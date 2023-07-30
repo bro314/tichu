@@ -25,7 +25,7 @@ class PlayerManager extends APP_GameClass {
 				$player_no = 9; // Default to 9 (should never be left to 9 unless the following doesn't work)
 				$counter++;
 
-				if (Tichu::$instance->getGameStateValue('playerTeams') == TEAM_RANDOM) {
+				if (Tichudashwood::$instance->getGameStateValue('playerTeams') == TEAM_RANDOM) {
 						$color = array_shift($default_colors); // Random since the $players order is random
 						$player_no = $counter;
 						$player_team = $counter % 2;
@@ -33,9 +33,9 @@ class PlayerManager extends APP_GameClass {
 				elseif (isset($player["player_table_order"])) {
 						$table_order = $position[$player["player_table_order"]]; // By default TEAM_1_3
 
-						if (Tichu::$instance->getGameStateValue('playerTeams') == TEAM_1_2) // If TEAM_1_2 swap 2 and 3
+						if (Tichudashwood::$instance->getGameStateValue('playerTeams') == TEAM_1_2) // If TEAM_1_2 swap 2 and 3
 								$table_order = ($table_order == 2 ? 3 : ($table_order == 3 ? 2 : $table_order));
-						elseif (Tichu::$instance->getGameStateValue('playerTeams') == TEAM_1_4) // If TEAM_1_4 swap 4 and 3
+						elseif (Tichudashwood::$instance->getGameStateValue('playerTeams') == TEAM_1_4) // If TEAM_1_4 swap 4 and 3
 								$table_order = ($table_order == 3 ? 4 : ($table_order == 4 ? 3 : $table_order));
 
 						if (isset($default_colors[$table_order - 1])) {
@@ -72,7 +72,7 @@ class PlayerManager extends APP_GameClass {
 	}
 
 	private static function resToObjects($res) {
-		return array_map(['tichu\managers\PlayerManager', 'getPlayer()'], $res);
+		return array_map(['tichudashwood\managers\PlayerManager', 'getPlayer()'], $res);
 	}
 
 	public static function getPlayer($id) {
@@ -88,7 +88,7 @@ class PlayerManager extends APP_GameClass {
 	}
 
 	public static function getNextPlayers($pId = null, $desc = false) {
-			$id = $pId ?? Tichu::getCurrentId();
+			$id = $pId ?? Tichudashwood::getCurrentId();
 			$sql = self::getSelectStmnt() . " ORDER BY player_no";
 			if($desc) $sql .= " DESC";
 			$players = self::getObjectListFromDB($sql);

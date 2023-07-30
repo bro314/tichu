@@ -23,7 +23,7 @@ define([
 		"ebg/stock"
 ],
 function (dojo, declare) {
-	return declare("bgagame.tichu", ebg.core.gamegui, {
+	return declare("bgagame.tichudashwood", ebg.core.gamegui, {
 		constructor: function() {
 				console.log('tichu constructor');
 
@@ -804,7 +804,7 @@ function (dojo, declare) {
 		},
 
 		takeAction: function(action, args = {}) {
-			this.ajaxcall( "/tichu/tichu/" + action + ".html", args, this, function (res) { });
+			this.ajaxcall( "/tichudashwood/tichudashwood/" + action + ".html", args, this, function (res) { });
 		},
 
 

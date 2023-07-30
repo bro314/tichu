@@ -2,7 +2,7 @@
 class LogManager extends APP_GameClass {
 
 	public static function insert($playerId, $action, $args = []) {
-		$playerId = $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
+		$playerId = $playerId == -1 ? Tichudashwood::$instance->getActivePlayerId() : $playerId;
 		$current = self::getCurrentRoundAndTrick();
 		$round = $current['round'];
 		$trick = $current['trick'];

@@ -2,7 +2,7 @@
 class NotificationManager extends APP_GameClass {
 
 	public static function dealCards($player_id, $cards, $msg) {
-		Tichu::$instance->notifyPlayer( $player_id, 'dealCards', clienttranslate($msg), array(
+		Tichudashwood::$instance->notifyPlayer( $player_id, 'dealCards', clienttranslate($msg), array(
 								'cards' => $cards,
 		));
 	}
@@ -10,7 +10,7 @@ class NotificationManager extends APP_GameClass {
 	public static function grandTichuBet($player_id, $player_name, $bet) {
 		$msg = $bet == 0 ? '${player_name} makes no Grand Tichu bet' : '
 												${player_name} makes a Grand Tichu bet';
-		Tichu::$instance->notifyAllPlayers( "grandTichuBet", clienttranslate($msg), array(
+		Tichudashwood::$instance->notifyAllPlayers( "grandTichuBet", clienttranslate($msg), array(
 								"player_id" => $player_id,
 								"player_name" => $player_name,
 								"bet" => $bet
@@ -19,7 +19,7 @@ class NotificationManager extends APP_GameClass {
 
 	public static function tichuBet($player_id, $player_name, $bet) {
 		$msg = $bet == 0 ? '' : clienttranslate('${player_name} makes a Tichu bet');
-		Tichu::$instance->notifyAllPlayers( "tichuBet", $msg, [
+		Tichudashwood::$instance->notifyAllPlayers( "tichuBet", $msg, [
 								"player_id" => $player_id,
 								"player_name" => $player_name,
 								"bet" => $bet
@@ -27,15 +27,15 @@ class NotificationManager extends APP_GameClass {
 	}
 
 	public static function hasBomb($player_id, $hasBomb) {
-		Tichu::$instance->notifyPlayer($player_id, 'hasBomb', '', ['hasBomb' => $hasBomb]);
+		Tichudashwood::$instance->notifyPlayer($player_id, 'hasBomb', '', ['hasBomb' => $hasBomb]);
 	}
 
 	public static function log($msg, $args) {
-		Tichu::$instance->notifyAllPlayers( 'log', clienttranslate($msg), $args );
+		Tichudashwood::$instance->notifyAllPlayers( 'log', clienttranslate($msg), $args );
 	}
 
 	public static function playCombo($playerId, $playerName, $combo, $msg) {
-		Tichu::$instance->notifyAllPlayers('playCombo', $msg, [
+		Tichudashwood::$instance->notifyAllPlayers('playCombo', $msg, [
 			'player_id' => $playerId,
 			'player_name' => $playerName,
 			'combo_name' => $combo->description,
@@ -45,7 +45,7 @@ class NotificationManager extends APP_GameClass {
 	}
 
 	public static function wishMade($player_id, $player_name, $wish, $textValue, $msg) {
-		Tichu::$instance->notifyAllPlayers( 'wishMade', $msg, [
+		Tichudashwood::$instance->notifyAllPlayers( 'wishMade', $msg, [
 			'player_id' => $player_id,
 			'player_name' => $player_name,
 			'wish' => $wish,
@@ -54,12 +54,12 @@ class NotificationManager extends APP_GameClass {
 	}
 
 	public static function mahjongGranted() {
-		Tichu::$instance->notifyAllPlayers( 'mahjongWishGranted', '', []);
+		Tichudashwood::$instance->notifyAllPlayers( 'mahjongWishGranted', '', []);
 	}
 
 
 	public static function playerGoOut($player_id, $player_name, $firstOutPlayer) {
-		Tichu::$instance->notifyAllPlayers( 'playerGoOut', clienttranslate('${player_name} has shed the cards from hand '), [
+		Tichudashwood::$instance->notifyAllPlayers( 'playerGoOut', clienttranslate('${player_name} has shed the cards from hand '), [
 								'firstout_id' => $firstOutPlayer,
 								'player_id' => $player_id,
 								'player_name' => $player_name
@@ -67,7 +67,7 @@ class NotificationManager extends APP_GameClass {
 	}
 
 	public static function pass($player_id, $player_name, $msg=null) {
-		Tichu::$instance->notifyAllPlayers( 'pass', clienttranslate($msg ?? '${player_name} passes'), [
+		Tichudashwood::$instance->notifyAllPlayers( 'pass', clienttranslate($msg ?? '${player_name} passes'), [
 				'player_id' => $player_id,
 				'player_name' => $player_name
 		]);
@@ -76,7 +76,7 @@ class NotificationManager extends APP_GameClass {
 
 
 	public static function tableWindow($table) {
-		Tichu::$instance->notifyAllPlayers("tableWindow", '', [
+		Tichudashwood::$instance->notifyAllPlayers("tableWindow", '', [
 				"id" => 'finalScoring',
 				"title" => clienttranslate("Result of this Round") ,
 				"table" => $table,
@@ -85,13 +85,13 @@ class NotificationManager extends APP_GameClass {
 	}
 
 	public static function newScores($newScores) {
-		Tichu::$instance->notifyAllPlayers("newScores", '', [
+		Tichudashwood::$instance->notifyAllPlayers("newScores", '', [
 				'newScores' => $newScores
 		]);
 	}
 
 	public static function captureCards($player_id, $player_name, $trickValue) {
-		Tichu::$instance->notifyAllPlayers( 'captureCards', clienttranslate('${player_name} gets all cards valuing ${trick_value} points'), array(
+		Tichudashwood::$instance->notifyAllPlayers( 'captureCards', clienttranslate('${player_name} gets all cards valuing ${trick_value} points'), array(
                 'player_id' => $player_id,
                 'player_name' => $player_name,
                 'trick_value' => $trickValue
@@ -100,11 +100,11 @@ class NotificationManager extends APP_GameClass {
 
 	public static function autopass($val, $pId=null) {
 		if(is_null($pId)) {
-			Tichu::$instance->notifyAllPlayers("autopass", '', [
+			Tichudashwood::$instance->notifyAllPlayers("autopass", '', [
 					'autopass' => $val,
 			]);
 		} else {
-			Tichu::$instance->notifyPlayer($pId, "autopass", '', [
+			Tichudashwood::$instance->notifyPlayer($pId, "autopass", '', [
 				'autopass' => $val,
 			]);
 		}
@@ -112,18 +112,18 @@ class NotificationManager extends APP_GameClass {
 
 	public static function confirmTichu($player_id, $grand, $msg=null) {
 		$s = $grand ? ' grand' : '';
-		Tichu::$instance->notifyPlayer($player_id, 'confirmTichu', '', [
+		Tichudashwood::$instance->notifyPlayer($player_id, 'confirmTichu', '', [
 			'grand' => $grand,
 			'msg' => clienttranslate($msg ?? 'Another tichu bet has just been made. Are you sure?')
 		]);
 	}
 
 	public static function acceptCards($player_id) {
-		Tichu::$instance->notifyPlayer($player_id, 'acceptCards', '', ["cards" => CardManager::getCardsPassedBy($player_id)]);
+		Tichudashwood::$instance->notifyPlayer($player_id, 'acceptCards', '', ["cards" => CardManager::getCardsPassedBy($player_id)]);
 	}
 
 	public static function passCards($player_id, $cardIds) {
-		Tichu::$instance->notifyPlayer($player_id, 'passCards', '', $cardIds);
+		Tichudashwood::$instance->notifyPlayer($player_id, 'passCards', '', $cardIds);
 	}
 }
 ?>

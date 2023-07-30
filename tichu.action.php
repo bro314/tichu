@@ -22,7 +22,7 @@
  */
 
 
-class action_tichu extends APP_GameAction
+class action_tichudashwood extends APP_GameAction
 {
 		// Constructor: please do not modify
 		public function __default() {

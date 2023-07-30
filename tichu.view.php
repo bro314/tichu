@@ -17,7 +17,7 @@
  * _ when a player refreshes the game page (F5)
  *
  * "build_page" method allows you to dynamically modify the HTML generated for the game interface. In
- * particular, you can set here the values of variables elements defined in tichu_tichu.tpl (elements
+ * particular, you can set here the values of variables elements defined in tichudashwood_tichudashwood.tpl (elements
  * like {MY_VARIABLE_ELEMENT}), and insert HTML block elements (also defined in your HTML template file)
  *
  * Note: if the HTML of your game interface is always the same, you don't have to place anything here.
@@ -26,11 +26,11 @@
 
 require_once(APP_BASE_PATH . "view/common/game.view.php");
 
-class view_tichu_tichu extends game_view
+class view_tichudashwood_tichudashwood extends game_view
 {
     function getGameName()
     {
-        return "tichu";
+        return "tichudashwood";
     }
 
     function build_page($viewArgs)
@@ -62,7 +62,7 @@ class view_tichu_tichu extends game_view
 
         $player_to_dir = PlayerManager::getNextPlayers(null, true);
 
-        $this->page->begin_block("tichu_tichu", "player");
+        $this->page->begin_block("tichudashwood_tichudashwood", "player");
         foreach ($player_to_dir as $dir => $player) {
           if($dir < 3)
             $this->page->insert_block("player", array("PLAYER_ID" => $player['id'],
@@ -75,7 +75,7 @@ class view_tichu_tichu extends game_view
 				$clazzNames = ['bottom', 'right', 'top', 'left'];
 				//$clazzNames = ['right', 'top', 'left', 'bottom'];
 
-        $this->page->begin_block("tichu_tichu", "last_played");
+        $this->page->begin_block("tichudashwood_tichudashwood", "last_played");
         //array_splice($player_to_dir, 0, 0,array_splice($player_to_dir, 3, 1,[])); // move last to first
 				$player_to_dir = array_reverse($player_to_dir);
         foreach ($player_to_dir as $i => $player) {
@@ -110,7 +110,7 @@ class view_tichu_tichu extends game_view
         //      <!-- END myblock -->
 
 
-        $this->page->begin_block( "tichu_tichu", "myblock" );
+        $this->page->begin_block( "tichudashwood_tichudashwood", "myblock" );
         foreach( $players as $player )
         {
             $this->page->insert_block( "myblock", array(

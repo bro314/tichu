@@ -23,7 +23,7 @@ require_once( APP_GAMEMODULE_PATH.'module/table/table.game.php' );
 
 
 
-class Tichu extends Table {
+class Tichudashwood extends Table {
 	public static $instance;
 	function __construct() {
 			// Your global variables labels:
@@ -53,7 +53,7 @@ class Tichu extends Table {
 
 	// Used for translations and stuff. Please do not modify.
 	protected function getGameName( ) {
-			return "tichu";
+			return "tichudashwood";
 	}
 
 	/*
