@@ -1,0 +1,361 @@
+@import url(../../../css/csslayer.css); /* Note: you must not use any @import directive other than this one */
+/********* You can start writing your CSS below this line: **********/
+.ha_board {
+  clear: both;
+}
+
+#myhandwrap {
+  padding-left: 10px;
+}
+
+.smallCards {
+  background-size: 1050px 450px;
+}
+
+.whiteblock {
+  border-radius: 6px;
+}
+.whiteblock.lastComboPlayer {
+  background-color: yellow;
+}
+.whiteblock.disabled:not(.lastComboPlayer) {
+  background-color: rgba(170, 170, 170, 0.6666666667);
+  background-image: unset;
+}
+
+.combo {
+  margin: 10px;
+}
+
+.stockitem {
+  border-radius: 6px;
+  -moz-box-shadow: 5px 5px 5px 5px #656565;
+  -webkit-box-shadow: 5px 5px 5px 5px #656565;
+  -o-box-shadow: 5px 5px 5px 5px #656565;
+  box-shadow: 5px 5px 5px 5px #656565;
+  filter: progid:DXImageTransform.Microsoft.Shadow(color=#656565, Direction=134, Strength=5);
+}
+
+.stockitem_selected {
+  border: 4px solid yellow !important;
+}
+
+.reordercards {
+  font-size: 70%;
+  position: relative;
+  top: -1px;
+  margin-left: 30px;
+}
+
+.active {
+  border: 5px solid orangered;
+}
+
+.count {
+  margin-right: 5px;
+}
+
+.icon {
+  display: none;
+  background-image: url("img/tichu-icons.png");
+}
+.icon.star {
+  background-size: 128px 64px;
+  background-position: -112px -16px;
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+}
+.icon.hand {
+  background-size: 128px 64px;
+  background-position: -112px 0px;
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+}
+.icon.firstoutcolor {
+  background-size: 128px 64px;
+  background-position: -64px -32px;
+  width: 16px;
+  height: 16px;
+  height: 32px;
+}
+.icon.grandtichublack {
+  background-size: 128px 64px;
+  background-position: 0px 0px;
+  width: 32px;
+  height: 32px;
+}
+.icon.grandtichucolor {
+  background-size: 128px 64px;
+  background-position: 0px -32px;
+  width: 32px;
+  height: 32px;
+}
+.icon.tichublack {
+  background-size: 128px 64px;
+  background-position: -32px 0px;
+  width: 32px;
+  height: 32px;
+}
+.icon.tichucolor {
+  background-size: 128px 64px;
+  background-position: -32px -32px;
+  width: 26px;
+  height: 26px;
+}
+.icon.big.grandtichublack {
+  background-size: 307.2px 153.6px;
+  background-position: 0px 0px;
+  width: 76.8px;
+  height: 76.8px;
+}
+.icon.big.grandtichucolor {
+  background-size: 307.2px 153.6px;
+  background-position: 0px -76.8px;
+  width: 76.8px;
+  height: 76.8px;
+}
+.icon.big.tichublack {
+  background-size: 307.2px 153.6px;
+  background-position: -76.8px 0px;
+  width: 76.8px;
+  height: 76.8px;
+}
+.icon.big.tichucolor {
+  background-size: 307.2px 153.6px;
+  background-position: -76.8px -76.8px;
+  width: 62.4px;
+  height: 62.4px;
+}
+.icon.temp {
+  position: absolute;
+  display: block;
+  left: calc(50% - 128px);
+  top: calc(50% - 128px);
+}
+.icon.temp.grandtichublack {
+  background-size: 1024px 512px;
+  background-position: 0px 0px;
+  width: 256px;
+  height: 256px;
+}
+.icon.temp.grandtichucolor {
+  background-size: 1024px 512px;
+  background-position: 0px -256px;
+  width: 256px;
+  height: 256px;
+}
+.icon.temp.tichublack {
+  background-size: 1024px 512px;
+  background-position: -256px 0px;
+  width: 256px;
+  height: 256px;
+}
+.icon.temp.tichucolor {
+  background-size: 1024px 512px;
+  background-position: -256px -256px;
+  width: 208px;
+  height: 208px;
+}
+.icon.cardback {
+  background-size: 128px 64px;
+  background-position: -90px 0px;
+  width: 22px;
+  height: 32px;
+}
+
+/** Table layout **/
+.playertablename {
+  font-weight: bold;
+}
+
+.playertable {
+  text-align: center;
+  width: 400px;
+  height: 170px;
+  cursor: pointer;
+}
+
+.playertable_1 {
+  top: 0px;
+  left: 30px;
+  width: 120px;
+}
+
+.playertable_2 {
+  top: 0px;
+  left: 180px;
+  width: 120px;
+}
+
+.playertable_3 {
+  top: 0px;
+  left: 330px;
+  width: 120px;
+}
+
+.receivePassCard, .givePassCard {
+  top: 30px;
+  left: 20px;
+}
+
+/*** cards on table ***/
+.cardontable {
+  position: absolute;
+  width: 100px;
+  height: 150px;
+  background-image: url("img/tichu-cards.png");
+  border-radius: 6px;
+  -moz-box-shadow: 5px 5px 5px 5px #656565;
+  -webkit-box-shadow: 5px 5px 5px 5px #656565;
+  -o-box-shadow: 5px 5px 5px 5px #656565;
+  box-shadow: 5px 5px 5px 5px #656565;
+  filter: progid:DXImageTransform.Microsoft.Shadow(color=#656565, Direction=134, Strength=5);
+}
+
+.tikicardontable {
+  position: absolute;
+  width: 100px;
+  height: 150px;
+  background-image: url("img/tiki-cards.png");
+  border-radius: 6px;
+  -moz-box-shadow: 5px 5px 5px 5px #656565;
+  -webkit-box-shadow: 5px 5px 5px 5px #656565;
+  -o-box-shadow: 5px 5px 5px 5px #656565;
+  box-shadow: 5px 5px 5px 5px #656565;
+  filter: progid:DXImageTransform.Microsoft.Shadow(color=#656565, Direction=134, Strength=5);
+}
+
+#card-last-played-area {
+  padding-left: 20px;
+  width: 685px;
+}
+
+.mahjong {
+  width: 100px;
+  height: 150px;
+  background-image: url("img/tichu-icons-table.png");
+  background-size: 800px 300px;
+  background-color: rgba(255, 255, 255, 0.5333333333);
+}
+
+#mahjongIndicator {
+  display: none;
+  position: absolute;
+  top: 200px;
+  left: 750px;
+  width: 100px;
+  height: 150px;
+  background-image: url("img/tichu-mahjong.png");
+}
+
+#mahjongTikiIndicator {
+  display: none;
+  position: absolute;
+  top: 200px;
+  left: 750px;
+  width: 100px;
+  height: 150px;
+  background-image: url("img/tiki-tichu-mahjong.png");
+}
+
+.squareTable #card-last-played-area {
+  width: 1500px;
+  height: 500px;
+  position: relative;
+  padding-left: 0px;
+  zoom: 0.6;
+}
+.squareTable #card-last-played-area .whiteblock {
+  position: absolute;
+  width: 660px;
+  height: 115px;
+  margin: 0px 0px 0px 0px;
+}
+.squareTable #card-last-played-area .whiteblock.top {
+  left: 410px;
+  top: 0px;
+}
+.squareTable #card-last-played-area .whiteblock.left {
+  left: 0px;
+  top: 182.5px;
+}
+.squareTable #card-last-played-area .whiteblock.bottom {
+  left: 410px;
+  bottom: 0px;
+}
+.squareTable #card-last-played-area .whiteblock.right {
+  right: 0px;
+  top: 182.5px;
+}
+.squareTable #mahjongIndicator {
+  zoom: 0.6;
+  left: 700px;
+  top: 175px;
+}
+.squareTable #mahjongTikiIndicator {
+  zoom: 0.6;
+  left: 700px;
+  top: 175px;
+}
+
+@media (min-width: 1700px) {
+  .squareTable #card-last-played-area {
+    zoom: 0.95;
+  }
+  .squareTable #mahjongIndicator {
+    zoom: 0.95;
+  }
+  .squareTable #mahjongTikiIndicator {
+    zoom: 0.95;
+  }
+}
+@media (min-width: 2000px) {
+  .squareTable #card-last-played-area {
+    zoom: 1;
+  }
+  .squareTable #mahjongIndicator {
+    zoom: 1;
+  }
+  .squareTable #mahjongTikiIndicator {
+    zoom: 1;
+  }
+}
+#playertables {
+  width: 560px;
+  height: 300px;
+  margin-left: 120px;
+  display: flex;
+  justify-content: space-evenly;
+}
+
+.spectatorMode #grandtichupanel, .spectatorMode #tichupanel, .spectatorMode #mahjongpanel, .spectatorMode #playertables, .spectatorMode #myhandwrap {
+  display: none;
+}
+
+#currentTrick {
+  position: absolute;
+  top: 0px;
+  right: 20px;
+  font-size: 28px;
+}
+@media (max-width: 1300px) {
+  #currentTrick {
+    max-width: 180px;
+  }
+}
+
+#currentTrickCounter {
+  display: inline-block;
+}
+
+.playertabletext {
+  height: 134px;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/*# sourceMappingURL=tichu.css.map */
