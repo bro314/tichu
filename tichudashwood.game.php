@@ -139,7 +139,7 @@ class Tichudashwood extends Table {
 			$result['lastComboPlayer'] = $lastCombo->player;
 			$result['cardslastcombo'] = $lastCombo->cards;
 			$result['lastComboDescription'] = $lastCombo->description;
-			list($lastCombos, $passes) = LogManager::getLastCombos();
+			list($lastCombos, $passes) = LogManager::getLastCombos($current_player_id);
 			$result['allLastCombos'] = $lastCombos;
 			$result['passes'] = $passes;
 			$currentTrick = array_values($deck->getCardsInLocation('combos'));
