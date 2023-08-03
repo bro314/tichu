@@ -437,7 +437,9 @@ class Tichudashwood extends Table {
 		$lastTichuCall = LogManager::getLastAction('tichuCall');
 		$now = time();
 		if( $bet == 200 ){
-			if(!$confirmed && $now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
+			if(!$confirmed &&
+					$lastTichuCall != null &&
+					$now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
 				NotificationManager::confirmTichu($player_id, true);
 				return;
 			}
@@ -465,7 +467,9 @@ class Tichudashwood extends Table {
 		$state = $this->gamestate->state();
 		$lastTichuCall = LogManager::getLastAction('tichuCall');
 		$now = time();
-		if(!$confirmed && $now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
+		if(!$confirmed &&
+				$lastTichuCall != null &&
+				$now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
 			NotificationManager::confirmTichu($player_id, false);
 			return;
 		}
@@ -677,11 +681,11 @@ class Tichudashwood extends Table {
 				$this->gamestate->changeActivePlayer( $mahjongOwnerId );
 				$this->giveExtraTime($mahjongOwnerId);
 				$notify = 'A new round starts. ${player_name} has the Mahjong';
-                $bombs = PlayerManager::getBombStatus();
-                foreach ($bombs as $k => $v) {
-                    NotificationManager::hasBomb($k, $v);
-                }
-                self::dump("vinayakr_debug bombs", $bombs);
+				$bombs = PlayerManager::getBombStatus();
+				foreach ($bombs as $k => $v) {
+					NotificationManager::hasBomb($k, $v);
+				}
+				self::dump("vinayakr_debug bombs", $bombs);
 			} else {   //this is not the first trick
 				$hand_count = $deck->countCardsByLocationArgs( 'hand' );
 
