@@ -177,6 +177,7 @@ class Tichudashwood extends Table {
 
 	function completePlayCombo($playerId, $combo) {
 			$player = PlayerManager::getPlayer($playerId);
+			$mahjongOwner = self::getGameStateValue( 'mahjongOwner' );
 			$wish = self::getGameStateValue( 'mahjongWish' );
 			$cards = $combo->cards;
 			$cardIds = array_column($combo->cards, 'id');
@@ -335,6 +336,12 @@ class Tichudashwood extends Table {
 
 		LogManager::insert(self::getCurrentPlayerId(), 'changePlayer', ['transition' => 'playBomb', 'active' => self::getActivePlayerId(), 'last' => $name]);
 		$this->gamestate->nextState('changePlayer');
+		/*$cards = array_values(CardManager::getDeck()->getCards($cards_ids));
+		$combo = new Combo($cards, BOMB_COMBO);
+		if(!$combo->checkType())
+			throw new feException( self::_("This is not a bomb"), true );
+		LogManager::playCombo($playerId, $combo);
+		$this->completePlayCombo($playerId, $combo, true);*/
 	}
 
 	function choosePhoenix( $phoenixValue )  {

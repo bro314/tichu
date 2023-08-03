@@ -940,7 +940,7 @@ function (dojo, declare) {
 
 		notif_mahjongWishGranted: function( notif ) {
 			debug('notif_mahjongWishGranted', notif );
-			var indicator = this.prefs[103].value == 1 ? 'mahjongTikiIndicator': 'mahjongIndicator';
+			var indicator = $('mahjongIndicator');
 			indicator.innerHTML = '';
 			indicator.style.display = 'none';
 		},
