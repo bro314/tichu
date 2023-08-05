@@ -145,7 +145,7 @@ function (dojo, declare) {
 					$('playertable_' + player_id).classList.add('lastComboPlayer');
 				}
 
-				$('pointcount_' + player_id).innerHTML = gamedatas.capturedpoints[player_id];
+				dojo.query(".pointcount." + player_id).innerHTML(gamedatas.capturedpoints[player_id]);
 			});
 
 			dojo.query(".playertabletext").forEach(e => {
@@ -182,11 +182,11 @@ function (dojo, declare) {
 			this.addTooltipHtml('counterClockwise', _('This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings'));
 		},
 
-		createStock: function (element, cardWidth, cardHeight) {
+		createStock: function (element, cardWidth, cardHeight, overlapPercent = 50) {
 				stock = new ebg.stock();
 				stock.create(this, element, cardWidth, cardHeight);
 				stock.setSelectionAppearance('class');
-				stock.setOverlap(cardWidth/2, 0);
+				stock.setOverlap(overlapPercent, 0);
 				stock.image_items_per_row = 14;
 				var cardImgFile = this.prefs[103].value == 1 ? 'img/tiki-cards.png': 'img/tichu-cards.png' ;
 				for (var color = 1; color <= 4; color++) {
@@ -236,7 +236,7 @@ function (dojo, declare) {
 				if (playerId in this.tableCombos) {
 						this.tableCombos[playerId].removeAll();
 				} else {
-						this.tableCombos[playerId] = this.createStock($('lastcombo_' + playerId), this.cardwidth * 0.75, this.cardheight * 0.75);
+						this.tableCombos[playerId] = this.createStock($('lastcombo_' + playerId), this.cardwidth * 0.75, this.cardheight * 0.75, 25);
 						this.tableCombos[playerId].extraClasses="smallCards";
 						this.tableCombos[playerId].setSelectionMode(0);
 				}
@@ -993,8 +993,10 @@ function (dojo, declare) {
 
 			var playerId = notif.args.player_id;
 			var trick_value = notif.args.trick_value;
-			$('pointcount_' + playerId).innerHTML =	parseInt($('pointcount_' + playerId).innerHTML) + trick_value;
+			var old_score = parseInt($('pointcount_' + playerId).innerHTML);
+			var new_score = old_score + trick_value;
 
+			dojo.query(".pointcount." + player_id).innerHTML(new_score);
 			dojo.query('.cardback').style('display', 'none');
 		},
 

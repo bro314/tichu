@@ -55,10 +55,6 @@ span.pass img {
   border: 5px solid rgba(255, 0, 0, 0.7);
 }
 
-.count {
-  margin-right: 5px;
-}
-
 .icon {
   display: none;
   background-image: url("img/tichu-icons.png");
@@ -109,26 +105,26 @@ span.pass img {
   height: 26px;
 }
 .icon.big.grandtichublack {
-  background-size: 307.2px 153.6px;
+  background-size: 256px 128px;
   background-position: 0px 0px;
-  width: 76.8px;
-  height: 76.8px;
+  width: 64px;
+  height: 64px;
 }
 .icon.big.grandtichucolor {
-  background-size: 307.2px 153.6px;
-  background-position: 0px -76.8px;
-  width: 76.8px;
-  height: 76.8px;
+  background-size: 256px 128px;
+  background-position: 0px -64px;
+  width: 64px;
+  height: 64px;
 }
 .icon.big.tichublack {
-  background-size: 307.2px 153.6px;
-  background-position: -76.8px 0px;
-  width: 76.8px;
-  height: 76.8px;
+  background-size: 256px 128px;
+  background-position: -64px 0px;
+  width: 64px;
+  height: 64px;
 }
 .icon.big.tichucolor {
-  background-size: 307.2px 153.6px;
-  background-position: -76.8px -76.8px;
+  background-size: 256px 128px;
+  background-position: -64px -64px;
   width: 62.4px;
   height: 62.4px;
 }
@@ -173,6 +169,32 @@ span.pass img {
 .playerinfo {
   width: 140px;
   padding-right: 10px;
+}
+
+.last-played-container {
+  display:flex;
+  line-height: 24px;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.last-played-player {
+  width: 140px;
+  padding-right: 10px;
+}
+
+.last-played-player .playertablename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.last-played-player .last-played-icons .count {
+  display: inline-block;
+  width: 40px;
+}
+
+.last-played-combo {
+  flex-grow: 1;
 }
 
 .playertablename {
