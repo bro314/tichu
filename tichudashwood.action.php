@@ -33,7 +33,7 @@ class action_tichudashwood extends APP_GameAction
 				}
 				else
 				{
-						$this->view = "tichu_tichu";
+						$this->view = "tichudashwood_tichudashwood";
 						self::trace( "Complete reinitialization of board game" );
 				}
 		}
