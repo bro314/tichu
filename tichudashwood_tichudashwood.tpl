@@ -33,6 +33,12 @@
         </div>
     </div>
     <!-- END last_played -->
+
+  <div id="mahjongIndicator"></div>
+  <div id="mahjongTikiIndicator"></div>
+  <div id="currentTrickDiv">
+	  <a id="currentTrick" href="#"><div id="currentTrickCounter"></div></a>
+	</div>
 </div>
 
 <div id="playertables"  style="display:none;">
@@ -63,10 +69,6 @@
     </div>
 </div>
 <div id="placeholder" style="position:absolute; left:800px; top:250px; width:1px; height:1px"></div>
-
-<div id="mahjongIndicator"></div>
-<div id="mahjongTikiIndicator"></div>
-<a id="currentTrick" href="#"><div id="currentTrickCounter"></div></a>
 
 <script type="text/javascript">
 

@@ -1,5 +1,10 @@
 @import url(../../../css/csslayer.css); /* Note: you must not use any @import directive other than this one */
-/********* You can start writing your CSS below this line: **********/
+
+#game_play_area {
+  max-width: 1500px;
+  margin: 5px auto;
+}
+
 .ha_board {
   clear: both;
 }
@@ -52,6 +57,14 @@ span.pass img {
 }
 
 .active {
+  border: 5px solid rgba(255, 0, 0, 0.7);
+}
+#card-last-played-area .whiteblock {
+  border: 5px solid transparent;
+  padding: 5px;
+  margin: 5px;
+}
+#card-last-played-area .whiteblock.active {
   border: 5px solid rgba(255, 0, 0, 0.7);
 }
 
@@ -166,13 +179,85 @@ span.pass img {
 }
 
 /** Table layout **/
-.playerinfo {
-  width: 140px;
-  padding-right: 10px;
+
+#card-last-played-area {
+  padding: 10px;
+}
+
+#card-last-played-area {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr 1fr;
+}
+#card-last-played-area .whiteblock.top {
+  grid-column: 1 / span 1;
+  grid-row: 3 / span 1;
+}
+#card-last-played-area .whiteblock.left {
+  grid-column: 1 / span 1;
+  grid-row: 4 / span 1;
+}
+#card-last-played-area .whiteblock.right {
+  grid-column: 1 / span 1;
+  grid-row: 2 / span 1;
+}
+#card-last-played-area .whiteblock.bottom {
+  grid-column: 1 / span 1;
+  grid-row: 1 / span 1;
+}
+#card-last-played-area #mahjongIndicator,
+#card-last-played-area #mahjongTikiIndicator {
+  grid-column: 2 / span 1;
+  grid-row: 4 / span 1;
+  place-self: center;
+  scale: 0.75
+}
+#card-last-played-area #currentTrickDiv {
+  grid-column: 2 / span 1;
+  grid-row: 1 / span 1;
+  place-self: center;
+  text-align: center;
+  font-size: 28px;
+}
+
+.squareTable #card-last-played-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr 10px 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+}
+.squareTable #card-last-played-area .whiteblock.top {
+  grid-column: 2 / span 3;
+  grid-row: 1 / span 1;
+}
+.squareTable #card-last-played-area .whiteblock.left {
+  grid-column: 1 / span 2;
+  grid-row: 2 / span 1;
+}
+.squareTable #card-last-played-area .whiteblock.right {
+  grid-column: 4 / span 2;
+  grid-row: 2 / span 1;
+}
+.squareTable #card-last-played-area .whiteblock.bottom {
+  grid-column: 2 / span 3;
+  grid-row: 3 / span 1;
+}
+.squareTable #card-last-played-area #mahjongIndicator,
+.squareTable #card-last-played-area #mahjongTikiIndicator {
+  grid-column: 5 / span 1;
+  grid-row: 3 / span 1;
+  place-self: center;
+  scale: 0.75
+}
+.squareTable #card-last-played-area #currentTrickDiv {
+  grid-column: 5 / span 1;
+  grid-row: 1 / span 1;
+  place-self: center;
+  text-align: center;
+  font-size: 28px;
 }
 
 .last-played-container {
-  display:flex;
+  display: flex;
   line-height: 24px;
   font-size: 20px;
   font-weight: bold;
@@ -181,11 +266,16 @@ span.pass img {
 .last-played-player {
   width: 140px;
   padding-right: 10px;
+  flex-shrink: 0;
 }
 
 .last-played-player .playertablename {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.last-played-player .last-played-icons {
+  top: 2px;
 }
 
 .last-played-player .last-played-icons .count {
@@ -194,6 +284,7 @@ span.pass img {
 }
 
 .last-played-combo {
+  width: 300px;
   flex-grow: 1;
 }
 
@@ -240,11 +331,7 @@ span.pass img {
   height: 150px;
   background-image: url("img/tichu-cards.png");
   border-radius: 6px;
-  -moz-box-shadow: 5px 5px 5px 5px #656565;
-  -webkit-box-shadow: 5px 5px 5px 5px #656565;
-  -o-box-shadow: 5px 5px 5px 5px #656565;
-  box-shadow: 5px 5px 5px 5px #656565;
-  filter: progid:DXImageTransform.Microsoft.Shadow(color=#656565, Direction=134, Strength=5);
+  box-shadow: 2px 2px 5px 3px #666;
 }
 
 .tikicardontable {
@@ -253,16 +340,7 @@ span.pass img {
   height: 150px;
   background-image: url("img/tiki-cards.png");
   border-radius: 6px;
-  -moz-box-shadow: 5px 5px 5px 5px #656565;
-  -webkit-box-shadow: 5px 5px 5px 5px #656565;
-  -o-box-shadow: 5px 5px 5px 5px #656565;
-  box-shadow: 5px 5px 5px 5px #656565;
-  filter: progid:DXImageTransform.Microsoft.Shadow(color=#656565, Direction=134, Strength=5);
-}
-
-#card-last-played-area {
-  padding-left: 15px;
-  width: 685px;
+  box-shadow: 2px 2px 5px 3px #666;
 }
 
 .mahjong {
@@ -271,93 +349,28 @@ span.pass img {
   background-image: url("img/tichu-icons-table.png");
   background-size: 800px 300px;
   background-color: rgba(255, 255, 255, 0.5333333333);
+  border-radius: 8px;
+}
+
+#mahjongIndicator,
+#mahjongTikiIndicator {
+  display: none;
+  width: 100px;
+  height: 150px;
+  border-radius: 8px;
 }
 
 #mahjongIndicator {
-  display: none;
-  position: absolute;
-  top: 200px;
-  left: 750px;
-  width: 100px;
-  height: 150px;
   background-image: url("img/tichu-mahjong.png");
 }
 
 #mahjongTikiIndicator {
-  display: none;
-  position: absolute;
-  top: 200px;
-  left: 750px;
-  width: 100px;
-  height: 150px;
   background-image: url("img/tiki-tichu-mahjong.png");
 }
 
-.squareTable #card-last-played-area {
-  width: 1500px;
-  height: 500px;
-  position: relative;
-  padding-left: 0px;
-  zoom: 0.6;
-}
-.squareTable #card-last-played-area .whiteblock {
-  position: absolute;
-  width: 660px;
-  height: 115px;
-  margin: 0px 0px 0px 0px;
-}
-.squareTable #card-last-played-area .whiteblock.top {
-  left: 410px;
-  top: 0px;
-}
-.squareTable #card-last-played-area .whiteblock.left {
-  left: 0px;
-  top: 182.5px;
-}
-.squareTable #card-last-played-area .whiteblock.bottom {
-  left: 410px;
-  bottom: 0px;
-}
-.squareTable #card-last-played-area .whiteblock.right {
-  right: 0px;
-  top: 182.5px;
-}
-.squareTable #mahjongIndicator {
-  zoom: 0.6;
-  left: 700px;
-  top: 175px;
-}
-.squareTable #mahjongTikiIndicator {
-  zoom: 0.6;
-  left: 700px;
-  top: 175px;
-}
-
-@media (min-width: 1700px) {
-  .squareTable #card-last-played-area {
-    zoom: 0.95;
-  }
-  .squareTable #mahjongIndicator {
-    zoom: 0.95;
-  }
-  .squareTable #mahjongTikiIndicator {
-    zoom: 0.95;
-  }
-}
-@media (min-width: 2000px) {
-  .squareTable #card-last-played-area {
-    zoom: 1;
-  }
-  .squareTable #mahjongIndicator {
-    zoom: 1;
-  }
-  .squareTable #mahjongTikiIndicator {
-    zoom: 1;
-  }
-}
 #playertables {
   width: 560px;
-  height: 300px;
+  height: 250px;
   margin-left: 120px;
   display: flex;
   justify-content: space-evenly;
@@ -367,20 +380,12 @@ span.pass img {
   display: none;
 }
 
-#currentTrick {
-  position: absolute;
-  top: 0px;
-  right: 20px;
-  font-size: 28px;
-}
-@media (max-width: 1300px) {
-  #currentTrick {
-    max-width: 180px;
-  }
-}
-
 #currentTrickCounter {
   display: inline-block;
+}
+
+#myDialogCurrentTrick #currentTrickCards {
+  width: 500px;
 }
 
 .playertabletext {

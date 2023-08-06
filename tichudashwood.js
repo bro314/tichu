@@ -168,6 +168,7 @@ function (dojo, declare) {
 				var value = card.type_arg;
 				this.playerHand.addToStockWithId(this.getCardUniqueId(color, value), card.id);
 			}
+			this.updateStockOverlap(this.playerHand);
 
 			// triggers reorder cards
 			dojo.connect($('order_by_rank'), 'onclick', this, 'onReorderByRank');
@@ -182,11 +183,12 @@ function (dojo, declare) {
 			this.addTooltipHtml('counterClockwise', _('This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings'));
 		},
 
-		createStock: function (element, cardWidth, cardHeight, overlapPercent = 50) {
-				stock = new ebg.stock();
+		createStock: function (element, cardWidth, cardHeight) {
+				const stock = new ebg.stock();
 				stock.create(this, element, cardWidth, cardHeight);
 				stock.setSelectionAppearance('class');
-				stock.setOverlap(overlapPercent, 0);
+				stock.setOverlap(30, 0);
+				new ResizeObserver(() => requestAnimationFrame(() => this.updateStockOverlap(stock))).observe(element);
 				stock.image_items_per_row = 14;
 				var cardImgFile = this.prefs[103].value == 1 ? 'img/tiki-cards.png': 'img/tichu-cards.png' ;
 				for (var color = 1; color <= 4; color++) {
@@ -198,6 +200,21 @@ function (dojo, declare) {
 						}
 				}
 				return stock;
+		},
+
+		/**
+		 * We would like the card overlap to depend on the width of the container element.
+		 * We have to make sure that this method gets called every time that the number of cards in a
+		 * stock changes or the size of the container element changes.
+		 *
+		 * We think it is useful to only allow overlap between 12% and 60%.
+		 */		
+		updateStockOverlap:function (stock) {
+			let availableWidthForOverlapPerItem = (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) / (stock.items.length - 1);
+			let overlap = Math.floor((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width * 100);
+			if (overlap > 60) overlap = 60;
+			if (overlap < 12) overlap = 12;
+			stock.setOverlap(overlap, 0);
 		},
 
 		setupValueChoice:function (idName, callbackFunc, count) {
@@ -236,7 +253,7 @@ function (dojo, declare) {
 				if (playerId in this.tableCombos) {
 						this.tableCombos[playerId].removeAll();
 				} else {
-						this.tableCombos[playerId] = this.createStock($('lastcombo_' + playerId), this.cardwidth * 0.75, this.cardheight * 0.75, 25);
+						this.tableCombos[playerId] = this.createStock($('lastcombo_' + playerId), this.cardwidth * 0.75, this.cardheight * 0.75);
 						this.tableCombos[playerId].extraClasses="smallCards";
 						this.tableCombos[playerId].setSelectionMode(0);
 				}
@@ -258,6 +275,8 @@ function (dojo, declare) {
 				stock.addToStockWithId(uid, card.id);
 			});
 			stock.changeItemsWeight(weights);
+			this.updateStockOverlap(this.playerHand);
+			this.updateStockOverlap(stock);
 		},
 
 		animateIcon: function(clazz, player_id) { // todo
@@ -565,7 +584,7 @@ function (dojo, declare) {
 		showCurrentTrick: function() {
 			console.log('showTrick');
 			var myDlg = new ebg.popindialog();
-			myDlg.create( 'myDialogUniqueId' );
+			myDlg.create( 'myDialogCurrentTrick' );
 			myDlg.setTitle( _('Cards in current Trick') );
 			myDlg.setContent('<div id="currentTrickCards"></div>');
 			myDlg.show();
@@ -638,6 +657,7 @@ function (dojo, declare) {
 				setTimeout(() => this.playerHand.addToStockWithId(card.type, card.id),1000);
 				this.cardsToPass[i] = null;
 			}
+			this.updateStockOverlap(this.playerHand);
 		},
 
 		onPassCards: function () {
@@ -858,6 +878,7 @@ function (dojo, declare) {
 			notif.args.cards.forEach(card => {
 				this.playerHand.addToStockWithId( this.getCardUniqueId( card.type, card.type_arg ), card.id );
 			});
+			this.updateStockOverlap(this.playerHand);
 			var totalCards = notif.args.cards.length == 8 ? 8 : 14;
 			dojo.query('.handcount').innerHTML(totalCards);
 		},
@@ -996,7 +1017,7 @@ function (dojo, declare) {
 			var old_score = parseInt($('pointcount_' + playerId).innerHTML);
 			var new_score = old_score + trick_value;
 
-			dojo.query(".pointcount." + player_id).innerHTML(new_score);
+			dojo.query(".pointcount." + playerId).innerHTML(new_score);
 			dojo.query('.cardback').style('display', 'none');
 		},
 
@@ -1025,9 +1046,11 @@ function (dojo, declare) {
 				this.playerHand.addToStockWithId(card_type,card.id);
 				this.slideToObjectAndDestroy(card_on_table, 'myhand', 1000, 0);
 			});
+			this.updateStockOverlap(this.playerHand);
+
 			setTimeout(function(){
 				dojo.style( 'playertables', 'display', 'none' );
-				dojo.style( 'card-last-played-area', 'display', 'block' );
+				dojo.style( 'card-last-played-area', 'display', 'grid' );
 			}, 2000);
 
 		},
@@ -1037,7 +1060,7 @@ function (dojo, declare) {
 			notif.args.forEach(card => {
 				this.playerHand.removeFromStockById(card);
 			});
+			this.updateStockOverlap(this.playerHand);
 		}
-
 	});
 });
