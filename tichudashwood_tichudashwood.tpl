@@ -56,16 +56,26 @@
     <!-- END player -->
 </div>
 
+<div id="buttons">
+  <div id="play_button"></div>
+  <div id="pass_button"></div>
+  <div id="pass_trick_button"></div>
+  <div id="space"></div>
+  <div id="bomb_button"></div>
+  <div id="tichu_button"></div>
+</div>
+
 <div id="myhandwrap">
-    <h3>{MY_HAND}
-    <a href="#" class="reordercards" id="order_by_rank" style="display:none;">[{REORDER_CARDS_BY_RANK}]</a>
-    <a href="#" class="reordercards" id="order_by_color">[{REORDER_CARDS_BY_COLOR}]</a>
-		<a href="#" class="reordercards" id="list_table" style="display:none;">[{LIST_TABLE}]</a>
-    <a href="#" class="reordercards" id="square_table">[{SQUARE_TABLE}]</a>
-    <a href="#" class="reordercards" id="clockwise">[{CLOCKWISE}]</a>
-    <a href="#" class="reordercards" id="counterClockwise" style="display:none;">[{COUNTER_CLOCKWISE}]</a>
-    </h3>
     <div id="myhand">
+    </div>
+    <div id="prefs">
+		  <span>User Preferences:</span>
+      <a href="#" class="reordercards" id="order_by_rank" style="display:none;">[{REORDER_CARDS_BY_RANK}]</a>
+      <a href="#" class="reordercards" id="order_by_color">[{REORDER_CARDS_BY_COLOR}]</a>
+		  <a href="#" class="reordercards" id="list_table" style="display:none;">[{LIST_TABLE}]</a>
+      <a href="#" class="reordercards" id="square_table">[{SQUARE_TABLE}]</a>
+      <a href="#" class="reordercards" id="clockwise">[{CLOCKWISE}]</a>
+      <a href="#" class="reordercards" id="counterClockwise" style="display:none;">[{COUNTER_CLOCKWISE}]</a>
     </div>
 </div>
 <div id="placeholder" style="position:absolute; left:800px; top:250px; width:1px; height:1px"></div>
@@ -102,6 +112,10 @@ var jstpl_tikicardontable = '<div class="tikicardontable" id="cardontable_${play
 var jstpl_mahjong='<div class="mahjong" id="mahjong_${value}" style="background-position:-${x}px -${y}px"></div>';
 var jstpl_cardback='<div class="icon cardback ${id}"></div>';
 var jstpl_temp='<div id="temp_${id}" class="icon temp ${clazz}"></div>'
+
+var jstpl_my_action_button = '<a href="#" class="action-button ${addclass}" onclick="return false;" id="${id}">${label}</a>';
+
+var jstpl_my_hand = '<h3>{MY_HAND}</h3>'
 
 </script>
 
