@@ -683,7 +683,7 @@ class Tichudashwood extends Table {
 				$notify = 'A new round starts. ${player_name} has the Mahjong';
 				$bombs = PlayerManager::getBombStatus();
 				foreach ($bombs as $k => $v) {
-					NotificationManager::hasBomb($k, $v);
+					NotificationManager::hasBomb($k, intval($v));
 				}
 				self::dump("vinayakr_debug bombs", $bombs);
 			} else {   //this is not the first trick
