@@ -83,7 +83,7 @@ function (dojo, declare) {
                     var script = document.createElement("script");
                     script.type = "text/javascript";
                     var lang_code = dojoConfig.locale.substr(0,2);
-                    script.src = "https://maps.googleapis.com/maps/api/js?key=AIzaSyCrPx3aUElpdWAGTyxd-t9w92er94Nfxjk&sensor=false&callback=initGoogleApi&language="+lang_code;
+                    script.src = "https://maps.googleapis.com/maps/api/js?key=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&sensor=false&callback=initGoogleApi&language="+lang_code;
 
                     initGoogleApi = dojo.hitch( this, function() {
                         this.googleApiLoaded = true;
