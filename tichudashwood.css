@@ -433,7 +433,7 @@ span.pass img {
   display: inline-block;
 }
 
-#myDialogCurrentTrick #currentTrickCards {
+#popin_myDialogCurrentTrick #currentTrickCards {
   width: 500px;
 }
 
