@@ -786,6 +786,7 @@ function (dojo, declare) {
 				this.takeAction(action, {cards: selected.join(';')});
 		},
 
+		// Note that is either normal pass or auto-pass depending on whose turn it is.
 		onPass: function(onlyOnce) {
 				debug( 'onPass', {onlyOnce:onlyOnce} );
 				if(this.prefs[102].value == 1 && this.playerHand.getSelectedItems().length > 0) {
@@ -804,6 +805,7 @@ function (dojo, declare) {
 		},
 
 		takeAction: function(action, args = {}) {
+			args.lock = true;
 			this.ajaxcall( "/tichu/tichu/" + action + ".html", args, this, function (res) { });
 		},
 
@@ -822,22 +824,28 @@ function (dojo, declare) {
 		*/
 		setupNotifications: function() {
 			console.log( 'notifications subscriptions setup' );
+
+			// Make sure to read the documentation about "Synchronous Nnotifications" in the BGA Studio docs
+			// before making any changes here.
+			// Be aware that using `undefined` here means that you have to make abolutely sure that
+			// `setSynchronousDuration` is called in your handler.
+			// Also be aware that using 0 may completely break the flow and cause missed notifications.
 			var notifs = [
-				['dealCards', 1000],
-				['grandTichuBet', 1000],
-				['tichuBet', 1000],
-				['confirmTichu', 1000],
-				['hasBomb', 1000],
-				['playCombo', 1000],
-				['wishMade', 1000],
-				['mahjongWishGranted', 1000],
-				['playerGoOut', 1000],
-				['pass', 1000],
-				['captureCards', 1000],
+				['dealCards', 500],
+				['grandTichuBet', undefined],
+				['tichuBet', undefined],
+				['confirmTichu', 1],
+				['hasBomb', 1],
+				['playCombo', 300],
+				['wishMade', 200],
+				['mahjongWishGranted', 1],
+				['playerGoOut', 1],
+				['pass', 300],
+				['captureCards', 500],
 				['newScores', 1000],
-				['autopass', 1000],
+				['autopass', 1],
 				['acceptCards', 1000],
-				['passCards', 1000],
+				['passCards', 200],
 			];
 			notifs.forEach(notif => {
 				dojo.subscribe(notif[0], this, "notif_" + notif[0]);
@@ -855,7 +863,9 @@ function (dojo, declare) {
 		},
 
 		notif_grandTichuBet: function( notif )	{
+			// MUST call setSynchronousDuration
 			debug('notif_grandTichuBet', notif);
+
 			this.gamedatas.players[notif.args.player_id].call_grand_tichu = notif.args.bet
 			dojo.query('.grandtichublack.'+notif.args.player_id).style('display', 'none');
 			if( notif.args.bet == 200 ) {
@@ -863,12 +873,20 @@ function (dojo, declare) {
 				dojo.query('.grandtichucolor.'+notif.args.player_id).style('display', 'inline-block');
 				dojo.query('.tichublack.'+notif.args.player_id).style('display', 'none');
 				this.animateIcon('grandtichucolor', notif.args.player_id);
+				this.notifqueue.setSynchronousDuration(1000);
+			} else {
+				// If the notification was just a "this player has made no bet", then there is good reason
+				// to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
+				this.notifqueue.setSynchronousDuration(100);
 			}
+
 			this.onUpdateActionButtons(this.stateName, {});
 		},
 
 		notif_tichuBet: function( notif ) {
+			// MUST call setSynchronousDuration
 			debug('notif_tichuBet', notif);
+
 			this.gamedatas.players[notif.args.player_id].call_tichu = notif.args.bet;
 			this.gamedatas.players[notif.args.player_id].call_grand_tichu = 0;
 			dojo.query('.tichublack.'+notif.args.player_id).style('display', 'none');
@@ -876,7 +894,14 @@ function (dojo, declare) {
 			if( notif.args.bet == 100 ) {
 				dojo.query('.tichucolor.'+notif.args.player_id).style('display', 'inline-block');
 				this.animateIcon('tichucolor', notif.args.player_id);
+				this.notifqueue.setSynchronousDuration(1000);
+			} else {
+				// If the notification was just a "this player has made no bet" or "this player has already
+				// played their first card, so cannot bet anymore", then there is no good reason
+				// to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
+				this.notifqueue.setSynchronousDuration(100);
 			}
+
 			this.onUpdateActionButtons(this.stateName, {});
 		},
 
