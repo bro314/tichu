@@ -437,7 +437,9 @@ class Tichu extends Table {
 		$lastTichuCall = LogManager::getLastAction('tichuCall');
 		$now = time();
 		if( $bet == 200 ){
-			if(!$confirmed && $now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
+			if(!$confirmed &&
+					$lastTichuCall != null &&
+					$now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
 				NotificationManager::confirmTichu($player_id, true);
 				return;
 			}
@@ -465,7 +467,9 @@ class Tichu extends Table {
 		$state = $this->gamestate->state();
 		$lastTichuCall = LogManager::getLastAction('tichuCall');
 		$now = time();
-		if(!$confirmed && $now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
+		if(!$confirmed &&
+				$lastTichuCall != null &&
+				$now - intval($lastTichuCall['arg']) < TICHU_CONFIRMATION_TRESHOLD) {
 			NotificationManager::confirmTichu($player_id, false);
 			return;
 		}
