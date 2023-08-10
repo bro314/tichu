@@ -73,8 +73,6 @@ function (dojo, declare) {
 				dojo.style( $('firstoutcolor_'+gamedatas.firstoutplayer), 'display', 'inline-block' );
 			}
 
-
-			// Player hand
 			this.setupPlayerHand();
 
 			this.mahjongValues = this.setupValueChoice('mahjong', null/*'onMahjongValuesSelectionChanged'*/, 14);
@@ -145,7 +143,7 @@ function (dojo, declare) {
 					$('playertable_' + player_id).classList.add('lastComboPlayer');
 				}
 
-				$('pointcount_' + player_id).innerHTML = gamedatas.capturedpoints[player_id];
+				dojo.query(".pointcount." + player_id).innerHTML(gamedatas.capturedpoints[player_id]);
 			});
 
 			dojo.query(".playertabletext").forEach(e => {
@@ -168,6 +166,7 @@ function (dojo, declare) {
 				var value = card.type_arg;
 				this.playerHand.addToStockWithId(this.getCardUniqueId(color, value), card.id);
 			}
+			this.updateStockOverlap(this.playerHand);
 
 			// triggers reorder cards
 			dojo.connect($('order_by_rank'), 'onclick', this, 'onReorderByRank');
@@ -182,11 +181,32 @@ function (dojo, declare) {
 			this.addTooltipHtml('counterClockwise', _('This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings'));
 		},
 
+		removeMyActionButtons: function() {
+			document.getElementById('bomb_button').replaceChildren();
+			document.getElementById('play_button').replaceChildren();
+			document.getElementById('pass_button').replaceChildren();
+			document.getElementById('pass_trick_button').replaceChildren();
+			document.getElementById('tichu_button').replaceChildren();
+      dojo.place(this.format_block("jstpl_my_hand", {}), $('play_button'));
+		},
+
+		addMyActionButton: function(id, label, method, color, dest)
+		{
+			 tpl = {};
+       tpl.id = id;
+       tpl.label = label;
+       tpl.addclass = `bgabutton bgabutton_${color}`;
+
+       dojo.place(this.format_block("jstpl_my_action_button", tpl), dest, 'only');
+       dojo.connect($(id), "onclick", this, method);
+		},
+
 		createStock: function (element, cardWidth, cardHeight) {
-				stock = new ebg.stock();
+				const stock = new ebg.stock();
 				stock.create(this, element, cardWidth, cardHeight);
 				stock.setSelectionAppearance('class');
-				stock.setOverlap(cardWidth/2, 0);
+				stock.setOverlap(30, 0);
+				new ResizeObserver(() => requestAnimationFrame(() => this.updateStockOverlap(stock))).observe(element);
 				stock.image_items_per_row = 14;
 				var cardImgFile = this.prefs[103].value == 1 ? 'img/tiki-cards.png': 'img/tichu-cards.png' ;
 				for (var color = 1; color <= 4; color++) {
@@ -198,6 +218,21 @@ function (dojo, declare) {
 						}
 				}
 				return stock;
+		},
+
+		/**
+		 * We would like the card overlap to depend on the width of the container element.
+		 * We have to make sure that this method gets called every time that the number of cards in a
+		 * stock changes or the size of the container element changes.
+		 *
+		 * We think it is useful to only allow overlap between 12% and 60%.
+		 */		
+		updateStockOverlap:function (stock) {
+			let availableWidthForOverlapPerItem = (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) / (stock.items.length - 1);
+			let overlap = Math.floor((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width * 100);
+			if (overlap > 60) overlap = 60;
+			if (overlap < 12) overlap = 12;
+			stock.setOverlap(overlap, 0);
 		},
 
 		setupValueChoice:function (idName, callbackFunc, count) {
@@ -258,6 +293,8 @@ function (dojo, declare) {
 				stock.addToStockWithId(uid, card.id);
 			});
 			stock.changeItemsWeight(weights);
+			this.updateStockOverlap(this.playerHand);
+			this.updateStockOverlap(stock);
 		},
 
 		animateIcon: function(clazz, player_id) { // todo
@@ -431,6 +468,7 @@ function (dojo, declare) {
 			console.log( 'onUpdateActionButtons: '+stateName );
 			var player = this.gamedatas.players[this.player_id]
 			this.removeActionButtons();
+			this.removeMyActionButtons();
 			if( this.isCurrentPlayerActive() ) {
 				switch( stateName ) {
 					case 'giveCards':
@@ -441,44 +479,47 @@ function (dojo, declare) {
 						this.addActionButton('acceptCards_button', _('Accept cards'), 'onAcceptCards');
 						break;
 					case 'mahjongPlay':
-						this.addActionButton( 'chooseWish', _('Make a wish'), 'onMakeAWish' );
+						this.addActionButton('chooseWish', _('Make a wish'), 'onMakeAWish' );
 						break;
 					case 'phoenixPlay':
 						this.addActionButton('choosePhoenix', _('Choose a value for the Phoenix'), 'onChoosePhoenix');
 						this.addActionButton('cancelPhoenix', _('Cancel'), 'cancelPhoenix');
 						break;
 					case 'playComboOpen':
-						this.addActionButton( 'playCombo', _('Play selected cards'), () => this.playCombo('playCombo'));
+						this.addMyActionButton('myPlayCombo', _('Play selected cards'), () => this.playCombo('playCombo'), 'blue', 'play_button');
 						break;
 					case 'playCombo':
-						this.addActionButton( 'playCombo', _('Play selected cards'), () => this.playCombo('playCombo'));
-						this.addActionButton( 'pass', _('Pass'), () => this.onPass(true), null, false, 'gray' );
-						this.addActionButton( 'passTrick', _('Auto-Pass this Trick'), () => this.onPass(false), null, false, 'gray' );
-						this.addTooltip('passTrick', _('Automatically pass until the end of this trick.'), '');
+						this.addMyActionButton('myPlayCombo', _('Play selected cards'),  () => this.playCombo('playCombo'), 'blue', 'play_button');
+						this.addMyActionButton('myPass',      _('Pass'),                 () => this.onPass(true),           'red',  'pass_button');
+						this.addMyActionButton('myPassTrick', _('Auto-Pass this Trick'), () => this.onPass(false),          'gray', 'pass_trick_button');
+						this.addTooltip('myPassTrick', _('Automatically pass until the end of this trick.'), '');
 						break;
 					case 'playBomb':
-						this.addActionButton( 'playCombo', _('Play selected cards'), () => this.playCombo('playCombo'));
-						this.addActionButton( 'cancel', _('Cancel'), () => this.takeAction('cancel'), null, false, 'red' );
+						this.addMyActionButton('myPlayCombo', _('Play selected cards'), () => this.playCombo('playCombo'), 'blue', 'play_button');
+						this.addMyActionButton('myCancel',    _('Cancel'),              () => this.takeAction('cancel'),   'red',  'pass_button');
 						break;
 					case 'confirmTrick':
-						this.addActionButton('confirmTrick', _('collect'), () => this.collect())
-						if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0)
-							this.addActionButton( 'playBomb', _('Play a Bomb'), () => this.playCombo('playBomb') );
+						this.addMyActionButton('myConfirmTrick', _('Collect'), () => this.collect(), 'blue', 'play_button');
+						if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0) {
+							this.addMyActionButton('myPlayBomb', _('Play a Bomb'), () => this.playCombo('playBomb'), 'gray', 'bomb_button');
+						}
 				}
 			} else if(!this.isSpectator && (stateName == 'playCombo' || stateName == 'confirmTrick') && this.playerHand.getAllItems().length > 0) {
 				if(player.pass < 2) {
-					this.addActionButton( 'passTrick', _('Auto-Pass this Trick'), () => this.onPass(false), null, false, 'gray' );
-					this.addTooltip('passTrick', _('Automatically pass until the end of this trick.'), '');
+					this.addMyActionButton('myPassTrick', _('Auto-Pass this Trick'), () => this.onPass(false), 'gray', 'pass_trick_button');
+					this.addTooltip('myPassTrick', _('Automatically pass until the end of this trick.'), '');
 				}
 				if(player.pass == 0) {
-					this.addActionButton( 'pass', _('Auto-Pass once'), () => this.onPass(true), null, false, 'gray' );
-					this.addTooltip('pass', _('Automatically pass next time(unless a new trick starts)'), '');
-				} else {
-					this.addActionButton( 'cancelAutopass', _('Cancel Auto-Pass'), 'cancelAutopass', null, false, 'red' );
-					this.addTooltip('cancelAutopass', _('You have chosen to automatically pass during this trick. Click to cancel'), '');
+					this.addMyActionButton('myPassOnce', _('Auto-Pass once'), () => this.onPass(true), 'red', 'pass_button');
+					this.addTooltip('myPassOnce', _('Automatically pass next time(unless a new trick starts)'), '');
 				}
-				if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0)
-					this.addActionButton( 'playBomb', _('Play a Bomb'), () => this.playCombo('playBomb') );
+				if(player.pass > 0) {
+					this.addMyActionButton('myCancelAutopass', _('Cancel Auto-Pass'), () => this.cancelAutopass(), 'red', 'pass_button');
+					this.addTooltip('myCancelAutopass', _('You have chosen to automatically pass during this trick. Click to cancel'), '');
+				}
+				if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0) {
+					this.addMyActionButton('myPlayBomb', _('Play a Bomb'), () => this.playCombo('playBomb'), 'gray', 'bomb_button');
+				}
 			}
 
 			//tichus
@@ -490,8 +531,8 @@ function (dojo, declare) {
 					this.addTooltip('makeGTBet', _('Bet 200 Points, tha you will finish first'), '');
 				}
 				if(player.call_tichu < 0) {
-					this.addActionButton('makeTichuBet', _('Tichu'), ()=>this.onTichuBet(100), null, false, 'red');
-					this.addTooltip('makeTichuBet', _('Bet 100 Points, tha you will finish first'), '');
+					this.addMyActionButton('myMakeTichuBet', _('Tichu'), () => this.onTichuBet(100), 'green', 'tichu_button');
+					this.addTooltip('myMakeTichuBet', _('Bet 100 Points, tha you will finish first'), '');
 				}
 			}
 		},
@@ -565,7 +606,7 @@ function (dojo, declare) {
 		showCurrentTrick: function() {
 			console.log('showTrick');
 			var myDlg = new ebg.popindialog();
-			myDlg.create( 'myDialogUniqueId' );
+			myDlg.create( 'myDialogCurrentTrick' );
 			myDlg.setTitle( _('Cards in current Trick') );
 			myDlg.setContent('<div id="currentTrickCards"></div>');
 			myDlg.show();
@@ -638,6 +679,7 @@ function (dojo, declare) {
 				setTimeout(() => this.playerHand.addToStockWithId(card.type, card.id),1000);
 				this.cardsToPass[i] = null;
 			}
+			this.updateStockOverlap(this.playerHand);
 		},
 
 		onPassCards: function () {
@@ -858,6 +900,7 @@ function (dojo, declare) {
 			notif.args.cards.forEach(card => {
 				this.playerHand.addToStockWithId( this.getCardUniqueId( card.type, card.type_arg ), card.id );
 			});
+			this.updateStockOverlap(this.playerHand);
 			var totalCards = notif.args.cards.length == 8 ? 8 : 14;
 			dojo.query('.handcount').innerHTML(totalCards);
 		},
@@ -993,8 +1036,10 @@ function (dojo, declare) {
 
 			var playerId = notif.args.player_id;
 			var trick_value = notif.args.trick_value;
-			$('pointcount_' + playerId).innerHTML =	parseInt($('pointcount_' + playerId).innerHTML) + trick_value;
+			var old_score = parseInt($('pointcount_' + playerId).innerHTML);
+			var new_score = old_score + trick_value;
 
+			dojo.query(".pointcount." + playerId).innerHTML(new_score);
 			dojo.query('.cardback').style('display', 'none');
 		},
 
@@ -1023,9 +1068,11 @@ function (dojo, declare) {
 				this.playerHand.addToStockWithId(card_type,card.id);
 				this.slideToObjectAndDestroy(card_on_table, 'myhand', 1000, 0);
 			});
+			this.updateStockOverlap(this.playerHand);
+
 			setTimeout(function(){
 				dojo.style( 'playertables', 'display', 'none' );
-				dojo.style( 'card-last-played-area', 'display', 'block' );
+				dojo.style( 'card-last-played-area', 'display', 'grid' );
 			}, 2000);
 
 		},
@@ -1035,7 +1082,7 @@ function (dojo, declare) {
 			notif.args.forEach(card => {
 				this.playerHand.removeFromStockById(card);
 			});
+			this.updateStockOverlap(this.playerHand);
 		}
-
 	});
 });
