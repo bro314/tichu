@@ -52,23 +52,11 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
       this.addTooltipToClass("firstoutcolor", _("First player out"), "");
       this.addTooltipToClass("cardback", _("has passed"), "");
       this.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
-      if (gamedatas.mahjongWish > 0) {
-        var wish = gamedatas.mahjongWish - 2;
-        var x = wish % 7;
-        var y = (wish - x) / 7;
-        dojo.place(
-          this.format_block("jstpl_mahjong", {
-            value: gamedatas.mahjongWish,
-            x: x * 100,
-            y: y * 150,
-          }),
-          this.prefs[103].value == 1 ? "mahjongTikiIndicator" : "mahjongIndicator"
-        );
 
-        this.prefs[103].value == 1
-          ? ($("mahjongTikiIndicator").style.display = "block")
-          : ($("mahjongIndicator").style.display = "block");
-      }
+      document
+        .getElementById("overall-content")
+        .classList.toggle("tiki", this.prefs[103].value == 1);
+      this.updateMahjongWish(gamedatas.mahjongWish);
 
       if (gamedatas.firstoutplayer != 0) {
         dojo.style($("firstoutcolor_" + gamedatas.firstoutplayer), "display", "inline-block");
@@ -366,9 +354,8 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
         this.gamedatas.players[id].call_grand_tichu = -1;
       }
       dojo.query(".whiteblock").removeClass("disabled");
-      var indicator = $("mahjongIndicator");
-      indicator.innerHTML = "";
-      indicator.style.display = "none";
+
+      this.updateMahjongWish(0);
     },
 
     onEnteringStateGrandTichuBets: function (args) {
@@ -391,16 +378,12 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
         var x = this.cardwidth * (card.type_arg - 1);
         var y = this.cardheight * (card.type - 1);
         dojo.place(
-          this.format_block(
-            this.prefs[103].value == 1 ? "jstpl_tikicardontable" : "jstpl_cardontable",
-            {
-              // x,y = tichu-cards.png (css background-position)
-              x: x,
-              y: y,
-              player_id: card.location_arg,
-              card_id: card.id,
-            }
-          ),
+          this.format_block("jstpl_cardontable", {
+            x,
+            y,
+            player_id: card.location_arg,
+            card_id: card.id,
+          }),
           "receiveplayertable_" + card.passed_from
         );
       });
@@ -858,33 +841,25 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
         var direction = i + 1;
 
         dojo.place(
-          this.format_block(
-            this.prefs[103].value == 1 ? "jstpl_tikicardontable" : "jstpl_cardontable",
-            {
-              // x,y = tichu-cards.png (css background-position)
-              x: x,
-              y: y,
-              player_id: player_id,
-              card_id: card_id,
-            }
-          ),
+          this.format_block("jstpl_cardontable", {
+            // x,y = tichu-cards.png (css background-position)
+            x: x,
+            y: y,
+            player_id: player_id,
+            card_id: card_id,
+          }),
           "giveplayertable_" + direction
         );
 
         if ($("myhand_item_" + card_id)) {
-          this.placeOnObject("cardontable_" + player_id + "_" + card_id, "myhand_item_" + card_id);
           this.playerHand.removeFromStockById(card_id);
-        } else console.log("Failed to remove card from hand");
-        this.slideToObjectPos(
-          "cardontable_" + player_id + "_" + card_id,
-          "giveplayertable_" + direction,
-          0,
-          0
-        ).play();
+        } else {
+          console.log("Failed to remove card from hand");
+        }
       } else {
         var card = this.cardsToPass[i];
-        this.slideToObjectAndDestroy("cardontable_" + player_id + "_" + card.id, "myhand", 1000, 0);
-        setTimeout(() => this.playerHand.addToStockWithId(card.type, card.id), 1000);
+        $("cardontable_" + player_id + "_" + card.id).remove();
+        this.playerHand.addToStockWithId(card.type, card.id);
         this.cardsToPass[i] = null;
       }
       this.updateStockOverlap(this.playerHand);
@@ -1019,8 +994,8 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
       var player_id = this.player_id;
       this.cardsToPass.forEach((card) => {
         if (card == null) return;
-        this.slideToObjectAndDestroy("cardontable_" + player_id + "_" + card.id, "myhand", 1000, 0);
-        setTimeout(() => this.playerHand.addToStockWithId(card.type, card.id), 1000);
+        $("cardontable_" + player_id + "_" + card.id).remove();
+        this.playerHand.addToStockWithId(card.type, card.id);
       });
       this.cardsToPass = [null, null, null];
     },
@@ -1207,29 +1182,33 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
     notif_wishMade: function (notif) {
       debug("notif_wishMade", notif);
       dojo.style($("mahjongpanel"), "display", "none");
-      if (notif.args.wish < 15) {
-        var wish = notif.args.wish - 2;
-        var x = wish % 7;
-        var y = (wish - x) / 7;
+      this.updateMahjongWish(notif.args.wish);
+    },
+
+    updateMahjongWish: function (wish) {
+      const indicator = $("mahjongIndicator");
+      if (wish > 0 && wish < 15) {
+        var w = wish - 2;
+        var x = w % 7;
+        var y = (w - x) / 7;
         dojo.place(
           this.format_block("jstpl_mahjong", {
             value: wish,
             x: x * 100,
             y: y * 150,
           }),
-          this.prefs[103].value == 1 ? "mahjongTikiIndicator" : "mahjongIndicator"
+          indicator
         );
-        this.prefs[103].value == 1
-          ? ($("mahjongTikiIndicator").style.display = "block")
-          : ($("mahjongIndicator").style.display = "block");
+        indicator.style.display = "block";
+      } else {
+        indicator.innerHTML = "";
+        indicator.style.display = "none";
       }
     },
 
     notif_mahjongWishGranted: function (notif) {
       debug("notif_mahjongWishGranted", notif);
-      var indicator = $("mahjongIndicator");
-      indicator.innerHTML = "";
-      indicator.style.display = "none";
+      this.updateMahjongWish(0);
     },
 
     notif_playerGoOut: function (notif) {

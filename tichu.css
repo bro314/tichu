@@ -254,8 +254,7 @@ span.pass img {
   grid-column: 1 / span 1;
   grid-row: 1 / span 1;
 }
-#card-last-played-area #mahjongIndicator,
-#card-last-played-area #mahjongTikiIndicator {
+#card-last-played-area #mahjongIndicator {
   grid-column: 2 / span 1;
   grid-row: 4 / span 1;
   place-self: center;
@@ -290,8 +289,7 @@ span.pass img {
   grid-column: 2 / span 3;
   grid-row: 3 / span 1;
 }
-.squareTable #card-last-played-area #mahjongIndicator,
-.squareTable #card-last-played-area #mahjongTikiIndicator {
+.squareTable #card-last-played-area #mahjongIndicator {
   grid-column: 5 / span 1;
   grid-row: 3 / span 1;
   place-self: center;
@@ -318,11 +316,6 @@ span.pass img {
   flex-shrink: 0;
 }
 
-.last-played-player .playertablename {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .last-played-player .last-played-icons {
   top: 2px;
 }
@@ -343,40 +336,26 @@ span.pass img {
   text-overflow: ellipsis;
 }
 
+/* passing and receiving cards only */
 .playertable {
   text-align: center;
   width: 400px;
-  height: 170px;
+  height: 190px;
   cursor: pointer;
 }
 
-.playertable_1 {
-  top: 0px;
-  left: 30px;
+.playertable_1,
+.playertable_2,
+.playertable_3,
+.playertablebackground {
   width: 120px;
 }
 
-.playertable_2 {
-  top: 0px;
-  left: 180px;
-  width: 120px;
-}
-
-.playertable_3 {
-  top: 0px;
-  left: 330px;
-  width: 120px;
-}
-
-.receivePassCard,
-.givePassCard {
-  top: 30px;
-  left: 20px;
-}
-
-/*** cards on table ***/
+/*** cards on table for passing and receiving ***/
 .cardontable {
-  position: absolute;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
   width: 100px;
   height: 150px;
   background-image: url("img/tichu-cards.png");
@@ -384,13 +363,8 @@ span.pass img {
   box-shadow: 2px 2px 5px 3px #666;
 }
 
-.tikicardontable {
-  position: absolute;
-  width: 100px;
-  height: 150px;
+.tiki .cardontable {
   background-image: url("img/tiki-cards.png");
-  border-radius: 6px;
-  box-shadow: 2px 2px 5px 3px #666;
 }
 
 .mahjong {
@@ -402,28 +376,28 @@ span.pass img {
   border-radius: 8px;
 }
 
-#mahjongIndicator,
-#mahjongTikiIndicator {
+#mahjongIndicator {
   display: none;
   width: 100px;
   height: 150px;
   border-radius: 8px;
-}
-
-#mahjongIndicator {
   background-image: url("img/tichu-mahjong.png");
 }
 
-#mahjongTikiIndicator {
+.tiki #mahjongIndicator {
   background-image: url("img/tiki-tichu-mahjong.png");
 }
 
+/*** cards on table for passing and receiving ***/
 #playertables {
   width: 560px;
-  height: 250px;
-  margin-left: 120px;
+  margin: 0 auto;
   display: flex;
   justify-content: space-evenly;
+}
+
+#playertables .playertablename {
+  margin-bottom: 15px;
 }
 
 .spectatorMode #grandtichupanel,
@@ -442,12 +416,13 @@ span.pass img {
   width: 500px;
 }
 
-.playertabletext {
-  height: 134px;
-  width: 120px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.playertablebackground {
+  position: absolute;
+}
+
+.playertablebackground .tichubets {
+  min-height: 20px;
+  margin-bottom: 20px;
 }
 
 /*# sourceMappingURL=tichu.css.map */

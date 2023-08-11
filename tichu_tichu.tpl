@@ -35,20 +35,25 @@
     <!-- END last_played -->
 
   <div id="mahjongIndicator"></div>
-  <div id="mahjongTikiIndicator"></div>
   <div id="currentTrickDiv">
 	  <a id="currentTrick" href="#"><div id="currentTrickCounter"></div></a>
 	</div>
 </div>
 
-<div id="playertables"  style="display:none;">
+<div id="playertables" style="display:none;">
     <!-- BEGIN player -->
-    <div style="display: inline-block">
+    <div>
         <div class="playertable whiteblock playertable_{DIR}" id="playertable_{PLAYER_ID}">
             <div class="playertablename" style="color:#{PLAYER_COLOR}">
                 {PLAYER_NAME}
             </div>
-            <div style="height:0px"><div class="playertabletext" id="playertablecard_{PLAYER_ID}" ></div></div>
+            <div class="playertablebackground">
+                <div class="tichubets">
+                  <div class="icon big grandtichucolor {PLAYER_ID}"></div>
+                  <div class="icon big tichucolor {PLAYER_ID}"></div>
+                </div>
+                <div class="playertabletext" id="playertablecard_{PLAYER_ID}" ></div>
+            </div>
             <div class="receivePassCard" id="receiveplayertable_{PLAYER_ID}"></div>
             <div class="givePassCard" id="giveplayertable_{DIR}"></div>
         </div>
@@ -104,9 +109,6 @@ var jstpl_combo = '<div id="combo_${combo_id}" class="combo">\
 
 
 var jstpl_cardontable = '<div class="cardontable" id="cardontable_${player_id}_${card_id}" style="background-position:-${x}px -${y}px">\
-                        </div>';
-
-var jstpl_tikicardontable = '<div class="tikicardontable" id="cardontable_${player_id}_${card_id}" style="background-position:-${x}px -${y}px">\
                         </div>';
 
 var jstpl_mahjong='<div class="mahjong" id="mahjong_${value}" style="background-position:-${x}px -${y}px"></div>';
