@@ -1,0 +1,26 @@
+{
+  "name": "bga-tichu",
+  "version": "1.0.0",
+  "description": "Tichu for BoardGameArena",
+  "main": "tichu.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bro314/tichu.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/bro314/tichu/issues"
+  },
+  "homepage": "https://github.com/bro314/tichu#readme",
+  "devDependencies": {
+		"@prettier/plugin-php": "^0.19.6",
+		"prettier": "^2.8.8",
+    "typescript": "^5.1.6"
+  }
+}
