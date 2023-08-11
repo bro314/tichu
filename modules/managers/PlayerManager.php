@@ -36,14 +36,10 @@ class PlayerManager extends APP_GameClass
 
         if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_1_2) {
           // If TEAM_1_2 swap 2 and 3
-          $table_order =
-            $table_order == 2 ? 3 : ($table_order == 3 ? 2 : $table_order);
-        } elseif (
-          Tichu::$instance->getGameStateValue("playerTeams") == TEAM_1_4
-        ) {
+          $table_order = $table_order == 2 ? 3 : ($table_order == 3 ? 2 : $table_order);
+        } elseif (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_1_4) {
           // If TEAM_1_4 swap 4 and 3
-          $table_order =
-            $table_order == 3 ? 4 : ($table_order == 4 ? 3 : $table_order);
+          $table_order = $table_order == 3 ? 4 : ($table_order == 4 ? 3 : $table_order);
         }
 
         if (isset($default_colors[$table_order - 1])) {
@@ -94,9 +90,7 @@ class PlayerManager extends APP_GameClass
     if (count($where) > 0) {
       $conditions = array_map(
         function ($key, $value) {
-          return substr($key, 0, 7) == "player_"
-            ? $key
-            : "player_$key" . " = '$value'";
+          return substr($key, 0, 7) == "player_" ? $key : "player_$key" . " = '$value'";
         },
         array_keys($where),
         $where
@@ -151,22 +145,15 @@ class PlayerManager extends APP_GameClass
     return $players;
   }
 
-  public static function getNextPlayerWithCards(
-    $mixed,
-    $lastPlayerId = null,
-    $amount = 1
-  ) {
+  public static function getNextPlayerWithCards($mixed, $lastPlayerId = null, $amount = 1)
+  {
     $next_players = is_array($mixed) ? $mixed : self::getNextPlayers($mixed);
-    $handCounts =
-      $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
+    $handCounts = $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
     foreach ($next_players as $player) {
       if ($lastPlayerId == $player["id"]) {
         return $lastPlayerId;
       }
-      if (
-        isset($handCounts[$player["id"]]) &&
-        $handCounts[$player["id"]] >= $amount
-      ) {
+      if (isset($handCounts[$player["id"]]) && $handCounts[$player["id"]] >= $amount) {
         return $player["id"];
       }
     }
@@ -174,44 +161,29 @@ class PlayerManager extends APP_GameClass
 
   public static function getScores()
   {
-    return self::getCollectionFromDb(
-      "SELECT player_id, player_score FROM player",
-      true
-    );
+    return self::getCollectionFromDb("SELECT player_id, player_score FROM player", true);
   }
 
   public static function getBombs()
   {
-    return self::getObjectListFromDB(
-      "SELECT player_id FROM player WHERE player_has_bomb=1",
-      true
-    );
+    return self::getObjectListFromDB("SELECT player_id FROM player WHERE player_has_bomb=1", true);
   }
 
   public static function getBombStatus()
   {
-    return self::getCollectionFromDb(
-      "SELECT player_id, player_has_bomb FROM player",
-      true
-    );
+    return self::getCollectionFromDb("SELECT player_id, player_has_bomb FROM player", true);
   }
 
   public static function resetTichus()
   {
-    self::DbQuery(
-      "UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1"
-    );
+    self::DbQuery("UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1");
   }
 
   public static function grandTichuBet($pId, $bet)
   {
-    self::DbQuery(
-      "UPDATE player SET player_call_grand_tichu=$bet WHERE player_id=$pId"
-    );
+    self::DbQuery("UPDATE player SET player_call_grand_tichu=$bet WHERE player_id=$pId");
     if ($bet > 0) {
-      self::DbQuery(
-        "UPDATE player SET player_call_tichu=0 WHERE player_id='$pId' "
-      );
+      self::DbQuery("UPDATE player SET player_call_tichu=0 WHERE player_id='$pId' ");
     }
   }
 
@@ -224,9 +196,7 @@ class PlayerManager extends APP_GameClass
 
   public static function setHasBomb($pId, $hasBomb)
   {
-    self::DbQuery(
-      "UPDATE player SET player_has_bomb=$hasBomb WHERE player_id=$pId"
-    );
+    self::DbQuery("UPDATE player SET player_has_bomb=$hasBomb WHERE player_id=$pId");
   }
 
   public static function updateScores($team_points)

@@ -3,14 +3,9 @@ class NotificationManager extends APP_GameClass
 {
   public static function dealCards($player_id, $cards, $msg)
   {
-    Tichu::$instance->notifyPlayer(
-      $player_id,
-      "dealCards",
-      clienttranslate($msg),
-      [
-        "cards" => $cards,
-      ]
-    );
+    Tichu::$instance->notifyPlayer($player_id, "dealCards", clienttranslate($msg), [
+      "cards" => $cards,
+    ]);
   }
 
   public static function grandTichuBet($player_id, $player_name, $bet)
@@ -60,13 +55,8 @@ class NotificationManager extends APP_GameClass
     ]);
   }
 
-  public static function wishMade(
-    $player_id,
-    $player_name,
-    $wish,
-    $textValue,
-    $msg
-  ) {
+  public static function wishMade($player_id, $player_name, $wish, $textValue, $msg)
+  {
     Tichu::$instance->notifyAllPlayers("wishMade", $msg, [
       "player_id" => $player_id,
       "player_name" => $player_name,
@@ -95,14 +85,10 @@ class NotificationManager extends APP_GameClass
 
   public static function pass($player_id, $player_name, $msg = null)
   {
-    Tichu::$instance->notifyAllPlayers(
-      "pass",
-      clienttranslate($msg ?? '${player_name} passes'),
-      [
-        "player_id" => $player_id,
-        "player_name" => $player_name,
-      ]
-    );
+    Tichu::$instance->notifyAllPlayers("pass", clienttranslate($msg ?? '${player_name} passes'), [
+      "player_id" => $player_id,
+      "player_name" => $player_name,
+    ]);
   }
 
   public static function tableWindow($table)
@@ -126,9 +112,7 @@ class NotificationManager extends APP_GameClass
   {
     Tichu::$instance->notifyAllPlayers(
       "captureCards",
-      clienttranslate(
-        '${player_name} gets all cards valuing ${trick_value} points'
-      ),
+      clienttranslate('${player_name} gets all cards valuing ${trick_value} points'),
       [
         "player_id" => $player_id,
         "player_name" => $player_name,
@@ -155,9 +139,7 @@ class NotificationManager extends APP_GameClass
     $s = $grand ? " grand" : "";
     Tichu::$instance->notifyPlayer($player_id, "confirmTichu", "", [
       "grand" => $grand,
-      "msg" => clienttranslate(
-        $msg ?? "Another tichu bet has just been made. Are you sure?"
-      ),
+      "msg" => clienttranslate($msg ?? "Another tichu bet has just been made. Are you sure?"),
     ]);
   }
 

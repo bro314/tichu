@@ -31,12 +31,8 @@ class Combo extends APP_GameClass
    *		- the description,
    *		- the phoenixvalue (null if no phoenix, array if more than 1 possibilities)
    */
-  public function __construct(
-    $cards,
-    $type = null,
-    $phoenixValue = null,
-    $description = null
-  ) {
+  public function __construct($cards, $type = null, $phoenixValue = null, $description = null)
+  {
     if (is_null($type)) {
       if (count($cards) == 0) {
         $this->type = INVALID_COMBO;
@@ -261,11 +257,9 @@ class Combo extends APP_GameClass
     if ($card["type_arg"] == 1 && $card["type"] == TYPE_PHOENIX) {
       //get Value from last combo of this trick
       $lastCombo = LogManager::getLastCombo();
-      $val =
-        $lastCombo->type == SINGLE_COMBO ? $lastCombo->cards[0]["type_arg"] : 1;
+      $val = $lastCombo->type == SINGLE_COMBO ? $lastCombo->cards[0]["type_arg"] : 1;
       $phoenixValue = $val + 0.5;
-      $description =
-        "Phoenix a half step above " . CardManager::cardToStr($val);
+      $description = "Phoenix a half step above " . CardManager::cardToStr($val);
     } else {
       $description = CardManager::cardToStr($card);
     }

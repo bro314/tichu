@@ -3,8 +3,7 @@ class LogManager extends APP_GameClass
 {
   public static function insert($playerId, $action, $args = [])
   {
-    $playerId =
-      $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
+    $playerId = $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
     $current = self::getCurrentRoundAndTrick();
     $round = $current["round"];
     $trick = $current["trick"];
@@ -22,11 +21,8 @@ class LogManager extends APP_GameClass
     );
   }
 
-  public static function getLastActions(
-    $action,
-    $currentTrick = true,
-    $single = false
-  ) {
+  public static function getLastActions($action, $currentTrick = true, $single = false)
+  {
     $arr = is_array($action) ? $action : [$action];
     $actions = implode("','", $arr);
 
@@ -96,12 +92,7 @@ class LogManager extends APP_GameClass
     if (count($lastComboActions) > $skip) {
       $lastComboAction = $lastComboActions[$skip];
       $arg = $lastComboAction["arg"];
-      $combo = new Combo(
-        $arg["cards"],
-        $arg["type"],
-        $arg["phoenixValue"],
-        $arg["description"]
-      );
+      $combo = new Combo($arg["cards"], $arg["type"], $arg["phoenixValue"], $arg["description"]);
       $combo->player = $lastComboAction["player"];
       return $combo;
     }

@@ -9,17 +9,13 @@ class DBManager extends APP_GameClass
   public static function getPlayers($append = "")
   {
     return array_values(
-      Utils::removePrefix(
-        self::getObjectListFromDB(self::getPlayerSelect() . $append)
-      )
+      Utils::removePrefix(self::getObjectListFromDB(self::getPlayerSelect() . $append))
     );
   }
 
   public static function getPlayersMap($append = "")
   {
-    return Utils::removePrefix(
-      self::getCollectionFromDb(self::getPlayerSelect() . $append)
-    );
+    return Utils::removePrefix(self::getCollectionFromDb(self::getPlayerSelect() . $append));
   }
 
   public static function getPlayer($pid)

@@ -49,9 +49,7 @@ class CardManager extends APP_GameClass
     $captured_points = [];
     $players = PlayerManager::getPlayerIds();
     return Utils::map(function ($pId) {
-      return self::getTrickValue(
-        self::getDeck()->getCardsInLocation("captured", $pId)
-      );
+      return self::getTrickValue(self::getDeck()->getCardsInLocation("captured", $pId));
     }, $players);
   }
 
@@ -70,9 +68,7 @@ class CardManager extends APP_GameClass
   public static function setPassedCards($ids, $playerId)
   {
     $join = implode(",", $ids);
-    self::DbQuery(
-      "UPDATE card SET card_passed_from=$playerId WHERE card_id IN ($join)"
-    );
+    self::DbQuery("UPDATE card SET card_passed_from=$playerId WHERE card_id IN ($join)");
   }
 
   public static function cardToStr($card, $plural = false)
@@ -150,9 +146,7 @@ class CardManager extends APP_GameClass
         $score += 25;
       } //Dragon
     }
-    return $asTable
-      ? ["table" => $table, "special" => $special, "score" => $score]
-      : $score;
+    return $asTable ? ["table" => $table, "special" => $special, "score" => $score] : $score;
   }
 }
 ?>

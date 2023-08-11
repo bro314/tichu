@@ -42,18 +42,12 @@ class MyDeck extends APP_GameClass
   }
   function pickCards($nbr, $from_location, $player_id)
   {
-    return self::toCards(
-      $this->deck->pickCards($nbr, $from_location, $player_id)
-    );
+    return self::toCards($this->deck->pickCards($nbr, $from_location, $player_id));
   }
   function pickCardForLocation($from_location, $to_location, $location_arg = 0)
   {
     return self::toCard(
-      $this->deck->pickCardForLocation(
-        $from_location,
-        $to_location,
-        $location_arg
-      )
+      $this->deck->pickCardForLocation($from_location, $to_location, $location_arg)
     );
   }
   function pickCardsForLocation(
@@ -121,19 +115,12 @@ class MyDeck extends APP_GameClass
   function getCardsInLocation($location, $location_arg = null, $order_by = null)
   {
     return self::toCards(
-      array_values(
-        $this->deck->getCardsInLocation($location, $location_arg, $order_by)
-      )
+      array_values($this->deck->getCardsInLocation($location, $location_arg, $order_by))
     );
   }
-  function getCardsMapInLocation(
-    $location,
-    $location_arg = null,
-    $order_by = null
-  ) {
-    return self::toCards(
-      $this->deck->getCardsInLocation($location, $location_arg, $order_by)
-    );
+  function getCardsMapInLocation($location, $location_arg = null, $order_by = null)
+  {
+    return self::toCards($this->deck->getCardsInLocation($location, $location_arg, $order_by));
   }
   function countCardInLocation($location, $location_arg = null)
   {
@@ -167,19 +154,10 @@ class MyDeck extends APP_GameClass
   {
     return self::toCards($this->deck->getCardsOfType($type, $type_arg));
   }
-  function getCardsOfTypeInLocation(
-    $type,
-    $type_arg = null,
-    $location,
-    $location_arg = null
-  ) {
+  function getCardsOfTypeInLocation($type, $type_arg = null, $location, $location_arg = null)
+  {
     return self::toCards(
-      $this->deck->getCardsOfTypeInLocation(
-        $type,
-        $type_arg,
-        $location,
-        $location_arg
-      )
+      $this->deck->getCardsOfTypeInLocation($type, $type_arg, $location, $location_arg)
     );
   }
   function shuffle($location)
@@ -221,9 +199,7 @@ class MyDeck extends APP_GameClass
 
   function shiftDown($pId)
   {
-    self::DbQuery(
-      "UPDATE tile SET card_type_arg=card_type_arg+1 WHERE card_location='$pId'"
-    );
+    self::DbQuery("UPDATE tile SET card_type_arg=card_type_arg+1 WHERE card_location='$pId'");
   }
 }
 

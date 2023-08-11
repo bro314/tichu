@@ -22,7 +22,7 @@ class Utils extends APP_GameClass
     foreach ($arr as $idx => $row) {
       foreach ($row as $key => $val) {
         $arr[$idx][$key] = in_array($key, $columns) ? intval($val) : $val;
-      };
+      }
     }
     return $arr;
   }

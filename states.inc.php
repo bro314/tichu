@@ -71,12 +71,8 @@ $machinestates = [
 
   ST_GRAND_TICHU_BETS => [
     "name" => "grandTichuBets",
-    "description" => clienttranslate(
-      "All players must choose if they want to bet a Grand Tichu"
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must choose if you want to bet a Grand Tichu'
-    ),
+    "description" => clienttranslate("All players must choose if they want to bet a Grand Tichu"),
+    "descriptionmyturn" => clienttranslate('${you} must choose if you want to bet a Grand Tichu'),
     "type" => "multipleactiveplayer",
     "possibleactions" => ["grandTichuBet", "tichuBet"],
     "transitions" => ["dealLastCards" => ST_DEAL_LAST_CARDS],
@@ -92,12 +88,8 @@ $machinestates = [
 
   ST_GIVE_CARDS => [
     "name" => "giveCards",
-    "description" => clienttranslate(
-      "All players must give a card to each other player"
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must give a card to each other player'
-    ),
+    "description" => clienttranslate("All players must give a card to each other player"),
+    "descriptionmyturn" => clienttranslate('${you} must give a card to each other player'),
     "action" => "stGiveCards",
     "type" => "multipleactiveplayer",
     "possibleactions" => ["giveCards"],
@@ -106,9 +98,7 @@ $machinestates = [
 
   ST_SHOW_PASSED_CARDS => [
     "name" => "showPassedCards",
-    "description" => clienttranslate(
-      "Waiting for other players to accept cards"
-    ),
+    "description" => clienttranslate("Waiting for other players to accept cards"),
     "descriptionmyturn" => clienttranslate('${you} must accept cards'),
     "action" => "stShowPassedCards",
     "type" => "multipleactiveplayer",
@@ -128,12 +118,8 @@ $machinestates = [
 
   ST_PLAY_COMBO_OPEN => [
     "name" => "playComboOpen",
-    "description" => clienttranslate(
-      '${actplayer} must play an opening card combination'
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must play an opening card combination'
-    ),
+    "description" => clienttranslate('${actplayer} must play an opening card combination'),
+    "descriptionmyturn" => clienttranslate('${you} must play an opening card combination'),
     "type" => "activeplayer",
     "args" => "argPlayComboOpen",
     "possibleactions" => ["playCombo", "tichuBet"],
@@ -147,12 +133,8 @@ $machinestates = [
 
   ST_PLAY_COMBO => [
     "name" => "playCombo",
-    "description" => clienttranslate(
-      '${actplayer} must play a card combination, or pass'
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must play a card combination, or pass'
-    ),
+    "description" => clienttranslate('${actplayer} must play a card combination, or pass'),
+    "descriptionmyturn" => clienttranslate('${you} must play a card combination, or pass'),
     "type" => "activeplayer",
     "possibleactions" => ["playCombo", "tichuBet", "pass"],
     "transitions" => [
@@ -180,12 +162,8 @@ $machinestates = [
 
   ST_PHOENIX_PLAY => [
     "name" => "phoenixPlay",
-    "description" => clienttranslate(
-      '${actplayer} must play a card combination, or pass'
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must choose a value for the phoenix'
-    ),
+    "description" => clienttranslate('${actplayer} must play a card combination, or pass'),
+    "descriptionmyturn" => clienttranslate('${you} must choose a value for the phoenix'),
     "type" => "activeplayer",
     "args" => "argsPhoenixPlay",
     "possibleactions" => ["phoenixPlay"],
@@ -244,12 +222,8 @@ $machinestates = [
 
   ST_CHOOSE_DRAGON_GIFT => [
     "name" => "chooseDragonGift",
-    "description" => clienttranslate(
-      '${actplayer} must choose who to give the Dragon trick'
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must choose who to give the Dragon trick'
-    ),
+    "description" => clienttranslate('${actplayer} must choose who to give the Dragon trick'),
+    "descriptionmyturn" => clienttranslate('${you} must choose who to give the Dragon trick'),
     "type" => "activeplayer",
     "args" => "argChooseDragonGift",
     "possibleactions" => ["chooseDragonGift"],

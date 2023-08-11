@@ -14,10 +14,7 @@ class Hand extends APP_GameClass
     if (count($this->cards) == 0) {
       return;
     }
-    if (
-      $this->cards[0]["type_arg"] == 1 &&
-      $this->cards[0]["type"] == TYPE_PHOENIX
-    ) {
+    if ($this->cards[0]["type_arg"] == 1 && $this->cards[0]["type"] == TYPE_PHOENIX) {
       $this->phoenix = $this->cards[0];
     } elseif (
       count($this->cards) > 1 &&
@@ -62,13 +59,7 @@ class Hand extends APP_GameClass
     $name = Combo::$comboNames[$combo->type];
     $highestCombo =
       self::getHighestBomb($this->cards, $wish, $length) ??
-      call_user_func(
-        "self::getHighest$name",
-        $this->cards,
-        $wish,
-        $length,
-        $this->phoenix
-      );
+      call_user_func("self::getHighest$name", $this->cards, $wish, $length, $this->phoenix);
 
     if (is_null($highestCombo)) {
       return false;
@@ -142,11 +133,7 @@ class Hand extends APP_GameClass
       })
     );
     if ($phoenix) {
-      return new Combo(
-        [$phoenix, $filtered[0]],
-        PAIR_COMBO,
-        ($phoenixValue = $wish)
-      );
+      return new Combo([$phoenix, $filtered[0]], PAIR_COMBO, ($phoenixValue = $wish));
     }
     if (count($filtered) > 1) {
       return new Combo([$filtered[0], $filtered[1]], PAIR_COMBO);
@@ -162,11 +149,7 @@ class Hand extends APP_GameClass
     );
     $count = count($filtered);
     if ($phoenix && $count > 1) {
-      return new Combo(
-        [$phoenix, $filtered[0], $filtered[1]],
-        TRIP_COMBO,
-        ($phoenixValue = $wish)
-      );
+      return new Combo([$phoenix, $filtered[0], $filtered[1]], TRIP_COMBO, ($phoenixValue = $wish));
     }
     if ($count > 2) {
       return new Combo(array_slice($filtered, 0, 3), TRIP_COMBO);
@@ -402,10 +385,7 @@ class Hand extends APP_GameClass
           $i++;
         }
         // check if it contains the wish and is better than any other found previously
-        if (
-          $wish < $value + $i &&
-          ($i > $length || ($i == $length && $value > $val))
-        ) {
+        if ($wish < $value + $i && ($i > $length || ($i == $length && $value > $val))) {
           $length = $i - $idx;
           $val = $value;
         }
