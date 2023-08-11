@@ -195,7 +195,8 @@
   width: 120px;
 }
 
-.receivePassCard, .givePassCard {
+.receivePassCard,
+.givePassCard {
   top: 30px;
   left: 20px;
 }
@@ -330,7 +331,11 @@
   justify-content: space-evenly;
 }
 
-.spectatorMode #grandtichupanel, .spectatorMode #tichupanel, .spectatorMode #mahjongpanel, .spectatorMode #playertables, .spectatorMode #myhandwrap {
+.spectatorMode #grandtichupanel,
+.spectatorMode #tichupanel,
+.spectatorMode #mahjongpanel,
+.spectatorMode #playertables,
+.spectatorMode #myhandwrap {
   display: none;
 }
 

@@ -259,7 +259,7 @@ span.pass img {
   grid-column: 2 / span 1;
   grid-row: 4 / span 1;
   place-self: center;
-  scale: 0.75
+  scale: 0.75;
 }
 #card-last-played-area #currentTrickDiv {
   grid-column: 2 / span 1;
@@ -295,7 +295,7 @@ span.pass img {
   grid-column: 5 / span 1;
   grid-row: 3 / span 1;
   place-self: center;
-  scale: 0.75
+  scale: 0.75;
 }
 .squareTable #card-last-played-area #currentTrickDiv {
   grid-column: 5 / span 1;
@@ -368,7 +368,8 @@ span.pass img {
   width: 120px;
 }
 
-.receivePassCard, .givePassCard {
+.receivePassCard,
+.givePassCard {
   top: 30px;
   left: 20px;
 }
@@ -425,7 +426,11 @@ span.pass img {
   justify-content: space-evenly;
 }
 
-.spectatorMode #grandtichupanel, .spectatorMode #tichupanel, .spectatorMode #mahjongpanel, .spectatorMode #playertables, .spectatorMode #myhandwrap {
+.spectatorMode #grandtichupanel,
+.spectatorMode #tichupanel,
+.spectatorMode #mahjongpanel,
+.spectatorMode #playertables,
+.spectatorMode #myhandwrap {
   display: none;
 }
 

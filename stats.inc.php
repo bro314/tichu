@@ -47,47 +47,54 @@
     
 */
 
-$stats_type = array(
+$stats_type = [
+  // Statistics global to table
+  "table" => [
+    "round_number" => [
+      "id" => 11,
+      "name" => totranslate("Round n°"),
+      "type" => "int",
+    ],
 
+    "trick_number" => [
+      "id" => 12,
+      "name" => totranslate("Trick n°"),
+      "type" => "int",
+    ],
+  ],
 
-    // Statistics global to table
-    "table" => array(
+  // Statistics existing for each player
 
-        "round_number" => array("id"=> 11,
-                    "name" => totranslate("Round n°"),
-                    "type" => "int" ),
-                    
-        "trick_number" => array("id"=> 12,
-                    "name" => totranslate("Trick n°"),
-                    "type" => "int" ),
-
-
-    ),
-    
-    // Statistics existing for each player
-
-    "player" => array(
-    
-        "tricks_win" => array(  "id"=> 10,
-                                "name" => totranslate("Number of tricks won"), 
-                                "type" => "int" ),
-        "bomb_number" => array(  "id"=> 11,
-                                "name" => totranslate("Number of bombs played"), 
-                                "type" => "int" ),
-        "tichu_number" => array(   "id"=> 12,
-                                "name" => totranslate("Number of tichu bets"), 
-                                "type" => "int" ),
-        "grandtichu_number" => array(   "id"=> 13,
-                                "name" => totranslate("Number of grand tichu bets"), 
-                                "type" => "int" ),
-        "tichu_won_number" => array(   "id"=> 14,
-                                "name" => totranslate("Number of tichu won"), 
-                                "type" => "int" ),
-        "grandtichu_won_number" => array(   "id"=> 15,
-                                "name" => totranslate("Number of grand tichu won"), 
-                                "type" => "int" )
-    
-    )
-
-
-);
+  "player" => [
+    "tricks_win" => [
+      "id" => 10,
+      "name" => totranslate("Number of tricks won"),
+      "type" => "int",
+    ],
+    "bomb_number" => [
+      "id" => 11,
+      "name" => totranslate("Number of bombs played"),
+      "type" => "int",
+    ],
+    "tichu_number" => [
+      "id" => 12,
+      "name" => totranslate("Number of tichu bets"),
+      "type" => "int",
+    ],
+    "grandtichu_number" => [
+      "id" => 13,
+      "name" => totranslate("Number of grand tichu bets"),
+      "type" => "int",
+    ],
+    "tichu_won_number" => [
+      "id" => 14,
+      "name" => totranslate("Number of tichu won"),
+      "type" => "int",
+    ],
+    "grandtichu_won_number" => [
+      "id" => 15,
+      "name" => totranslate("Number of grand tichu won"),
+      "type" => "int",
+    ],
+  ],
+];
