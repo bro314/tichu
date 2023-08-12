@@ -449,15 +449,20 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
     },
 
     onEnteringStateChooseDragonGift: function (args) {
-      if (this.isCurrentPlayerActive()) {
-        this.targets = args.enemies;
-        this.addActionButton("giveDragonBefore_button", _("Give cards to " + args.enemies[0]), () =>
-          this.onGiveDragon(0)
-        );
-        this.addActionButton("giveDragonAfter_button", _("Give cards to " + args.enemies[1]), () =>
-          this.onGiveDragon(1)
-        );
-      }
+      if (!this.isCurrentPlayerActive()) return;
+
+      const left = this.clockwise ? 0 : 1;
+      const right = this.clockwise ? 1 : 0;
+      this.addActionButton(
+        "giveDragonBefore_button",
+        _("Give cards to " + args.enemies[left]),
+        () => this.onGiveDragon(left)
+      );
+      this.addActionButton(
+        "giveDragonAfter_button",
+        _("Give cards to " + args.enemies[right]),
+        () => this.onGiveDragon(right)
+      );
     },
 
     onEnteringStateEndRound: function (args) {
