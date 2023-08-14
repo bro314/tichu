@@ -68,19 +68,28 @@ class LogManager extends APP_GameClass
 
   public static function getLastCombos()
   {
-    //id->[description->text, cards->[type,type_arg]]
+    // All "combo" and "pass" actions from the current trick.
+    // Sorted descending by log id. So let's iterate over the array and find
+    // the last action for each player.
     $actions = self::getLastActions(["combo", "pass"]);
     $combos = [];
     $passes = [];
-    foreach ($actions as $idx => $row) {
-      $pId = $row["player"];
-      if ($row["action"] == "pass") {
-        $passes[] = intval($pId);
-      } else {
-        $combos[$pId] = $row["arg"];
+    // We cannot simply look at the last 4 actions, because the dog might have
+    // been played or a player has already gone out. So we go through all
+    // actions and remember which player we have already processed.
+    $playerIdsProcessed = [];
+    foreach ($actions as $action) {
+      $playerId = $action["player"];
+      if (in_array($playerId, $playerIdsProcessed)) {
+        continue;
       }
-      if ($idx == 3) {
-        break;
+      $playerIdsProcessed[] = $playerId;
+
+      if ($action["action"] == "pass") {
+        $passes[] = intval($playerId);
+      }
+      if ($action["action"] == "combo") {
+        $combos[$playerId] = $action["arg"];
       }
     }
     return [$combos, $passes];
