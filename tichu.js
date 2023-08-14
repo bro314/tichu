@@ -195,7 +195,7 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
       document.getElementById("pass_button").replaceChildren();
       document.getElementById("pass_trick_button").replaceChildren();
       document.getElementById("tichu_button").replaceChildren();
-      dojo.place(this.format_block("jstpl_my_hand", {}), $("play_button"));
+      dojo.place(this.format_block("jstpl_my_hand", {}), $("play_button"), "only");
     },
 
     addMyActionButton: function (id, label, method, color, dest) {
@@ -578,13 +578,18 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
             );
             break;
           case "confirmTrick":
-            this.addMyActionButton(
-              "myConfirmTrick",
-              _("Collect"),
-              () => this.collect(),
-              "blue",
-              "play_button"
-            );
+            if (this.bRealtime) {
+              dojo.place(this.format_block("jstpl_auto_collect", {}), $("play_button"), "only");
+              setTimeout(() => this.collect(), 2000);
+            } else {
+              this.addMyActionButton(
+                "myConfirmTrick",
+                _("Collect"),
+                () => this.collect(),
+                "blue",
+                "play_button"
+              );
+            }
             if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0) {
               this.addMyActionButton(
                 "myPlayBomb",
@@ -1036,6 +1041,7 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
     },
 
     collect: function () {
+      if (!this.checkAction("collect")) return;
       this.takeAction("collect");
     },
 

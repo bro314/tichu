@@ -118,6 +118,7 @@ var jstpl_temp='<div id="temp_${id}" class="icon temp ${clazz}"></div>'
 var jstpl_my_action_button = '<a href="#" class="action-button ${addclass}" onclick="return false;" id="${id}">${label}</a>';
 
 var jstpl_my_hand = '<h3>{MY_HAND}</h3>'
+var jstpl_auto_collect = '<h3>{AUTO_COLLECT}</h3>'
 
 </script>
 

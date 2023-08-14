@@ -51,6 +51,8 @@ span.pass img {
 
 #buttons {
   padding: 10px 5px 10px 5px;
+  /* UI should not jump when no buttons are present. */
+  min-height: 30px;
   display: flex;
   background-color: rgba(255, 255, 255, 0.5);
 }
