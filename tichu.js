@@ -1,235 +1,195 @@
-﻿/**
- *------
- * BGA framework: © Gregory Isabelli <gisabelli@boardgamearena.com> & Emmanuel Colin <ecolin@boardgamearena.com>
- * Tichu implementation : © Yannick Priol <camertwo@hotmail.com>
- *
- * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
- * See http://en.boardgamearena.com/#!doc/Studio for more information.
- * -----
- *
- * tichu.js
- *
- * Tichu user interface script
- *
- * In this file, you are describing the logic of your user interface, in Javascript language.
- *
- */
-var isDebug = true;
-var debug = isDebug ? console.info.bind(window.console) : function () {};
-define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function (
-  dojo,
-  declare
-) {
-  return declare("bgagame.tichu", ebg.core.gamegui, {
-    constructor: function () {
-      console.log("tichu constructor");
-
-      this.cardwidth = 100;
-      this.cardheight = 150;
-
-      this.cardChoiceWidth = 70;
-      this.cardChoiceHeight = 105;
-
-      this.cardsToPass = [null, null, null];
-
-      this.tableCombos = {};
-    },
-    setup: function (gamedatas) {
-      debug("SETUP", gamedatas);
-      var player_ids = new Array();
-      for (var player_id in gamedatas.players) {
-        player_ids.push(parseInt(player_id));
-        if (gamedatas.handcount[player_id] == undefined) gamedatas.handcount[player_id] = 0;
-      }
-      // Setting up player boards
-      this.setupGameBoards(gamedatas);
-      this.addTooltipToClass("hand", _("Cards in hand"), "");
-      this.addTooltipToClass("star", _("Points captured"), "");
-      this.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
-      this.addTooltipToClass("tichublack", _("Tichu bet yet to be made"), "");
-      this.addTooltipToClass("grandtichucolor", _("Grand Tichu bet"), "");
-      this.addTooltipToClass("tichucolor", _("Tichu bet"), "");
-      this.addTooltipToClass("firstoutcolor", _("First player out"), "");
-      this.addTooltipToClass("cardback", _("has passed"), "");
-      this.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
-
-      document
-        .getElementById("overall-content")
-        .classList.toggle("tiki", this.prefs[103].value == 1);
-      this.updateMahjongWish(gamedatas.mahjongWish);
-
-      if (gamedatas.firstoutplayer != 0) {
-        dojo.style($("firstoutcolor_" + gamedatas.firstoutplayer), "display", "inline-block");
-      }
-
-      this.setupPlayerHand();
-
-      this.mahjongValues = this.setupValueChoice(
-        "mahjong",
-        null /*'onMahjongValuesSelectionChanged'*/,
-        14
-      );
-      this.phoenixValues = this.setupValueChoice(
-        "phoenixChoice",
-        null /*'onPhoenixValuesSelectionChanged'*/,
-        13
-      );
-
-      this.allLastCombos = gamedatas["allLastCombos"];
-      this.displayLastCombos(player_ids, gamedatas["passes"]);
-      // Betting
-      Array.from($("playertables").children).forEach((el, i) => {
-        dojo.connect(el.children[0], "onclick", this, () => this.onGiveCard(i));
-      });
-
-      // Setup game notifications to handle (see "setupNotifications" method below)
-      this.setupNotifications();
-      if (this.prefs[100].value == 2) {
-        this.onReorderTable(true);
-      }
-      this.clockwise = false;
-      if (this.prefs[101].value == 1) {
-        this.changeOrder(true);
-      }
-
-      var currentTrick = $("currentTrick");
-      currentTrick.innerHTML = _("Points in current trick: ") + currentTrick.innerHTML;
-      this.currentTrickCounter = new ebg.counter();
-      this.currentTrickCounter.create("currentTrickCounter");
-      var div = document.createElement("DIV");
-      this.addTooltipHtml("currentTrick", _("click to see the cards"));
-      dojo.connect($("currentTrick"), "onclick", this, "showCurrentTrick");
-      this.currentTrickCounter.setValue(gamedatas.currentTrickValue);
-
-      console.log("Ending game setup");
-    },
-
-    setupGameBoards: function (gamedatas) {
-      Object.values(gamedatas.players).forEach((player) => {
-        var player_id = player.id;
-        var player_board_div = $("player_board_" + player_id);
-        var isCurrent = player_id == this.player_id;
-        dojo.place(this.format_block("jstpl_player_board", player), player_board_div);
-        //this.scoreCtrl[player_id].toValue(player.score);
-
-        if (player.call_grand_tichu >= 0) {
-          if (player.call_grand_tichu == 200) {
-            dojo.query(".grandtichucolor." + player_id).style("display", "inline-block");
-            dojo.query(".tichublack." + player_id).style("display", "none");
-          }
-        } else {
-          dojo.query(".grandtichublack." + player_id).style("display", "inline-block");
+"use strict";
+define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function (dojo, declare) {
+    return declare("bgagame.tichu", ebg.core.gamegui, new Tichu());
+});
+var Bet;
+(function (Bet) {
+    // Player can still make a bet.
+    Bet["NO_BET_YET"] = "-1";
+    // Player cannot bet anymore.
+    Bet["NO_BET"] = "0";
+    Bet["TICHU"] = "100";
+    Bet["GRAND_TICHU"] = "200";
+})(Bet || (Bet = {}));
+var Pass;
+(function (Pass) {
+    Pass["NO_BET"] = "0";
+})(Pass || (Pass = {}));
+var isDebug = window.location.host === "studio.boardgamearena.com";
+var debug = isDebug ? console.log.bind(window.console) : function () { };
+function cardToStockType(card) {
+    return stockType(Number(card.type), Number(card.type_arg));
+}
+function stockType(color, value) {
+    return (Number(color) - 1) * 14 + (Number(value) - 1);
+}
+function addCardToStock(stock, card) {
+    stock === null || stock === void 0 ? void 0 : stock.addToStockWithId(cardToStockType(card), card.id);
+}
+function addItemToStock(stock, item) {
+    stock.addToStockWithId(item.type, item.id);
+}
+var Tichu = /** @class */ (function () {
+    function Tichu() {
+        this.game = this;
+        this.cardwidth = 100;
+        this.cardheight = 150;
+        this.cardChoiceWidth = 70;
+        this.cardChoiceHeight = 105;
+        this.cardsToPass = [null, null, null];
+        this.tableCombos = {};
+        this.allLastCombos = {};
+        this.clockwise = false;
+        this.allowedValues = [];
+    }
+    Tichu.prototype.setup = function (gamedatas) {
+        var _this = this;
+        var _a;
+        debug("SETUP", gamedatas);
+        var player_ids = new Array();
+        for (var player_id in gamedatas.players) {
+            player_ids.push(parseInt(player_id));
+            if (gamedatas.handcount[player_id] === undefined)
+                gamedatas.handcount[player_id] = 0;
         }
-
-        if (player.call_tichu >= 0) {
-          if (player.call_tichu == 100) {
-            dojo.query(".tichucolor." + player_id).style("display", "inline-block");
-          }
-        } else {
-          dojo.query(".tichublack." + player_id).style("display", "inline-block");
+        this.setupGameBoards(gamedatas);
+        this.game.addTooltipToClass("hand", _("Cards in hand"), "");
+        this.game.addTooltipToClass("star", _("Points captured"), "");
+        this.game.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
+        this.game.addTooltipToClass("tichublack", _("Tichu bet yet to be made"), "");
+        this.game.addTooltipToClass("grandtichucolor", _("Grand Tichu bet"), "");
+        this.game.addTooltipToClass("tichucolor", _("Tichu bet"), "");
+        this.game.addTooltipToClass("firstoutcolor", _("First player out"), "");
+        this.game.addTooltipToClass("cardback", _("has passed"), "");
+        this.game.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
+        (_a = document
+            .getElementById("overall-content")) === null || _a === void 0 ? void 0 : _a.classList.toggle("tiki", this.game.prefs[103].value === 1);
+        this.updateMahjongWish(gamedatas.mahjongWish);
+        if (gamedatas.firstoutplayer != 0) {
+            dojo.style($("firstoutcolor_" + gamedatas.firstoutplayer), "display", "inline-block");
         }
-
-        dojo.query(".handcount." + player_id).innerHTML(gamedatas.handcount[player_id]);
-        if (gamedatas.handcount[player_id] == 0) {
-          this.disablePlayerPanel(player_id);
-          $("playertable_" + player_id).classList.add("disabled");
+        this.setupPlayerHand();
+        this.mahjongValues = this.setupValueChoice("mahjong", 14);
+        this.phoenixValues = this.setupValueChoice("phoenixChoice", 13);
+        this.allLastCombos = gamedatas["allLastCombos"];
+        this.displayLastCombos(player_ids, gamedatas["passes"]);
+        Array.from($("playertables").children).forEach(function (el, i) {
+            dojo.connect(el.children[0], "onclick", _this, function () { return _this.onGiveCard(i); });
+        });
+        this.setupNotifications();
+        if (this.game.prefs[100].value === 2) {
+            this.onReorderTable(true);
         }
-        if (player_id == gamedatas.lastComboPlayer) {
-          $("playertable_" + player_id).classList.add("lastComboPlayer");
+        this.clockwise = false;
+        if (this.game.prefs[101].value === 1) {
+            this.changeOrder(true);
         }
-
-        dojo.query(".pointcount." + player_id).innerHTML(gamedatas.capturedpoints[player_id]);
-      });
-
-      dojo.query(".playertabletext").forEach((e) => {
-        var span = document.createElement("SPAN");
-        span.innerText = _("Select a card and click here");
-        e.appendChild(span);
-      });
-    },
-
-    setupPlayerHand: function () {
-      this.playerHand = this.createStock($("myhand"), this.cardwidth, this.cardheight);
-
-      dojo.connect(this.playerHand, "onChangeSelection", this, "onPlayerHandSelectionChanged");
-
-      // Cards in player's hand
-
-      for (var i in this.gamedatas.hand) {
-        var card = this.gamedatas.hand[i];
-        var color = card.type;
-        var value = card.type_arg;
-        this.playerHand.addToStockWithId(this.getCardUniqueId(color, value), card.id);
-      }
-      this.updateStockOverlap(this.playerHand);
-
-      // triggers reorder cards
-      dojo.connect($("order_by_rank"), "onclick", this, "onReorderByRank");
-      dojo.connect($("order_by_color"), "onclick", this, "onReorderByColor");
-      dojo.connect($("list_table"), "onclick", this, () => this.onReorderTable(false));
-      dojo.connect($("square_table"), "onclick", this, () => this.onReorderTable(true));
-      this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
-      this.addTooltipHtml(
-        "square_table",
-        _("You can change this permanently in the user settings")
-      );
-      dojo.connect($("clockwise"), "onclick", this, () => this.changeOrder(true));
-      dojo.connect($("counterClockwise"), "onclick", this, () => this.changeOrder(false));
-      this.addTooltipHtml(
-        "clockwise",
-        _(
-          "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"
-        )
-      );
-      this.addTooltipHtml(
-        "counterClockwise",
-        _(
-          "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"
-        )
-      );
-    },
-
-    removeMyActionButtons: function () {
-      document.getElementById("bomb_button").replaceChildren();
-      document.getElementById("play_button").replaceChildren();
-      document.getElementById("pass_button").replaceChildren();
-      document.getElementById("pass_trick_button").replaceChildren();
-      document.getElementById("tichu_button").replaceChildren();
-      dojo.place(this.format_block("jstpl_my_hand", {}), $("play_button"), "only");
-    },
-
-    addMyActionButton: function (id, label, method, color, dest) {
-      tpl = {};
-      tpl.id = id;
-      tpl.label = label;
-      tpl.addclass = `bgabutton bgabutton_${color}`;
-
-      dojo.place(this.format_block("jstpl_my_action_button", tpl), dest, "only");
-      dojo.connect($(id), "onclick", this, method);
-    },
-
-    createStock: function (element, cardWidth, cardHeight) {
-      const stock = new ebg.stock();
-      stock.create(this, element, cardWidth, cardHeight);
-      stock.setSelectionAppearance("class");
-      stock.setOverlap(30, 0);
-      new ResizeObserver(() => requestAnimationFrame(() => this.updateStockOverlap(stock))).observe(
-        element
-      );
-      stock.image_items_per_row = 14;
-      var cardImgFile = this.prefs[103].value == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
-      for (var color = 1; color <= 4; color++) {
-        for (var value = 1; value <= 14; value++) {
-          // Build card type id
-          var card_type_id = this.getCardUniqueId(color, value);
-          var card_weight = 2 * (4 * (value - 1) + (color - 1));
-          stock.addItemType(card_type_id, card_weight, g_gamethemeurl + cardImgFile, card_type_id);
-          stock.onItemCreate = dojo.hitch(this, "setupNewCard");
+        this.setupCurrentTrick(gamedatas.currentTrickValue);
+        debug("Ending game setup");
+    };
+    Tichu.prototype.setupCurrentTrick = function (currentTrickValue) {
+        var _this = this;
+        var currentTrick = $("currentTrick");
+        currentTrick.innerHTML = _("Points in current trick: ") + currentTrick.innerHTML;
+        this.currentTrickCounter = new ebg.counter();
+        this.currentTrickCounter.create("currentTrickCounter");
+        var div = document.createElement("DIV");
+        this.game.addTooltipHtml("currentTrick", _("click to see the cards"));
+        dojo.connect($("currentTrick"), "onclick", this, function () { return _this.showCurrentTrick(); });
+        this.currentTrickCounter.setValue(currentTrickValue);
+    };
+    Tichu.prototype.setupGameBoards = function (gamedatas) {
+        for (var _i = 0, _a = Object.values(gamedatas.players); _i < _a.length; _i++) {
+            var player = _a[_i];
+            var player_id = player.id;
+            var player_board_div = $("player_board_" + player_id);
+            var isCurrent = player_id === this.game.player_id;
+            dojo.place(this.game.format_block("jstpl_player_board", player), player_board_div);
+            if (player.call_grand_tichu === Bet.GRAND_TICHU) {
+                dojo.query(".grandtichucolor." + player_id).style("display", "inline-block");
+                dojo.query(".tichublack." + player_id).style("display", "none");
+            }
+            if (player.call_grand_tichu === Bet.NO_BET_YET) {
+                dojo.query(".grandtichublack." + player_id).style("display", "inline-block");
+            }
+            if (player.call_tichu === Bet.TICHU) {
+                dojo.query(".tichucolor." + player_id).style("display", "inline-block");
+            }
+            if (player.call_tichu === Bet.NO_BET_YET) {
+                dojo.query(".tichublack." + player_id).style("display", "inline-block");
+            }
+            dojo.query(".handcount." + player_id).innerHTML(gamedatas.handcount[player_id]);
+            if (gamedatas.handcount[player_id] === 0) {
+                this.game.disablePlayerPanel(player_id);
+                $("playertable_" + player_id).classList.add("disabled");
+            }
+            if (player_id === Number(gamedatas.lastComboPlayer)) {
+                $("playertable_" + player_id).classList.add("lastComboPlayer");
+            }
+            dojo.query(".pointcount." + player_id).innerHTML(gamedatas.capturedpoints[player_id]);
         }
-      }
-      return stock;
-    },
-
+        dojo.query(".playertabletext").forEach(function (e) {
+            var span = document.createElement("SPAN");
+            span.innerText = _("Select a card and click here");
+            e.appendChild(span);
+        });
+    };
+    Tichu.prototype.setupPlayerHand = function () {
+        var _this = this;
+        this.playerHand = this.createStock($("myhand"), this.cardwidth, this.cardheight);
+        for (var _i = 0, _a = this.game.gamedatas.hand; _i < _a.length; _i++) {
+            var card = _a[_i];
+            addCardToStock(this.playerHand, card);
+        }
+        this.updateStockOverlap(this.playerHand);
+        dojo.connect($("order_by_rank"), "onclick", this, function (e) { return _this.onReorderByRank(e); });
+        dojo.connect($("order_by_color"), "onclick", this, function (e) { return _this.onReorderByColor(e); });
+        dojo.connect($("list_table"), "onclick", this, function () { return _this.onReorderTable(false); });
+        dojo.connect($("square_table"), "onclick", this, function () { return _this.onReorderTable(true); });
+        dojo.connect($("clockwise"), "onclick", this, function () { return _this.changeOrder(true); });
+        dojo.connect($("counterClockwise"), "onclick", this, function () { return _this.changeOrder(false); });
+        this.game.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
+        this.game.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
+        this.game.addTooltipHtml("clockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
+        this.game.addTooltipHtml("counterClockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
+    };
+    Tichu.prototype.removeMyActionButtons = function () {
+        var _a, _b, _c, _d, _e;
+        (_a = document.getElementById("bomb_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
+        (_b = document.getElementById("play_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
+        (_c = document.getElementById("pass_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
+        (_d = document.getElementById("pass_trick_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
+        (_e = document.getElementById("tichu_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
+        dojo.place(this.game.format_block("jstpl_my_hand", {}), $("play_button"), "only");
+    };
+    Tichu.prototype.addMyActionButton = function (id, label, method, color, dest) {
+        var args = {
+            id: id,
+            label: label,
+            addclass: "bgabutton bgabutton_".concat(color),
+        };
+        dojo.place(this.game.format_block("jstpl_my_action_button", args), dest, "only");
+        dojo.connect($(id), "onclick", this, method);
+    };
+    Tichu.prototype.createStock = function (element, cardWidth, cardHeight) {
+        var _this = this;
+        var stock = new ebg.stock();
+        stock.create(this, element, cardWidth, cardHeight);
+        stock.setSelectionAppearance("class");
+        stock.setOverlap(30, 0);
+        new ResizeObserver(function () { return requestAnimationFrame(function () { return _this.updateStockOverlap(stock); }); }).observe(element);
+        stock.image_items_per_row = 14;
+        var cardImgFile = this.game.prefs[103].value === 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
+        for (var color = 1; color <= 4; color++) {
+            for (var value = 1; value <= 14; value++) {
+                var type = stockType(color, value);
+                var weight = 2 * (4 * (value - 1) + (color - 1));
+                stock.addItemType(type, weight, g_gamethemeurl + cardImgFile, type);
+                stock.onItemCreate = dojo.hitch(this, "setupNewCard");
+            }
+        }
+        return stock;
+    };
     /**
      * We would like the card overlap to depend on the width of the container element.
      * We have to make sure that this method gets called every time that the number of cards in a
@@ -237,1059 +197,790 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/st
      *
      * We think it is useful to only allow overlap between 12% and 60%.
      */
-    updateStockOverlap: function (stock) {
-      let availableWidthForOverlapPerItem =
-        (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) /
-        (stock.items.length - 1);
-      let overlap = Math.floor(
-        ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100
-      );
-      if (overlap > 60) overlap = 60;
-      if (overlap < 12) overlap = 12;
-      stock.setOverlap(overlap, 0);
-    },
-
-    setupValueChoice: function (idName, callbackFunc, count) {
-      //mahjong wish
-      valueChoice = new ebg.stock();
-      valueChoice.create(this, $(idName), this.cardChoiceWidth, this.cardChoiceHeight);
-      valueChoice.setSelectionAppearance("class");
-
-      if (callbackFunc != null) dojo.connect(valueChoice, "onChangeSelection", this, callbackFunc);
-      else valueChoice.setSelectionMode(1);
-
-      valueChoice.image_items_per_row = 7; // 7 images per row
-
-      for (var value = 0; value < count; value++) {
-        // Build card type id
-        valueChoice.addItemType(value, value, g_gamethemeurl + "img/tichu-icons-table.png", value);
-        valueChoice.addToStockWithId(value, value + 2);
-      }
-
-      return valueChoice;
-    },
-
-    displayLastCombos: function (playerIds, passes) {
-      if (this.allLastCombos == undefined) return;
-      playerIds.forEach((playerId) => {
-        this.resetComboStock(playerId);
-        if (
-          this.allLastCombos[playerId] != undefined &&
-          this.allLastCombos[playerId]["cards"].length > 0
-        ) {
-          this.addCardsToStock(this.tableCombos[playerId], this.allLastCombos[playerId]["cards"]);
-          this.setDescription(playerId, this.allLastCombos[playerId]["description"]);
-        } else if (passes.indexOf(playerId) >= 0) {
-          this.setPass(playerId);
+    Tichu.prototype.updateStockOverlap = function (stock) {
+        if (!stock)
+            return;
+        var availableWidthForOverlapPerItem = (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) /
+            (stock.items.length - 1);
+        var overlap = Math.floor(((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100);
+        if (overlap > 60)
+            overlap = 60;
+        if (overlap < 12)
+            overlap = 12;
+        stock.setOverlap(overlap, 0);
+    };
+    Tichu.prototype.setupValueChoice = function (idName, count) {
+        var valueChoice = new ebg.stock();
+        valueChoice.create(this.game, $(idName), this.cardChoiceWidth, this.cardChoiceHeight);
+        valueChoice.setSelectionAppearance("class");
+        valueChoice.setSelectionMode(1);
+        valueChoice.image_items_per_row = 7;
+        for (var value = 0; value < count; value++) {
+            valueChoice.addItemType(value, value, g_gamethemeurl + "img/tichu-icons-table.png", value);
+            valueChoice.addToStockWithId(value, String(value + 2));
         }
-      });
-    },
-
-    resetComboStock: function (playerId) {
-      if (playerId in this.tableCombos) {
-        this.tableCombos[playerId].removeAll();
-      } else {
-        this.tableCombos[playerId] = this.createStock(
-          $("lastcombo_" + playerId),
-          this.cardwidth * 0.75,
-          this.cardheight * 0.75
-        );
-        this.tableCombos[playerId].extraClasses = "smallCards";
-        this.tableCombos[playerId].setSelectionMode(0);
-      }
-    },
-
-    setDescription: function (playerId, desc) {
-      var translatedDesc = _(desc);
-      this.addTooltipHtml("playertable_" + playerId, translatedDesc);
-    },
-
-    addCardsToStock: function (stock, cards, playerId = null) {
-      var weights = {};
-      cards.forEach((card, i) => {
-        if (playerId == this.player_id) {
-          this.playerHand.removeFromStockById(card.id);
-        }
-        var uid = this.getCardUniqueId(card.type, card.type_arg);
-        weights[uid] = i;
-        stock.addToStockWithId(uid, card.id);
-      });
-      stock.changeItemsWeight(weights);
-      this.updateStockOverlap(this.playerHand);
-      this.updateStockOverlap(stock);
-    },
-
-    animateIcon: function (clazz, player_id) {
-      // todo
-      var block = this.format_block("jstpl_temp", {
-        clazz: clazz,
-        id: player_id,
-      });
-      var e = dojo.place(block, "game_play_area");
-
-      this.fadeOutAndDestroy(e, 1000, 1000);
-    },
-
-    ///////////////////////////////////////////////////
-    //// Game & client states
-    // onEnteringState: this method is called each time we are entering into a new game state.
-    //									You can use this method to perform some user interface changes at this moment.
-    //
-    onEnteringState: function (stateName, args) {
-      debug("Entering state: " + stateName, args);
-      // Call appropriate method
-      var methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
-      this.active_player = args.active_player;
-      this.stateName = stateName;
-      if (this[methodName] !== undefined) this[methodName](args.args);
-    },
-
-    onEnteringStateNewRound: function (args) {
-      dojo.query(".pointcount").innerHTML("0");
-      dojo.query(".cardback").style("display", "none");
-      dojo.query(".mahjong_mini").innerHTML("");
-      this.resetLastCombos();
-      for (var id in this.gamedatas.players) {
-        this.gamedatas.players[id].call_tichu = -1;
-        this.gamedatas.players[id].call_grand_tichu = -1;
-      }
-      dojo.query(".whiteblock").removeClass("disabled");
-
-      this.updateMahjongWish(0);
-    },
-
-    onEnteringStateGrandTichuBets: function (args) {
-      this.resetLastCombos();
-    },
-
-    onEnteringStateGiveCards: function (args) {
-      if (this.isSpectator) return;
-      dojo.style("playertables", "display", "flex");
-      dojo.style("card-last-played-area", "display", "none");
-      dojo.query(".playertable").style("cursor", "pointer");
-    },
-
-    onEnteringStateShowPassedCards: function (args) {
-      dojo.query(".handcount").innerHTML(14);
-      if (args._private == undefined) return;
-      dojo.style("playertables", "display", "flex");
-      dojo.style("card-last-played-area", "display", "none");
-      args._private.forEach((card, i) => {
-        var x = this.cardwidth * (card.type_arg - 1);
-        var y = this.cardheight * (card.type - 1);
-        dojo.place(
-          this.format_block("jstpl_cardontable", {
-            x,
-            y,
-            player_id: card.location_arg,
-            card_id: card.id,
-          }),
-          "receiveplayertable_" + card.passed_from
-        );
-      });
-      this.passedCards = args._private;
-    },
-
-    onEnteringStateNewTrick: function (args) {
-      this.resetLastCombos();
-      this.currentTrickCounter.setValue(0);
-      this.gamedatas.currentTrick = [];
-    },
-
-    onEnteringStatePlayComboOpen: function (args) {
-      dojo.query(".active").forEach((e) => e.classList.remove("active"));
-      document.getElementById("playertable_" + this.active_player).classList.add("active");
-    },
-
-    onEnteringStateMahjongPlay: function (args) {
-      if (this.isCurrentPlayerActive()) {
-        dojo.style($("mahjongpanel"), "display", "block");
-        this.mahjongValues.updateDisplay();
-      }
-      this.playerHand.unselectAll();
-    },
-
-    onEnteringStatePhoenixPlay: function (args) {
-      if (this.isCurrentPlayerActive()) {
-        dojo.style($("phoenixpanel"), "display", "block");
-        this.allowedValues = args._private.values;
-        // variante 1
-        this.phoenixValues.removeAll();
-        args._private.values.forEach((value) => {
-          this.phoenixValues.addToStock(value - 2);
+        return valueChoice;
+    };
+    Tichu.prototype.displayLastCombos = function (playerIds, passes) {
+        var _this = this;
+        if (this.allLastCombos === undefined)
+            return;
+        playerIds.forEach(function (playerId) {
+            var _a;
+            _this.resetComboStock(playerId);
+            var combo = _this.allLastCombos[playerId];
+            if (combo && ((_a = combo.cards) === null || _a === void 0 ? void 0 : _a.length) > 0) {
+                _this.addCardsToStock(_this.tableCombos[playerId], combo.cards);
+                _this.setDescription(playerId, combo.description);
+            }
+            else if (passes.indexOf(playerId) >= 0) {
+                _this.setPass(playerId);
+            }
         });
-        this.phoenixValues.updateDisplay();
-        /* variante 2
-				this.phoenixValues.updateDisplay();
-				setTimeout(()=> {
-					dojo.query('#phoenixChoice .stockitem').forEach(e => {
-						var id = parseInt(e.id.substring(19));
-						if(args._private.values.indexOf(id) < 0) {
-							e.style.opacity = 0.5;
-							e.style.cursor='default';
-							e.style.filter ='grayscale(1)';
-						} else {
-							e.style.opacity = 1;
-							e.style.cursor='pointer';
-							e.style.filter ='unset';
-						}
-					});
-				}, 1000);*/
-      }
-      this.playerHand.unselectAll();
-    },
-
-    onEnteringStatePlayCombo: function (args) {
-      dojo.query(".active").forEach((e) => e.classList.remove("active"));
-      document.getElementById("playertable_" + this.active_player).classList.add("active");
-    },
-
-    onEnteringStatePlayBomb: function (args) {
-      document.getElementById("playertable_" + args.active).classList.add("active");
-    },
-
-    onEnteringStateChooseDragonGift: function (args) {
-      if (!this.isCurrentPlayerActive()) return;
-
-      const left = this.clockwise ? 0 : 1;
-      const right = this.clockwise ? 1 : 0;
-      this.addActionButton(
-        "giveDragonBefore_button",
-        _("Give cards to " + args.enemies[left]),
-        () => this.onGiveDragon(left)
-      );
-      this.addActionButton(
-        "giveDragonAfter_button",
-        _("Give cards to " + args.enemies[right]),
-        () => this.onGiveDragon(right)
-      );
-    },
-
-    onEnteringStateEndRound: function (args) {
-      this.playerHand.removeAll();
-      this.enableAllPlayerPanels();
-      this.cleanPlayersPanel();
-    },
-
-    onEnteringStateConfirmTrick: function (args) {
-      dojo.query(".active").forEach((e) => e.classList.remove("active"));
-      document.getElementById("playertable_" + this.active_player).classList.add("active");
-    },
-
-    // onLeavingState: this method is called each time we are leaving a game state.
-    //								 You can use this method to perform some user interface changes at this moment.
-    //
-    onLeavingState: function (stateName) {
-      console.log("Leaving state: " + stateName);
-      dojo.query(".playertable").style("cursor", "unset");
-
-      switch (stateName) {
-        case "dummmy":
-          break;
-      }
-    },
-
-    // onUpdateActionButtons: in this method you can manage "action buttons" that are displayed in the
-    //												action status bar (ie: the HTML links in the status bar).
-    //
-    onUpdateActionButtons: function (stateName, args) {
-      console.log("onUpdateActionButtons: " + stateName);
-      var player = this.gamedatas.players[this.player_id];
-      this.removeActionButtons();
-      this.removeMyActionButtons();
-      if (this.isCurrentPlayerActive()) {
-        switch (stateName) {
-          case "giveCards":
-            this.addActionButton(
-              "resetPassCards_button",
-              _("Reset choices"),
-              "onResetPassCards",
-              null,
-              false,
-              "gray"
-            );
-            this.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
-            break;
-          case "showPassedCards":
-            this.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
-            break;
-          case "mahjongPlay":
-            this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
-            break;
-          case "phoenixPlay":
-            this.addActionButton(
-              "choosePhoenix",
-              _("Choose a value for the Phoenix"),
-              "onChoosePhoenix"
-            );
-            this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
-            break;
-          case "playComboOpen":
-            this.addMyActionButton(
-              "myPlayCombo",
-              _("Play selected cards"),
-              () => this.playCombo("playCombo"),
-              "blue",
-              "play_button"
-            );
-            break;
-          case "playCombo":
-            this.addMyActionButton(
-              "myPlayCombo",
-              _("Play selected cards"),
-              () => this.playCombo("playCombo"),
-              "blue",
-              "play_button"
-            );
-            this.addMyActionButton(
-              "myPass",
-              _("Pass"),
-              () => this.onPass(true),
-              "red",
-              "pass_button"
-            );
-            this.addMyActionButton(
-              "myPassTrick",
-              _("Auto-Pass this Trick"),
-              () => this.onPass(false),
-              "gray",
-              "pass_trick_button"
-            );
-            this.addTooltip(
-              "myPassTrick",
-              _("Automatically pass until the end of this trick."),
-              ""
-            );
-            break;
-          case "playBomb":
-            this.addMyActionButton(
-              "myPlayCombo",
-              _("Play selected cards"),
-              () => this.playCombo("playCombo"),
-              "blue",
-              "play_button"
-            );
-            this.addMyActionButton(
-              "myCancel",
-              _("Cancel"),
-              () => this.takeAction("cancel"),
-              "red",
-              "pass_button"
-            );
-            break;
-          case "confirmTrick":
-            if (this.bRealtime) {
-              dojo.place(this.format_block("jstpl_auto_collect", {}), $("play_button"), "only");
-              setTimeout(() => this.collect(), 2000);
-            } else {
-              this.addMyActionButton(
-                "myConfirmTrick",
-                _("Collect"),
-                () => this.collect(),
-                "blue",
-                "play_button"
-              );
+    };
+    Tichu.prototype.resetComboStock = function (playerId) {
+        if (playerId in this.tableCombos) {
+            this.tableCombos[playerId].removeAll();
+        }
+        else {
+            this.tableCombos[playerId] = this.createStock($("lastcombo_" + playerId), this.cardwidth * 0.75, this.cardheight * 0.75);
+            this.tableCombos[playerId].extraClasses = "smallCards";
+            this.tableCombos[playerId].setSelectionMode(0);
+        }
+    };
+    Tichu.prototype.setDescription = function (playerId, desc) {
+        var translatedDesc = _(desc);
+        this.game.addTooltipHtml("playertable_" + playerId, translatedDesc);
+    };
+    Tichu.prototype.addCardsToStock = function (stock, cards, playerId) {
+        if (playerId === void 0) { playerId = null; }
+        var weights = {};
+        var i = 0;
+        for (var _i = 0, cards_1 = cards; _i < cards_1.length; _i++) {
+            var card = cards_1[_i];
+            if (playerId === this.game.player_id) {
+                this.playerHand.removeFromStockById(card.id);
             }
-            if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0) {
-              this.addMyActionButton(
-                "myPlayBomb",
-                _("Play a Bomb"),
-                () => this.playCombo("playBomb"),
-                "gray",
-                "bomb_button"
-              );
+            addCardToStock(stock, card);
+            weights[cardToStockType(card)] = i++;
+        }
+        stock.changeItemsWeight(weights);
+        this.updateStockOverlap(this.playerHand);
+        this.updateStockOverlap(stock);
+    };
+    Tichu.prototype.animateIcon = function (clazz, player_id) {
+        var block = this.game.format_block("jstpl_temp", {
+            clazz: clazz,
+            id: player_id,
+        });
+        var e = dojo.place(block, "game_play_area");
+        this.game.fadeOutAndDestroy(e, 1000, 1000);
+    };
+    Tichu.prototype.onEnteringState = function (stateName, stateObject) {
+        debug("Entering state: " + stateName, stateObject);
+        this.active_player = stateObject.active_player;
+        this.stateName = stateName;
+        var methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
+        var thisMethods = this;
+        if (thisMethods[methodName] !== undefined)
+            thisMethods[methodName](stateObject.args);
+    };
+    Tichu.prototype.onEnteringStateNewRound = function (args) {
+        dojo.query(".pointcount").innerHTML("0");
+        dojo.query(".cardback").style("display", "none");
+        dojo.query(".mahjong_mini").innerHTML("");
+        this.resetLastCombos();
+        for (var id in this.game.gamedatas.players) {
+            this.game.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
+            this.game.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
+        }
+        dojo.query(".whiteblock").removeClass("disabled");
+        this.updateMahjongWish(0);
+    };
+    Tichu.prototype.onEnteringStateGrandTichuBets = function (args) {
+        this.resetLastCombos();
+    };
+    Tichu.prototype.onEnteringStateGiveCards = function (args) {
+        if (this.game.isSpectator)
+            return;
+        dojo.style("playertables", "display", "flex");
+        dojo.style("card-last-played-area", "display", "none");
+        dojo.query(".playertable").style("cursor", "pointer");
+    };
+    Tichu.prototype.onEnteringStateShowPassedCards = function (args) {
+        var _this = this;
+        dojo.query(".handcount").innerHTML(14);
+        if (args._private === undefined)
+            return;
+        dojo.style("playertables", "display", "flex");
+        dojo.style("card-last-played-area", "display", "none");
+        args._private.forEach(function (card, i) {
+            var x = _this.cardwidth * (Number(card.type_arg) - 1);
+            var y = _this.cardheight * (Number(card.type) - 1);
+            dojo.place(_this.game.format_block("jstpl_cardontable", {
+                x: x,
+                y: y,
+                player_id: card.location_arg,
+                card_id: card.id,
+            }), "receiveplayertable_" + card.passed_from);
+        });
+    };
+    Tichu.prototype.onEnteringStateNewTrick = function (args) {
+        this.resetLastCombos();
+        this.currentTrickCounter.setValue(0);
+        this.game.gamedatas.currentTrick = [];
+    };
+    Tichu.prototype.onEnteringStatePlayComboOpen = function (args) {
+        var _a;
+        dojo.query(".active").forEach(function (el) { return el.classList.remove("active"); });
+        (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+    };
+    Tichu.prototype.onEnteringStateMahjongPlay = function (args) {
+        if (this.game.isCurrentPlayerActive()) {
+            dojo.style($("mahjongpanel"), "display", "block");
+            this.mahjongValues.updateDisplay();
+        }
+        this.playerHand.unselectAll();
+    };
+    Tichu.prototype.onEnteringStatePhoenixPlay = function (args) {
+        var _this = this;
+        if (this.game.isCurrentPlayerActive()) {
+            dojo.style($("phoenixpanel"), "display", "block");
+            this.allowedValues = args._private.values;
+            // variante 1
+            this.phoenixValues.removeAll();
+            args._private.values.forEach(function (value) {
+                _this.phoenixValues.addToStock(value - 2);
+            });
+            this.phoenixValues.updateDisplay();
+        }
+        this.playerHand.unselectAll();
+    };
+    Tichu.prototype.onEnteringStatePlayCombo = function (args) {
+        var _a;
+        dojo.query(".active").forEach(function (el) { return el.classList.remove("active"); });
+        (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+    };
+    Tichu.prototype.onEnteringStatePlayBomb = function (args) {
+        var _a;
+        (_a = document.getElementById("playertable_" + args.active)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+    };
+    Tichu.prototype.onEnteringStateChooseDragonGift = function (args) {
+        var _this = this;
+        if (!this.game.isCurrentPlayerActive())
+            return;
+        var left = this.clockwise ? 0 : 1;
+        var right = this.clockwise ? 1 : 0;
+        this.game.addActionButton("giveDragonBefore_button", _("Give cards to " + args.enemies[left]), function () { return _this.onGiveDragon(left); });
+        this.game.addActionButton("giveDragonAfter_button", _("Give cards to " + args.enemies[right]), function () { return _this.onGiveDragon(right); });
+    };
+    Tichu.prototype.onEnteringStateEndRound = function (args) {
+        this.playerHand.removeAll();
+        this.game.enableAllPlayerPanels();
+        this.cleanPlayersPanel();
+    };
+    Tichu.prototype.onEnteringStateConfirmTrick = function (args) {
+        var _a;
+        dojo.query(".active").forEach(function (el) { return el.classList.remove("active"); });
+        (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+    };
+    Tichu.prototype.onLeavingState = function (stateName) {
+        debug("Leaving state: " + stateName);
+        dojo.query(".playertable").style("cursor", "unset");
+    };
+    Tichu.prototype.onUpdateActionButtons = function (stateName, args) {
+        var _this = this;
+        debug("onUpdateActionButtons: " + stateName);
+        var player = this.game.gamedatas.players[this.game.player_id];
+        this.game.removeActionButtons();
+        this.removeMyActionButtons();
+        if (this.game.isCurrentPlayerActive()) {
+            switch (stateName) {
+                case "giveCards":
+                    this.game.addActionButton("resetPassCards_button", _("Reset choices"), "onResetPassCards", null, false, "gray");
+                    this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
+                    break;
+                case "showPassedCards":
+                    this.game.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
+                    break;
+                case "mahjongPlay":
+                    this.game.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
+                    break;
+                case "phoenixPlay":
+                    this.game.addActionButton("choosePhoenix", _("Choose a value for the Phoenix"), "onChoosePhoenix");
+                    this.game.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
+                    break;
+                case "playComboOpen":
+                    this.addMyActionButton("myPlayCombo", _("Play selected cards"), function () { return _this.playCombo("playCombo"); }, "blue", "play_button");
+                    break;
+                case "playCombo":
+                    this.addMyActionButton("myPlayCombo", _("Play selected cards"), function () { return _this.playCombo("playCombo"); }, "blue", "play_button");
+                    this.addMyActionButton("myPass", _("Pass"), function () { return _this.onPass(true); }, "red", "pass_button");
+                    this.addMyActionButton("myPassTrick", _("Auto-Pass this Trick"), function () { return _this.onPass(false); }, "gray", "pass_trick_button");
+                    this.game.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
+                    break;
+                case "playBomb":
+                    this.addMyActionButton("myPlayCombo", _("Play selected cards"), function () { return _this.playCombo("playCombo"); }, "blue", "play_button");
+                    this.addMyActionButton("myCancel", _("Cancel"), function () { return _this.takeAction("cancel"); }, "red", "pass_button");
+                    break;
+                case "confirmTrick":
+                    if (this.game.bRealtime) {
+                        dojo.place(this.game.format_block("jstpl_auto_collect", {}), $("play_button"), "only");
+                        setTimeout(function () { return _this.collect(); }, 2000);
+                    }
+                    else {
+                        this.addMyActionButton("myConfirmTrick", _("Collect"), function () { return _this.collect(); }, "blue", "play_button");
+                    }
+                    if (this.game.gamedatas.hasBomb && this.game.gamedatas.mahjongWish === 0) {
+                        this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
+                    }
             }
         }
-      } else if (
-        !this.isSpectator &&
-        (stateName == "playCombo" || stateName == "confirmTrick") &&
-        this.playerHand.getAllItems().length > 0
-      ) {
-        if (player.pass < 2) {
-          this.addMyActionButton(
-            "myPassTrick",
-            _("Auto-Pass this Trick"),
-            () => this.onPass(false),
-            "gray",
-            "pass_trick_button"
-          );
-          this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
+        else if (!this.game.isSpectator &&
+            (stateName === "playCombo" || stateName === "confirmTrick") &&
+            this.playerHand.getAllItems().length > 0) {
+            if (Number(player.pass) < 2) {
+                this.addMyActionButton("myPassTrick", _("Auto-Pass this Trick"), function () { return _this.onPass(false); }, "gray", "pass_trick_button");
+                this.game.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
+            }
+            if (Number(player.pass) === 0) {
+                this.addMyActionButton("myPassOnce", _("Auto-Pass once"), function () { return _this.onPass(true); }, "red", "pass_button");
+                this.game.addTooltip("myPassOnce", _("Automatically pass next time(unless a new trick starts)"), "");
+            }
+            if (Number(player.pass) > 0) {
+                this.addMyActionButton("myCancelAutopass", _("Cancel Auto-Pass"), function () { return _this.cancelAutopass(); }, "red", "pass_button");
+                this.game.addTooltip("myCancelAutopass", _("You have chosen to automatically pass during this trick. Click to cancel"), "");
+            }
+            if (this.game.gamedatas.hasBomb && this.game.gamedatas.mahjongWish === 0) {
+                this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
+            }
         }
-        if (player.pass == 0) {
-          this.addMyActionButton(
-            "myPassOnce",
-            _("Auto-Pass once"),
-            () => this.onPass(true),
-            "red",
-            "pass_button"
-          );
-          this.addTooltip(
-            "myPassOnce",
-            _("Automatically pass next time(unless a new trick starts)"),
-            ""
-          );
+        //tichus
+        if (!this.game.isSpectator) {
+            if (player.call_grand_tichu === Bet.NO_BET_YET) {
+                this.game.addActionButton("noBet", _("No bet"), function () { return _this.onGrandTichuBet(Bet.NO_BET); }, null, false, "gray");
+                this.game.addTooltip("noBet", _("Don't call Grand Tichu"), "");
+                this.game.addActionButton("makeGTBet", _("Grand Tichu"), function () { return _this.onGrandTichuBet(Bet.GRAND_TICHU); }, null, false, "red");
+                this.game.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
+            }
+            if (player.call_tichu === Bet.NO_BET_YET) {
+                this.addMyActionButton("myMakeTichuBet", _("Tichu"), function () { return _this.onTichuBet(); }, "green", "tichu_button");
+                this.game.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
+            }
         }
-        if (player.pass > 0) {
-          this.addMyActionButton(
-            "myCancelAutopass",
-            _("Cancel Auto-Pass"),
-            () => this.cancelAutopass(),
-            "red",
-            "pass_button"
-          );
-          this.addTooltip(
-            "myCancelAutopass",
-            _("You have chosen to automatically pass during this trick. Click to cancel"),
-            ""
-          );
+    };
+    Tichu.prototype.resetLastCombos = function () {
+        for (var _i = 0, _a = Object.entries(this.tableCombos); _i < _a.length; _i++) {
+            var _b = _a[_i], key = _b[0], comboStock = _b[1];
+            comboStock.removeAll();
+            $("lastcombo_" + key).innerHTML = "";
+            this.game.addTooltip("playertable_" + key, "", "");
         }
-        if (this.gamedatas.hasBomb && this.gamedatas.mahjongWish == 0) {
-          this.addMyActionButton(
-            "myPlayBomb",
-            _("Play a Bomb"),
-            () => this.playCombo("playBomb"),
-            "gray",
-            "bomb_button"
-          );
+        dojo.query(".whiteblock").removeClass("lastComboPlayer");
+    };
+    Tichu.prototype.cleanPlayersPanel = function () {
+        dojo.query(".handcount").innerHTML(0);
+        dojo.query(".pointcount").innerHTML(0);
+        dojo.query(".grandtichublack").style("display", "inline-block");
+        dojo.query(".tichublack").style("display", "inline-block");
+        dojo.query(".grandtichucolor").style("display", "none");
+        dojo.query(".tichucolor").style("display", "none");
+        dojo.query(".firstoutcolor").style("display", "none");
+        dojo.query(".cardback").style("display", "none");
+    };
+    Tichu.prototype.getCardValueByTypeID = function (cardTypeID) {
+        //get card value based on it's unique identifier
+        return (cardTypeID % 14) + 1;
+    };
+    Tichu.prototype.getCardColorByTypeID = function (cardTypeID) {
+        //get card color based on it's unique identifier
+        return Math.floor(cardTypeID / 14) + 1;
+    };
+    Tichu.prototype.setPass = function (playerId) {
+        var cardImgFile = this.game.prefs[103].value === 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+        var img = g_gamethemeurl + cardImgFile;
+        $("lastcombo_" + playerId).innerHTML =
+            "<span class = 'pass'> <img src='" +
+                img +
+                "' width='75px' height='112.5px' alt='pass'> </span>";
+        $("cardback_" + playerId).style.display = "inline-block";
+        this.setDescription(playerId, "Pass");
+    };
+    Tichu.prototype.setupNewCard = function (card_div, card_type_id, card_id) {
+        if (this.getCardValueByTypeID(card_type_id) === 10 ||
+            this.getCardValueByTypeID(card_type_id) === 13)
+            this.game.addTooltip(card_div.id, _("Scores 10 points"), "");
+        if (this.getCardValueByTypeID(card_type_id) === 5)
+            this.game.addTooltip(card_div.id, _("Scores 5 points"), "");
+        if (card_type_id === 0)
+            this.game.addTooltip(card_div.id, _("Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."), "");
+        if (card_type_id === 14)
+            this.game.addTooltip(card_div.id, _("Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5."), "");
+        if (card_type_id === 28)
+            this.game.addTooltip(card_div.id, _("The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead."), "");
+        if (card_type_id === 42)
+            this.game.addTooltip(card_div.id, _("The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible."), "");
+    };
+    Tichu.prototype.cancelPhoenix = function () {
+        dojo.style($("phoenixpanel"), "display", "none");
+        this.takeAction("cancelPhoenix", {});
+    };
+    Tichu.prototype.showCurrentTrick = function () {
+        var myDlg = new ebg.popindialog();
+        myDlg.create("myDialogCurrentTrick");
+        myDlg.setTitle(_("Cards in current Trick"));
+        myDlg.setContent('<div id="currentTrickCards"></div>');
+        myDlg.show();
+        var stock = this.createStock($("currentTrickCards"), this.cardwidth * 0.75, this.cardheight * 0.75);
+        stock.extraClasses = "smallCards";
+        stock.setSelectionMode(0);
+        for (var _i = 0, _a = this.game.gamedatas.currentTrick; _i < _a.length; _i++) {
+            var card = _a[_i];
+            addCardToStock(stock, card);
         }
-      }
-
-      //tichus
-      if (!this.isSpectator) {
-        if (player.call_grand_tichu < 0) {
-          this.addActionButton(
-            "noBet",
-            _("No bet"),
-            () => this.onGrandTichuBet(0),
-            null,
-            false,
-            "gray"
-          );
-          this.addTooltip("noBet", _("Don't call Grand Tichu"), "");
-          this.addActionButton(
-            "makeGTBet",
-            _("Grand Tichu"),
-            () => this.onGrandTichuBet(200),
-            null,
-            false,
-            "red"
-          );
-          this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
-        }
-        if (player.call_tichu < 0) {
-          this.addMyActionButton(
-            "myMakeTichuBet",
-            _("Tichu"),
-            () => this.onTichuBet(100),
-            "green",
-            "tichu_button"
-          );
-          this.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
-        }
-      }
-    },
-
-    ///////////////////////////////////////////////////
-    //// Utility methods
-
-    resetLastCombos: function () {
-      for (key in this.tableCombos) {
-        this.tableCombos[key].removeAll();
-        $("lastcombo_" + key).innerHTML = "";
-        this.addTooltip("playertable_" + key, "", "");
-        //$('playercomb_' + key).innerHTML = '';
-      }
-      dojo.query(".whiteblock").removeClass("lastComboPlayer");
-    },
-
-    // Clean all elements on the players panel
-    cleanPlayersPanel: function () {
-      dojo.query(".handcount").innerHTML(0);
-      dojo.query(".pointcount").innerHTML(0);
-      dojo.query(".grandtichublack").style("display", "inline-block");
-      dojo.query(".tichublack").style("display", "inline-block");
-      dojo.query(".grandtichucolor").style("display", "none");
-      dojo.query(".tichucolor").style("display", "none");
-      dojo.query(".firstoutcolor").style("display", "none");
-      dojo.query(".cardback").style("display", "none");
-    },
-
-    getCardUniqueId: function (color, value) {
-      // Get card unique identifier based on its color and value
-      return (color - 1) * 14 + (value - 1);
-    },
-
-    getCardValueByTypeID: function (cardTypeID) {
-      //get card value based on it's unique identifier
-      return (cardTypeID % 14) + 1;
-    },
-
-    getCardColorByTypeID: function (cardTypeID) {
-      //get card color based on it's unique identifier
-      return Math.floor(cardTypeID / 14) + 1;
-    },
-
-    setPass: function (playerId) {
-      var cardImgFile =
-        this.prefs[103].value == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
-      var img = g_gamethemeurl + cardImgFile;
-      $("lastcombo_" + playerId).innerHTML =
-        "<span class = 'pass'> <img src='" +
-        img +
-        "' width='75px' height='112.5px' alt='pass'> </span>";
-      $("cardback_" + playerId).style.display = "inline-block";
-      this.setDescription(playerId, "Pass");
-    },
-
-    setupNewCard: function (card_div, card_type_id, card_id) {
-      if (
-        this.getCardValueByTypeID(card_type_id) == 10 ||
-        this.getCardValueByTypeID(card_type_id) == 13
-      )
-        this.addTooltip(card_div.id, _("Scores 10 points"), "");
-      if (this.getCardValueByTypeID(card_type_id) == 5)
-        this.addTooltip(card_div.id, _("Scores 5 points"), "");
-      if (card_type_id == 0)
-        this.addTooltip(
-          card_div.id,
-          _("Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."),
-          ""
-        );
-      if (card_type_id == 14)
-        this.addTooltip(
-          card_div.id,
-          _(
-            " Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5."
-          ),
-          ""
-        );
-      if (card_type_id == 28)
-        this.addTooltip(
-          card_div.id,
-          _(
-            "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead."
-          ),
-          ""
-        );
-      if (card_type_id == 42)
-        this.addTooltip(
-          card_div.id,
-          _(
-            "The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible."
-          ),
-          ""
-        );
-    },
-
-    cancelPhoenix: function () {
-      dojo.style($("phoenixpanel"), "display", "none");
-      this.takeAction("cancelPhoenix", {});
-    },
-
-    showCurrentTrick: function () {
-      console.log("showTrick");
-      var myDlg = new ebg.popindialog();
-      myDlg.create("myDialogCurrentTrick");
-      myDlg.setTitle(_("Cards in current Trick"));
-      myDlg.setContent('<div id="currentTrickCards"></div>');
-      myDlg.show();
-      let stock = this.createStock(
-        $("currentTrickCards"),
-        this.cardwidth * 0.75,
-        this.cardheight * 0.75
-      );
-      stock.extraClasses = "smallCards";
-      stock.setSelectionMode(0);
-      this.gamedatas.currentTrick.forEach((card) =>
-        stock.addToStockWithId(this.getCardUniqueId(card.type, card.type_arg), card.id)
-      );
-    },
-
-    ///////////////////////////////////////////////////
-    //// Player's action
-
-    /*
-     * giveCards
-     * we push in cardsToPass each card to be given, one by one
-     * we create the card to be placed in 'giveplayertable_direction'
-     * we remove it from the player's hand and display the slide to 'giveplayertable_direction'
-     */
-    onPlayerHandSelectionChanged: function () {
-      console.log("onPlayerHandSelectionChanged");
-      if (!this.checkAction("giveCards", true)) return; //TRUE important to avoid errors
-    },
-
-    onGrandTichuBet: function (bet) {
-      if (this.checkAction("grandTichuBet")) {
-        console.log("onGrandTichuBet");
+    };
+    Tichu.prototype.onGrandTichuBet = function (bet) {
+        debug("onGrandTichuBet");
+        if (!this.game.checkAction("grandTichuBet"))
+            return;
         this.takeAction("grandTichuBet", { bet: bet });
-        this.removeActionButtons();
-      }
-    },
-
-    onTichuBet: function (evt) {
-      console.log("onTichuBet");
-      this.takeAction("tichuBet", { bet: 100 });
-      this.removeActionButtons();
-    },
-
-    onGiveCard: function (i) {
-      debug("onGiveCard", i);
-      if (!this.checkAction("giveCards", true)) return;
-      var items = this.playerHand.getSelectedItems();
-      var player_id = this.player_id;
-
-      if (this.cardsToPass[i] == null) {
-        if (items.length != 1) return;
-        var card = items[0];
-        this.cardsToPass[i] = card;
-        var card_id = card.id;
-        var value = this.getCardValueByTypeID(card.type);
-        var color = this.getCardColorByTypeID(card.type);
-        var x = this.cardwidth * (value - 1);
-        var y = this.cardheight * (color - 1);
-        var direction = i + 1;
-
-        dojo.place(
-          this.format_block("jstpl_cardontable", {
-            // x,y = tichu-cards.png (css background-position)
-            x: x,
-            y: y,
-            player_id: player_id,
-            card_id: card_id,
-          }),
-          "giveplayertable_" + direction
-        );
-
-        if ($("myhand_item_" + card_id)) {
-          this.playerHand.removeFromStockById(card_id);
-        } else {
-          console.log("Failed to remove card from hand");
+        this.game.removeActionButtons();
+    };
+    Tichu.prototype.onTichuBet = function () {
+        debug("onTichuBet");
+        // TODO: Check whether it is safe to call checkAction() here.
+        // if (!this.game.checkAction("tichuBet")) return;
+        this.takeAction("tichuBet", { bet: Bet.TICHU });
+        this.game.removeActionButtons();
+    };
+    // client side action only
+    Tichu.prototype.onGiveCard = function (i) {
+        debug("onGiveCard", i);
+        var items = this.playerHand.getSelectedItems();
+        var player_id = this.game.player_id;
+        var stockItem = this.cardsToPass[i];
+        if (stockItem === null) {
+            if (items.length != 1)
+                return;
+            var card = items[0];
+            this.cardsToPass[i] = card;
+            var value = this.getCardValueByTypeID(card.type);
+            var color = this.getCardColorByTypeID(card.type);
+            var x = this.cardwidth * (value - 1);
+            var y = this.cardheight * (color - 1);
+            var direction = i + 1;
+            dojo.place(this.game.format_block("jstpl_cardontable", {
+                x: x,
+                y: y,
+                player_id: player_id,
+                card_id: card.id,
+            }), "giveplayertable_" + direction);
+            if ($("myhand_item_" + card.id)) {
+                this.playerHand.removeFromStockById(card.id);
+            }
+            else {
+                debug("Failed to remove card from hand");
+            }
         }
-      } else {
-        var card = this.cardsToPass[i];
-        $("cardontable_" + player_id + "_" + card.id).remove();
-        this.playerHand.addToStockWithId(card.type, card.id);
-        this.cardsToPass[i] = null;
-      }
-      this.updateStockOverlap(this.playerHand);
-    },
-
-    onPassCards: function () {
-      if (!this.checkAction("giveCards")) return;
-      var items = this.cardsToPass;
-      for (var i = 0; i < 3; i++)
-        if (items[i] == null) {
-          this.showMessage(_("You must select exactly 3 cards"), "error");
-          return;
+        else {
+            $("cardontable_" + player_id + "_" + stockItem.id).remove();
+            addItemToStock(this.playerHand, stockItem);
+            this.cardsToPass[i] = null;
         }
-      // Give these 3 cards
-      var to_give = "";
-      for (var i in items) {
-        dojo.destroy("cardontable_" + this.player_id + "_" + items[i].id);
-        to_give += items[i].id + ";";
-      }
-
-      if (this.selectionHandler) dojo.disconnect(this.selectionHandler);
-      this.cardsToPass = [];
-      this.takeAction("giveTheCards", { cards: to_give });
-    },
-
-    onAcceptCards: function () {
-      if (!this.checkAction("acceptCards")) return;
-      this.takeAction("acceptCards");
-    },
-
-    onMakeAWish: function (evt) {
-      if (this.checkAction("makeAWish")) {
-        console.log("onMakeAWish");
+        this.updateStockOverlap(this.playerHand);
+    };
+    // DANGER: The state action is named "giveCards", but the php action is "giveTheCards".
+    Tichu.prototype.onPassCards = function () {
+        debug("onPassCards");
+        if (!this.game.checkAction("giveCards"))
+            return;
+        var items = this.cardsToPass;
+        for (var i = 0; i < 3; i++) {
+            if (items[i] === null) {
+                this.game.showMessage(_("You must select exactly 3 cards"), "error");
+                return;
+            }
+        }
+        var to_give = "";
+        for (var i in items) {
+            dojo.destroy("cardontable_" + this.game.player_id + "_" + items[i].id);
+            to_give += items[i].id + ";";
+        }
+        this.cardsToPass = [];
+        this.takeAction("giveTheCards", { cards: to_give });
+    };
+    Tichu.prototype.onAcceptCards = function () {
+        debug("onAcceptCards");
+        if (!this.game.checkAction("acceptCards"))
+            return;
+        this.takeAction("acceptCards");
+    };
+    Tichu.prototype.onMakeAWish = function (evt) {
+        debug("onMakeAWish");
+        if (!this.game.checkAction("makeAWish"))
+            return;
         var items = this.mahjongValues.getSelectedItems();
         if (items.length > 0) {
-          evt.preventDefault();
-          this.takeAction("makeAWish", { wish: items[0].id });
+            evt.preventDefault();
+            this.takeAction("makeAWish", { wish: items[0].id });
         }
-      }
-    },
-
-    onChoosePhoenix: function (evt) {
-      if (this.checkAction("phoenixPlay")) {
-        console.log("onChoosePhoenix");
+    };
+    Tichu.prototype.onChoosePhoenix = function (evt) {
+        debug("onChoosePhoenix");
+        // It is a bit weird that the names "phoenixPlay" and "choosePhoenix" don't match.
+        if (!this.game.checkAction("phoenixPlay"))
+            return;
         var items = this.phoenixValues.getSelectedItems();
-        if (items.length == 1) {
-          if (this.allowedValues.indexOf(items[0].type + 2) < 0) return;
-          dojo.style($("phoenixpanel"), "display", "none");
-          evt.preventDefault();
-          this.takeAction("choosePhoenix", { phoenixValue: items[0].type + 2 });
+        if (items.length === 1) {
+            if (this.allowedValues.indexOf(items[0].type + 2) < 0)
+                return;
+            dojo.style($("phoenixpanel"), "display", "none");
+            evt.preventDefault();
+            this.takeAction("choosePhoenix", { phoenixValue: items[0].type + 2 });
         }
-      }
-    },
-
-    onReorderByRank: function (evt) {
-      console.log("onReorderByRank");
-      evt.preventDefault();
-      var newWeights = {};
-      for (var serie = 1; serie <= 4; serie++) {
-        for (var value = 1; value <= 14; value++) {
-          var card_type_id = this.getCardUniqueId(serie, value);
-          newWeights[card_type_id] = 2 * (4 * (value - 1) + serie - 1);
+    };
+    // client side action only
+    Tichu.prototype.onReorderByRank = function (evt) {
+        debug("onReorderByRank");
+        evt.preventDefault();
+        var newWeights = {};
+        for (var color = 1; color <= 4; color++) {
+            for (var value = 1; value <= 14; value++) {
+                var type = stockType(color, value);
+                newWeights[type] = 2 * (4 * (value - 1) + color - 1);
+            }
         }
-      }
-      this.playerHand.changeItemsWeight(newWeights);
-      dojo.style("order_by_rank", "display", "none");
-      dojo.style("order_by_color", "display", "inline");
-    },
-
-    onReorderTable: function (square) {
-      if (square) {
-        $("game_play_area").classList.add("squareTable");
-        dojo.style("square_table", "display", "none");
-        dojo.style("list_table", "display", "inline");
-      } else {
-        $("game_play_area").classList.remove("squareTable");
-        dojo.style("square_table", "display", "inline");
-        dojo.style("list_table", "display", "none");
-      }
-    },
-
-    changeOrder: function (clockwise) {
-      if ($("list_table").style.display == "none") return;
-      this.clockwise = clockwise;
-      var left = dojo.query(".whiteblock.left")[0];
-      var right = dojo.query(".whiteblock.right")[0];
-      left.classList.remove("left");
-      left.classList.add("right");
-      right.classList.remove("right");
-      right.classList.add("left");
-      var playertables = [];
-      for (var i = 1; i < 4; i++) {
-        var e = dojo.query(".playertable_" + i)[0];
-        e.remove();
-        e.classList.remove("playertable_" + i);
-        e.classList.add("playertable_" + (4 - i));
-        playertables.push(e);
-      }
-      var parent = $("playertables");
-
-      for (var i = 2; i >= 0; i--) parent.appendChild(playertables[i]);
-      if (clockwise) {
-        dojo.style("clockwise", "display", "none");
-        dojo.style("counterClockwise", "display", "inline");
-      } else {
-        dojo.style("clockwise", "display", "inline");
-        dojo.style("counterClockwise", "display", "none");
-      }
-    },
-
-    onReorderByColor: function (evt) {
-      console.log("onReorderByColor");
-      evt.preventDefault();
-      var newWeights = {};
-      for (var serie = 1; serie <= 4; serie++) {
-        for (var value = 1; value <= 14; value++) {
-          var card_type_id = this.getCardUniqueId(serie, value);
-          newWeights[card_type_id] =
-            value == 1
-              ? 2 * toint(card_type_id)
-              : (newWeights[card_type_id] = 100 + 2 * toint(card_type_id));
+        this.playerHand.changeItemsWeight(newWeights);
+        dojo.style("order_by_rank", "display", "none");
+        dojo.style("order_by_color", "display", "inline");
+    };
+    // client side action only
+    Tichu.prototype.onReorderTable = function (square) {
+        debug("onReorderTable");
+        if (square) {
+            $("game_play_area").classList.add("squareTable");
+            dojo.style("square_table", "display", "none");
+            dojo.style("list_table", "display", "inline");
         }
-      }
-      this.playerHand.changeItemsWeight(newWeights);
-
-      dojo.style("order_by_rank", "display", "inline");
-      dojo.style("order_by_color", "display", "none");
-    },
-
-    onResetPassCards: function () {
-      if (!this.checkAction("giveCards")) return;
-      var player_id = this.player_id;
-      this.cardsToPass.forEach((card) => {
-        if (card == null) return;
-        $("cardontable_" + player_id + "_" + card.id).remove();
-        this.playerHand.addToStockWithId(card.type, card.id);
-      });
-      this.cardsToPass = [null, null, null];
-    },
-
-    onGiveDragon: function (player) {
-      this.takeAction("chooseDragonGift", { player: player });
-    },
-
-    playCombo: function (action) {
-      console.log("onComboChoice");
-      var selected = this.playerHand.getSelectedItems().map((card) => card.id);
-      //if(selected.length == 0) return;
-      this.takeAction(action, { cards: selected.join(";") });
-    },
-
+        else {
+            $("game_play_area").classList.remove("squareTable");
+            dojo.style("square_table", "display", "inline");
+            dojo.style("list_table", "display", "none");
+        }
+    };
+    // client side action only
+    Tichu.prototype.changeOrder = function (clockwise) {
+        debug("changeOrder");
+        if ($("list_table").style.display === "none")
+            return;
+        this.clockwise = clockwise;
+        var left = dojo.query(".whiteblock.left")[0];
+        var right = dojo.query(".whiteblock.right")[0];
+        left.classList.remove("left");
+        left.classList.add("right");
+        right.classList.remove("right");
+        right.classList.add("left");
+        var playertables = [];
+        for (var i = 1; i < 4; i++) {
+            var e = dojo.query(".playertable_" + i)[0];
+            e.remove();
+            e.classList.remove("playertable_" + i);
+            e.classList.add("playertable_" + (4 - i));
+            playertables.push(e);
+        }
+        var parent = $("playertables");
+        for (var i = 2; i >= 0; i--)
+            parent.appendChild(playertables[i]);
+        if (clockwise) {
+            dojo.style("clockwise", "display", "none");
+            dojo.style("counterClockwise", "display", "inline");
+        }
+        else {
+            dojo.style("clockwise", "display", "inline");
+            dojo.style("counterClockwise", "display", "none");
+        }
+    };
+    // client side action only
+    Tichu.prototype.onReorderByColor = function (evt) {
+        debug("onReorderByColor");
+        evt.preventDefault();
+        var newWeights = {};
+        for (var color = 1; color <= 4; color++) {
+            for (var value = 1; value <= 14; value++) {
+                var type = stockType(color, value);
+                newWeights[type] = value === 1 ? 2 * type : (newWeights[type] = 100 + 2 * type);
+            }
+        }
+        this.playerHand.changeItemsWeight(newWeights);
+        dojo.style("order_by_rank", "display", "inline");
+        dojo.style("order_by_color", "display", "none");
+    };
+    // client side action only
+    Tichu.prototype.onResetPassCards = function () {
+        debug("onResetPassCards");
+        if (!this.game.checkAction("giveCards"))
+            return;
+        var player_id = this.game.player_id;
+        for (var _i = 0, _a = this.cardsToPass; _i < _a.length; _i++) {
+            var item = _a[_i];
+            if (item === null)
+                continue;
+            $("cardontable_" + player_id + "_" + item.id).remove();
+            addItemToStock(this.playerHand, item);
+        }
+        this.cardsToPass = [null, null, null];
+    };
+    Tichu.prototype.onGiveDragon = function (player) {
+        debug("onGiveDragon");
+        if (!this.game.checkAction("chooseDragonGift"))
+            return;
+        this.takeAction("chooseDragonGift", { player: player });
+    };
+    Tichu.prototype.playCombo = function (action) {
+        debug("onPlayCombo");
+        // Note that we cannot check the action here, because it may not be the player's turn.
+        // But you can play a bomb out of turn.
+        var selected = this.playerHand.getSelectedItems().map(function (stockItem) { return stockItem.id; });
+        this.takeAction(action, { cards: selected.join(";") });
+    };
     // Note that is either normal pass or auto-pass depending on whose turn it is.
-    onPass: function (onlyOnce) {
-      debug("onPass", { onlyOnce: onlyOnce });
-      if (this.prefs[102].value == 1 && this.playerHand.getSelectedItems().length > 0) {
-        this.showMessage(
-          _(
-            "You have to unselect your cards first. (You can disable this safeguard in the user settings)"
-          ),
-          "error"
-        );
-        return;
-      }
-      this.takeAction("pass", { onlyOnce: onlyOnce });
-    },
-
-    cancelAutopass: function () {
-      this.takeAction("cancelAutopass");
-    },
-
-    collect: function () {
-      if (!this.checkAction("collect")) return;
-      this.takeAction("collect");
-    },
-
-    takeAction: function (action, args = {}) {
-      args.lock = true;
-      this.ajaxcall("/tichu/tichu/" + action + ".html", args, this, function (res) {});
-    },
-
-    ///////////////////////////////////////////////////
-    //// Reaction to cometD notifications
-
-    /*
-				setupNotifications:
-
-				In this method, you associate each of your game notifications with your local method to handle it.
-
-				Note: game notification names correspond to "notifyAllPlayers" and "notifyPlayer" calls in
-							your tichu.game.php file.
-
-		*/
-    setupNotifications: function () {
-      console.log("notifications subscriptions setup");
-
-      // Make sure to read the documentation about "Synchronous Nnotifications" in the BGA Studio docs
-      // before making any changes here.
-      // Be aware that using `undefined` here means that you have to make abolutely sure that
-      // `setSynchronousDuration` is called in your handler.
-      // Also be aware that using 0 may completely break the flow and cause missed notifications.
-      var notifs = [
-        ["dealCards", 500],
-        ["grandTichuBet", undefined],
-        ["tichuBet", undefined],
-        ["confirmTichu", 1],
-        ["hasBomb", 1],
-        ["playCombo", 300],
-        ["wishMade", 200],
-        ["mahjongWishGranted", 1],
-        ["playerGoOut", 1],
-        ["pass", 300],
-        ["captureCards", 500],
-        ["newScores", 1000],
-        ["autopass", 1],
-        ["acceptCards", 1000],
-        ["passCards", 200],
-      ];
-      notifs.forEach((notif) => {
-        dojo.subscribe(notif[0], this, "notif_" + notif[0]);
-        this.notifqueue.setSynchronous(notif[0], notif[1]);
-      });
-    },
-
-    notif_dealCards: function (notif) {
-      debug("notif_dealCards", notif);
-      notif.args.cards.forEach((card) => {
-        this.playerHand.addToStockWithId(this.getCardUniqueId(card.type, card.type_arg), card.id);
-      });
-      this.updateStockOverlap(this.playerHand);
-      var totalCards = notif.args.cards.length == 8 ? 8 : 14;
-      dojo.query(".handcount").innerHTML(totalCards);
-    },
-
-    notif_grandTichuBet: function (notif) {
-      // MUST call setSynchronousDuration
-      debug("notif_grandTichuBet", notif);
-
-      this.gamedatas.players[notif.args.player_id].call_grand_tichu = notif.args.bet;
-      dojo.query(".grandtichublack." + notif.args.player_id).style("display", "none");
-      if (notif.args.bet == 200) {
-        this.gamedatas.players[notif.args.player_id].call_tichu = 0;
-        dojo.query(".grandtichucolor." + notif.args.player_id).style("display", "inline-block");
-        dojo.query(".tichublack." + notif.args.player_id).style("display", "none");
-        this.animateIcon("grandtichucolor", notif.args.player_id);
-        this.notifqueue.setSynchronousDuration(1000);
-      } else {
-        // If the notification was just a "this player has made no bet", then there is good reason
-        // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
-        this.notifqueue.setSynchronousDuration(100);
-      }
-
-      this.onUpdateActionButtons(this.stateName, {});
-    },
-
-    notif_tichuBet: function (notif) {
-      // MUST call setSynchronousDuration
-      debug("notif_tichuBet", notif);
-
-      this.gamedatas.players[notif.args.player_id].call_tichu = notif.args.bet;
-      this.gamedatas.players[notif.args.player_id].call_grand_tichu = 0;
-      dojo.query(".tichublack." + notif.args.player_id).style("display", "none");
-      dojo.query(".grandtichublack." + notif.args.player_id).style("display", "none");
-      if (notif.args.bet == 100) {
-        dojo.query(".tichucolor." + notif.args.player_id).style("display", "inline-block");
-        this.animateIcon("tichucolor", notif.args.player_id);
-        this.notifqueue.setSynchronousDuration(1000);
-      } else {
-        // If the notification was just a "this player has made no bet" or "this player has already
-        // played their first card, so cannot bet anymore", then there is no good reason
-        // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
-        this.notifqueue.setSynchronousDuration(100);
-      }
-
-      this.onUpdateActionButtons(this.stateName, {});
-    },
-
-    notif_confirmTichu: function (notif) {
-      debug("notif_confirmTichu", notif);
-      this.titleSave = this.gamedatas.gamestate.descriptionmyturn;
-      var s = notif.args.grand ? "grand " : "";
-      this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
-      this.updatePageTitle();
-      this.removeActionButtons();
-      this.addActionButton("cancelTichu", _("no " + s + "tichu"), () => {
-        if (notif.args.grand) {
-          this.onGrandTichuBet(0);
-          return;
+    Tichu.prototype.onPass = function (onlyOnce) {
+        debug("onPass", { onlyOnce: onlyOnce });
+        // Note that we cannot check the action here, because it may not be the player's turn.
+        // But you can auto-pass out of turn.
+        if (this.game.prefs[102].value === 1 && this.playerHand.getSelectedItems().length > 0) {
+            this.game.showMessage(_("You have to unselect your cards first. (You can disable this safeguard in the user settings)"), "error");
+            return;
         }
-        this.gamedatas.gamestate.descriptionmyturn = this.titleSave;
-        this.updatePageTitle();
-        this.onUpdateActionButtons();
-      });
-      this.addActionButton("confirmTichu", _("confirm"), () =>
-        this.takeAction("confirmTichu", { bet: notif.args.grand ? 200 : 100 })
-      );
-    },
-
-    notif_hasBomb: function (notif) {
-      debug("notif_hasBomb", notif);
-      this.gamedatas.hasBomb = notif.args.hasBomb;
-    },
-
-    notif_playCombo: function (notif) {
-      debug("notif_playCombo", notif);
-
-      var playerId = notif.args.player_id;
-      this.resetComboStock(playerId);
-      this.addCardsToStock(this.tableCombos[playerId], notif.args.cards, playerId);
-      dojo.query("pass").innerHTML("");
-      $("cardback_" + playerId).style.display = "none";
-      this.setDescription(playerId, notif.args.combo_name);
-      dojo.query(".handcount." + playerId).forEach((e) => {
-        e.innerHTML = parseInt(e.innerHTML) - notif.args.cards.length;
-      });
-      dojo.query(".whiteblock").removeClass("lastComboPlayer");
-      $("playertable_" + playerId).classList.add("lastComboPlayer");
-      this.gamedatas.currentTrick.push(...notif.args.cards);
-      this.currentTrickCounter.incValue(notif.args.points);
-    },
-
-    notif_wishMade: function (notif) {
-      debug("notif_wishMade", notif);
-      dojo.style($("mahjongpanel"), "display", "none");
-      this.updateMahjongWish(notif.args.wish);
-    },
-
-    updateMahjongWish: function (wish) {
-      const indicator = $("mahjongIndicator");
-      if (wish > 0 && wish < 15) {
-        var w = wish - 2;
-        var x = w % 7;
-        var y = (w - x) / 7;
-        dojo.place(
-          this.format_block("jstpl_mahjong", {
-            value: wish,
-            x: x * 100,
-            y: y * 150,
-          }),
-          indicator
-        );
-        indicator.style.display = "block";
-      } else {
-        indicator.innerHTML = "";
-        indicator.style.display = "none";
-      }
-    },
-
-    notif_mahjongWishGranted: function (notif) {
-      debug("notif_mahjongWishGranted", notif);
-      this.updateMahjongWish(0);
-    },
-
-    notif_playerGoOut: function (notif) {
-      debug("notif_playerGoOut", notif);
-      if (notif.args.player_id == notif.args.firstout_id) {
-        dojo.style($("firstoutcolor_" + notif.args.player_id), "display", "inline-block");
-      }
-      this.disablePlayerPanel(notif.args.player_id);
-      $("playertable_" + notif.args.player_id).classList.add("disabled");
-    },
-
-    notif_pass: function (notif) {
-      debug("notif_pass", notif);
-      var playerId = notif.args.player_id;
-      this.tableCombos[playerId].removeAll();
-      this.setPass(playerId);
-      dojo.query(".active").forEach((e) => e.classList.remove("active"));
-      document.getElementById("playertable_" + notif.args.player_id).classList.add("active");
-    },
-
-    notif_captureCards: function (notif) {
-      debug("notif_captureCards", notif);
-
-      var playerId = notif.args.player_id;
-      var trick_value = notif.args.trick_value;
-      var old_score = parseInt($("pointcount_" + playerId).innerHTML);
-      var new_score = old_score + trick_value;
-
-      dojo.query(".pointcount." + playerId).innerHTML(new_score);
-      dojo.query(".cardback").style("display", "none");
-    },
-
-    notif_newScores: function (notif) {
-      debug("notif_newScores", notif);
-      for (var player_id in notif.args.newScores) {
-        this.scoreCtrl[player_id].toValue(notif.args.newScores[player_id]);
-      }
-    },
-
-    notif_autopass: function (notif) {
-      debug("notif_autopass", notif);
-      if (this.stateName == "playComboOpen") {
-        debug("ERROR", notif.debug);
-      }
-      if (!this.isSpectator) this.gamedatas.players[this.player_id].pass = notif.args.autopass;
-      this.onUpdateActionButtons(this.stateName, {});
-    },
-
-    notif_acceptCards: function (notif) {
-      debug("notif_acceptCards", notif);
-      notif.args.cards.forEach((card) => {
-        card_type = this.getCardUniqueId(card.type, card.type_arg);
-        card_on_table = "cardontable_" + this.player_id + "_" + card.id;
-        this.playerHand.addToStockWithId(card_type, card.id);
-        this.slideToObjectAndDestroy(card_on_table, "myhand", 1000, 0);
-      });
-      this.updateStockOverlap(this.playerHand);
-
-      setTimeout(function () {
-        dojo.style("playertables", "display", "none");
-        dojo.style("card-last-played-area", "display", "grid");
-      }, 2000);
-    },
-
-    notif_passCards: function (notif) {
-      debug("notif_passCards", notif);
-      notif.args.forEach((card) => {
-        this.playerHand.removeFromStockById(card);
-      });
-      this.updateStockOverlap(this.playerHand);
-    },
-  });
-});
+        this.takeAction("pass", { onlyOnce: onlyOnce });
+    };
+    Tichu.prototype.cancelAutopass = function () {
+        debug("onCancelAutopass");
+        if (!this.game.checkAction("cancelAutopass"))
+            return;
+        this.takeAction("cancelAutopass");
+    };
+    Tichu.prototype.collect = function () {
+        debug("onCollect");
+        if (!this.game.checkAction("collect"))
+            return;
+        this.takeAction("collect");
+    };
+    Tichu.prototype.takeAction = function (action, args) {
+        if (args === void 0) { args = {}; }
+        args.lock = true;
+        this.game.ajaxcall("/tichu/tichu/" + action + ".html", args, this.game, function (res) { });
+    };
+    Tichu.prototype.setupNotifications = function () {
+        debug("notifications subscriptions setup");
+        // Make sure to read the documentation about "Synchronous Nnotifications" in the BGA Studio docs
+        // before making any changes here.
+        // Be aware that using `undefined` here means that you have to make abolutely sure that
+        // `setSynchronousDuration` is called in your handler.
+        // Also be aware that using 0 may completely break the flow and cause missed notifications.
+        var notifs = {
+            dealCards: 500,
+            grandTichuBet: undefined,
+            tichuBet: undefined,
+            confirmTichu: 1,
+            hasBomb: 1,
+            playCombo: 300,
+            wishMade: 200,
+            mahjongWishGranted: 1,
+            playerGoOut: 1,
+            pass: 300,
+            captureCards: 500,
+            newScores: 1000,
+            autopass: 1,
+            acceptCards: 1000,
+            passCards: 200,
+        };
+        for (var _i = 0, _a = Object.entries(notifs); _i < _a.length; _i++) {
+            var _b = _a[_i], type = _b[0], duration = _b[1];
+            dojo.subscribe(type, this, "notif_" + type);
+            this.game.notifqueue.setSynchronous(type, duration);
+        }
+    };
+    Tichu.prototype.notif_dealCards = function (notif) {
+        debug("notif_dealCards", notif);
+        for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
+            var card = _a[_i];
+            addCardToStock(this.playerHand, card);
+        }
+        this.updateStockOverlap(this.playerHand);
+        var totalCards = notif.args.cards.length === 8 ? 8 : 14;
+        dojo.query(".handcount").innerHTML(totalCards);
+    };
+    Tichu.prototype.notif_grandTichuBet = function (notif) {
+        // MUST call setSynchronousDuration
+        debug("notif_grandTichuBet", notif);
+        var bet = String(notif.args.bet);
+        this.game.gamedatas.players[notif.args.player_id].call_grand_tichu = bet;
+        dojo.query(".grandtichublack." + notif.args.player_id).style("display", "none");
+        if (bet === Bet.GRAND_TICHU) {
+            this.game.gamedatas.players[notif.args.player_id].call_tichu = Bet.NO_BET;
+            dojo.query(".grandtichucolor." + notif.args.player_id).style("display", "inline-block");
+            dojo.query(".tichublack." + notif.args.player_id).style("display", "none");
+            this.animateIcon("grandtichucolor", notif.args.player_id);
+            this.game.notifqueue.setSynchronousDuration(1000);
+        }
+        else {
+            // If the notification was just a "this player has made no bet", then there is good reason
+            // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
+            this.game.notifqueue.setSynchronousDuration(100);
+        }
+        this.onUpdateActionButtons(this.stateName, {});
+    };
+    Tichu.prototype.notif_tichuBet = function (notif) {
+        // MUST call setSynchronousDuration
+        debug("notif_tichuBet", notif);
+        var bet = String(notif.args.bet);
+        this.game.gamedatas.players[notif.args.player_id].call_tichu = bet;
+        this.game.gamedatas.players[notif.args.player_id].call_grand_tichu = Bet.NO_BET;
+        dojo.query(".tichublack." + notif.args.player_id).style("display", "none");
+        dojo.query(".grandtichublack." + notif.args.player_id).style("display", "none");
+        if (bet === Bet.TICHU) {
+            dojo.query(".tichucolor." + notif.args.player_id).style("display", "inline-block");
+            this.animateIcon("tichucolor", notif.args.player_id);
+            this.game.notifqueue.setSynchronousDuration(1000);
+        }
+        else {
+            // If the notification was just a "this player has made no bet" or "this player has already
+            // played their first card, so cannot bet anymore", then there is no good reason
+            // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
+            this.game.notifqueue.setSynchronousDuration(100);
+        }
+        this.onUpdateActionButtons(this.stateName, {});
+    };
+    Tichu.prototype.notif_confirmTichu = function (notif) {
+        var _this = this;
+        debug("notif_confirmTichu", notif);
+        var titleSave = this.game.gamedatas.gamestate.descriptionmyturn;
+        var s = notif.args.grand ? "grand " : "";
+        this.game.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
+        this.game.updatePageTitle();
+        this.game.removeActionButtons();
+        this.game.addActionButton("cancelTichu", _("no " + s + "tichu"), function () {
+            if (notif.args.grand) {
+                _this.onGrandTichuBet(Bet.NO_BET);
+                return;
+            }
+            _this.game.gamedatas.gamestate.descriptionmyturn = titleSave;
+            _this.game.updatePageTitle();
+            _this.onUpdateActionButtons(_this.stateName, {});
+        });
+        this.game.addActionButton("confirmTichu", _("confirm"), function () {
+            return _this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU });
+        });
+    };
+    Tichu.prototype.notif_hasBomb = function (notif) {
+        debug("notif_hasBomb", notif);
+        this.game.gamedatas.hasBomb = notif.args.hasBomb;
+    };
+    Tichu.prototype.notif_playCombo = function (notif) {
+        var _a;
+        debug("notif_playCombo", notif);
+        var playerId = Number(notif.args.player_id);
+        this.resetComboStock(playerId);
+        this.addCardsToStock(this.tableCombos[playerId], notif.args.cards, playerId);
+        dojo.query("pass").innerHTML("");
+        $("cardback_" + playerId).style.display = "none";
+        this.setDescription(playerId, notif.args.combo_name);
+        dojo.query(".handcount." + playerId).forEach(function (el) {
+            el.innerHTML = String(parseInt(el.innerHTML) - notif.args.cards.length);
+        });
+        dojo.query(".whiteblock").removeClass("lastComboPlayer");
+        $("playertable_" + playerId).classList.add("lastComboPlayer");
+        (_a = this.game.gamedatas.currentTrick).push.apply(_a, notif.args.cards);
+        this.currentTrickCounter.incValue(notif.args.points);
+    };
+    Tichu.prototype.notif_wishMade = function (notif) {
+        debug("notif_wishMade", notif);
+        dojo.style($("mahjongpanel"), "display", "none");
+        this.updateMahjongWish(notif.args.wish);
+    };
+    Tichu.prototype.updateMahjongWish = function (wish) {
+        var indicator = $("mahjongIndicator");
+        if (wish > 0 && wish < 15) {
+            var w = wish - 2;
+            var x = w % 7;
+            var y = (w - x) / 7;
+            dojo.place(this.game.format_block("jstpl_mahjong", {
+                value: wish,
+                x: x * 100,
+                y: y * 150,
+            }), indicator);
+            indicator.style.display = "block";
+        }
+        else {
+            indicator.innerHTML = "";
+            indicator.style.display = "none";
+        }
+    };
+    Tichu.prototype.notif_mahjongWishGranted = function (notif) {
+        debug("notif_mahjongWishGranted", notif);
+        this.updateMahjongWish(0);
+    };
+    Tichu.prototype.notif_playerGoOut = function (notif) {
+        debug("notif_playerGoOut", notif);
+        if (notif.args.player_id === notif.args.firstout_id) {
+            dojo.style($("firstoutcolor_" + notif.args.player_id), "display", "inline-block");
+        }
+        this.game.disablePlayerPanel(notif.args.player_id);
+        $("playertable_" + notif.args.player_id).classList.add("disabled");
+    };
+    Tichu.prototype.notif_pass = function (notif) {
+        var _a;
+        debug("notif_pass", notif);
+        var playerId = notif.args.player_id;
+        this.tableCombos[playerId].removeAll();
+        this.setPass(playerId);
+        dojo.query(".active").forEach(function (el) { return el.classList.remove("active"); });
+        (_a = document.getElementById("playertable_" + notif.args.player_id)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+    };
+    Tichu.prototype.notif_captureCards = function (notif) {
+        debug("notif_captureCards", notif);
+        var playerId = notif.args.player_id;
+        var trick_value = notif.args.trick_value;
+        var old_score = parseInt($("pointcount_" + playerId).innerHTML);
+        var new_score = old_score + trick_value;
+        dojo.query(".pointcount." + playerId).innerHTML(new_score);
+        dojo.query(".cardback").style("display", "none");
+    };
+    Tichu.prototype.notif_newScores = function (notif) {
+        debug("notif_newScores", notif);
+        var newScores = notif.args.newScores;
+        for (var player_id in newScores) {
+            this.game.scoreCtrl[player_id].toValue(newScores[player_id]);
+        }
+    };
+    Tichu.prototype.notif_autopass = function (notif) {
+        debug("notif_autopass", notif);
+        if (!this.game.isSpectator)
+            this.game.gamedatas.players[this.game.player_id].pass = notif.args.autopass;
+        this.onUpdateActionButtons(this.stateName, {});
+    };
+    Tichu.prototype.notif_acceptCards = function (notif) {
+        debug("notif_acceptCards", notif);
+        for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
+            var card = _a[_i];
+            var cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
+            addCardToStock(this.playerHand, card);
+            this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 1000, 0);
+        }
+        this.updateStockOverlap(this.playerHand);
+        setTimeout(function () {
+            dojo.style("playertables", "display", "none");
+            dojo.style("card-last-played-area", "display", "grid");
+        }, 2000);
+    };
+    Tichu.prototype.notif_passCards = function (notif) {
+        debug("notif_passCards", notif);
+        for (var _i = 0, _a = notif.args; _i < _a.length; _i++) {
+            var cardId = _a[_i];
+            this.playerHand.removeFromStockById(cardId);
+        }
+        this.updateStockOverlap(this.playerHand);
+    };
+    return Tichu;
+}());
