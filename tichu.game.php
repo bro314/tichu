@@ -1,22 +1,4 @@
 ﻿<?php
-/**
- *------
- * BGA framework: © Gregory Isabelli <gisabelli@boardgamearena.com> & Emmanuel Colin <ecolin@boardgamearena.com>
- * Tichu implementation : © Yannick Priol <camertwo@hotmail.com>
- * Credits : Gregory Isabelli, Emmanuel Colin, David Bonnin, Jean Portemer, Bryan McGinnis.
- *
- * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
- * See http://en.boardgamearena.com/#!doc/Studio for more information.
- * -----
- *
- * tichu.game.php
- *
- * This is the main file for your game logic.
- *
- * In this PHP file, you are going to defines the rules of the game.
- *
- */
-
 require_once APP_GAMEMODULE_PATH . "module/table/table.game.php";
 
 class Tichu extends Table
@@ -24,23 +6,19 @@ class Tichu extends Table
   public static $instance;
   function __construct()
   {
-    // Your global variables labels:
-    //  Here, you can assign labels to global variables you are using for this game.
-    //  You can use any number of global variables with IDs between 10 and 99.
-    //  If your game has options (variants), you also have to associate here a label to
-    //  the corresponding ID in gameoptions.inc.php.
-    // Note: afterwards, you can get/set the global variables with getGameStateValue/setGameStateInitialValue/setGameStateValue
     parent::__construct();
     self::$instance = $this;
     Combo::$noCombo = new Combo([], NO_COMBO);
 
     self::initGameStateLabels([
+      // globals
       "firstOutPlayer" => 21, // first player getting rid of his cards
       "secondOutPlayer" => 22, // second player getting rid of his cards
       "doubleVictory" => 23, // team scoring a double victory
       "mahjongWish" => 26, // value wished by Mahjong Owner
       "mahjongOwner" => 27, // Mahjong Owner, 0 when wish is granted
 
+      //options
       "gameLength" => 100, // 1 = 500pts, 2 = 1000pts, 3 = 2000pts
       "playerTeams" => 101, // 1 = 13 vs 24, 2 = 12 vs 34, 3 = 14 vs 23, 4 = random
       "gameVariant" => 102, // 1 = tichu standard
@@ -69,17 +47,14 @@ class Tichu extends Table
     self::reloadPlayersBasicInfos();
     CardManager::setupCards();
 
-    /************ Start the game initialization *****/
-
-    // Init global values with their initial values
+    // Init globals
     self::setGameStateInitialValue("firstOutPlayer", 0);
     self::setGameStateInitialValue("secondOutPlayer", 0);
     self::setGameStateInitialValue("doubleVictory", -1);
     self::setGameStateInitialValue("mahjongWish", 0);
     self::setGameStateInitialValue("mahjongOwner", 0);
 
-    // Init game statistics
-    // (note: statistics used in this file must be defined in your stats.inc.php file)
+    // Init statistics
     self::initStat("table", "round_number", 0);
     self::initStat("table", "trick_number", 0);
     self::initStat("player", "tricks_win", 0);
@@ -164,16 +139,6 @@ class Tichu extends Table
     return round(min(100, PlayerManager::getHighestScore() / $p));
   }
 
-  function test()
-  {
-    LogManager::getLastComboPlayer();
-    Utils::die(date("Y-m-d H:i", time()));
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  //////////// Utility functions
-  ////////////
-
   public static function getCurrentId()
   {
     return self::$instance->getCurrentPlayerId();
@@ -257,15 +222,6 @@ class Tichu extends Table
     }
   }
 
-  //////////////////////////////////////////////////////////////////////////////
-  //////////// Player actions
-  ////////////
-
-  /*
-	chooseDragonGift
-	move all cards captured this trick to the opponent chosen by Dragon player.
-	we calculate trick value and notify elements to be updated
-	*/
   function chooseDragonGift($playertogive)
   {
     self::checkAction("chooseDragonGift");
@@ -305,14 +261,6 @@ class Tichu extends Table
     }
   }
 
-  /*
-	// giveTheCards
-	// Checks if cards can be sent
-	// get array player_id => direction with self::getPlayersToDirection()
-	// update DB location, location_arg and card_passed_from
-	// notify passCards
-	// Move to next gamestate
-	*/
   function giveTheCards($card_ids)
   {
     self::checkAction("giveCards");
@@ -334,7 +282,6 @@ class Tichu extends Table
       }
     }
 
-    // Determine which players to give the cards to
     $player_to_give_cards = null;
     $nextPlayers = PlayerManager::getNextPlayers(null, true);
     foreach ($card_ids as $idx => $card) {
@@ -345,18 +292,6 @@ class Tichu extends Table
     $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
   }
 
-  /*
-	// Play Bomb:
-	// first check if last card played is the Hound
-	// second check : you can't steal the right to lead of another player
-	// check if it's a bomb with checkCombo
-	// check if tichu bet is still possible
-	// reset number of consecutive pass
-	// update GameStateValues
-	// create new combo in DB
-	// check if a MahjongWish has been granted
-	// update cards position in DB and notify PlayCombo to JS
-	*/
   function playBomb($cards_ids)
   {
     $name = $this->gamestate->state()["name"];
@@ -384,12 +319,6 @@ class Tichu extends Table
       "last" => $name,
     ]);
     $this->gamestate->nextState("changePlayer");
-    /*$cards = array_values(CardManager::getDeck()->getCards($cards_ids));
-		$combo = new Combo($cards, BOMB_COMBO);
-		if(!$combo->checkType())
-			throw new feException( self::_("This is not a bomb"), true );
-		LogManager::playCombo($playerId, $combo);
-		$this->completePlayCombo($playerId, $combo, true);*/
   }
 
   function choosePhoenix($phoenixValue)
@@ -483,14 +412,6 @@ class Tichu extends Table
     $this->gamestate->nextState("changePlayer");
   }
 
-  /*
-	// grandTichuBet:
-	// check if the player has 8 cards, if he has already made a grand tichu bet
-	// update tichu bet to 0 if grand tichu bet is done
-	// update grand tichu bet
-	// notify grandTichuBet for updating players panel
-	// move to next gamestate
-	*/
   function grandTichuBet($bet, $confirmed = false)
   {
     self::checkAction("grandTichuBet");
@@ -499,12 +420,10 @@ class Tichu extends Table
     if ($player["call_tichu"] != -1) {
       return;
     }
-
     $handcount = CardManager::getDeck()->countCardInLocation("hand", $player_id);
     if ($handcount != 8) {
       throw new feException("Can't make grand tichu bet: you don\'t have 8 cards");
     }
-
     if ($player["call_grand_tichu"] >= 0) {
       throw new feException("Can't make bet: you already bet");
     }
@@ -528,14 +447,6 @@ class Tichu extends Table
     $this->gamestate->setPlayerNonMultiactive($player_id, "dealLastCards");
   }
 
-  /*
-	// TichuBet:
-	// check if the player has already made a tichu bet
-	// update grand tichu bet to 0 if only 8 cards dealt
-	// update tichu bet
-	// notify TichuBet for updating players panel
-	// move to next gamestate
-	*/
   function tichuBet($confirmed = false)
   {
     $player_id = self::getCurrentPlayerId();
@@ -580,11 +491,6 @@ class Tichu extends Table
     }
   }
 
-  /*
-	// acceptCards:
-	// destroy cards created on cardontable_
-	// AJAX cards to giveTheCards PHP
-	*/
   function acceptCards()
   {
     $player_id = self::getCurrentPlayerId();
@@ -601,13 +507,6 @@ class Tichu extends Table
     $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
   }
 
-  /*
-	// makeAWish:
-	// $wish<13 : value between 0 and 13 means 2 to Ace
-	// modify GSV mahjongWish
-	// notify players about value chosen
-	// next state
-	*/
   function makeAWish($wish)
   {
     self::checkAction("makeAWish");
@@ -655,9 +554,6 @@ class Tichu extends Table
       $this->gamestate->nextState("playCombo");
     }
   }
-  //////////////////////////////////////////////////////////////////////////////
-  //////////// Game state arguments
-  ////////////
 
   function argShowPassedCards()
   {
@@ -678,11 +574,6 @@ class Tichu extends Table
     ];
   }
 
-  /*
-	// ChooseDragonGift:
-	// get opponents before and after the Dragon player
-	// notify Dragon player
-	*/
   function argChooseDragonGift()
   {
     $lastComboPlayer = LogManager::getLastComboPlayer();
@@ -699,18 +590,7 @@ class Tichu extends Table
   {
     return LogManager::getLastAction("changePlayer")["arg"];
   }
-  //////////////////////////////////////////////////////////////////////////////
-  //////////// Game state actions
-  ////////////
 
-  /*
-	// New round:
-	// Reset GameStateValues and increase Statistic Values
-	// Shuffle and deal cards to all players
-	// Notif newRound enables PlayersPanel
-	// Notif newDealPart1 sends 8 first cards to all players�??hand
-	// Move to next gamestate
-	*/
   function stNewRound()
   {
     LogManager::insert(0, "newRound");
@@ -721,8 +601,6 @@ class Tichu extends Table
     self::setGameStateValue("mahjongOwner", 0);
 
     self::incStat(1, "round_number");
-
-    //self::DbQuery( "DELETE FROM combo WHERE 1" );   // Remove all combo on table
 
     CardManager::resetPassedCards();
     $deck = CardManager::getDeck();
@@ -741,16 +619,8 @@ class Tichu extends Table
 
     $this->gamestate->setAllPlayersMultiactive();
     $this->gamestate->nextState("GTBets");
-    // make all players multiactive just before entering the state
   }
 
-  /*
-	// DealLastCards
-	// Check if all 4 players have chosen about the Grand Tichu bet
-	// Deal the remaining 6 cards
-	// Notif newDealPart2 sends last 6 cards to all players�??hand
-	// Move to next gamestate
-	*/
   function stDealLastCards()
   {
     $players = PlayerManager::getPlayerIds();
@@ -793,7 +663,6 @@ class Tichu extends Table
     $deck = CardManager::getDeck();
 
     if ($lastWinner == 0) {
-      //first trick of a new round, owner of Mah Jong starts
       $card = array_values($deck->getCardsOfType(TYPE_MAHJONG, 1))[0];
       $mahjongOwnerId = $card["location_arg"];
       self::setGameStateValue("mahjongOwner", $mahjongOwnerId);
@@ -804,7 +673,6 @@ class Tichu extends Table
       foreach ($bombs as $k => $v) {
         NotificationManager::hasBomb($k, $v);
       }
-      self::dump("vinayakr_debug bombs", $bombs);
     } else {
       //this is not the first trick
       $hand_count = $deck->countCardsByLocationArgs("hand");

@@ -114,6 +114,7 @@ class action_tichu extends APP_GameAction
     self::ajaxResponse();
   }
 
+  // DANGER: The actual action is named "giveCards".
   public function giveTheCards()
   {
     self::setAjaxMode();

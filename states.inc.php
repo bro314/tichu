@@ -59,8 +59,6 @@ $machinestates = [
     "transitions" => ["" => ST_NEW_ROUND],
   ],
 
-  // Note: ID=2 => your first state
-
   ST_NEW_ROUND => [
     "name" => "newRound",
     "description" => "",
@@ -92,7 +90,7 @@ $machinestates = [
     "descriptionmyturn" => clienttranslate('${you} must give a card to each other player'),
     "action" => "stGiveCards",
     "type" => "multipleactiveplayer",
-    "possibleactions" => ["giveCards"],
+    "possibleactions" => ["giveCards", "tichuBet"],
     "transitions" => ["showPassedCards" => ST_SHOW_PASSED_CARDS],
   ],
 
@@ -103,7 +101,7 @@ $machinestates = [
     "action" => "stShowPassedCards",
     "type" => "multipleactiveplayer",
     "args" => "argShowPassedCards",
-    "possibleactions" => ["acceptCards"],
+    "possibleactions" => ["acceptCards", "tichuBet"],
     "transitions" => ["acceptCards" => ST_NEW_TRICK],
   ],
 

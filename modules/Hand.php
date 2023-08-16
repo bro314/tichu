@@ -25,25 +25,6 @@ class Hand extends APP_GameClass
     }
   }
 
-  public function test($wish, $combo)
-  {
-    if (!in_array($wish, array_column($this->cards, "type_arg"))) {
-      return null;
-    }
-    //if(is_null($combo)) return null;
-    $length = count($combo->cards);
-    $name = Combo::$comboNames[$combo->type];
-    $highestCombo = /*self::getHighestBomb($this->cards, $wish, $length) ?? */ call_user_func(
-      "self::getHighest$name",
-      $this->cards,
-      $wish,
-      $length,
-      $this->phoenix
-    );
-
-    return $highestCombo;
-  }
-
   public function canFulFillWish($wish, $combo)
   {
     if ($combo->type == NO_COMBO || $combo->type == DOG_COMBO) {
