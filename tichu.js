@@ -36,7 +36,7 @@ var Tichu = /** @class */ (function () {
         this.cardheight = 150;
         this.cardChoiceWidth = 70;
         this.cardChoiceHeight = 105;
-        this.cardsToPass = [null, null, null];
+        this.cardsToPass = [];
         this.tableCombos = {};
         this.allLastCombos = {};
         this.clockwise = false;
@@ -562,7 +562,7 @@ var Tichu = /** @class */ (function () {
         var items = this.playerHand.getSelectedItems();
         var player_id = this.game.player_id;
         var stockItem = this.cardsToPass[i];
-        if (stockItem === null) {
+        if (!stockItem) {
             if (items.length != 1)
                 return;
             var card = items[0];
@@ -588,7 +588,7 @@ var Tichu = /** @class */ (function () {
         else {
             $("cardontable_" + player_id + "_" + stockItem.id).remove();
             addItemToStock(this.playerHand, stockItem);
-            this.cardsToPass[i] = null;
+            this.cardsToPass[i] = undefined;
         }
         this.updateStockOverlap(this.playerHand);
     };
@@ -599,7 +599,7 @@ var Tichu = /** @class */ (function () {
             return;
         var items = this.cardsToPass;
         for (var i = 0; i < 3; i++) {
-            if (items[i] === null) {
+            if (!items[i]) {
                 this.game.showMessage(_("You must select exactly 3 cards"), "error");
                 return;
             }
@@ -699,12 +699,12 @@ var Tichu = /** @class */ (function () {
         var player_id = this.game.player_id;
         for (var _i = 0, _a = this.cardsToPass; _i < _a.length; _i++) {
             var item = _a[_i];
-            if (item === null)
+            if (!item)
                 continue;
             $("cardontable_" + player_id + "_" + item.id).remove();
             addItemToStock(this.playerHand, item);
         }
-        this.cardsToPass = [null, null, null];
+        this.cardsToPass = [];
     };
     Tichu.prototype.onGiveDragon = function (player) {
         debug("onGiveDragon");

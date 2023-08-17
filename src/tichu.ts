@@ -116,7 +116,7 @@ class Tichu {
   private readonly cardheight = 150;
   private readonly cardChoiceWidth = 70;
   private readonly cardChoiceHeight = 105;
-  private cardsToPass: (StockItem | null)[] = [null, null, null];
+  private cardsToPass: (StockItem | undefined)[] = [];
   private tableCombos: Record<number, Stock> = {};
   private mahjongValues!: Stock;
   private phoenixValues!: Stock;
@@ -880,7 +880,7 @@ class Tichu {
     const player_id = this.game.player_id;
     const stockItem = this.cardsToPass[i];
 
-    if (stockItem === null) {
+    if (!stockItem) {
       if (items.length != 1) return;
       const card: StockItem = items[0];
       this.cardsToPass[i] = card;
@@ -908,7 +908,7 @@ class Tichu {
     } else {
       $("cardontable_" + player_id + "_" + stockItem.id).remove();
       addItemToStock(this.playerHand!, stockItem);
-      this.cardsToPass[i] = null;
+      this.cardsToPass[i] = undefined;
     }
     this.updateStockOverlap(this.playerHand);
   }
@@ -920,7 +920,7 @@ class Tichu {
 
     const items = this.cardsToPass;
     for (let i = 0; i < 3; i++) {
-      if (items[i] === null) {
+      if (!items[i]) {
         this.game.showMessage(_("You must select exactly 3 cards"), "error");
         return;
       }
@@ -1032,11 +1032,11 @@ class Tichu {
 
     const player_id = this.game.player_id;
     for (const item of this.cardsToPass) {
-      if (item === null) continue;
+      if (!item) continue;
       $("cardontable_" + player_id + "_" + item.id).remove();
       addItemToStock(this.playerHand!, item);
     }
-    this.cardsToPass = [null, null, null];
+    this.cardsToPass = [];
   }
 
   private onGiveDragon(player: number) {
