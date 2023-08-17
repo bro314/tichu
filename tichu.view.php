@@ -16,6 +16,7 @@ class view_tichu_tichu extends game_view
     $this->tpl["MAHJONG"] = self::_("Mahjong Wish");
     $this->tpl["PHOENIX"] = self::_("Phoenix Choice");
     $this->tpl["MY_HAND"] = self::_("My hand");
+    $this->tpl["AUTO_ACCEPT"] = self::_("Auto accepting in 2 seconds ...");
     $this->tpl["AUTO_COLLECT"] = self::_("Auto collecting in 2 seconds ...");
     $this->tpl["REORDER_CARDS_BY_RANK"] = self::_("Reorder cards by rank");
     $this->tpl["REORDER_CARDS_BY_COLOR"] = self::_("Reorder cards by color");

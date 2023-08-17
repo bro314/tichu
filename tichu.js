@@ -277,6 +277,8 @@ var Tichu = /** @class */ (function () {
         debug("Entering state: " + stateName, stateObject);
         this.active_player = stateObject.active_player;
         this.stateName = stateName;
+        clearTimeout(this.autoAcceptTimeout);
+        clearTimeout(this.autoCollectTimeout);
         var methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
         var thisMethods = this;
         if (thisMethods[methodName] !== undefined)
@@ -398,6 +400,9 @@ var Tichu = /** @class */ (function () {
                     this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
                     break;
                 case "showPassedCards":
+                    dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
+                    clearTimeout(this.autoAcceptTimeout);
+                    this.autoAcceptTimeout = setTimeout(function () { return _this.onAcceptCards(); }, 2000);
                     this.game.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
                     break;
                 case "mahjongPlay":
@@ -423,7 +428,8 @@ var Tichu = /** @class */ (function () {
                 case "confirmTrick":
                     if (this.game.bRealtime) {
                         dojo.place(this.game.format_block("jstpl_auto_collect", {}), $("play_button"), "only");
-                        setTimeout(function () { return _this.collect(); }, 2000);
+                        clearTimeout(this.autoCollectTimeout);
+                        this.autoCollectTimeout = setTimeout(function () { return _this.collect(); }, 2000);
                     }
                     else {
                         this.addMyActionButton("myConfirmTrick", _("Collect"), function () { return _this.collect(); }, "blue", "play_button");
@@ -608,6 +614,7 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.onAcceptCards = function () {
         debug("onAcceptCards");
+        clearTimeout(this.autoAcceptTimeout);
         if (!this.game.checkAction("acceptCards"))
             return;
         this.takeAction("acceptCards");
@@ -731,6 +738,7 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.collect = function () {
         debug("onCollect");
+        clearTimeout(this.autoCollectTimeout);
         if (!this.game.checkAction("collect"))
             return;
         this.takeAction("collect");
@@ -935,13 +943,13 @@ var Tichu = /** @class */ (function () {
             var card = _a[_i];
             var cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
             addCardToStock(this.playerHand, card);
-            this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 1000, 0);
+            this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
         }
         this.updateStockOverlap(this.playerHand);
         setTimeout(function () {
             dojo.style("playertables", "display", "none");
             dojo.style("card-last-played-area", "display", "grid");
-        }, 2000);
+        }, 1000);
     };
     Tichu.prototype.notif_passCards = function (notif) {
         var _a;

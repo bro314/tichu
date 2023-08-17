@@ -119,6 +119,7 @@ var jstpl_my_action_button = '<a href="#" class="action-button ${addclass}" oncl
 
 var jstpl_my_hand = '<h3>{MY_HAND}</h3>'
 var jstpl_auto_collect = '<h3>{AUTO_COLLECT}</h3>'
+var jstpl_auto_accept = '<h3>{AUTO_ACCEPT}</h3>'
 
 </script>
 

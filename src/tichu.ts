@@ -127,6 +127,8 @@ class Tichu {
   private active_player?: string;
   private stateName!: string;
   private allowedValues: number[] = [];
+  private autoCollectTimeout?: number;
+  private autoAcceptTimeout?: number;
 
   setup(gamedatas: TichuGamedatas) {
     debug("SETUP", gamedatas);
@@ -415,6 +417,9 @@ class Tichu {
     this.active_player = stateObject.active_player;
     this.stateName = stateName;
 
+    clearTimeout(this.autoAcceptTimeout);
+    clearTimeout(this.autoCollectTimeout);
+
     const methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
     const thisMethods = this as unknown as { [key: string]: Function };
     if (thisMethods[methodName] !== undefined) thisMethods[methodName](stateObject.args);
@@ -559,6 +564,9 @@ class Tichu {
           this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
           break;
         case "showPassedCards":
+          dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
+          clearTimeout(this.autoAcceptTimeout);
+          this.autoAcceptTimeout = setTimeout(() => this.onAcceptCards(), 2000);
           this.game.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
           break;
         case "mahjongPlay":
@@ -628,7 +636,8 @@ class Tichu {
         case "confirmTrick":
           if (this.game.bRealtime) {
             dojo.place(this.game.format_block("jstpl_auto_collect", {}), $("play_button"), "only");
-            setTimeout(() => this.collect(), 2000);
+            clearTimeout(this.autoCollectTimeout);
+            this.autoCollectTimeout = setTimeout(() => this.collect(), 2000);
           } else {
             this.addMyActionButton(
               "myConfirmTrick",
@@ -929,6 +938,7 @@ class Tichu {
 
   private onAcceptCards() {
     debug("onAcceptCards");
+    clearTimeout(this.autoAcceptTimeout);
     if (!this.game.checkAction("acceptCards")) return;
     this.takeAction("acceptCards");
   }
@@ -1072,6 +1082,7 @@ class Tichu {
 
   private collect() {
     debug("onCollect");
+    clearTimeout(this.autoCollectTimeout);
     if (!this.game.checkAction("collect")) return;
 
     this.takeAction("collect");
@@ -1304,14 +1315,14 @@ class Tichu {
     for (const card of notif.args.cards) {
       const cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
       addCardToStock(this.playerHand, card);
-      this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 1000, 0);
+      this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
     }
     this.updateStockOverlap(this.playerHand);
 
     setTimeout(function () {
       dojo.style("playertables", "display", "none");
       dojo.style("card-last-played-area", "display", "grid");
-    }, 2000);
+    }, 1000);
   }
 
   private notif_passCards(notif: Notif) {
