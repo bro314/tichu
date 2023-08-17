@@ -150,7 +150,7 @@ class Tichu {
 
     document
       .getElementById("overall-content")
-      ?.classList.toggle("tiki", this.game.prefs[103].value === 1);
+      ?.classList.toggle("tiki", this.game.prefs[103].value == 1);
     this.updateMahjongWish(gamedatas.mahjongWish);
 
     if (gamedatas.firstoutplayer != 0) {
@@ -171,11 +171,11 @@ class Tichu {
 
     this.setupNotifications();
 
-    if (this.game.prefs[100].value === 2) {
+    if (this.game.prefs[100].value == 2) {
       this.onReorderTable(true);
     }
     this.clockwise = false;
-    if (this.game.prefs[101].value === 1) {
+    if (this.game.prefs[101].value == 1) {
       this.changeOrder(true);
     }
 
@@ -307,7 +307,7 @@ class Tichu {
     );
     stock.image_items_per_row = 14;
     const cardImgFile =
-      this.game.prefs[103].value === 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
+      this.game.prefs[103].value == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
     for (let color = 1; color <= 4; color++) {
       for (let value = 1; value <= 14; value++) {
         const type = stockType(color, value);
@@ -775,7 +775,7 @@ class Tichu {
 
   private setPass(playerId: number) {
     const cardImgFile =
-      this.game.prefs[103].value === 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+      this.game.prefs[103].value == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
     const img = g_gamethemeurl + cardImgFile;
     $("lastcombo_" + playerId).innerHTML =
       "<span class = 'pass'> <img src='" +
@@ -858,8 +858,8 @@ class Tichu {
 
   private onTichuBet() {
     debug("onTichuBet");
-    // TODO: Check whether it is safe to call checkAction() here.
-    // if (!this.game.checkAction("tichuBet")) return;
+    // Note that we cannot check the action here, because it may not be the player's turn.
+    // But you can call Tichu out of turn.
 
     this.takeAction("tichuBet", { bet: Bet.TICHU });
     this.game.removeActionButtons();
@@ -1045,7 +1045,6 @@ class Tichu {
   // client side action only
   private onResetPassCards() {
     debug("onResetPassCards");
-    if (!this.game.checkAction("giveCards")) return;
 
     const player_id = this.game.player_id;
     for (const item of this.cardsToPass) {
@@ -1077,7 +1076,7 @@ class Tichu {
     // Note that we cannot check the action here, because it may not be the player's turn.
     // But you can auto-pass out of turn.
 
-    if (this.game.prefs[102].value === 1 && this.playerHand!.getSelectedItems().length > 0) {
+    if (this.game.prefs[102].value == 1 && this.playerHand!.getSelectedItems().length > 0) {
       this.game.showMessage(
         _(
           "You have to unselect your cards first. (You can disable this safeguard in the user settings)"
@@ -1091,7 +1090,8 @@ class Tichu {
 
   private cancelAutopass() {
     debug("onCancelAutopass");
-    if (!this.game.checkAction("cancelAutopass")) return;
+    // Note that we cannot check the action here, because it may not be the player's turn.
+    // But you can cancel auto-pass out of turn.
 
     this.takeAction("cancelAutopass");
   }

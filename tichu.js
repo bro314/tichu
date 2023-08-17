@@ -63,7 +63,7 @@ var Tichu = /** @class */ (function () {
         this.game.addTooltipToClass("cardback", _("has passed"), "");
         this.game.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
         (_a = document
-            .getElementById("overall-content")) === null || _a === void 0 ? void 0 : _a.classList.toggle("tiki", this.game.prefs[103].value === 1);
+            .getElementById("overall-content")) === null || _a === void 0 ? void 0 : _a.classList.toggle("tiki", this.game.prefs[103].value == 1);
         this.updateMahjongWish(gamedatas.mahjongWish);
         if (gamedatas.firstoutplayer != 0) {
             dojo.style($("firstoutcolor_" + gamedatas.firstoutplayer), "display", "inline-block");
@@ -77,11 +77,11 @@ var Tichu = /** @class */ (function () {
             dojo.connect(el.children[0], "onclick", _this, function () { return _this.onGiveCard(i); });
         });
         this.setupNotifications();
-        if (this.game.prefs[100].value === 2) {
+        if (this.game.prefs[100].value == 2) {
             this.onReorderTable(true);
         }
         this.clockwise = false;
-        if (this.game.prefs[101].value === 1) {
+        if (this.game.prefs[101].value == 1) {
             this.changeOrder(true);
         }
         this.setupCurrentTrick(gamedatas.currentTrickValue);
@@ -179,7 +179,7 @@ var Tichu = /** @class */ (function () {
         stock.setOverlap(30, 0);
         new ResizeObserver(function () { return requestAnimationFrame(function () { return _this.updateStockOverlap(stock); }); }).observe(element);
         stock.image_items_per_row = 14;
-        var cardImgFile = this.game.prefs[103].value === 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
+        var cardImgFile = this.game.prefs[103].value == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
         for (var color = 1; color <= 4; color++) {
             for (var value = 1; value <= 14; value++) {
                 var type = stockType(color, value);
@@ -497,7 +497,7 @@ var Tichu = /** @class */ (function () {
         return Math.floor(cardTypeID / 14) + 1;
     };
     Tichu.prototype.setPass = function (playerId) {
-        var cardImgFile = this.game.prefs[103].value === 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+        var cardImgFile = this.game.prefs[103].value == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
         var img = g_gamethemeurl + cardImgFile;
         $("lastcombo_" + playerId).innerHTML =
             "<span class = 'pass'> <img src='" +
@@ -548,8 +548,8 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.onTichuBet = function () {
         debug("onTichuBet");
-        // TODO: Check whether it is safe to call checkAction() here.
-        // if (!this.game.checkAction("tichuBet")) return;
+        // Note that we cannot check the action here, because it may not be the player's turn.
+        // But you can call Tichu out of turn.
         this.takeAction("tichuBet", { bet: Bet.TICHU });
         this.game.removeActionButtons();
     };
@@ -718,8 +718,6 @@ var Tichu = /** @class */ (function () {
     // client side action only
     Tichu.prototype.onResetPassCards = function () {
         debug("onResetPassCards");
-        if (!this.game.checkAction("giveCards"))
-            return;
         var player_id = this.game.player_id;
         for (var _i = 0, _a = this.cardsToPass; _i < _a.length; _i++) {
             var item = _a[_i];
@@ -748,7 +746,7 @@ var Tichu = /** @class */ (function () {
         debug("onPass", { onlyOnce: onlyOnce });
         // Note that we cannot check the action here, because it may not be the player's turn.
         // But you can auto-pass out of turn.
-        if (this.game.prefs[102].value === 1 && this.playerHand.getSelectedItems().length > 0) {
+        if (this.game.prefs[102].value == 1 && this.playerHand.getSelectedItems().length > 0) {
             this.game.showMessage(_("You have to unselect your cards first. (You can disable this safeguard in the user settings)"), "error");
             return;
         }
@@ -756,8 +754,8 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.cancelAutopass = function () {
         debug("onCancelAutopass");
-        if (!this.game.checkAction("cancelAutopass"))
-            return;
+        // Note that we cannot check the action here, because it may not be the player's turn.
+        // But you can cancel auto-pass out of turn.
         this.takeAction("cancelAutopass");
     };
     Tichu.prototype.collect = function () {
