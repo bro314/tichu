@@ -145,14 +145,51 @@ class NotificationManager extends APP_GameClass
 
   public static function acceptCards($player_id)
   {
-    Tichu::$instance->notifyPlayer($player_id, "acceptCards", "", [
-      "cards" => CardManager::getCardsPassedBy($player_id),
-    ]);
+    $card1 = null;
+    $card2 = null;
+    $card3 = null;
+    $cards = array_values(CardManager::getCardsPassedBy($player_id));
+    $nextPlayers = PlayerManager::getNextPlayers($player_id);
+    foreach ($cards as $card) {
+      if ($card["passed_from"] == $nextPlayers[2]["id"]) {
+        $card1 = $card;
+      } elseif ($card["passed_from"] == $nextPlayers[1]["id"]) {
+        $card2 = $card;
+      } elseif ($card["passed_from"] == $nextPlayers[0]["id"]) {
+        $card3 = $card;
+      }
+    }
+
+    Tichu::$instance->notifyPlayer(
+      $player_id,
+      "acceptCards",
+      clienttranslate(
+        'You have accepted ${card1} from previous player, ${card2} from partner, ${card3} from next player.'
+      ),
+      [
+        "cards" => $cards,
+        "card1" => CardManager::cardToStr($card1),
+        "card2" => CardManager::cardToStr($card2),
+        "card3" => CardManager::cardToStr($card3),
+      ]
+    );
   }
 
   public static function passCards($player_id, $cardIds)
   {
-    Tichu::$instance->notifyPlayer($player_id, "passCards", "", $cardIds);
+    Tichu::$instance->notifyPlayer(
+      $player_id,
+      "passCards",
+      clienttranslate(
+        'You have passed ${card1} to previous player, ${card2} to partner, ${card3} to next player.'
+      ),
+      [
+        "cardIds" => $cardIds,
+        "card1" => CardManager::cardToStr(CardManager::getDeck()->getCard($cardIds[0])),
+        "card2" => CardManager::cardToStr(CardManager::getDeck()->getCard($cardIds[1])),
+        "card3" => CardManager::cardToStr(CardManager::getDeck()->getCard($cardIds[2])),
+      ]
+    );
   }
 }
 ?>

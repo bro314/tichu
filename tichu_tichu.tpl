@@ -80,7 +80,7 @@
 		  <a href="#" class="reordercards" id="list_table" style="display:none;">[{LIST_TABLE}]</a>
       <a href="#" class="reordercards" id="square_table">[{SQUARE_TABLE}]</a>
       <a href="#" class="reordercards" id="clockwise">[{CLOCKWISE}]</a>
-      <a href="#" class="reordercards" id="counterClockwise" style="display:none;">[{COUNTER_CLOCKWISE}]</a>
+      <a href="#" class="reordercards" id="counterClockwise">[{COUNTER_CLOCKWISE}]</a>
     </div>
 </div>
 <div id="placeholder" style="position:absolute; left:800px; top:250px; width:1px; height:1px"></div>

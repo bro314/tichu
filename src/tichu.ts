@@ -174,10 +174,8 @@ class Tichu {
     if (this.game.prefs[100].value == 2) {
       this.onReorderTable(true);
     }
-    this.clockwise = false;
-    if (this.game.prefs[101].value == 1) {
-      this.changeOrder(true);
-    }
+
+    this.changeOrder(this.game.prefs[101].value != 1);
 
     this.setupCurrentTrick(gamedatas.currentTrickValue);
 
@@ -994,34 +992,10 @@ class Tichu {
 
   // client side action only
   private changeOrder(clockwise: boolean) {
-    debug("changeOrder");
+    debug(`changeOrder ${clockwise} ${this.game.prefs[101].value}`);
 
-    if ($("list_table").style.display === "none") return;
     this.clockwise = clockwise;
-    const left = dojo.query(".whiteblock.left")[0];
-    const right = dojo.query(".whiteblock.right")[0];
-    left.classList.remove("left");
-    left.classList.add("right");
-    right.classList.remove("right");
-    right.classList.add("left");
-    const playertables = [];
-    for (let i = 1; i < 4; i++) {
-      const e = dojo.query(".playertable_" + i)[0];
-      e.remove();
-      e.classList.remove("playertable_" + i);
-      e.classList.add("playertable_" + (4 - i));
-      playertables.push(e);
-    }
-    const parent = $("playertables");
-
-    for (let i = 2; i >= 0; i--) parent.appendChild(playertables[i]);
-    if (clockwise) {
-      dojo.style("clockwise", "display", "none");
-      dojo.style("counterClockwise", "display", "inline");
-    } else {
-      dojo.style("clockwise", "display", "inline");
-      dojo.style("counterClockwise", "display", "none");
-    }
+    $("game_play_area").classList.toggle("clockwise", clockwise);
   }
 
   // client side action only
@@ -1343,8 +1317,14 @@ class Tichu {
   private notif_passCards(notif: Notif) {
     debug("notif_passCards", notif);
 
-    for (const cardId of notif.args) {
-      this.playerHand.removeFromStockById(cardId);
+    // The format of the notification has changed. Let's be backwards compatible for a while.
+    // Support for the old format can be removed in October 2023.
+    // New format: notif.args.cardIds
+    // Old format: notif.args
+    const ids = notif.args.cardIds ?? notif.args;
+
+    for (const id of ids) {
+      this.playerHand.removeFromStockById(id);
     }
     this.updateStockOverlap(this.playerHand);
   }

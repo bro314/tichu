@@ -283,9 +283,15 @@ span.pass img {
   grid-column: 1 / span 2;
   grid-row: 2 / span 1;
 }
+.clockwise.squareTable #card-last-played-area .whiteblock.left {
+  grid-column: 4 / span 2;
+}
 .squareTable #card-last-played-area .whiteblock.right {
   grid-column: 4 / span 2;
   grid-row: 2 / span 1;
+}
+.clockwise.squareTable #card-last-played-area .whiteblock.right {
+  grid-column: 1 / span 2;
 }
 .squareTable #card-last-played-area .whiteblock.bottom {
   grid-column: 2 / span 3;
@@ -353,6 +359,11 @@ span.pass img {
   width: 120px;
 }
 
+.playertable_1,
+.playertable_3 {
+  margin-top: 50px;
+}
+
 /*** cards on table for passing and receiving ***/
 .cardontable {
   margin: 0 auto;
@@ -396,6 +407,11 @@ span.pass img {
   margin: 0 auto;
   display: flex;
   justify-content: space-evenly;
+  flex-direction: row;
+}
+
+.clockwise #playertables {
+  flex-direction: row-reverse;
 }
 
 #playertables .playertablename {
@@ -425,6 +441,21 @@ span.pass img {
 .playertablebackground .tichubets {
   min-height: 20px;
   margin-bottom: 20px;
+}
+
+/* game preference toggles */
+
+#clockwise {
+  display: inline;
+}
+#counterClockwise {
+  display: none;
+}
+.clockwise #clockwise {
+  display: none;
+}
+.clockwise #counterClockwise {
+  display: inline;
 }
 
 /*# sourceMappingURL=tichu.css.map */

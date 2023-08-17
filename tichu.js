@@ -80,10 +80,7 @@ var Tichu = /** @class */ (function () {
         if (this.game.prefs[100].value == 2) {
             this.onReorderTable(true);
         }
-        this.clockwise = false;
-        if (this.game.prefs[101].value == 1) {
-            this.changeOrder(true);
-        }
+        this.changeOrder(this.game.prefs[101].value != 1);
         this.setupCurrentTrick(gamedatas.currentTrickValue);
         debug("Ending game setup");
     };
@@ -670,35 +667,9 @@ var Tichu = /** @class */ (function () {
     };
     // client side action only
     Tichu.prototype.changeOrder = function (clockwise) {
-        debug("changeOrder");
-        if ($("list_table").style.display === "none")
-            return;
+        debug("changeOrder ".concat(clockwise, " ").concat(this.game.prefs[101].value));
         this.clockwise = clockwise;
-        var left = dojo.query(".whiteblock.left")[0];
-        var right = dojo.query(".whiteblock.right")[0];
-        left.classList.remove("left");
-        left.classList.add("right");
-        right.classList.remove("right");
-        right.classList.add("left");
-        var playertables = [];
-        for (var i = 1; i < 4; i++) {
-            var e = dojo.query(".playertable_" + i)[0];
-            e.remove();
-            e.classList.remove("playertable_" + i);
-            e.classList.add("playertable_" + (4 - i));
-            playertables.push(e);
-        }
-        var parent = $("playertables");
-        for (var i = 2; i >= 0; i--)
-            parent.appendChild(playertables[i]);
-        if (clockwise) {
-            dojo.style("clockwise", "display", "none");
-            dojo.style("counterClockwise", "display", "inline");
-        }
-        else {
-            dojo.style("clockwise", "display", "inline");
-            dojo.style("counterClockwise", "display", "none");
-        }
+        $("game_play_area").classList.toggle("clockwise", clockwise);
     };
     // client side action only
     Tichu.prototype.onReorderByColor = function (evt) {
@@ -973,10 +944,16 @@ var Tichu = /** @class */ (function () {
         }, 2000);
     };
     Tichu.prototype.notif_passCards = function (notif) {
+        var _a;
         debug("notif_passCards", notif);
-        for (var _i = 0, _a = notif.args; _i < _a.length; _i++) {
-            var cardId = _a[_i];
-            this.playerHand.removeFromStockById(cardId);
+        // The format of the notification has changed. Let's be backwards compatible for a while.
+        // Support for the old format can be removed in October 2023.
+        // New format: notif.args.cardIds
+        // Old format: notif.args
+        var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
+        for (var _i = 0, ids_1 = ids; _i < ids_1.length; _i++) {
+            var id = ids_1[_i];
+            this.playerHand.removeFromStockById(id);
         }
         this.updateStockOverlap(this.playerHand);
     };

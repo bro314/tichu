@@ -56,7 +56,7 @@ class CardManager extends APP_GameClass
   public static function getCardsPassedBy($pId)
   {
     return self::getObjectListFromDB(
-      "SELECT card_id id, card_type type, card_type_arg type_arg FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
+      "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
     );
   }
 
