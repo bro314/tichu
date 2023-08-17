@@ -1031,7 +1031,9 @@ class Tichu extends Table
   function zombieTurn($state, $active_player)
   {
     $statename = $state["name"];
-    NotificationManager::log('${playerName} makes a zombie turn');
+    NotificationManager::log('${playerName} makes a zombie turn', [
+      "player_name" => $active_player["name"],
+    ]);
     if ($state["type"] === "activeplayer") {
       switch ($statename) {
         case "playComboOpen":
