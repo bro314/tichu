@@ -417,8 +417,12 @@ class Tichu {
     this.active_player = stateObject.active_player;
     this.stateName = stateName;
 
-    clearTimeout(this.autoAcceptTimeout);
-    clearTimeout(this.autoCollectTimeout);
+    if (stateName !== "confirmTrick") {
+      clearTimeout(this.autoCollectTimeout);
+    }
+    if (stateName !== "showPassedCards") {
+      clearTimeout(this.autoAcceptTimeout);
+    }
 
     const methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
     const thisMethods = this as unknown as { [key: string]: Function };
@@ -564,9 +568,12 @@ class Tichu {
           this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
           break;
         case "showPassedCards":
-          dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
           clearTimeout(this.autoAcceptTimeout);
-          this.autoAcceptTimeout = setTimeout(() => this.onAcceptCards(), 2000);
+          if (document.visibilityState === "visible") {
+            dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
+            clearTimeout(this.autoAcceptTimeout);
+            this.autoAcceptTimeout = setTimeout(() => this.onAcceptCards(), 2000);
+          }
           this.game.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
           break;
         case "mahjongPlay":
@@ -939,7 +946,7 @@ class Tichu {
   private onAcceptCards() {
     debug("onAcceptCards");
     clearTimeout(this.autoAcceptTimeout);
-    if (!this.game.checkAction("acceptCards")) return;
+    if (this.stateName !== "showPassedCards") return;
     this.takeAction("acceptCards");
   }
 
@@ -1311,6 +1318,7 @@ class Tichu {
 
   private notif_acceptCards(notif: Notif) {
     debug("notif_acceptCards", notif);
+    clearTimeout(this.autoAcceptTimeout);
 
     for (const card of notif.args.cards) {
       const cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;

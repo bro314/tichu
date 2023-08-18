@@ -7,6 +7,7 @@ class Tichu extends Table
   function __construct()
   {
     parent::__construct();
+    $this->bSelectGlobalsForUpdate = true;
     self::$instance = $this;
     Combo::$noCombo = new Combo([], NO_COMBO);
 
@@ -284,9 +285,9 @@ class Tichu extends Table
 
     $player_to_give_cards = null;
     $nextPlayers = PlayerManager::getNextPlayers(null, true);
+    CardManager::setPassedCards($card_ids, $player_id);
     foreach ($card_ids as $idx => $card) {
       CardManager::getDeck()->moveCard($card, "temporary", $nextPlayers[$idx]["id"]);
-      CardManager::setPassedCards($card_ids, $player_id);
     }
     NotificationManager::passCards($player_id, $card_ids);
     $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
@@ -364,37 +365,39 @@ class Tichu extends Table
 
   function pass($onlyOnce)
   {
-    $player_id = self::getCurrentPlayerId();
-    if ($player_id == self::getActivePlayerId()) {
-      if ($this->gamestate->state()["name"] == "playComboOpen") {
-        return;
-      }
-      $currentMahjongWish = self::getGameStateValue("mahjongWish");
-      if ($currentMahjongWish > 0) {
-        $cardsInHand = CardManager::getDeck()->getPlayerHand($player_id);
-        $hand = new Hand($cardsInHand, $this);
-        if ($hand->canFulfillWish($currentMahjongWish, LogManager::getLastCombo())) {
-          throw new feException(
-            sprintf(
-              self::_("You must grant the Mahjong Wish and play a %s "),
-              CardManager::cardToStr($currentMahjongWish)
-            ),
-            true
-          );
-        }
-      }
+    if ($this->gamestate->state()["name"] != "playCombo") {
+      throw new feException(self::_("You can't pass right now"), true);
+    }
 
-      LogManager::insert($player_id, "pass");
-      NotificationManager::pass($player_id, self::getActivePlayerName());
-      if (!$onlyOnce) {
-        PlayerManager::setAutopass(2, $player_id);
-        NotificationManager::autopass(2, $player_id);
-      }
-      $this->gamestate->nextState("nextPlayer");
-    } else {
+    $player_id = self::getCurrentPlayerId();
+    if ($player_id != self::getActivePlayerId()) {
       PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
       NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
+      return;
     }
+
+    $currentMahjongWish = self::getGameStateValue("mahjongWish");
+    if ($currentMahjongWish > 0) {
+      $cardsInHand = CardManager::getDeck()->getPlayerHand($player_id);
+      $hand = new Hand($cardsInHand, $this);
+      if ($hand->canFulfillWish($currentMahjongWish, LogManager::getLastCombo())) {
+        throw new feException(
+          sprintf(
+            self::_("You must grant the Mahjong Wish and play a %s "),
+            CardManager::cardToStr($currentMahjongWish)
+          ),
+          true
+        );
+      }
+    }
+
+    LogManager::insert($player_id, "pass");
+    NotificationManager::pass($player_id, self::getActivePlayerName());
+    if (!$onlyOnce) {
+      PlayerManager::setAutopass(2, $player_id);
+      NotificationManager::autopass(2, $player_id);
+    }
+    $this->gamestate->nextState("nextPlayer");
   }
 
   function cancelAutopass()
@@ -531,6 +534,7 @@ class Tichu extends Table
 
   function collect()
   {
+    self::checkAction("collect");
     $action = LogManager::getLastAction("confirm");
     $pId = $action["player"];
     $action = $action["arg"];

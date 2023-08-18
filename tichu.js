@@ -277,8 +277,12 @@ var Tichu = /** @class */ (function () {
         debug("Entering state: " + stateName, stateObject);
         this.active_player = stateObject.active_player;
         this.stateName = stateName;
-        clearTimeout(this.autoAcceptTimeout);
-        clearTimeout(this.autoCollectTimeout);
+        if (stateName !== "confirmTrick") {
+            clearTimeout(this.autoCollectTimeout);
+        }
+        if (stateName !== "showPassedCards") {
+            clearTimeout(this.autoAcceptTimeout);
+        }
         var methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
         var thisMethods = this;
         if (thisMethods[methodName] !== undefined)
@@ -400,9 +404,12 @@ var Tichu = /** @class */ (function () {
                     this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
                     break;
                 case "showPassedCards":
-                    dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
                     clearTimeout(this.autoAcceptTimeout);
-                    this.autoAcceptTimeout = setTimeout(function () { return _this.onAcceptCards(); }, 2000);
+                    if (document.visibilityState === "visible") {
+                        dojo.place(this.game.format_block("jstpl_auto_accept", {}), $("play_button"), "only");
+                        clearTimeout(this.autoAcceptTimeout);
+                        this.autoAcceptTimeout = setTimeout(function () { return _this.onAcceptCards(); }, 2000);
+                    }
                     this.game.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
                     break;
                 case "mahjongPlay":
@@ -615,7 +622,7 @@ var Tichu = /** @class */ (function () {
     Tichu.prototype.onAcceptCards = function () {
         debug("onAcceptCards");
         clearTimeout(this.autoAcceptTimeout);
-        if (!this.game.checkAction("acceptCards"))
+        if (this.stateName !== "showPassedCards")
             return;
         this.takeAction("acceptCards");
     };
@@ -939,6 +946,7 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.notif_acceptCards = function (notif) {
         debug("notif_acceptCards", notif);
+        clearTimeout(this.autoAcceptTimeout);
         for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
             var card = _a[_i];
             var cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
