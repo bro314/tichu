@@ -454,6 +454,7 @@ class Tichu {
     dojo.query(".cardback").style("display", "none");
     dojo.query(".mahjong_mini").innerHTML("");
     this.resetLastCombos();
+    this.game.gamedatas.firstoutplayer = 0;
     for (const id in this.game.gamedatas.players) {
       this.game.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
       this.game.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
@@ -765,7 +766,7 @@ class Tichu {
         );
         this.game.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
       }
-      if (player.call_tichu === Bet.NO_BET_YET) {
+      if (player.call_tichu === Bet.NO_BET_YET && this.game.gamedatas.firstoutplayer == 0) {
         this.addMyActionButton(
           "myMakeTichuBet",
           _("Tichu"),
@@ -1304,6 +1305,7 @@ class Tichu {
     debug("notif_playerGoOut", notif);
 
     if (notif.args.player_id === notif.args.firstout_id) {
+      this.game.gamedatas.firstoutplayer = notif.args.player_id;
       dojo.style($("firstoutcolor_" + notif.args.player_id), "display", "inline-block");
     }
     this.game.disablePlayerPanel(notif.args.player_id);
