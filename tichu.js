@@ -44,7 +44,7 @@ var Tichu = /** @class */ (function () {
     }
     Tichu.prototype.setup = function (gamedatas) {
         var _this = this;
-        var _a;
+        var _a, _b, _c;
         debug("SETUP", gamedatas);
         var player_ids = new Array();
         for (var player_id in gamedatas.players) {
@@ -81,19 +81,20 @@ var Tichu = /** @class */ (function () {
             this.onReorderTable(true);
         }
         this.changeOrder(this.game.prefs[101].value != 1);
-        this.setupCurrentTrick(gamedatas.currentTrickValue);
+        this.setTheme((_c = (_b = this.game.prefs[104]) === null || _b === void 0 ? void 0 : _b.value) !== null && _c !== void 0 ? _c : 0);
+        this.setupCurrentTrick();
         debug("Ending game setup");
     };
-    Tichu.prototype.setupCurrentTrick = function (currentTrickValue) {
-        var _this = this;
-        var currentTrick = $("currentTrick");
-        currentTrick.innerHTML = _("Points in current trick: ") + currentTrick.innerHTML;
+    Tichu.prototype.setupCurrentTrick = function () {
+        this.roundCounter = new ebg.counter();
+        this.roundCounter.create("roundCounter");
+        this.roundCounter.setValue(this.game.gamedatas.round);
+        this.trickCounter = new ebg.counter();
+        this.trickCounter.create("trickCounter");
+        this.trickCounter.setValue(this.game.gamedatas.trick);
         this.currentTrickCounter = new ebg.counter();
         this.currentTrickCounter.create("currentTrickCounter");
-        var div = document.createElement("DIV");
-        this.game.addTooltipHtml("currentTrick", _("click to see the cards"));
-        dojo.connect($("currentTrick"), "onclick", this, function () { return _this.showCurrentTrick(); });
-        this.currentTrickCounter.setValue(currentTrickValue);
+        this.currentTrickCounter.setValue(this.game.gamedatas.currentTrickValue);
     };
     Tichu.prototype.setupGameBoards = function (gamedatas) {
         for (var _i = 0, _a = Object.values(gamedatas.players); _i < _a.length; _i++) {
@@ -139,6 +140,14 @@ var Tichu = /** @class */ (function () {
             addCardToStock(this.playerHand, card);
         }
         this.updateStockOverlap(this.playerHand);
+        var _loop_1 = function (themeNo) {
+            dojo.connect($("theme".concat(themeNo)), "onclick", this_1, function (e) { return _this.setTheme(themeNo); });
+        };
+        var this_1 = this;
+        for (var _b = 0, _c = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; _b < _c.length; _b++) {
+            var themeNo = _c[_b];
+            _loop_1(themeNo);
+        }
         dojo.connect($("order_by_rank"), "onclick", this, function (e) { return _this.onReorderByRank(e); });
         dojo.connect($("order_by_color"), "onclick", this, function (e) { return _this.onReorderByColor(e); });
         dojo.connect($("list_table"), "onclick", this, function () { return _this.onReorderTable(false); });
@@ -150,13 +159,21 @@ var Tichu = /** @class */ (function () {
         this.game.addTooltipHtml("clockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
         this.game.addTooltipHtml("counterClockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
     };
+    Tichu.prototype.setTheme = function (themeNo) {
+        for (var _i = 0, _a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; _i < _a.length; _i++) {
+            var n = _a[_i];
+            document.body.classList.remove("theme".concat(n));
+        }
+        document.body.classList.add("theme".concat(themeNo));
+    };
     Tichu.prototype.removeMyActionButtons = function () {
-        var _a, _b, _c, _d, _e;
-        (_a = document.getElementById("bomb_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
-        (_b = document.getElementById("play_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
-        (_c = document.getElementById("pass_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
-        (_d = document.getElementById("pass_trick_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
-        (_e = document.getElementById("tichu_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
+        var _a, _b, _c, _d, _e, _f;
+        (_a = document.getElementById("trick_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
+        (_b = document.getElementById("bomb_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
+        (_c = document.getElementById("play_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
+        (_d = document.getElementById("pass_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
+        (_e = document.getElementById("pass_trick_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
+        (_f = document.getElementById("tichu_button")) === null || _f === void 0 ? void 0 : _f.replaceChildren();
         dojo.place(this.game.format_block("jstpl_my_hand", {}), $("play_button"), "only");
     };
     Tichu.prototype.addMyActionButton = function (id, label, method, color, dest) {
@@ -297,7 +314,8 @@ var Tichu = /** @class */ (function () {
             this.game.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
             this.game.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
         }
-        dojo.query(".whiteblock").removeClass("disabled");
+        dojo.query(".last-played-container").removeClass("disabled");
+        this.roundCounter.incValue(1);
         this.updateMahjongWish(0);
     };
     Tichu.prototype.onEnteringStateGrandTichuBets = function (args) {
@@ -331,6 +349,7 @@ var Tichu = /** @class */ (function () {
     Tichu.prototype.onEnteringStateNewTrick = function (args) {
         this.resetLastCombos();
         this.currentTrickCounter.setValue(0);
+        this.trickCounter.incValue(1);
         this.game.gamedatas.currentTrick = [];
     };
     Tichu.prototype.onEnteringStatePlayComboOpen = function (args) {
@@ -465,7 +484,6 @@ var Tichu = /** @class */ (function () {
                 this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
             }
         }
-        //tichus
         if (!this.game.isSpectator) {
             if (player.call_grand_tichu === Bet.NO_BET_YET) {
                 this.game.addActionButton("noBet", _("No bet"), function () { return _this.onGrandTichuBet(Bet.NO_BET); }, null, false, "gray");
@@ -478,6 +496,9 @@ var Tichu = /** @class */ (function () {
                 this.game.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
             }
         }
+        if (this.game.gamedatas.currentTrick.length > 0) {
+            this.addMyActionButton("myShowTrick", _("Show current trick"), function () { return _this.showCurrentTrick(); }, "gray", "trick_button");
+        }
     };
     Tichu.prototype.resetLastCombos = function () {
         for (var _i = 0, _a = Object.entries(this.tableCombos); _i < _a.length; _i++) {
@@ -486,7 +507,7 @@ var Tichu = /** @class */ (function () {
             $("lastcombo_" + key).innerHTML = "";
             this.game.addTooltip("playertable_" + key, "", "");
         }
-        dojo.query(".whiteblock").removeClass("lastComboPlayer");
+        dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
     };
     Tichu.prototype.cleanPlayersPanel = function () {
         dojo.query(".handcount").innerHTML(0);
@@ -873,7 +894,7 @@ var Tichu = /** @class */ (function () {
         dojo.query(".handcount." + playerId).forEach(function (el) {
             el.innerHTML = String(parseInt(el.innerHTML) - notif.args.cards.length);
         });
-        dojo.query(".whiteblock").removeClass("lastComboPlayer");
+        dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
         $("playertable_" + playerId).classList.add("lastComboPlayer");
         (_a = this.game.gamedatas.currentTrick).push.apply(_a, notif.args.cards);
         this.currentTrickCounter.incValue(notif.args.points);
@@ -891,8 +912,8 @@ var Tichu = /** @class */ (function () {
             var y = (w - x) / 7;
             dojo.place(this.game.format_block("jstpl_mahjong", {
                 value: wish,
-                x: x * 100,
-                y: y * 150,
+                x: x * 75,
+                y: y * 112.5,
             }), indicator);
             indicator.style.display = "block";
         }

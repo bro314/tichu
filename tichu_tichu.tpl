@@ -1,49 +1,57 @@
 {OVERALL_GAME_HEADER}
 
-<div id="mahjongpanel" class="whiteblock" style="display:none;">
+<div id="mahjongpanel" style="display:none;">
     <h3>{MAHJONG}</h3>
     <div id="mahjong"></div>
 </div>
 
-<div id="phoenixpanel" class="whiteblock" style="display:none;">
+<div id="phoenixpanel" style="display:none;">
     <h3>{PHOENIX}</h3>
     <div id="phoenixChoice"></div>
 </div>
 
 <div id="card-last-played-area">
     <!-- BEGIN last_played -->
-    <div class="whiteblock {POSITION}" id="playertable_{PLAYER_ID}">
-        <div class="last-played-container">
-					<div class="last-played-player">
-						<div class="playertablename" style="color:#{PLAYER_COLOR}">
-							{PLAYER_NAME}
-						</div>
-						<div class="last-played-icons">
-						  <div class="icon hand" id="icon_hand_{PLAYER_ID}"></div>
-						  <div class="count handcount {PLAYER_ID}"></div>
-						  <div class="icon star" id="icon_star_{PLAYER_ID}"></div>
-						  <div class="count pointcount {PLAYER_ID}"></div>
-						</div>
-						<div>
-  	          <div class="icon big grandtichucolor {PLAYER_ID}"></div>
-	            <div class="icon big tichucolor {PLAYER_ID}"></div>
-						</div>
-					</div>
-          <div id="lastcombo_{PLAYER_ID}" class="last-played-combo"></div>
+    <div class="last-played-container {POSITION}" id="playertable_{PLAYER_ID}">
+      <div class="disabler"></div>
+      <div class="last-played-player">
+        <div class="playertablename" style="color:#{PLAYER_COLOR}">
+          {PLAYER_NAME}
         </div>
+        <div class="last-played-icons">
+          <div class="icon hand" id="icon_hand_{PLAYER_ID}"></div>
+          <div class="count handcount {PLAYER_ID}"></div>
+          <div class="icon star" id="icon_star_{PLAYER_ID}"></div>
+          <div class="count pointcount {PLAYER_ID}"></div>
+        </div>
+        <div>
+          <div class="icon big grandtichucolor {PLAYER_ID}"></div>
+          <div class="icon big tichucolor {PLAYER_ID}"></div>
+        </div>
+      </div>
+      <div id="lastcombo_{PLAYER_ID}" class="last-played-combo"></div>
     </div>
     <!-- END last_played -->
 
   <div id="mahjongIndicator"></div>
   <div id="currentTrickDiv">
-	  <a id="currentTrick" href="#"><div id="currentTrickCounter"></div></a>
-	</div>
+    <div>
+      Round: <span id="roundCounter">0</span>
+    </div>
+    <div>
+      Trick: <span id="trickCounter">0</span>
+    </div>
+    <div>
+      Trick Points: <span id="currentTrickCounter">0</span>
+    </div>
+    <div id="trick_button"></div>
+  </div>
 </div>
 
 <div id="playertables" style="display:none;">
     <!-- BEGIN player -->
     <div>
-        <div class="playertable whiteblock playertable_{DIR}" id="playertable_{PLAYER_ID}">
+        <div class="playertable playertable_{DIR}" id="playertable_{PLAYER_ID}">
             <div class="playertablename" style="color:#{PLAYER_COLOR}">
                 {PLAYER_NAME}
             </div>
@@ -74,13 +82,23 @@
     <div id="myhand">
     </div>
     <div id="prefs">
-		  <span>User Preferences:</span>
+      <span>User Preferences:</span>
       <a href="#" class="reordercards" id="order_by_rank" style="display:none;">[{REORDER_CARDS_BY_RANK}]</a>
       <a href="#" class="reordercards" id="order_by_color">[{REORDER_CARDS_BY_COLOR}]</a>
-		  <a href="#" class="reordercards" id="list_table" style="display:none;">[{LIST_TABLE}]</a>
+      <a href="#" class="reordercards" id="list_table" style="display:none;">[{LIST_TABLE}]</a>
       <a href="#" class="reordercards" id="square_table">[{SQUARE_TABLE}]</a>
       <a href="#" class="reordercards" id="clockwise">[{CLOCKWISE}]</a>
       <a href="#" class="reordercards" id="counterClockwise">[{COUNTER_CLOCKWISE}]</a>
+    </div>
+    <div id="themes">
+      <span>Color Themes:</span>
+      <!-- BEGIN theme -->
+      <a href="#" class="themelink theme{THEME_NO}" id="theme{THEME_NO}">
+        <div class="bg bg1"></div>
+        <div class="bg bg2"></div>
+        <div class="bg bg3"></div>
+      </a>
+      <!-- END theme -->
     </div>
 </div>
 <div id="placeholder" style="position:absolute; left:800px; top:250px; width:1px; height:1px"></div>

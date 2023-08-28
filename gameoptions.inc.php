@@ -96,4 +96,22 @@ $game_preferences = [
     ],
     "default" => 2,
   ],
+  104 => [
+    "name" => totranslate("Color Theme"),
+    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "values" => [
+      0 => ["name" => totranslate("wood")],
+      1 => ["name" => totranslate("blue")],
+      2 => ["name" => totranslate("blue gray")],
+      3 => ["name" => totranslate("pink")],
+      4 => ["name" => totranslate("green brown")],
+      5 => ["name" => totranslate("red beige")],
+      6 => ["name" => totranslate("gray")],
+      7 => ["name" => totranslate("blue brown")],
+      8 => ["name" => totranslate("blue beige")],
+      9 => ["name" => totranslate("brown")],
+      10 => ["name" => totranslate("green")],
+    ],
+    "default" => 0,
+  ],
 ];

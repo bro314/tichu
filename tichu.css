@@ -1,8 +1,173 @@
 @import url(../../../css/csslayer.css); /* Note: you must not use any @import directive other than this one */
 
+html {
+  --bg-color-light: #eee;
+
+  --bg-color-html: rgba(0, 0, 0, 0.3);
+  --bg-color-play-area: rgba(255, 255, 255, 0.3);
+  --bg-color-lighter: hsl(32 75% 90% / 1);
+
+  --bg-color-active: rgba(200, 0, 0, 0.9);
+
+  --border-radius: 6px;
+}
+
+body {
+  background: var(--bg-color-html);
+}
+
+html.theme0,
+.theme0 {
+  --bg-color-html: rgba(0, 0, 0, 0.3);
+  --bg-color-play-area: rgba(255, 255, 255, 0.3);
+  --bg-color-lighter: hsl(32 75% 90% / 1);
+}
+html.theme1,
+.theme1 {
+  --bg-color-html: hsl(225 35% 15% / 1);
+  --bg-color-play-area: hsl(225 20% 65% / 1);
+  --bg-color-lighter: hsl(225 30% 90% / 1);
+}
+html.theme2,
+.theme2 {
+  --bg-color-html: hsl(203 37% 20% / 1);
+  --bg-color-play-area: hsl(50 15% 60% / 1);
+  --bg-color-lighter: hsl(50 10% 80% / 1);
+}
+html.theme3,
+.theme3 {
+  --bg-color-html: hsl(352 71% 25% / 1);
+  --bg-color-play-area: hsl(342 56% 76% / 1);
+  --bg-color-lighter: hsl(32 66% 90% / 1);
+}
+html.theme4,
+.theme4 {
+  --bg-color-html: hsl(75 10% 25% / 1);
+  --bg-color-play-area: hsl(31 40% 70% / 1);
+  --bg-color-lighter: hsl(21 60% 90% / 1);
+}
+html.theme5,
+.theme5 {
+  --bg-color-html: hsl(0 0% 25% / 1);
+  --bg-color-play-area: hsl(355 45% 50% / 1);
+  --bg-color-lighter: hsl(40 100% 86% / 1);
+  --bg-color-active: rgba(255, 155, 0, 0.8);
+}
+html.theme6,
+.theme6 {
+  --bg-color-html: hsl(0 0% 20% / 1);
+  --bg-color-play-area: hsl(0 0% 70% / 1);
+  --bg-color-lighter: hsl(0 0% 90% / 1);
+}
+html.theme7,
+.theme7 {
+  --bg-color-html: hsl(216, 69%, 20%);
+  --bg-color-play-area: hsl(32, 43%, 75%);
+  --bg-color-lighter: hsl(35, 58%, 94%);
+}
+html.theme8,
+.theme8 {
+  --bg-color-html: hsl(222, 38%, 9%);
+  --bg-color-play-area: hsl(212, 8%, 64%);
+  --bg-color-lighter: hsl(41, 70%, 85%);
+}
+html.theme9,
+.theme9 {
+  --bg-color-html: hsl(33 53% 25% / 1);
+  --bg-color-play-area: hsl(33 40% 64% / 1);
+  --bg-color-lighter: hsl(33 68% 85% / 1);
+}
+html.theme10,
+.theme10 {
+  --bg-color-html: hsl(91, 23%, 26%);
+  --bg-color-play-area: hsl(87, 24%, 61%);
+  --bg-color-lighter: hsl(35, 69%, 94%);
+}
+
+#themes {
+  display: flex;
+  padding: 0px 10px 10px 10px;
+  line-height: 16px;
+}
+#themes > * {
+  margin-right: 15px;
+}
+
+a.themelink {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+a.themelink .bg {
+  width: 14px;
+  height: 14px;
+}
+a.themelink .bg1 {
+  background-color: var(--bg-color-html);
+}
+a.themelink .bg2 {
+  background-color: var(--bg-color-play-area);
+}
+a.themelink .bg3 {
+  background-color: var(--bg-color-lighter);
+}
+
+.roundedbox {
+  background-color: var(--bg-color-light);
+}
+
 #game_play_area {
-  max-width: 1500px;
-  margin: 5px auto;
+  max-width: 900px;
+  margin: 10px auto 50px;
+  background: var(--bg-color-play-area);
+  border-radius: var(--border-radius);
+  padding-top: 15px;
+}
+#game_play_area h3 {
+  font-size: 20px;
+}
+#game_play_area #prefs a {
+  color: var(--bg-color-lighter);
+}
+
+#page-title {
+  max-width: 900px;
+  box-sizing: border-box;
+  margin: 0px auto 10px auto;
+  border-radius: var(--border-radius);
+  box-shadow: none;
+}
+#page-title.fixed-page-title {
+  max-width: unset;
+  margin: unset;
+  border-radius: 0;
+}
+
+.player-board {
+  background-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+.player_board_inner {
+  position: relative;
+  background-color: var(--bg-color-lighter);
+  border-radius: var(--border-radius);
+  margin-right: 4px;
+  padding: 5px 3px;
+}
+.player-name {
+  position: relative;
+}
+.player_score {
+  position: relative;
+}
+.player_score .timeToThink {
+  top: 0;
+}
+
+.log {
+  margin-right: 10px;
+  border-radius: var(--border-radius);
 }
 
 .ha_board {
@@ -10,23 +175,35 @@
 }
 
 #myhandwrap {
-  padding-left: 15px;
-  padding-top: 25px;
+  padding-top: 10px;
+  font-size: 14px;
+}
+#myhand {
+  margin: 15px 15px 25px 15px;
 }
 
 .smallCards {
   background-size: 1050px 450px;
 }
 
-.whiteblock {
-  border-radius: 6px;
+#card-last-played-area .last-played-container {
+  position: relative;
+  border-radius: var(--border-radius);
 }
-.whiteblock.lastComboPlayer {
-  background-color: rgba(255, 255, 0, 0.7);
+#card-last-played-area .last-played-container.disabled:not(.lastComboPlayer) .disabler {
+  display: block;
 }
-.whiteblock.disabled:not(.lastComboPlayer) {
-  background-color: rgba(170, 170, 170, 0.7);
-  background-image: unset;
+.disabler {
+  display: none;
+  position: absolute;
+  background: rgba(100, 100, 100, 0.6);
+  border-radius: var(--border-radius);
+  /* Covering the 4px border of the parent box. */
+  left: -4px;
+  right: -4px;
+  top: -4px;
+  bottom: -4px;
+  z-index: 10;
 }
 
 .combo {
@@ -34,13 +211,13 @@
 }
 
 span.pass img {
-  border-radius: 6px;
+  border-radius: var(--border-radius);
   opacity: 0.9;
   box-shadow: 5px 5px 5px 0px #666;
 }
 
 .stockitem {
-  border-radius: 6px;
+  border-radius: var(--border-radius);
   box-shadow: 2px 2px 5px 3px #666;
 }
 
@@ -54,11 +231,10 @@ span.pass img {
   /* UI should not jump when no buttons are present. */
   min-height: 30px;
   display: flex;
-  background-color: rgba(255, 255, 255, 0.5);
+  background-color: var(--bg-color-lighter);
 }
 #buttons h3 {
   line-height: 20px;
-  font-size: 20px;
 }
 #buttons #space {
   flex-grow: 1;
@@ -71,6 +247,8 @@ span.pass img {
   margin: 0;
   width: 100%;
   box-sizing: border-box;
+  box-shadow: none;
+  text-shadow: none;
 }
 #buttons #bomb_button {
   min-width: 100px;
@@ -99,8 +277,8 @@ span.pass img {
 }
 
 #prefs {
-  margin-top: 15px;
-  font-size: 14px;
+  padding: 10px;
+  border-top: 1px solid var(--bg-color-lighter);
 }
 
 .reordercards {
@@ -108,15 +286,16 @@ span.pass img {
 }
 
 .active {
-  border: 5px solid rgba(255, 0, 0, 0.7);
+  border: 4px solid var(--bg-color-active);
 }
-#card-last-played-area .whiteblock {
-  border: 5px solid transparent;
-  padding: 5px;
-  margin: 5px;
+#card-last-played-area .last-played-container {
+  border: 4px solid transparent;
+  padding: 6px;
+  background: var(--bg-color-lighter);
+  border-radius: var(--border-radius);
 }
-#card-last-played-area .whiteblock.active {
-  border: 5px solid rgba(255, 0, 0, 0.7);
+#card-last-played-area .last-played-container.active {
+  border: 4px solid var(--bg-color-active);
 }
 
 .icon {
@@ -232,27 +411,25 @@ span.pass img {
 /** Table layout **/
 
 #card-last-played-area {
-  padding: 10px;
-}
-
-#card-last-played-area {
   display: grid;
+  padding: 0px 15px 15px 15px;
+  grid-gap: 10px;
   grid-template-columns: 2fr 1fr;
   grid-template-rows: 1fr 1fr 1fr 1fr;
 }
-#card-last-played-area .whiteblock.top {
+#card-last-played-area .top {
   grid-column: 1 / span 1;
   grid-row: 3 / span 1;
 }
-#card-last-played-area .whiteblock.left {
+#card-last-played-area .left {
   grid-column: 1 / span 1;
   grid-row: 4 / span 1;
 }
-#card-last-played-area .whiteblock.right {
+#card-last-played-area .right {
   grid-column: 1 / span 1;
   grid-row: 2 / span 1;
 }
-#card-last-played-area .whiteblock.bottom {
+#card-last-played-area .bottom {
   grid-column: 1 / span 1;
   grid-row: 1 / span 1;
 }
@@ -260,14 +437,13 @@ span.pass img {
   grid-column: 2 / span 1;
   grid-row: 4 / span 1;
   place-self: center;
-  scale: 0.75;
 }
 #card-last-played-area #currentTrickDiv {
   grid-column: 2 / span 1;
   grid-row: 1 / span 1;
-  place-self: center;
-  text-align: center;
-  font-size: 28px;
+  place-self: start end;
+  text-align: right;
+  font-size: 20px;
 }
 
 .squareTable #card-last-played-area {
@@ -275,25 +451,25 @@ span.pass img {
   grid-template-columns: 1fr 1fr 10px 1fr 1fr;
   grid-template-rows: 1fr 1fr 1fr;
 }
-.squareTable #card-last-played-area .whiteblock.top {
+.squareTable #card-last-played-area .top {
   grid-column: 2 / span 3;
   grid-row: 1 / span 1;
 }
-.squareTable #card-last-played-area .whiteblock.left {
+.squareTable #card-last-played-area .left {
   grid-column: 1 / span 2;
   grid-row: 2 / span 1;
 }
-.clockwise.squareTable #card-last-played-area .whiteblock.left {
+.clockwise.squareTable #card-last-played-area .left {
   grid-column: 4 / span 2;
 }
-.squareTable #card-last-played-area .whiteblock.right {
+.squareTable #card-last-played-area .right {
   grid-column: 4 / span 2;
   grid-row: 2 / span 1;
 }
-.clockwise.squareTable #card-last-played-area .whiteblock.right {
+.clockwise.squareTable #card-last-played-area .right {
   grid-column: 1 / span 2;
 }
-.squareTable #card-last-played-area .whiteblock.bottom {
+.squareTable #card-last-played-area .bottom {
   grid-column: 2 / span 3;
   grid-row: 3 / span 1;
 }
@@ -301,14 +477,10 @@ span.pass img {
   grid-column: 5 / span 1;
   grid-row: 3 / span 1;
   place-self: center;
-  scale: 0.75;
 }
 .squareTable #card-last-played-area #currentTrickDiv {
   grid-column: 5 / span 1;
   grid-row: 1 / span 1;
-  place-self: center;
-  text-align: center;
-  font-size: 28px;
 }
 
 .last-played-container {
@@ -345,23 +517,24 @@ span.pass img {
 }
 
 /* passing and receiving cards only */
-.playertable {
+#playertables .playertable {
   text-align: center;
-  width: 400px;
+  width: 120px;
   height: 190px;
   cursor: pointer;
+  border-radius: var(--border-radius);
+  background: var(--bg-color-lighter);
+  padding: 10px;
+  margin: 10px 0;
 }
 
-.playertable_1,
-.playertable_2,
-.playertable_3,
-.playertablebackground {
+#playertables .playertablebackground {
   width: 120px;
 }
 
-.playertable_1,
-.playertable_3 {
-  margin-top: 50px;
+#playertables .playertable_1,
+#playertables .playertable_3 {
+  margin: 50px 0px 25px 0px;
 }
 
 /*** cards on table for passing and receiving ***/
@@ -372,7 +545,7 @@ span.pass img {
   width: 100px;
   height: 150px;
   background-image: url("img/tichu-cards.png");
-  border-radius: 6px;
+  border-radius: var(--border-radius);
   box-shadow: 2px 2px 5px 3px #666;
 }
 
@@ -380,21 +553,36 @@ span.pass img {
   background-image: url("img/tiki-cards.png");
 }
 
+#mahjongpanel,
+#phoenixpanel {
+  display: block;
+  margin: 0px 15px 15px 15px;
+  padding: 15px;
+  background: var(--bg-color-lighter);
+  border-radius: var(--border-radius);
+}
+
+#mahjongpanel h3,
+#phoenixpanel h3 {
+  margin-bottom: 15px;
+}
+
 .mahjong {
-  width: 100px;
-  height: 150px;
+  width: 75px;
+  height: 112.5px;
   background-image: url("img/tichu-icons-table.png");
-  background-size: 800px 300px;
-  background-color: rgba(255, 255, 255, 0.5333333333);
-  border-radius: 8px;
+  background-size: 600px 225px;
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: var(--border-radius);
 }
 
 #mahjongIndicator {
   display: none;
-  width: 100px;
-  height: 150px;
-  border-radius: 8px;
+  width: 75px;
+  height: 112.5px;
   background-image: url("img/tichu-mahjong.png");
+  background-size: 75px 112.5px;
+  border-radius: var(--border-radius);
 }
 
 .tiki #mahjongIndicator {
@@ -424,10 +612,6 @@ span.pass img {
 .spectatorMode #playertables,
 .spectatorMode #myhandwrap {
   display: none;
-}
-
-#currentTrickCounter {
-  display: inline-block;
 }
 
 #popin_myDialogCurrentTrick #currentTrickCards {

@@ -120,6 +120,9 @@ class Tichu extends Table
     $currentTrick = array_values($deck->getCardsInLocation("combos"));
     $result["currentTrick"] = $currentTrick;
     $result["currentTrickValue"] = CardManager::getTrickValue($currentTrick);
+    $roundAndTrick = LogManager::getCurrentRoundAndTrick();
+    $result["round"] = $roundAndTrick["round"];
+    $result["trick"] = $roundAndTrick["trick"];
 
     return $result;
   }
