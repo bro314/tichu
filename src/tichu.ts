@@ -677,7 +677,8 @@ class Tichu {
               "play_button"
             );
           }
-          if (this.game.gamedatas.hasBomb && this.game.gamedatas.mahjongWish === 0) {
+          // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
+          if (this.game.gamedatas.mahjongWish === 0) {
             this.addMyActionButton(
               "myPlayBomb",
               _("Play a Bomb"),
@@ -734,7 +735,8 @@ class Tichu {
           ""
         );
       }
-      if (this.game.gamedatas.hasBomb && this.game.gamedatas.mahjongWish === 0) {
+      // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
+      if (this.game.gamedatas.mahjongWish === 0) {
         this.addMyActionButton(
           "myPlayBomb",
           _("Play a Bomb"),
