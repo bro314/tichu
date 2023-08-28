@@ -1,5 +1,8 @@
 {OVERALL_GAME_HEADER}
 
+<audio id="audiosrc_tichu_laser" src="{GAMETHEMEURL}img/tichu_laser.mp3" preload="none" autobuffer></audio>
+<audio id="audiosrc_o_tichu_laser" src="{GAMETHEMEURL}img/tichu_laser.ogg" preload="none" autobuffer></audio>
+
 <div id="mahjongpanel" style="display:none;">
     <h3>{MAHJONG}</h3>
     <div id="mahjong"></div>

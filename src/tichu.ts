@@ -1185,6 +1185,7 @@ class Tichu {
       dojo.query(".grandtichucolor." + notif.args.player_id).style("display", "inline-block");
       dojo.query(".tichublack." + notif.args.player_id).style("display", "none");
       this.animateIcon("grandtichucolor", notif.args.player_id);
+      playSound("tichu_laser");
       this.game.notifqueue.setSynchronousDuration(1000);
     } else {
       // If the notification was just a "this player has made no bet", then there is good reason
@@ -1207,6 +1208,7 @@ class Tichu {
     if (bet === Bet.TICHU) {
       dojo.query(".tichucolor." + notif.args.player_id).style("display", "inline-block");
       this.animateIcon("tichucolor", notif.args.player_id);
+      playSound("tichu_laser");
       this.game.notifqueue.setSynchronousDuration(1000);
     } else {
       // If the notification was just a "this player has made no bet" or "this player has already

@@ -6,6 +6,7 @@ declare var g_archive_mode: boolean;
 declare function _(str: string): string;
 declare function __(site: string, str: string): string;
 declare function $(text: string | Element): HTMLElement;
+declare function playSound(id: string): void;
 
 declare const define: any;
 declare const ebg: any;
