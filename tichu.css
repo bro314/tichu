@@ -516,6 +516,36 @@ span.pass img {
   text-overflow: ellipsis;
 }
 
+#playedCards {
+  display: none;
+  padding: 15px;
+  --w: 40px;
+  --h: 60px;
+}
+#playedCards .type {
+  display: flex;
+  justify-content: center;
+}
+#playedCards .arg {
+  width: var(--w);
+  height: var(--h);
+  margin: 3px;
+  border-radius: 3px;
+  background-image: url(img/tichu-cards.png);
+  background-position: calc(var(--x) * -1 * var(--w)) calc(var(--y) * -1 * var(--h));
+  background-repeat: no-repeat;
+  background-size: calc(var(--w) * 14) calc(var(--h) * 4);
+}
+#playedCards .arg.hand {
+  opacity: 0.3;
+}
+#playedCards .arg.trick {
+  visibility: hidden;
+}
+#playedCards .arg.captured {
+  visibility: hidden;
+}
+
 /* passing and receiving cards only */
 #playertables .playertable {
   text-align: center;

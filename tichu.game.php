@@ -101,11 +101,8 @@ class Tichu extends Table
     $result["players"] = Utils::parseInt($players, ["id", "no", "has_bomb"]);
 
     $result["hand"] = array_values($deck->getCardsInLocation("hand", $current_player_id));
-
-    $ticHand = new Hand($result["hand"]);
     $result["handcount"] = $deck->countCardsByLocationArgs("hand");
     $result["capturedpoints"] = CardManager::calculatCapturedPoints();
-    $result["allcombos"] = $deck->getCardsInLocation("allcombos");
     $result["firstoutplayer"] = intval(self::getGameStateValue("firstOutPlayer"));
     $result["mahjongOwner"] = intval(self::getGameStateValue("mahjongOwner"));
     $result["mahjongWish"] = intval(self::getGameStateValue("mahjongWish"));
@@ -114,12 +111,17 @@ class Tichu extends Table
     $result["lastComboPlayer"] = $lastCombo->player;
     $result["cardslastcombo"] = $lastCombo->cards;
     $result["lastComboDescription"] = $lastCombo->description;
+
     list($lastCombos, $passes) = LogManager::getLastCombos($current_player_id);
     $result["allLastCombos"] = $lastCombos;
     $result["passes"] = $passes;
+
+    $result["capturedCards"] = array_values($deck->getCardsInLocation("captured"));
+
     $currentTrick = array_values($deck->getCardsInLocation("combos"));
     $result["currentTrick"] = $currentTrick;
     $result["currentTrickValue"] = CardManager::getTrickValue($currentTrick);
+
     $roundAndTrick = LogManager::getCurrentRoundAndTrick();
     $result["round"] = $roundAndTrick["round"];
     $result["trick"] = $roundAndTrick["trick"];

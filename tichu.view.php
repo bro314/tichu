@@ -67,5 +67,25 @@ class view_tichu_tichu extends game_view
         "THEME_NO" => $value,
       ]);
     }
+
+    $this->page->begin_block("tichu_tichu", "played_arg");
+    $this->page->begin_block("tichu_tichu", "played_type");
+    for ($type = 1; $type <= 4; $type++) {
+      $this->page->reset_subblocks("played_arg");
+
+      for ($arg = 1; $arg <= 14; $arg++) {
+        $this->page->insert_block("played_arg", [
+          "Y" => $type - 1,
+          "X" => $arg - 1,
+          "TYPE" => $type,
+          "ARG" => $arg,
+        ]);
+      }
+
+      $this->page->insert_block("played_type", [
+        "Y" => $type - 1,
+        "TYPE" => $type,
+      ]);
+    }
   }
 }

@@ -75,12 +75,15 @@ interface TichuGamedatas {
   tablespeed: string;
 
   allLastCombos: Record<number, Combo>;
-  allcombos: Combo[];
   capturedpoints: Record<number, number>;
+  // deck location "captured"
+  capturedCards: Card[];
   cardslastcombo: Card[];
+  // deck location "combo"
   currentTrick: Card[];
   currentTrickValue: number;
   firstoutplayer: number;
+  // deck location "hand" (current user only)
   hand: Card[];
   handcount: Record<number, number>;
   hasBomb: boolean;
@@ -185,6 +188,7 @@ class Tichu {
     this.setTheme(this.game.prefs[104]?.value ?? 0);
 
     this.setupCurrentTrick();
+    this.updateCardsPlayed();
 
     debug("Ending game setup");
   }
@@ -454,6 +458,8 @@ class Tichu {
     dojo.query(".cardback").style("display", "none");
     dojo.query(".mahjong_mini").innerHTML("");
     this.resetLastCombos();
+    this.game.gamedatas.capturedCards = [];
+    this.game.gamedatas.currentTrick = [];
     this.game.gamedatas.firstoutplayer = 0;
     for (const id in this.game.gamedatas.players) {
       this.game.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
@@ -500,6 +506,7 @@ class Tichu {
     this.resetLastCombos();
     this.currentTrickCounter.setValue(0);
     this.trickCounter.incValue(1);
+    this.game.gamedatas.capturedCards.push(...this.game.gamedatas.currentTrick);
     this.game.gamedatas.currentTrick = [];
   }
 
@@ -572,11 +579,30 @@ class Tichu {
     dojo.query(".playertable").style("cursor", "unset");
   }
 
+  updateCardsPlayed() {
+    const captured = this.game.gamedatas.capturedCards;
+    for (const card of captured) {
+      const id = `playedCard_${card.type}_${card.type_arg}`;
+      document.getElementById(id)?.classList.add("captured");
+    }
+    const trick = this.game.gamedatas.currentTrick;
+    for (const card of trick) {
+      const id = `playedCard_${card.type}_${card.type_arg}`;
+      document.getElementById(id)?.classList.add("trick");
+    }
+    const hand = this.game.gamedatas.hand;
+    for (const card of hand) {
+      const id = `playedCard_${card.type}_${card.type_arg}`;
+      document.getElementById(id)?.classList.add("hand");
+    }
+  }
+
   onUpdateActionButtons(stateName: string, args: any) {
     debug("onUpdateActionButtons: " + stateName);
     const player = this.game.gamedatas.players[this.game.player_id];
     this.game.removeActionButtons();
     this.removeMyActionButtons();
+    this.updateCardsPlayed();
     if (this.game.isCurrentPlayerActive()) {
       switch (stateName) {
         case "giveCards":
@@ -1169,6 +1195,7 @@ class Tichu {
     debug("notif_dealCards", notif);
 
     for (const card of notif.args.cards) {
+      this.game.gamedatas.hand.push(card);
       addCardToStock(this.playerHand, card);
     }
     this.updateStockOverlap(this.playerHand);

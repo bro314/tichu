@@ -83,6 +83,7 @@ var Tichu = /** @class */ (function () {
         this.changeOrder(this.game.prefs[101].value != 1);
         this.setTheme((_c = (_b = this.game.prefs[104]) === null || _b === void 0 ? void 0 : _b.value) !== null && _c !== void 0 ? _c : 0);
         this.setupCurrentTrick();
+        this.updateCardsPlayed();
         debug("Ending game setup");
     };
     Tichu.prototype.setupCurrentTrick = function () {
@@ -310,6 +311,8 @@ var Tichu = /** @class */ (function () {
         dojo.query(".cardback").style("display", "none");
         dojo.query(".mahjong_mini").innerHTML("");
         this.resetLastCombos();
+        this.game.gamedatas.capturedCards = [];
+        this.game.gamedatas.currentTrick = [];
         this.game.gamedatas.firstoutplayer = 0;
         for (var id in this.game.gamedatas.players) {
             this.game.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
@@ -348,9 +351,11 @@ var Tichu = /** @class */ (function () {
         });
     };
     Tichu.prototype.onEnteringStateNewTrick = function (args) {
+        var _a;
         this.resetLastCombos();
         this.currentTrickCounter.setValue(0);
         this.trickCounter.incValue(1);
+        (_a = this.game.gamedatas.capturedCards).push.apply(_a, this.game.gamedatas.currentTrick);
         this.game.gamedatas.currentTrick = [];
     };
     Tichu.prototype.onEnteringStatePlayComboOpen = function (args) {
@@ -411,12 +416,34 @@ var Tichu = /** @class */ (function () {
         debug("Leaving state: " + stateName);
         dojo.query(".playertable").style("cursor", "unset");
     };
+    Tichu.prototype.updateCardsPlayed = function () {
+        var _a, _b, _c;
+        var captured = this.game.gamedatas.capturedCards;
+        for (var _i = 0, captured_1 = captured; _i < captured_1.length; _i++) {
+            var card = captured_1[_i];
+            var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
+            (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.add("captured");
+        }
+        var trick = this.game.gamedatas.currentTrick;
+        for (var _d = 0, trick_1 = trick; _d < trick_1.length; _d++) {
+            var card = trick_1[_d];
+            var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
+            (_b = document.getElementById(id)) === null || _b === void 0 ? void 0 : _b.classList.add("trick");
+        }
+        var hand = this.game.gamedatas.hand;
+        for (var _e = 0, hand_1 = hand; _e < hand_1.length; _e++) {
+            var card = hand_1[_e];
+            var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
+            (_c = document.getElementById(id)) === null || _c === void 0 ? void 0 : _c.classList.add("hand");
+        }
+    };
     Tichu.prototype.onUpdateActionButtons = function (stateName, args) {
         var _this = this;
         debug("onUpdateActionButtons: " + stateName);
         var player = this.game.gamedatas.players[this.game.player_id];
         this.game.removeActionButtons();
         this.removeMyActionButtons();
+        this.updateCardsPlayed();
         if (this.game.isCurrentPlayerActive()) {
             switch (stateName) {
                 case "giveCards":
@@ -813,6 +840,7 @@ var Tichu = /** @class */ (function () {
         debug("notif_dealCards", notif);
         for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
             var card = _a[_i];
+            this.game.gamedatas.hand.push(card);
             addCardToStock(this.playerHand, card);
         }
         this.updateStockOverlap(this.playerHand);

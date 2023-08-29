@@ -139,12 +139,12 @@ class CardManager extends APP_GameClass
       } elseif ($val == 13) {
         $score += 10;
       } elseif ($val == 1 && $card["type"] == 2) {
+        // Phoenix
         $score -= 25;
-      }
-      //Phoenix
-      elseif ($val == 1 && $card["type"] == 1) {
+      } elseif ($val == 1 && $card["type"] == 1) {
+        // Dragon
         $score += 25;
-      } //Dragon
+      }
     }
     return $asTable ? ["table" => $table, "special" => $special, "score" => $score] : $score;
   }
