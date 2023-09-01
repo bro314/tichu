@@ -5,7 +5,7 @@ html {
 
   --bg-color-html: rgba(0, 0, 0, 0.3);
   --bg-color-play-area: rgba(255, 255, 255, 0.3);
-  --bg-color-lighter: hsl(32 75% 90% / 1);
+  --bg-color-lighter: rgba(246, 231, 212, 0.8);
 
   --bg-color-active: rgba(200, 0, 0, 0.9);
 
@@ -20,7 +20,7 @@ html.theme0,
 .theme0 {
   --bg-color-html: rgba(0, 0, 0, 0.3);
   --bg-color-play-area: rgba(255, 255, 255, 0.3);
-  --bg-color-lighter: hsl(32 75% 90% / 1);
+  --bg-color-lighter: rgba(246, 231, 212, 0.8);
 }
 html.theme1,
 .theme1 {
@@ -42,10 +42,11 @@ html.theme3,
 }
 html.theme4,
 .theme4 {
-  --bg-color-html: hsl(75 10% 25% / 1);
-  --bg-color-play-area: hsl(31 40% 70% / 1);
-  --bg-color-lighter: hsl(21 60% 90% / 1);
+  --bg-color-html: transparent;
+  --bg-color-play-area: rgba(255, 255, 255, 0.3);
+  --bg-color-lighter: rgba(255, 255, 255, 0.7);
 }
+
 html.theme5,
 .theme5 {
   --bg-color-html: hsl(0 0% 25% / 1);
