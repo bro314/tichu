@@ -107,14 +107,20 @@
 
 <div id="playedCards">
   <h3>Played Cards</h3>
-  <!-- BEGIN played_type -->
-  <div id="playedType_{TYPE}" class="type" style="--y:{Y};">
-    <!-- BEGIN played_arg -->
-    <div id="playedCard_{TYPE}_{ARG}" class="arg" style="--x:{X};">
+  <div id="playedCardsFlexRow">
+    <div class="space"></div>
+    <div id="playedCardsFlexCol">
+      <!-- BEGIN played_type -->
+      <div id="playedType_{TYPE}" class="type" style="--y:{Y};">
+        <!-- BEGIN played_arg -->
+        <div id="playedCard_{TYPE}_{ARG}" class="arg" style="--x:{X};">
+        </div>
+        <!-- END played_arg -->
+      </div>
+      <!-- END played_type -->
     </div>
-    <!-- END played_arg -->
+    <div class="space"></div>
   </div>
-  <!-- END played_type -->
 </div>
 
 <div id="placeholder" style="position:absolute; left:800px; top:250px; width:1px; height:1px"></div>

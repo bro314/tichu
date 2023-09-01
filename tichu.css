@@ -536,10 +536,30 @@ span.pass img {
 }
 
 #playedCards {
-  display: none;
-  padding: 15px;
   --w: 40px;
   --h: 60px;
+  display: none;
+}
+#playedCards h3 {
+  padding: 10px 15px;
+  background-color: var(--bg-color-lighter);
+}
+#playedCards #playedCardsFlexRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+#playedCards #playedCardsFlexRow .space {
+  flex-grow: 1;
+}
+#playedCards #playedCardsFlexCol {
+  flex-grow: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 10px;
+  padding: 5px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: var(--border-radius);
 }
 #playedCards .type {
   display: flex;
