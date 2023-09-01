@@ -1416,6 +1416,7 @@ class Tichu {
 
     for (const card of notif.args.cards) {
       const cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
+      this.game.gamedatas.hand.push(card);
       addCardToStock(this.playerHand, card);
       this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
     }
@@ -1437,6 +1438,7 @@ class Tichu {
     const ids = notif.args.cardIds ?? notif.args;
 
     for (const id of ids) {
+      this.game.gamedatas.hand = this.game.gamedatas.hand.filter((c) => c.id === id);
       this.playerHand.removeFromStockById(id);
     }
     this.updateStockOverlap(this.playerHand);

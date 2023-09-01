@@ -1024,6 +1024,7 @@ var Tichu = /** @class */ (function () {
         for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
             var card = _a[_i];
             var cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
+            this.game.gamedatas.hand.push(card);
             addCardToStock(this.playerHand, card);
             this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
         }
@@ -1041,9 +1042,14 @@ var Tichu = /** @class */ (function () {
         // New format: notif.args.cardIds
         // Old format: notif.args
         var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
+        var _loop_2 = function (id) {
+            this_2.game.gamedatas.hand = this_2.game.gamedatas.hand.filter(function (c) { return c.id === id; });
+            this_2.playerHand.removeFromStockById(id);
+        };
+        var this_2 = this;
         for (var _i = 0, ids_1 = ids; _i < ids_1.length; _i++) {
             var id = ids_1[_i];
-            this.playerHand.removeFromStockById(id);
+            _loop_2(id);
         }
         this.updateStockOverlap(this.playerHand);
     };
