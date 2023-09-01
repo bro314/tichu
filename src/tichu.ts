@@ -137,8 +137,38 @@ class Tichu {
   private autoCollectTimeout?: number;
   private autoAcceptTimeout?: number;
 
+  rescale() {
+    const areaElement = document.getElementById("game_play_area")!;
+    const areaWrapElement = document.getElementById("game_play_area_wrap")!;
+    const widthAvailable = areaWrapElement.clientWidth;
+    const heightAvailable = document.documentElement.clientHeight - 120;
+
+    const widthMax = 1200;
+    const widthMin = 900;
+    const heightMin = 800;
+
+    const widthFactor = Math.max(widthAvailable / widthMin, 0.4);
+    const heightFactor = Math.max(heightAvailable / heightMin, 0.7);
+    const factor = Math.min(widthFactor, heightFactor, 1.0);
+
+    areaWrapElement.style.transform = `scale(${factor})`;
+    areaWrapElement.style.transformOrigin = factor === 1.0 ? "top center" : "top left";
+    areaElement.style.width = `${Math.max(
+      Math.min(widthAvailable / factor, widthMax),
+      widthMin
+    )}px`;
+  }
+
   setup(gamedatas: TichuGamedatas) {
     debug("SETUP", gamedatas);
+
+    // Replaces BGA css zoom feature, which is not supported on Firefox.
+    // The css zoom is disabled in tichu.css.
+    new ResizeObserver(() => requestAnimationFrame(() => this.rescale())).observe(
+      document.getElementById("game_play_area_wrap")!
+    );
+    window.addEventListener("resize", () => requestAnimationFrame(() => this.rescale()));
+
     const player_ids = new Array();
     for (const player_id in gamedatas.players) {
       player_ids.push(parseInt(player_id));
@@ -359,7 +389,7 @@ class Tichu {
     let overlap = Math.floor(
       ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100
     );
-    if (overlap > 60) overlap = 60;
+    if (overlap > 70) overlap = 70;
     if (overlap < 12) overlap = 12;
     stock.setOverlap(overlap, 0);
   }

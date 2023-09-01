@@ -115,9 +115,23 @@ a.themelink .bg3 {
   background-color: var(--bg-color-light);
 }
 
+#page-content,
+#right-side-first-part,
+#page-title {
+  zoom: 1 !important;
+}
+
+#game_play_area_wrap {
+  /* this is set dynamically using resize observers */
+  transform: scale(1);
+  /* this is set dynamically using resize observers */
+  transform-origin: top left;
+  margin: 0px 10px;
+}
 #game_play_area {
-  max-width: 900px;
-  margin: 10px auto 50px;
+  /* this is set dynamically using resize observers */
+  width: 900px;
+  margin: 10px auto 50px auto;
   background: var(--bg-color-play-area);
   border-radius: var(--border-radius);
   padding-top: 15px;
@@ -130,9 +144,8 @@ a.themelink .bg3 {
 }
 
 #page-title {
-  max-width: 900px;
   box-sizing: border-box;
-  margin: 0px auto 10px auto;
+  margin: 0px 10px 10px 10px;
   border-radius: var(--border-radius);
   box-shadow: none;
 }
@@ -448,7 +461,12 @@ span.pass img {
 
 .squareTable #card-last-played-area {
   display: grid;
-  grid-template-columns: 1fr 1fr 10px 1fr 1fr;
+  grid-template-columns:
+    minmax(200px, 2.5fr)
+    minmax(200px, 2fr)
+    minmax(20px, 1fr)
+    minmax(200px, 2fr)
+    minmax(200px, 2.5fr);
   grid-template-rows: 1fr 1fr 1fr;
 }
 .squareTable #card-last-played-area .top {
