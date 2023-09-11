@@ -331,6 +331,7 @@ var Tichu = /** @class */ (function () {
         dojo.query(".mahjong_mini").innerHTML("");
         this.resetLastCombos();
         this.game.gamedatas.capturedCards = [];
+        this.game.gamedatas.hand = [];
         this.game.gamedatas.currentTrick = [];
         this.game.gamedatas.firstoutplayer = 0;
         for (var id in this.game.gamedatas.players) {
@@ -1047,7 +1048,7 @@ var Tichu = /** @class */ (function () {
         // Old format: notif.args
         var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
         var _loop_2 = function (id) {
-            this_2.game.gamedatas.hand = this_2.game.gamedatas.hand.filter(function (c) { return c.id === id; });
+            this_2.game.gamedatas.hand = this_2.game.gamedatas.hand.filter(function (c) { return c.id !== id; });
             this_2.playerHand.removeFromStockById(id);
         };
         var this_2 = this;

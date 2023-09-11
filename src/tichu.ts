@@ -489,6 +489,7 @@ class Tichu {
     dojo.query(".mahjong_mini").innerHTML("");
     this.resetLastCombos();
     this.game.gamedatas.capturedCards = [];
+    this.game.gamedatas.hand = [];
     this.game.gamedatas.currentTrick = [];
     this.game.gamedatas.firstoutplayer = 0;
     for (const id in this.game.gamedatas.players) {
@@ -1443,7 +1444,7 @@ class Tichu {
     const ids = notif.args.cardIds ?? notif.args;
 
     for (const id of ids) {
-      this.game.gamedatas.hand = this.game.gamedatas.hand.filter((c) => c.id === id);
+      this.game.gamedatas.hand = this.game.gamedatas.hand.filter((c) => c.id !== id);
       this.playerHand.removeFromStockById(id);
     }
     this.updateStockOverlap(this.playerHand);
