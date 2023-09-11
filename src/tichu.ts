@@ -734,15 +734,13 @@ class Tichu {
             );
           }
           // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
-          if (this.game.gamedatas.mahjongWish === 0) {
-            this.addMyActionButton(
-              "myPlayBomb",
-              _("Play a Bomb"),
-              () => this.playCombo("playBomb"),
-              "gray",
-              "bomb_button"
-            );
-          }
+          this.addMyActionButton(
+            "myPlayBomb",
+            _("Play a Bomb"),
+            () => this.playCombo("playBomb"),
+            "gray",
+            "bomb_button"
+          );
       }
     } else if (
       !this.game.isSpectator &&
@@ -792,15 +790,13 @@ class Tichu {
         );
       }
       // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
-      if (this.game.gamedatas.mahjongWish === 0) {
-        this.addMyActionButton(
-          "myPlayBomb",
-          _("Play a Bomb"),
-          () => this.playCombo("playBomb"),
-          "gray",
-          "bomb_button"
-        );
-      }
+      this.addMyActionButton(
+        "myPlayBomb",
+        _("Play a Bomb"),
+        () => this.playCombo("playBomb"),
+        "gray",
+        "bomb_button"
+      );
     }
 
     if (!this.game.isSpectator) {

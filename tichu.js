@@ -508,9 +508,7 @@ var Tichu = /** @class */ (function () {
                         this.addMyActionButton("myConfirmTrick", _("Collect"), function () { return _this.collect(); }, "blue", "play_button");
                     }
                     // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
-                    if (this.game.gamedatas.mahjongWish === 0) {
-                        this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
-                    }
+                    this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
             }
         }
         else if (!this.game.isSpectator &&
@@ -529,9 +527,7 @@ var Tichu = /** @class */ (function () {
                 this.game.addTooltip("myCancelAutopass", _("You have chosen to automatically pass during this trick. Click to cancel"), "");
             }
             // TODO: Bring back the "this.game.gamedatas.hasBomb" check, but only if the new game option was selected.
-            if (this.game.gamedatas.mahjongWish === 0) {
-                this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
-            }
+            this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function () { return _this.playCombo("playBomb"); }, "gray", "bomb_button");
         }
         if (!this.game.isSpectator) {
             if (player.call_grand_tichu === Bet.NO_BET_YET) {
