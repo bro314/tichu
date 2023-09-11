@@ -610,6 +610,15 @@ class Tichu {
   }
 
   updateCardsPlayed() {
+    for (let color = 1; color <= 4; color++) {
+      for (let value = 1; value <= 14; value++) {
+        const id = `playedCard_${color}_${value}`;
+        document.getElementById(id)?.classList.remove("captured");
+        document.getElementById(id)?.classList.remove("trick");
+        document.getElementById(id)?.classList.remove("hand");
+      }
+    }
+
     const captured = this.game.gamedatas.capturedCards;
     for (const card of captured) {
       const id = `playedCard_${card.type}_${card.type_arg}`;

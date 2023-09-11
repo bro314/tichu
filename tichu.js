@@ -436,24 +436,32 @@ var Tichu = /** @class */ (function () {
         dojo.query(".playertable").style("cursor", "unset");
     };
     Tichu.prototype.updateCardsPlayed = function () {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f;
+        for (var color = 1; color <= 4; color++) {
+            for (var value = 1; value <= 14; value++) {
+                var id = "playedCard_".concat(color, "_").concat(value);
+                (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.remove("captured");
+                (_b = document.getElementById(id)) === null || _b === void 0 ? void 0 : _b.classList.remove("trick");
+                (_c = document.getElementById(id)) === null || _c === void 0 ? void 0 : _c.classList.remove("hand");
+            }
+        }
         var captured = this.game.gamedatas.capturedCards;
         for (var _i = 0, captured_1 = captured; _i < captured_1.length; _i++) {
             var card = captured_1[_i];
             var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-            (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.add("captured");
+            (_d = document.getElementById(id)) === null || _d === void 0 ? void 0 : _d.classList.add("captured");
         }
         var trick = this.game.gamedatas.currentTrick;
-        for (var _d = 0, trick_1 = trick; _d < trick_1.length; _d++) {
-            var card = trick_1[_d];
+        for (var _g = 0, trick_1 = trick; _g < trick_1.length; _g++) {
+            var card = trick_1[_g];
             var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-            (_b = document.getElementById(id)) === null || _b === void 0 ? void 0 : _b.classList.add("trick");
+            (_e = document.getElementById(id)) === null || _e === void 0 ? void 0 : _e.classList.add("trick");
         }
         var hand = this.game.gamedatas.hand;
-        for (var _e = 0, hand_1 = hand; _e < hand_1.length; _e++) {
-            var card = hand_1[_e];
+        for (var _h = 0, hand_1 = hand; _h < hand_1.length; _h++) {
+            var card = hand_1[_h];
             var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-            (_c = document.getElementById(id)) === null || _c === void 0 ? void 0 : _c.classList.add("hand");
+            (_f = document.getElementById(id)) === null || _f === void 0 ? void 0 : _f.classList.add("hand");
         }
     };
     Tichu.prototype.onUpdateActionButtons = function (stateName, args) {
