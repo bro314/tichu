@@ -389,7 +389,7 @@ class Tichu {
     let overlap = Math.floor(
       ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100
     );
-    if (overlap > 70) overlap = 70;
+    if (overlap > 50) overlap = 50;
     if (overlap < 12) overlap = 12;
     stock.setOverlap(overlap, 0);
   }
