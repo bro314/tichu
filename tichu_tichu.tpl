@@ -76,9 +76,10 @@
   <div id="play_button"></div>
   <div id="pass_button"></div>
   <div id="pass_trick_button"></div>
-  <div id="space"></div>
+  <div class="space1"></div>
   <div id="bomb_button"></div>
   <div id="tichu_button"></div>
+  <div class="space2"></div>
 </div>
 
 <div id="myhandwrap">
