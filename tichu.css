@@ -193,7 +193,8 @@ a.themelink .bg3 {
   font-size: 14px;
 }
 #myhand {
-  margin: 15px 15px 25px 15px;
+  /* The right margin makes room for the chat window. */
+  margin: 15px 250px 25px 15px;
 }
 
 .smallCards {

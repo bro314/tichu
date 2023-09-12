@@ -237,8 +237,8 @@ var Tichu = /** @class */ (function () {
         var availableWidthForOverlapPerItem = (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) /
             (stock.items.length - 1);
         var overlap = Math.floor(((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100);
-        if (overlap > 50)
-            overlap = 50;
+        if (overlap > 60)
+            overlap = 60;
         if (overlap < 12)
             overlap = 12;
         stock.setOverlap(overlap, 0);
