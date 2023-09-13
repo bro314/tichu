@@ -1,5 +1,5 @@
 <?php
-class Hand extends APP_GameClass
+class Hand
 {
   public $cards;
   public $phoenix;

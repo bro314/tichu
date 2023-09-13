@@ -1,5 +1,5 @@
 <?php
-class Utils extends APP_GameClass
+class Utils
 {
   public static function die($args = null)
   {

@@ -1,5 +1,5 @@
 <?php
-class CardManager extends APP_GameClass
+class CardManager
 {
   private static $deck = null;
   public static function getDeck()

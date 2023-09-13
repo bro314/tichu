@@ -1,5 +1,5 @@
 <?php
-class LogManager extends APP_GameClass
+class LogManager
 {
   public static function insert($playerId, $action, $args = [])
   {

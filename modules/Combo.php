@@ -1,5 +1,5 @@
 <?php
-class Combo extends APP_GameClass
+class Combo
 {
   public $cards;
   public $type;
