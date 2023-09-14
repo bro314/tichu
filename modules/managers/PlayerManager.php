@@ -1,5 +1,5 @@
 <?php
-class PlayerManager
+class PlayerManager extends APP_GameClass
 {
   public static function setupPlayers($players)
   {

@@ -1,5 +1,5 @@
 <?php
-class NotificationManager
+class NotificationManager extends APP_GameClass
 {
   public static function dealCards($player_id, $cards, $msg)
   {
@@ -145,20 +145,7 @@ class NotificationManager
 
   public static function acceptCards($player_id)
   {
-    $card1 = null;
-    $card2 = null;
-    $card3 = null;
-    $cards = array_values(CardManager::getCardsPassedBy($player_id));
-    $nextPlayers = PlayerManager::getNextPlayers($player_id);
-    foreach ($cards as $card) {
-      if ($card["passed_from"] == $nextPlayers[2]["id"]) {
-        $card1 = $card;
-      } elseif ($card["passed_from"] == $nextPlayers[1]["id"]) {
-        $card2 = $card;
-      } elseif ($card["passed_from"] == $nextPlayers[0]["id"]) {
-        $card3 = $card;
-      }
-    }
+    $cards = CardManager::getCardsPassedTo($player_id);
 
     Tichu::$instance->notifyPlayer(
       $player_id,
@@ -168,9 +155,9 @@ class NotificationManager
       ),
       [
         "cards" => $cards,
-        "card1" => CardManager::cardToStr($card1),
-        "card2" => CardManager::cardToStr($card2),
-        "card3" => CardManager::cardToStr($card3),
+        "card1" => CardManager::cardToStr($cards[0]),
+        "card2" => CardManager::cardToStr($cards[1]),
+        "card3" => CardManager::cardToStr($cards[2]),
       ]
     );
   }

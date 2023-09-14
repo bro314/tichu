@@ -96,5 +96,11 @@ $stats_type = [
       "name" => totranslate("Number of grand tichu won"),
       "type" => "int",
     ],
+    "bombs_completed_by_partner" => [
+      "id" => 16,
+      "name" => totranslate("Number of bombs completed by partner"),
+      "type" => "int",
+      "display" => "limited",
+    ],
   ],
 ];

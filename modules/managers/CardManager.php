@@ -1,5 +1,5 @@
 <?php
-class CardManager
+class CardManager extends APP_GameClass
 {
   private static $deck = null;
   public static function getDeck()
@@ -53,11 +53,29 @@ class CardManager
     }, $players);
   }
 
-  public static function getCardsPassedBy($pId)
+  // Return array of three cards that were passed to this player.
+  // [0]: previous player
+  // [1]: partner
+  // [2]: next player
+  public static function getCardsPassedTo($pId)
   {
-    return self::getObjectListFromDB(
-      "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
+    $cardsEntries = array_values(
+      self::getObjectListFromDB(
+        "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
+      )
     );
+    $cards = [null, null, null];
+    $nextPlayers = PlayerManager::getNextPlayers($pId);
+    foreach ($cardsEntries as $card) {
+      if ($card["passed_from"] == $nextPlayers[2]["id"]) {
+        $cards[0] = $card;
+      } elseif ($card["passed_from"] == $nextPlayers[1]["id"]) {
+        $cards[1] = $card;
+      } elseif ($card["passed_from"] == $nextPlayers[0]["id"]) {
+        $cards[2] = $card;
+      }
+    }
+    return $cards;
   }
 
   public static function resetPassedCards()

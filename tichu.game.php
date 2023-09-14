@@ -64,6 +64,7 @@ class Tichu extends Table
     self::initStat("player", "grandtichu_number", 0);
     self::initStat("player", "tichu_won_number", 0);
     self::initStat("player", "grandtichu_won_number", 0);
+    self::initStat("player", "bombs_completed_by_partner", 0);
 
     $this->activeNextPlayer();
   }
@@ -499,17 +500,50 @@ class Tichu extends Table
     }
   }
 
+  function detectBombPassing()
+  {
+    $player_id = self::getCurrentPlayerId();
+    $deck = CardManager::getDeck();
+    $cardPassedFromPartner = CardManager::getCardsPassedTo($player_id)[1];
+
+    // You cannot complete a bomb by passing a special card.
+    if ($cardPassedFromPartner["type_arg"] == 1) {
+      return;
+    }
+    // Passing a King or Ace is quite natural. If that happens to complete a
+    // bomb, then this is probably just lucky and not suspicious.
+    if ($cardPassedFromPartner["type_arg"] > 12) {
+      return;
+    }
+
+    $beforeCards = $deck->getCardsInLocation("hand", $player_id);
+    $beforeHasBomb = (new Hand($beforeCards))->hasBomb();
+
+    // The player already had a bomb, so don't bother to check, if they got
+    // another one completed.
+    if ($beforeHasBomb) {
+      return;
+    }
+
+    $afterCards = array_merge($beforeCards, [$cardPassedFromPartner]);
+    $afterHasBomb = (new Hand($afterCards))->hasBomb();
+
+    if ($afterHasBomb) {
+      self::incStat(1, "bombs_completed_by_partner", $player_id);
+    }
+  }
+
   function acceptCards()
   {
+    self::detectBombPassing();
+
     $player_id = self::getCurrentPlayerId();
     NotificationManager::acceptCards($player_id);
 
     $deck = CardManager::getDeck();
-    $cards = $deck->getCardsInLocation("temporary", $player_id);
-
     $deck->moveAllCardsInLocation("temporary", "hand", $player_id, $player_id);
-    $hand = new Hand($deck->getCardsInLocation("hand", $player_id));
 
+    $hand = new Hand($deck->getCardsInLocation("hand", $player_id));
     PlayerManager::setHasBomb($player_id, $hand->hasBomb() ? 1 : 0);
 
     $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
