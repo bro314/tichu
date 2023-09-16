@@ -65,6 +65,7 @@ var Tichu = /** @class */ (function () {
         // The css zoom is disabled in tichu.css.
         new ResizeObserver(function () { return requestAnimationFrame(function () { return _this.rescale(); }); }).observe(document.getElementById("game_play_area_wrap"));
         window.addEventListener("resize", function () { return requestAnimationFrame(function () { return _this.rescale(); }); });
+        $("game_play_area").classList.toggle("turnbased", !this.game.bRealtime);
         var player_ids = new Array();
         for (var player_id in gamedatas.players) {
             player_ids.push(parseInt(player_id));
@@ -438,6 +439,8 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.updateCardsPlayed = function () {
         var _a, _b, _c, _d, _e, _f;
+        if (this.game.bRealtime)
+            return;
         for (var color = 1; color <= 4; color++) {
             for (var value = 1; value <= 14; value++) {
                 var id = "playedCard_".concat(color, "_").concat(value);

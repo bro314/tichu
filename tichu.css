@@ -543,6 +543,9 @@ span.pass img {
   --h: 60px;
   display: none;
 }
+.turnbased #playedCards {
+  display: block;
+}
 #playedCards h3 {
   padding: 10px 15px;
   background-color: var(--bg-color-lighter);

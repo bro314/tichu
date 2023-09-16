@@ -168,6 +168,7 @@ class Tichu {
       document.getElementById("game_play_area_wrap")!
     );
     window.addEventListener("resize", () => requestAnimationFrame(() => this.rescale()));
+    $("game_play_area").classList.toggle("turnbased", !this.game.bRealtime);
 
     const player_ids = new Array();
     for (const player_id in gamedatas.players) {
@@ -611,6 +612,8 @@ class Tichu {
   }
 
   updateCardsPlayed() {
+    if (this.game.bRealtime) return;
+
     for (let color = 1; color <= 4; color++) {
       for (let value = 1; value <= 14; value++) {
         const id = `playedCard_${color}_${value}`;
