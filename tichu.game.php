@@ -292,8 +292,8 @@ class Tichu extends Table
     $player_to_give_cards = null;
     $nextPlayers = PlayerManager::getNextPlayers(null, true);
     CardManager::setPassedCards($card_ids, $player_id);
-    foreach ($card_ids as $idx => $card) {
-      CardManager::getDeck()->moveCard($card, "temporary", $nextPlayers[$idx]["id"]);
+    foreach ($card_ids as $idx => $cardId) {
+      CardManager::getDeck()->moveCard($cardId, "temporary", $nextPlayers[$idx]["id"]);
     }
     NotificationManager::passCards($player_id, $card_ids);
     $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
@@ -503,7 +503,6 @@ class Tichu extends Table
   function detectBombPassing()
   {
     $player_id = self::getCurrentPlayerId();
-    $deck = CardManager::getDeck();
     $cardPassedFromPartner = CardManager::getCardsPassedTo($player_id)[1];
 
     // You cannot complete a bomb by passing a special card.
@@ -516,7 +515,8 @@ class Tichu extends Table
       return;
     }
 
-    $beforeCards = $deck->getCardsInLocation("hand", $player_id);
+    // The new passed cards are still in "temporary" location.
+    $beforeCards = CardManager::getCardsInLocation("hand", $player_id);
     $beforeHasBomb = (new Hand($beforeCards))->hasBomb();
 
     // The player already had a bomb, so don't bother to check, if they got
@@ -528,9 +528,33 @@ class Tichu extends Table
     $afterCards = array_merge($beforeCards, [$cardPassedFromPartner]);
     $afterHasBomb = (new Hand($afterCards))->hasBomb();
 
-    if ($afterHasBomb) {
-      self::incStat(1, "bombs_completed_by_partner", $player_id);
+    // No bomb, even after passing, so no cheating.
+    if (!$afterHasBomb) {
+      return;
     }
+
+    // Now, let's check the hand of the partner. Did the passed card have the highest rank?
+    // Or at least the highest rank of all singles? Then the pass is quite natural.
+    $partner = PlayerManager::getPartner($player_id);
+    $partnerCards = CardManager::getCardsInLocation("hand", $partner["id"]);
+    // The partner may already have accepted passed cards *to* him, so we have to filter those.
+    $partnerCardsNotPassed = array_filter($partnerCards, function ($card) {
+      return $card["passed_from"] == null;
+    });
+    // Let's add the passed card *from* partner back to the partner hand.
+    $partnerCardsRelevant = array_merge($partnerCardsNotPassed, [$cardPassedFromPartner]);
+    $partnerHand = new Hand($partnerCardsRelevant);
+    $partnerTopSingleRank = $partnerHand->getTopSingleRank();
+    if ($cardPassedFromPartner["type_arg"] == $partnerTopSingleRank) {
+      return;
+    }
+    $partnerTopRank = $partnerHand->getTopRank();
+    if ($cardPassedFromPartner["type_arg"] == $partnerTopRank) {
+      return;
+    }
+
+    // The pass was not natural and completed a bomb. Count it!
+    self::incStat(1, "bombs_completed_by_partner", $player_id);
   }
 
   function acceptCards()

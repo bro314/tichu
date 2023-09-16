@@ -130,6 +130,12 @@ class PlayerManager extends APP_GameClass
     return self::getUniqueValueFromDB("SELECT MAX(player_score) FROM player");
   }
 
+  public static function getPartner($pId)
+  {
+    $next_players = self::getNextPlayers($pId);
+    return $next_players[1];
+  }
+
   public static function getNextPlayers($pId = null, $desc = false)
   {
     $id = $pId ?? Tichu::getCurrentId();

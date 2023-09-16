@@ -44,6 +44,16 @@ class CardManager extends APP_GameClass
     return $ret;
   }
 
+  public static function getCardsInLocation($location, $location_arg)
+  {
+    $sql = "
+    SELECT card_id id, card_type type, card_type_arg type_arg, card_location_arg location_arg, card_passed_from passed_from
+    FROM card
+    WHERE card_location = '$location' AND card_location_arg = $location_arg
+    ";
+    return self::getObjectListFromDB($sql);
+  }
+
   public static function calculatCapturedPoints()
   {
     $captured_points = [];

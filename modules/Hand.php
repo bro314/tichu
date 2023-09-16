@@ -85,6 +85,44 @@ class Hand
     return false;
   }
 
+  /**
+   * Returns the rank of the highest card that is not part of a pair, triple or 4-bomb.
+   * Returns 0, if the hand has no cards or only special cards, or no singles.
+   */
+  public function getTopSingleRank()
+  {
+    foreach (range(14, 2) as $n) {
+      $filtered = array_values(
+        array_filter($this->cards, function ($card) use ($n) {
+          return $card["type_arg"] == $n;
+        })
+      );
+      if (count($filtered) == 1) {
+        return $filtered[0]["type_arg"];
+      }
+    }
+    return 0;
+  }
+
+  /**
+   * Returns the rank of the highest card, not counting special cards.
+   * Returns 0, if the hand has no cards or only special cards, or no singles.
+   */
+  public function getTopRank()
+  {
+    foreach (range(14, 2) as $n) {
+      $filtered = array_values(
+        array_filter($this->cards, function ($card) use ($n) {
+          return $card["type_arg"] == $n;
+        })
+      );
+      if (count($filtered) > 0) {
+        return $filtered[0]["type_arg"];
+      }
+    }
+    return 0;
+  }
+
   /* getHighest... functions. Used to check if a wish can be fulfilled
    * arguments:
    * $cards: the cards of the hand. as usual filtered by type_arg(and type)
