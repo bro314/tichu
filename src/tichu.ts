@@ -1223,11 +1223,17 @@ class Tichu {
       autopass: 1,
       acceptCards: 1000,
       passCards: 200,
+      devConsole: 1,
     };
     for (const [type, duration] of Object.entries(notifs)) {
       dojo.subscribe(type, this, "notif_" + type);
       this.game.notifqueue.setSynchronous(type, duration);
     }
+  }
+
+  private notif_devConsole(notif: Notif) {
+    debug("notif_devConsole", notif);
+    console.log(`NOTIFICATION DEV CONSOLE: ${notif.log}`);
   }
 
   private notif_dealCards(notif: Notif) {

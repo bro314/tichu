@@ -833,6 +833,24 @@ class Tichu extends Table
       return;
     }
 
+    // New experimental feature: Can the total remaining cards beat the last combo?
+    // Can we skip all players in turn-based mode?
+    $impossibleToBeat = false;
+    if ($this->isAsync()) {
+      $remainingCards = $deck->getCardsInLocation("hand");
+      $handRemainingCards = new Hand($remainingCards);
+      $beatingCombo = $handRemainingCards->findBeatingCombo($lastCombo);
+      $impossibleToBeat = is_null($beatingCombo);
+      NotificationManager::devConsole(
+        "Remaining " .
+          count($remainingCards) .
+          " cards can beat combo '" .
+          $lastCombo->description .
+          "'? " .
+          ($impossibleToBeat ? "NO" : $beatingCombo->description)
+      );
+    }
+
     // search for next Player with enough cards, but don't go beyond the player who played the last combo
     $amount = min(count($lastCombo->cards), 4);
     if ($lastCombo->hasDragon()) {
@@ -859,6 +877,10 @@ class Tichu extends Table
         continue;
       }
       if ($handCounts[$pId] < $amount) {
+        NotificationManager::pass($pId, $player["name"]);
+        continue;
+      }
+      if ($this->isAsync() && $impossibleToBeat) {
         NotificationManager::pass($pId, $player["name"]);
         continue;
       }

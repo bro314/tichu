@@ -1,6 +1,9 @@
 <?php
 class LogManager extends APP_GameClass
 {
+  // Clunky workaround for being able to unit test the Combo class, which requires to know about the last combo to assess the phoenix value.
+  public static $lastComboForTesting = null;
+
   public static function insert($playerId, $action, $args = [])
   {
     $playerId = $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
@@ -97,6 +100,9 @@ class LogManager extends APP_GameClass
 
   public static function getLastCombo($skip = 0, $action = "combo")
   {
+    if (self::$lastComboForTesting != null) {
+      return self::$lastComboForTesting;
+    }
     $lastComboActions = self::getLastActions($action);
     if (count($lastComboActions) > $skip) {
       $lastComboAction = $lastComboActions[$skip];

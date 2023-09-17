@@ -856,12 +856,17 @@ var Tichu = /** @class */ (function () {
             autopass: 1,
             acceptCards: 1000,
             passCards: 200,
+            devConsole: 1,
         };
         for (var _i = 0, _a = Object.entries(notifs); _i < _a.length; _i++) {
             var _b = _a[_i], type = _b[0], duration = _b[1];
             dojo.subscribe(type, this, "notif_" + type);
             this.game.notifqueue.setSynchronous(type, duration);
         }
+    };
+    Tichu.prototype.notif_devConsole = function (notif) {
+        debug("notif_devConsole", notif);
+        console.log("NOTIFICATION DEV CONSOLE: ".concat(notif.log));
     };
     Tichu.prototype.notif_dealCards = function (notif) {
         debug("notif_dealCards", notif);

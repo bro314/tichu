@@ -7,6 +7,16 @@ require_once "tests/TestUtils.php";
 
 final class ComboTest extends TestCase
 {
+  protected function setUp(): void
+  {
+    LogManager::$lastComboForTesting = new Combo([], NO_COMBO);
+  }
+
+  protected function tearDown(): void
+  {
+    LogManager::$lastComboForTesting = null;
+  }
+
   public function testCheckSingle(): void
   {
     $this->assertEquals("2", Combo::checkSingle([A2])["description"]);
@@ -15,8 +25,10 @@ final class ComboTest extends TestCase
     $this->assertEquals("Ace", Combo::checkSingle([DA])["description"]);
 
     $this->assertEquals("Dragon", Combo::checkSingle([DR])["description"]);
-    // requires DB access
-    //$this->assertEquals("Phoenix", Combo::checkSingle([card(TYPE_PHOENIX, 1)])["description"]);
+    $this->assertEquals(
+      "Phoenix a half step above 1",
+      Combo::checkSingle([card(TYPE_PHOENIX, 1)])["description"]
+    );
     $this->assertNull(Combo::checkSingle([DOG]));
     $this->assertEquals("Mahjong", Combo::checkSingle([MJ])["description"]);
   }

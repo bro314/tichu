@@ -46,7 +46,7 @@ class Utils
       },
       ARRAY_FILTER_USE_BOTH
     );
-    return array_values($res); // since array_fiilter keeps the keys we need to apply array_values
+    return array_values($res); // since array_filter keeps the keys we need to apply array_values
   }
 }
 ?>
