@@ -140,8 +140,8 @@ final class HandTest extends TestCase
 
   public function testGetHighestRunningPair(): void
   {
-    $this->assertHighestRunningPair(4, [A2, A2, A3, A3], [A2, B2, A3, B3]);
-    $this->assertHighestRunningPair(4, [A8, A8, A9, A9], [A2, B2, A3, B3, A8, B8, A9, B9]);
+    $this->assertHighestRunningPair(4, [C2, C2, D3, D3], [A2, B2, A3, B3]);
+    $this->assertHighestRunningPair(4, [A8, A8, B9, B9], [A2, B2, A3, B3, A8, B8, A9, B9]);
     $this->assertHighestRunningPair(4, null, [A2, B5, D7, C7, A0, C5, B9, D2, DR, MJ, DOG]);
     $this->assertHighestRunningPair(4, null, []);
     $this->assertHighestRunningPair(4, null, [DR]);
@@ -161,11 +161,11 @@ final class HandTest extends TestCase
 
   public function testGetHighestStraight(): void
   {
-    $this->assertHighestStraight(5, [A2, A3, A4, A5, A6], [A2, A3, B4, C5, D6]);
-    $this->assertHighestStraight(5, [A2, A3, A4, A5, A6], [A2, A3, PH, C5, D6]);
-    $this->assertHighestStraight(5, [A3, A4, A5, A6, A7], [PH, A3, B4, C5, D6]);
-    $this->assertHighestStraight(7, [A8, A9, A0, AJ, AQ, AK, AA], [AA, AK, CQ, CJ, C0, A9, A8]);
-    $this->assertHighestStraight(7, [A8, A9, A0, AJ, AQ, AK, AA], [AA, AK, CQ, CJ, C0, A9, PH]);
+    $this->assertHighestStraight(5, [C2, D3, A4, B5, C6], [A2, A3, B4, C5, D6]);
+    $this->assertHighestStraight(5, [C2, D3, A4, B5, C6], [A2, A3, PH, C5, D6]);
+    $this->assertHighestStraight(5, [D3, A4, B5, C6, D7], [PH, A3, B4, C5, D6]);
+    $this->assertHighestStraight(7, [A8, B9, C0, DJ, AQ, BK, CA], [AA, AK, CQ, CJ, C0, A9, A8]);
+    $this->assertHighestStraight(7, [A8, B9, C0, DJ, AQ, BK, CA], [AA, AK, CQ, CJ, C0, A9, PH]);
     $this->assertHighestStraight(5, null, []);
     $this->assertHighestStraight(5, null, [
       A2,
@@ -205,13 +205,13 @@ final class HandTest extends TestCase
 
   public function testGetHighestFullHouse(): void
   {
-    $this->assertHighestFullHouse([A2, A2, A2, A3, A3], [A2, B2, C2, A3, B3]);
-    $this->assertHighestFullHouse([A3, A3, A3, A2, A2], [A2, B2, C2, A3, B3, C3]);
-    $this->assertHighestFullHouse([A3, A3, A3, A2, A2], [A2, B2, C2, A3, B3, C3, PH]);
-    $this->assertHighestFullHouse([A3, A3, A3, A2, A2], [A2, A3, B3, C3, PH]);
-    $this->assertHighestFullHouse([A3, A3, A3, A2, A2], [A2, B2, A3, B3, PH]);
+    $this->assertHighestFullHouse([A2, A2, A2, B3, B3], [A2, B2, C2, A3, B3]);
+    $this->assertHighestFullHouse([A3, A3, A3, B2, B2], [A2, B2, C2, A3, B3, C3]);
+    $this->assertHighestFullHouse([A3, A3, A3, B2, B2], [A2, B2, C2, A3, B3, C3, PH]);
+    $this->assertHighestFullHouse([A3, A3, A3, B2, B2], [A2, A3, B3, C3, PH]);
+    $this->assertHighestFullHouse([A3, A3, A3, B2, B2], [A2, B2, A3, B3, PH]);
     $this->assertHighestFullHouse(
-      [AA, AA, AA, A7, A7],
+      [AA, AA, AA, B7, B7],
       [A2, B2, A3, B3, A7, B7, AA, BA, DR, MJ, DOG, PH]
     );
     $this->assertHighestFullHouse(null, [A2, B2, A3, B3, A7, B7, AA, BA, DR, MJ, DOG]);
@@ -286,7 +286,11 @@ final class HandTest extends TestCase
     $this->assertCanBeat(true, [DR, PH, MJ, DOG, C2, D2, C3, D3, A4], [A3, B3]);
     $this->assertCanBeat(true, [A2, B2, C2, D2], [A3, B3]);
 
-    $this->assertCanBeat(true, [DR, PH, C0, D0, BJ, CJ, AQ, DQ, AK, CK, BA, CA, DA], [C9, B0, AJ, CQ, DK]);
+    $this->assertCanBeat(
+      true,
+      [DR, PH, C0, D0, BJ, CJ, AQ, DQ, AK, CK, BA, CA, DA],
+      [C9, B0, AJ, CQ, DK]
+    );
   }
 
   public function testCanFulFillWish(): void
