@@ -880,21 +880,15 @@ class Tichu extends Table
       if (!isset($handCounts[$pId])) {
         continue;
       }
-      if ($player["pass"] == 1 && PlayerManager::canPass($pId, $wish, $lastCombo)) {
-        PlayerManager::setAutopass(0, $pId);
-        NotificationManager::autopass(0, $pId);
-        NotificationManager::pass($pId, $player["name"]);
-        continue;
-      }
-      if ($player["pass"] == 2 && PlayerManager::canPass($pId, $wish, $lastCombo)) {
-        NotificationManager::pass($pId, $player["name"]);
-        continue;
-      }
-      if ($handCounts[$pId] < $amount) {
-        NotificationManager::pass($pId, $player["name"]);
-        continue;
-      }
-      if ($this->isAllInfoExposed() && $impossibleToBeat) {
+      $autoPass = $player["pass"] > 0 && PlayerManager::canPass($pId, $wish, $lastCombo);
+      $cantBeat = $handCounts[$pId] < $amount || ($this->isAllInfoExposed() && $impossibleToBeat);
+      if ($autoPass || $cantBeat) {
+        $autoPassOnlyOnce = $player["pass"] == 1;
+        if ($autoPassOnlyOnce) {
+          PlayerManager::setAutopass(0, $pId);
+          NotificationManager::autopass(0, $pId);
+        }
+        LogManager::insert($pId, "pass");
         NotificationManager::pass($pId, $player["name"]);
         continue;
       }
