@@ -120,7 +120,7 @@ class Tichu extends Table
     $result["firstoutplayer"] = intval(self::getGameStateValue("firstOutPlayer"));
     $result["mahjongOwner"] = intval(self::getGameStateValue("mahjongOwner"));
     $result["mahjongWish"] = intval(self::getGameStateValue("mahjongWish"));
-    $result["isAllInfoExposed"] = intval(self::getGameStateValue("isAllInfoExposed"));
+    $result["isAllInfoExposed"] = intval($this->isAllInfoExposed());
 
     $lastCombo = LogManager::getLastCombo();
     $result["lastComboPlayer"] = $lastCombo->player;
