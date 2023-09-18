@@ -69,7 +69,7 @@ class view_tichu_tichu extends game_view
     }
 
     // Only show played cards in turn-based mode.
-    if (Tichu::$instance->isAsync()) {
+    if (Tichu::$instance->isAllInfoExposed()) {
       $this->page->begin_block("tichu_tichu", "played_arg");
       $this->page->begin_block("tichu_tichu", "played_type");
       for ($type = 1; $type <= 4; $type++) {

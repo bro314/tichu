@@ -543,7 +543,7 @@ span.pass img {
   --h: 60px;
   display: none;
 }
-.turnbased #playedCards {
+.isAllInfoExposed #playedCards {
   display: block;
 }
 #playedCards h3 {

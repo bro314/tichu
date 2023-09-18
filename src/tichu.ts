@@ -91,6 +91,8 @@ interface TichuGamedatas {
   lastComboPlayer: string;
   mahjongOwner: number;
   mahjongWish: number;
+  // Should the played card be shown and players smartly skipped? 0=FALSE, 1=TRUE
+  isAllInfoExposed: number;
   passes: number[];
   round: number;
   trick: number;
@@ -168,7 +170,7 @@ class Tichu {
       document.getElementById("game_play_area_wrap")!
     );
     window.addEventListener("resize", () => requestAnimationFrame(() => this.rescale()));
-    $("game_play_area").classList.toggle("turnbased", !this.game.bRealtime);
+    $("game_play_area").classList.toggle("isAllInfoExposed", this.isAllInfoExposed());
 
     const player_ids = new Array();
     for (const player_id in gamedatas.players) {
@@ -222,6 +224,10 @@ class Tichu {
     this.updateCardsPlayed();
 
     debug("Ending game setup");
+  }
+
+  private isAllInfoExposed() {
+    return this.game.gamedatas.isAllInfoExposed == 1;
   }
 
   private setupCurrentTrick() {
@@ -612,7 +618,7 @@ class Tichu {
   }
 
   updateCardsPlayed() {
-    if (this.game.bRealtime) return;
+    if (!this.isAllInfoExposed()) return;
 
     for (let color = 1; color <= 4; color++) {
       for (let value = 1; value <= 14; value++) {
@@ -1233,7 +1239,7 @@ class Tichu {
 
   private notif_devConsole(notif: Notif) {
     debug("notif_devConsole", notif);
-    console.log(`NOTIFICATION DEV CONSOLE: ${notif.log}`);
+    window.console.log(`DEV NOTIF: ${notif.args.msg}`);
   }
 
   private notif_dealCards(notif: Notif) {

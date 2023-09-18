@@ -65,7 +65,7 @@ var Tichu = /** @class */ (function () {
         // The css zoom is disabled in tichu.css.
         new ResizeObserver(function () { return requestAnimationFrame(function () { return _this.rescale(); }); }).observe(document.getElementById("game_play_area_wrap"));
         window.addEventListener("resize", function () { return requestAnimationFrame(function () { return _this.rescale(); }); });
-        $("game_play_area").classList.toggle("turnbased", !this.game.bRealtime);
+        $("game_play_area").classList.toggle("isAllInfoExposed", this.isAllInfoExposed());
         var player_ids = new Array();
         for (var player_id in gamedatas.players) {
             player_ids.push(parseInt(player_id));
@@ -105,6 +105,9 @@ var Tichu = /** @class */ (function () {
         this.setupCurrentTrick();
         this.updateCardsPlayed();
         debug("Ending game setup");
+    };
+    Tichu.prototype.isAllInfoExposed = function () {
+        return this.game.gamedatas.isAllInfoExposed == 1;
     };
     Tichu.prototype.setupCurrentTrick = function () {
         this.roundCounter = new ebg.counter();
@@ -439,7 +442,7 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.updateCardsPlayed = function () {
         var _a, _b, _c, _d, _e, _f;
-        if (this.game.bRealtime)
+        if (!this.isAllInfoExposed())
             return;
         for (var color = 1; color <= 4; color++) {
             for (var value = 1; value <= 14; value++) {
@@ -866,7 +869,7 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.notif_devConsole = function (notif) {
         debug("notif_devConsole", notif);
-        console.log("NOTIFICATION DEV CONSOLE: ".concat(notif.log));
+        window.console.log("DEV NOTIF: ".concat(notif.args.msg));
     };
     Tichu.prototype.notif_dealCards = function (notif) {
         debug("notif_dealCards", notif);

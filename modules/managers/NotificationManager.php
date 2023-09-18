@@ -93,7 +93,7 @@ class NotificationManager extends APP_GameClass
 
   public static function devConsole($msg)
   {
-    Tichu::$instance->notifyAllPlayers("devConsole", $msg, []);
+    Tichu::$instance->notifyAllPlayers("devConsole", "", ["msg" => $msg]);
   }
 
   public static function tableWindow($table)

@@ -18,6 +18,7 @@ class Tichu extends Table
       "doubleVictory" => 23, // team scoring a double victory
       "mahjongWish" => 26, // value wished by Mahjong Owner
       "mahjongOwner" => 27, // Mahjong Owner, 0 when wish is granted
+      "isAllInfoExposed" => 28, // Should the played card be shown and players smartly skipped? 0=FALSE, 1=TRUE
 
       //options
       "gameLength" => 100, // 1 = 500pts, 2 = 1000pts, 3 = 2000pts
@@ -54,6 +55,7 @@ class Tichu extends Table
     self::setGameStateInitialValue("doubleVictory", -1);
     self::setGameStateInitialValue("mahjongWish", 0);
     self::setGameStateInitialValue("mahjongOwner", 0);
+    self::setGameStateInitialValue("isAllInfoExposed", self::isAsync() ? 1 : 0);
 
     // Init statistics
     self::initStat("table", "round_number", 0);
@@ -67,6 +69,17 @@ class Tichu extends Table
     self::initStat("player", "bombs_completed_by_partner", 0);
 
     $this->activeNextPlayer();
+  }
+
+  /**
+   * Returns true, if the game is turn based now and was also turn based when the game was
+   * started.
+   */
+  public function isAllInfoExposed()
+  {
+    // In the future we can just return the "isAllInfoExposed" game state. We are only setting
+    // a default value for migrating in-progress games correctly.
+    return self::getGameStateValue("isAllInfoExposed", self::isAsync() ? 1 : 0) == 1;
   }
 
   /*
@@ -107,6 +120,7 @@ class Tichu extends Table
     $result["firstoutplayer"] = intval(self::getGameStateValue("firstOutPlayer"));
     $result["mahjongOwner"] = intval(self::getGameStateValue("mahjongOwner"));
     $result["mahjongWish"] = intval(self::getGameStateValue("mahjongWish"));
+    $result["isAllInfoExposed"] = intval(self::getGameStateValue("isAllInfoExposed"));
 
     $lastCombo = LogManager::getLastCombo();
     $result["lastComboPlayer"] = $lastCombo->player;
@@ -833,10 +847,10 @@ class Tichu extends Table
       return;
     }
 
-    // New experimental feature: Can the total remaining cards beat the last combo?
-    // Can we skip all players in turn-based mode?
+    // Can the total remaining cards beat the last combo? If not, then
+    // skip all players in "isAllInfoExposed" mode.
     $impossibleToBeat = false;
-    if ($this->isAsync()) {
+    if ($this->isAllInfoExposed()) {
       $remainingCards = $deck->getCardsInLocation("hand");
       $handRemainingCards = new Hand($remainingCards);
       $beatingCombo = $handRemainingCards->findBeatingCombo($lastCombo);
@@ -880,7 +894,7 @@ class Tichu extends Table
         NotificationManager::pass($pId, $player["name"]);
         continue;
       }
-      if ($this->isAsync() && $impossibleToBeat) {
+      if ($this->isAllInfoExposed() && $impossibleToBeat) {
         NotificationManager::pass($pId, $player["name"]);
         continue;
       }
