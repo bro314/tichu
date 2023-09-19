@@ -9,7 +9,10 @@ define("ST_NEW_ROUND", 10);
 define("ST_GRAND_TICHU_BETS", 20);
 define("ST_DEAL_LAST_CARDS", 30);
 define("ST_GIVE_CARDS", 40);
+// This is a legacy state replaced by ST_ACCEPT_PASSED_CARDS.
 define("ST_SHOW_PASSED_CARDS", 45);
+// This is a newly added state replacing by ST_SHOW_PASSED_CARDS.
+define("ST_ACCEPT_PASSED_CARDS", 46);
 define("ST_NEW_TRICK", 50);
 define("ST_PLAY_COMBO_OPEN", 55);
 define("ST_PLAY_COMBO", 60);

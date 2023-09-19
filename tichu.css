@@ -303,7 +303,7 @@ span.pass img {
   margin-left: 10px;
 }
 
-.active {
+#card-last-played-area .active {
   border: 4px solid var(--bg-color-active);
 }
 #card-last-played-area .last-played-container {
@@ -428,6 +428,11 @@ span.pass img {
 
 /** Table layout **/
 
+.gamestate_giveCards #card-last-played-area,
+.gamestate_showPassedCards #card-last-played-area,
+.gamestate_acceptPassedCards #card-last-played-area {
+  display: none;
+}
 #card-last-played-area {
   display: grid;
   padding: 0px 15px 15px 15px;
@@ -465,7 +470,6 @@ span.pass img {
 }
 
 .squareTable #card-last-played-area {
-  display: grid;
   grid-template-columns:
     minmax(200px, 2.5fr)
     minmax(200px, 2fr)
@@ -596,11 +600,19 @@ span.pass img {
   text-align: center;
   width: 120px;
   height: 190px;
-  cursor: pointer;
   border-radius: var(--border-radius);
   background: var(--bg-color-lighter);
   padding: 10px;
   margin: 10px 0;
+}
+.gamestate_giveCards .isCurrentPlayerActive #playertables .playertable {
+  cursor: pointer;
+}
+#playertables .playertabletext {
+  display: none;
+}
+.gamestate_giveCards .isCurrentPlayerActive #playertables .playertabletext {
+  display: block;
 }
 
 #playertables .playertablebackground {
@@ -668,9 +680,14 @@ span.pass img {
 #playertables {
   width: 560px;
   margin: 0 auto;
-  display: flex;
+  display: none;
   justify-content: space-evenly;
   flex-direction: row;
+}
+.gamestate_giveCards #playertables,
+.gamestate_showPassedCards #playertables,
+.gamestate_acceptPassedCards #playertables {
+  display: flex;
 }
 
 .clockwise #playertables {

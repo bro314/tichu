@@ -51,7 +51,7 @@
   </div>
 </div>
 
-<div id="playertables" style="display:none;">
+<div id="playertables">
     <!-- BEGIN player -->
     <div>
         <div class="playertable playertable_{DIR}" id="playertable_{PLAYER_ID}">
@@ -63,7 +63,7 @@
                   <div class="icon big grandtichucolor {PLAYER_ID}"></div>
                   <div class="icon big tichucolor {PLAYER_ID}"></div>
                 </div>
-                <div class="playertabletext" id="playertablecard_{PLAYER_ID}" ></div>
+                <div class="playertabletext"></div>
             </div>
             <div class="receivePassCard" id="receiveplayertable_{PLAYER_ID}"></div>
             <div class="givePassCard" id="giveplayertable_{DIR}"></div>

@@ -91,9 +91,16 @@ $machinestates = [
     "action" => "stGiveCards",
     "type" => "multipleactiveplayer",
     "possibleactions" => ["giveCards", "tichuBet"],
-    "transitions" => ["showPassedCards" => ST_SHOW_PASSED_CARDS],
+    "transitions" => [
+      // legacy state: players have to take action to accept cards
+      "showPassedCards" => ST_SHOW_PASSED_CARDS,
+      // new state: cards are accepted automatically, immediately proceeds to NEW TRICK
+      "acceptPassedCards" => ST_ACCEPT_PASSED_CARDS,
+    ],
   ],
 
+  // This is a legacy state replaced by ST_ACCEPT_PASSED_CARDS.
+  // This legacy state requires all users to explicitly take an action to accept cards.
   ST_SHOW_PASSED_CARDS => [
     "name" => "showPassedCards",
     "description" => clienttranslate("Waiting for other players to accept cards"),
@@ -103,6 +110,17 @@ $machinestates = [
     "args" => "argShowPassedCards",
     "possibleactions" => ["acceptCards", "tichuBet"],
     "transitions" => ["acceptCards" => ST_NEW_TRICK],
+  ],
+
+  // This is a newly added state replacing by ST_SHOW_PASSED_CARDS.
+  // This state accepts all the passed cards automatically without requiring any action.
+  ST_ACCEPT_PASSED_CARDS => [
+    "name" => "acceptPassedCards",
+    "description" => clienttranslate("Passing completed"),
+    "action" => "stAcceptPassedCards",
+    "type" => "game",
+    "args" => "argAcceptPassedCards",
+    "transitions" => ["allCardsAccepted" => ST_NEW_TRICK],
   ],
 
   ST_NEW_TRICK => [

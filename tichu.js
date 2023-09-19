@@ -349,20 +349,20 @@ var Tichu = /** @class */ (function () {
     Tichu.prototype.onEnteringStateGrandTichuBets = function (args) {
         this.resetLastCombos();
     };
-    Tichu.prototype.onEnteringStateGiveCards = function (args) {
-        if (this.game.isSpectator)
-            return;
-        dojo.style("playertables", "display", "flex");
-        dojo.style("card-last-played-area", "display", "none");
-        dojo.query(".playertable").style("cursor", "pointer");
-    };
+    /** This is the legacy state that requires a user action for accepting cards. */
     Tichu.prototype.onEnteringStateShowPassedCards = function (args) {
+        this.showPassedCards(args);
+    };
+    /** This is the new state that does not require a user action. */
+    Tichu.prototype.onEnteringStateAcceptPassedCards = function (args) {
+        this.showPassedCards(args);
+    };
+    /** This is shared by the new state and the legacy state. */
+    Tichu.prototype.showPassedCards = function (args) {
         var _this = this;
         dojo.query(".handcount").innerHTML(14);
         if (args._private === undefined)
             return;
-        dojo.style("playertables", "display", "flex");
-        dojo.style("card-last-played-area", "display", "none");
         args._private.forEach(function (card, i) {
             var x = _this.cardwidth * (Number(card.type_arg) - 1);
             var y = _this.cardheight * (Number(card.type) - 1);
@@ -438,7 +438,6 @@ var Tichu = /** @class */ (function () {
     };
     Tichu.prototype.onLeavingState = function (stateName) {
         debug("Leaving state: " + stateName);
-        dojo.query(".playertable").style("cursor", "unset");
     };
     Tichu.prototype.updateCardsPlayed = function () {
         var _a, _b, _c, _d, _e, _f;
@@ -474,6 +473,9 @@ var Tichu = /** @class */ (function () {
     Tichu.prototype.onUpdateActionButtons = function (stateName, args) {
         var _this = this;
         debug("onUpdateActionButtons: " + stateName);
+        document
+            .getElementById("game_play_area")
+            .classList.toggle("isCurrentPlayerActive", this.game.isCurrentPlayerActive());
         var player = this.game.gamedatas.players[this.game.player_id];
         this.game.removeActionButtons();
         this.removeMyActionButtons();
@@ -484,6 +486,7 @@ var Tichu = /** @class */ (function () {
                     this.game.addActionButton("resetPassCards_button", _("Reset choices"), "onResetPassCards", null, false, "gray");
                     this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
                     break;
+                // This is a legacy state. The new state "acceptAllCards" does not require a user action.
                 case "showPassedCards":
                     clearTimeout(this.autoAcceptTimeout);
                     if (document.visibilityState === "visible") {
@@ -647,6 +650,10 @@ var Tichu = /** @class */ (function () {
     // client side action only
     Tichu.prototype.onGiveCard = function (i) {
         debug("onGiveCard", i);
+        if (this.stateName !== "giveCards")
+            return;
+        if (!this.game.isCurrentPlayerActive())
+            return;
         var items = this.playerHand.getSelectedItems();
         var player_id = this.game.player_id;
         var stockItem = this.cardsToPass[i];
@@ -857,7 +864,7 @@ var Tichu = /** @class */ (function () {
             captureCards: 500,
             newScores: 1000,
             autopass: 1,
-            acceptCards: 1000,
+            acceptCards: 3000,
             passCards: 200,
             devConsole: 1,
         };
@@ -1035,20 +1042,19 @@ var Tichu = /** @class */ (function () {
         this.onUpdateActionButtons(this.stateName, {});
     };
     Tichu.prototype.notif_acceptCards = function (notif) {
+        var _this = this;
         debug("notif_acceptCards", notif);
         clearTimeout(this.autoAcceptTimeout);
-        for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
-            var card = _a[_i];
-            var cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
-            this.game.gamedatas.hand.push(card);
-            addCardToStock(this.playerHand, card);
-            this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
-        }
-        this.updateStockOverlap(this.playerHand);
         setTimeout(function () {
-            dojo.style("playertables", "display", "none");
-            dojo.style("card-last-played-area", "display", "grid");
-        }, 1000);
+            for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
+                var card = _a[_i];
+                var cardOnTable = "cardontable_" + _this.game.player_id + "_" + card.id;
+                _this.game.gamedatas.hand.push(card);
+                addCardToStock(_this.playerHand, card);
+                _this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
+            }
+            _this.updateStockOverlap(_this.playerHand);
+        }, 2000);
     };
     Tichu.prototype.notif_passCards = function (notif) {
         var _a;

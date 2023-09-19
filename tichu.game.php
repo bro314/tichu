@@ -310,7 +310,9 @@ class Tichu extends Table
       CardManager::getDeck()->moveCard($cardId, "temporary", $nextPlayers[$idx]["id"]);
     }
     NotificationManager::passCards($player_id, $card_ids);
-    $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
+
+    // legacy: $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
+    $this->gamestate->setPlayerNonMultiactive($player_id, "acceptPassedCards");
   }
 
   function playBomb($cards_ids)
@@ -514,9 +516,8 @@ class Tichu extends Table
     }
   }
 
-  function detectBombPassing()
+  function detectBombPassing($player_id)
   {
-    $player_id = self::getCurrentPlayerId();
     $cardPassedFromPartner = CardManager::getCardsPassedTo($player_id)[1];
 
     // You cannot complete a bomb by passing a special card.
@@ -571,11 +572,38 @@ class Tichu extends Table
     self::incStat(1, "bombs_completed_by_partner", $player_id);
   }
 
+  /**
+   * This auto accepts cards for all players in the new "acceptPassedCards" state.
+   * The transition "allCardsAccepted" immediately proceeds to a "new trick".
+   */
+  function acceptCardsForAllPlayers()
+  {
+    $players = PlayerManager::getPlayerIds();
+    foreach ($players as $player_id) {
+      $this->acceptCardsForPlayer($player_id);
+    }
+
+    $this->gamestate->nextState("allCardsAccepted");
+  }
+
+  /**
+   * This is called by a player action in the legacy "showPassedCards" state.
+   */
   function acceptCards()
   {
-    self::detectBombPassing();
-
     $player_id = self::getCurrentPlayerId();
+    $this->acceptCardsForPlayer($player_id);
+    $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
+  }
+
+  /**
+   * This is used by both (new and legacy) states for accepting passed cards into
+   * players' hands.
+   */
+  function acceptCardsForPlayer($player_id)
+  {
+    self::detectBombPassing($player_id);
+
     NotificationManager::acceptCards($player_id);
 
     $deck = CardManager::getDeck();
@@ -583,8 +611,6 @@ class Tichu extends Table
 
     $hand = new Hand($deck->getCardsInLocation("hand", $player_id));
     PlayerManager::setHasBomb($player_id, $hand->hasBomb() ? 1 : 0);
-
-    $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
   }
 
   function makeAWish($wish)
@@ -636,7 +662,16 @@ class Tichu extends Table
     }
   }
 
+  // arg for legacy state
   function argShowPassedCards()
+  {
+    return [
+      "_private" => ($result["passedCards"] = CardManager::getPassedCards()),
+    ];
+  }
+
+  // arg for new state
+  function argAcceptPassedCards()
   {
     return [
       "_private" => ($result["passedCards"] = CardManager::getPassedCards()),
@@ -717,9 +752,16 @@ class Tichu extends Table
     $this->gamestate->setAllPlayersMultiactive();
   }
 
+  // legacy state that requires all players to accept cards as an action
   function stShowPassedCards()
   {
     $this->gamestate->setAllPlayersMultiactive();
+  }
+
+  // new state that accepts cards automatically for all players
+  function stAcceptPassedCards()
+  {
+    $this->acceptCardsForAllPlayers();
   }
 
   /*

@@ -513,18 +513,20 @@ class Tichu {
     this.resetLastCombos();
   }
 
-  onEnteringStateGiveCards(args: any) {
-    if (this.game.isSpectator) return;
-    dojo.style("playertables", "display", "flex");
-    dojo.style("card-last-played-area", "display", "none");
-    dojo.query(".playertable").style("cursor", "pointer");
+  /** This is the legacy state that requires a user action for accepting cards. */
+  onEnteringStateShowPassedCards(args: any) {
+    this.showPassedCards(args);
   }
 
-  onEnteringStateShowPassedCards(args: any) {
+  /** This is the new state that does not require a user action. */
+  onEnteringStateAcceptPassedCards(args: any) {
+    this.showPassedCards(args);
+  }
+
+  /** This is shared by the new state and the legacy state. */
+  showPassedCards(args: any) {
     dojo.query(".handcount").innerHTML(14);
     if (args._private === undefined) return;
-    dojo.style("playertables", "display", "flex");
-    dojo.style("card-last-played-area", "display", "none");
     args._private.forEach((card: Card, i: number) => {
       const x = this.cardwidth * (Number(card.type_arg) - 1);
       const y = this.cardheight * (Number(card.type) - 1);
@@ -614,7 +616,6 @@ class Tichu {
 
   onLeavingState(stateName: string) {
     debug("Leaving state: " + stateName);
-    dojo.query(".playertable").style("cursor", "unset");
   }
 
   updateCardsPlayed() {
@@ -648,6 +649,9 @@ class Tichu {
 
   onUpdateActionButtons(stateName: string, args: any) {
     debug("onUpdateActionButtons: " + stateName);
+    document
+      .getElementById("game_play_area")!
+      .classList.toggle("isCurrentPlayerActive", this.game.isCurrentPlayerActive());
     const player = this.game.gamedatas.players[this.game.player_id];
     this.game.removeActionButtons();
     this.removeMyActionButtons();
@@ -665,6 +669,7 @@ class Tichu {
           );
           this.game.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
           break;
+        // This is a legacy state. The new state "acceptAllCards" does not require a user action.
         case "showPassedCards":
           clearTimeout(this.autoAcceptTimeout);
           if (document.visibilityState === "visible") {
@@ -987,6 +992,8 @@ class Tichu {
   // client side action only
   private onGiveCard(i: number) {
     debug("onGiveCard", i);
+    if (this.stateName !== "giveCards") return;
+    if (!this.game.isCurrentPlayerActive()) return;
 
     const items = this.playerHand!.getSelectedItems();
     const player_id = this.game.player_id;
@@ -1227,7 +1234,7 @@ class Tichu {
       captureCards: 500,
       newScores: 1000,
       autopass: 1,
-      acceptCards: 1000,
+      acceptCards: 3000,
       passCards: 200,
       devConsole: 1,
     };
@@ -1435,18 +1442,15 @@ class Tichu {
     debug("notif_acceptCards", notif);
     clearTimeout(this.autoAcceptTimeout);
 
-    for (const card of notif.args.cards) {
-      const cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
-      this.game.gamedatas.hand.push(card);
-      addCardToStock(this.playerHand, card);
-      this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
-    }
-    this.updateStockOverlap(this.playerHand);
-
-    setTimeout(function () {
-      dojo.style("playertables", "display", "none");
-      dojo.style("card-last-played-area", "display", "grid");
-    }, 1000);
+    setTimeout(() => {
+      for (const card of notif.args.cards) {
+        const cardOnTable = "cardontable_" + this.game.player_id + "_" + card.id;
+        this.game.gamedatas.hand.push(card);
+        addCardToStock(this.playerHand, card);
+        this.game.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
+      }
+      this.updateStockOverlap(this.playerHand);
+    }, 2000);
   }
 
   private notif_passCards(notif: Notif) {
