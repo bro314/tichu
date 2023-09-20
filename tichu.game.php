@@ -282,6 +282,15 @@ class Tichu extends Table
     }
   }
 
+  function checkCardsInHand($cards, $player_id)
+  {
+    foreach ($cards as $card) {
+      if ($card["location"] != "hand" || $card["location_arg"] != $player_id) {
+        throw new feException(self::_("Some of these cards are not in your hand"));
+      }
+    }
+  }
+
   function giveTheCards($card_ids)
   {
     self::checkAction("giveCards");
@@ -296,12 +305,7 @@ class Tichu extends Table
     if (count($cards) != 3) {
       throw new feException(self::_("Some of these cards don't exist"));
     }
-
-    foreach ($cards as $card) {
-      if ($card["location"] != "hand" || $card["location_arg"] != $player_id) {
-        throw new feException(self::_("Some of these cards are not in your hand"));
-      }
-    }
+    $this->checkCardsInHand($cards, $player_id);
 
     $player_to_give_cards = null;
     $nextPlayers = PlayerManager::getNextPlayers(null, true);
@@ -363,7 +367,10 @@ class Tichu extends Table
   function playCombo($cards_ids)
   {
     self::checkAction("playCombo");
+    $playerId = self::getCurrentPlayerId();
     $cards = array_values(CardManager::getDeck()->getCards($cards_ids));
+    $this->checkCardsInHand($cards, $playerId);
+
     $combo = new Combo($cards);
     if ($combo->type == INVALID_COMBO) {
       throw new feException(self::_("You must play a valid combo"), true);
@@ -371,7 +378,6 @@ class Tichu extends Table
     if ($this->gamestate->state()["name"] == "playBomb" && $combo->type != BOMB_COMBO) {
       throw new feException(self::_("This is not a valid bomb"), true);
     }
-    $playerId = self::getCurrentPlayerId();
     if (is_array($combo->phoenixValue)) {
       $combo->recheckPhoenix();
     }
