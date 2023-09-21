@@ -239,6 +239,7 @@ span.pass img {
   content: "accepted";
   position: absolute;
   bottom: -20px;
+  left: 4px;
   font-size: 11px;
 }
 
