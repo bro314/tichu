@@ -10,6 +10,8 @@ html {
   --bg-color-active: rgba(200, 0, 0, 0.9);
 
   --border-radius: 6px;
+
+  --elevation: 0px 1px 2px 0px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);
 }
 
 body {
@@ -159,7 +161,7 @@ a.themelink .bg3 {
 .player-board {
   background-color: transparent;
   border-radius: 0;
-  box-shadow: none;
+  box-shadow: var(--elevation);
   padding: 0;
 }
 .player_board_inner {
@@ -204,6 +206,7 @@ a.themelink .bg3 {
 #card-last-played-area .last-played-container {
   position: relative;
   border-radius: var(--border-radius);
+  box-shadow: var(--elevation);
 }
 #card-last-played-area .last-played-container.disabled:not(.lastComboPlayer) .disabler {
   display: block;
@@ -248,6 +251,7 @@ span.pass img {
   min-height: 30px;
   display: flex;
   background-color: var(--bg-color-lighter);
+  box-shadow: var(--elevation);
 }
 #buttons h3 {
   line-height: 20px;
