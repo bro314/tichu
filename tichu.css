@@ -234,6 +234,14 @@ span.pass img {
   box-shadow: 5px 5px 5px 0px #666;
 }
 
+/* Not yet used. Requires backend to always send info about passed/accepted cards. */
+.stockitem.accepted::before {
+  content: "accepted";
+  position: absolute;
+  bottom: -20px;
+  font-size: 11px;
+}
+
 .stockitem {
   border-radius: var(--border-radius);
   box-shadow: 2px 2px 5px 3px #666;
