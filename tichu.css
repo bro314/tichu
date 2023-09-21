@@ -237,8 +237,9 @@ span.pass img {
 }
 
 .stockitem.stockitem_selected {
-  border-width: 0px !important;
-  translate: 0px -20px;
+  border: 1px solid #dda !important;
+  box-shadow: 0px 0px 4px 1px #ff8;
+  translate: 0 -20px;
 }
 
 #buttons {
