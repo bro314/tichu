@@ -46,10 +46,19 @@ $game_options = [
   101 => [
     "name" => totranslate("Teams"),
     "values" => [
-      1 => ["name" => totranslate("By table order (1st/3rd versus 2nd/4th)")],
-      2 => ["name" => totranslate("By table order (1st/2nd versus 3rd/4th)")],
-      3 => ["name" => totranslate("By table order (1st/4th versus 2nd/3rd)")],
-      4 => ["name" => totranslate("At random")],
+      1 => [
+        "name" => totranslate("By table order (1st/3rd versus 2nd/4th)"),
+        "tmdisplay" => totranslate("1/3 vs 2/4"),
+      ],
+      2 => [
+        "name" => totranslate("By table order (1st/2nd versus 3rd/4th)"),
+        "tmdisplay" => totranslate("1/2 vs 3/4"),
+      ],
+      3 => [
+        "name" => totranslate("By table order (1st/4th versus 2nd/3rd)"),
+        "tmdisplay" => totranslate("1/4 vs 2/3"),
+      ],
+      4 => ["name" => totranslate("At random"), "tmdisplay" => totranslate("Random")],
     ],
     "default" => 1,
   ],
