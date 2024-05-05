@@ -1,6 +1,15 @@
 <?php
 class PlayerManager extends APP_GameClass
 {
+  private static $instance = null;
+  public static function getInstance()
+  {
+    if (self::$instance == null) {
+      self::$instance = new PlayerManager();
+    }
+    return self::$instance;
+  }
+
   public static function setupPlayers($players)
   {
     // Set the colors (red & black) of the players with HTML color code
@@ -63,8 +72,8 @@ class PlayerManager extends APP_GameClass
         "')";
     }
 
-    $sql .= implode($values, ",");
-    self::DbQuery($sql);
+    $sql .= implode(",", $values);
+    self::getInstance()->DbQuery($sql);
   }
 
   private static function getSelectStmnt($where = [])
@@ -102,12 +111,12 @@ class PlayerManager extends APP_GameClass
 
   public static function getPlayerIds()
   {
-    return self::getObjectListFromDB("SELECT player_id FROM player", true);
+    return self::getInstance()->getObjectListFromDB("SELECT player_id FROM player", true);
   }
 
   public static function getPlayers()
   {
-    return self::getCollectionFromDb(self::getSelectStmnt());
+    return self::getInstance()->getCollectionFromDb(self::getSelectStmnt());
   }
 
   private static function resToObjects($res)
@@ -117,7 +126,7 @@ class PlayerManager extends APP_GameClass
 
   public static function getPlayer($id)
   {
-    return self::getObjectFromDB(self::getSelectStmnt(["id" => $id]));
+    return self::getInstance()->getObjectFromDB(self::getSelectStmnt(["id" => $id]));
   }
 
   public static function numPlayersStillInRound()
@@ -127,7 +136,7 @@ class PlayerManager extends APP_GameClass
 
   public static function getHighestScore()
   {
-    return self::getUniqueValueFromDB("SELECT MAX(player_score) FROM player");
+    return self::getInstance()->getUniqueValueFromDB("SELECT MAX(player_score) FROM player");
   }
 
   public static function getPartner($pId)
@@ -143,7 +152,7 @@ class PlayerManager extends APP_GameClass
     if ($desc) {
       $sql .= " DESC";
     }
-    $players = self::getObjectListFromDB($sql);
+    $players = self::getInstance()->getObjectListFromDB($sql);
     $lastId = $players[3]["id"]; // for preventing infinite loop for spectators
     while ($players[3]["id"] != $id && $players[0]["id"] != $lastId) {
       $players[] = array_shift($players);
@@ -167,42 +176,55 @@ class PlayerManager extends APP_GameClass
 
   public static function getScores()
   {
-    return self::getCollectionFromDb("SELECT player_id, player_score FROM player", true);
+    return self::getInstance()->getCollectionFromDb(
+      "SELECT player_id, player_score FROM player",
+      true
+    );
   }
 
   public static function getBombs()
   {
-    return self::getObjectListFromDB("SELECT player_id FROM player WHERE player_has_bomb=1", true);
+    return self::getInstance()->getObjectListFromDB(
+      "SELECT player_id FROM player WHERE player_has_bomb=1",
+      true
+    );
   }
 
   public static function getBombStatus()
   {
-    return self::getCollectionFromDb("SELECT player_id, player_has_bomb FROM player", true);
+    return self::getInstance()->getCollectionFromDb(
+      "SELECT player_id, player_has_bomb FROM player",
+      true
+    );
   }
 
   public static function resetTichus()
   {
-    self::DbQuery("UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1");
+    self::getInstance()->DbQuery(
+      "UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1"
+    );
   }
 
   public static function grandTichuBet($pId, $bet)
   {
-    self::DbQuery("UPDATE player SET player_call_grand_tichu=$bet WHERE player_id=$pId");
+    self::getInstance()->DbQuery(
+      "UPDATE player SET player_call_grand_tichu=$bet WHERE player_id=$pId"
+    );
     if ($bet > 0) {
-      self::DbQuery("UPDATE player SET player_call_tichu=0 WHERE player_id='$pId' ");
+      self::getInstance()->DbQuery("UPDATE player SET player_call_tichu=0 WHERE player_id='$pId' ");
     }
   }
 
   public static function tichuBet($pId, $bet)
   {
-    self::DbQuery(
+    self::getInstance()->DbQuery(
       "UPDATE player SET player_call_tichu=$bet, player_call_grand_tichu=0 WHERE player_id=$pId"
     );
   }
 
   public static function setHasBomb($pId, $hasBomb)
   {
-    self::DbQuery("UPDATE player SET player_has_bomb=$hasBomb WHERE player_id=$pId");
+    self::getInstance()->DbQuery("UPDATE player SET player_has_bomb=$hasBomb WHERE player_id=$pId");
   }
 
   public static function updateScores($team_points)
@@ -212,7 +234,7 @@ class PlayerManager extends APP_GameClass
       if ($points != 0) {
         $sql = "UPDATE player SET player_score=player_score+$points
 									WHERE player_team='$t' ";
-        self::DbQuery($sql);
+        self::getInstance()->DbQuery($sql);
       }
     }
   }
@@ -223,7 +245,7 @@ class PlayerManager extends APP_GameClass
     if (!is_null($pId)) {
       $sql .= " WHERE player_id=$pId";
     }
-    self::DbQuery($sql);
+    self::getInstance()->DbQuery($sql);
   }
 
   public static function canPass($pId, $wish, $lastCombo)

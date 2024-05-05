@@ -43,10 +43,10 @@ class Tichu extends Table
   protected function setupNewGame($players, $options = [])
   {
     $sql = "DELETE FROM player WHERE 1 ";
-    self::DbQuery($sql);
+    $this->DbQuery($sql);
 
     PlayerManager::setupPlayers($players);
-    self::reloadPlayersBasicInfos();
+    $this->reloadPlayersBasicInfos();
     CardManager::setupCards();
 
     // Init globals
@@ -55,7 +55,7 @@ class Tichu extends Table
     self::setGameStateInitialValue("doubleVictory", -1);
     self::setGameStateInitialValue("mahjongWish", 0);
     self::setGameStateInitialValue("mahjongOwner", 0);
-    self::setGameStateInitialValue("isAllInfoExposed", self::isAsync() ? 1 : 0);
+    self::setGameStateInitialValue("isAllInfoExposed", $this->isAsync() ? 1 : 0);
 
     // Init statistics
     self::initStat("table", "round_number", 0);
@@ -1213,7 +1213,7 @@ class Tichu extends Table
           break;
 
         default:
-          self::DbQuery(
+          $this->DbQuery(
             sprintf(
               "UPDATE player SET player_is_multiactive = 0 WHERE player_id = '%s'",
               $active_player
@@ -1279,10 +1279,13 @@ class Tichu extends Table
 				PRIMARY KEY (`log_id`)
 			) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1;");
       $state = $this->gamestate->state()["name"];
-      self::DbQuery(
+      $this->DbQuery(
         "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
       );
-      $combos = $this->getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
+      $combos = $this->getCollectionFromDb(
+        "SELECT combo_player_id, combo_display FROM combo",
+        true
+      );
       $n = 0;
       $deck = CardManager::getDeck();
       foreach ($combos as $pId => $cardIds) {
@@ -1361,7 +1364,10 @@ class Tichu extends Table
       self::applyDbUpgradeToAllDB(
         "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
       );
-      $combos = $this->getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
+      $combos = $this->getCollectionFromDb(
+        "SELECT combo_player_id, combo_display FROM combo",
+        true
+      );
       $n = 0;
       $deck = CardManager::getDeck();
       foreach ($combos as $pId => $cardIds) {

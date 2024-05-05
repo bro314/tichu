@@ -1,6 +1,15 @@
 <?php
 class LogManager extends APP_GameClass
 {
+  private static $instance = null;
+  public static function getInstance()
+  {
+    if (self::$instance == null) {
+      self::$instance = new LogManager();
+    }
+    return self::$instance;
+  }
+
   // Clunky workaround for being able to unit test the Combo class, which requires to know about the last combo to assess the phoenix value.
   public static $lastComboForTesting = null;
 
@@ -19,7 +28,7 @@ class LogManager extends APP_GameClass
     }
 
     $actionArgs = json_encode($args);
-    self::DbQuery(
+    self::getInstance()->DbQuery(
       "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($playerId, $round, $trick, '$action', '$actionArgs')"
     );
   }
@@ -35,7 +44,7 @@ class LogManager extends APP_GameClass
       $sql .= " AND " . self::getCurrentTrickCond();
     }
     $sql .= " ORDER BY log_id DESC";
-    $res = self::getObjectListFromDB($sql);
+    $res = self::getInstance()->getObjectListFromDB($sql);
 
     if (count($res) == 0) {
       return $single ? null : [];
@@ -58,7 +67,7 @@ class LogManager extends APP_GameClass
 
   public static function getCurrentRoundAndTrick()
   {
-    return self::getObjectFromDB(
+    return self::getInstance()->getObjectFromDB(
       "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog"
     );
   }
@@ -129,18 +138,6 @@ class LogManager extends APP_GameClass
       "cards" => $cards,
       "phoenixValue" => $combo->phoenixValue,
     ]);
-  }
-
-  public static function chooseDragon($playerId, $enemies)
-  {
-    self::notifyPlayer(
-      $lastComboPlayer,
-      "chooseDragon",
-      clienttranslate("You have to choose the winner of the Dragon trick"),
-      [
-        "enemies" => $enemies,
-      ]
-    );
   }
 
   public static function askPhoenix($playerId, $combo)
