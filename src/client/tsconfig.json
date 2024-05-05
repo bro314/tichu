@@ -1,0 +1,50 @@
+/*
+ *------
+ * BGA framework: Gregory Isabelli & Emmanuel Colin & BoardGameArena
+ * Tichu implementation : © Ben Rohlfs et al.
+ *
+ * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
+ * See http://en.boardgamearena.com/#!doc/Studio for more information.
+ * -----
+ */
+{
+  "files": [
+    "tichu.ts"
+    // Add Cookbook files here: ../../node_modules/bga-ts-template/typescript/cookbook/<module>.ts
+    // "../../node_modules/bga-ts-template/typescript/cookbook/common.ts",
+  ],
+  "include": [
+    "build/**/*.ts" // Extra auto generated type files based on shared files
+  ],
+  "compilerOptions": {
+    /* NEVER CHANGE THESE */
+    "target": "es5", // This is the framework's version
+    "module": "AMD", // This is what allows for imports and automatically creates the define function.
+
+    /* Recommended, should not need to change. */
+    "moduleResolution": "node10",
+    "lib": ["dom", "esnext"],
+    "typeRoots": [
+      "../../node_modules/bga-ts-template/typescript/types", // NEVER CHANGE. This ensures modules have the correct paths.
+      "../../node_modules/@types" // Recommended (default when typeRoots not defined)
+    ],
+    "paths": {
+      // When cookbook files are added, this lets you import them without the full path.
+      "cookbook/*": ["../../node_modules/bga-ts-template/typescript/cookbook/*"]
+    },
+
+    /* Preference. This defaults to the most strict ts rules. */
+    "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "removeComments": true, // Comments are always removed from JS in production, so you don't need to remove them when compiling.
+    "sourceMap": false,
+    "noImplicitAny": true /* Raise error on expressions and declarations with an implied 'any' type. */,
+    "strictNullChecks": true /* Enable strict null checks. */,
+    "strictFunctionTypes": true /* Enable strict checking of function types. */,
+    "strictBindCallApply": true /* Enable strict 'bind', 'call', and 'apply' methods on functions. */,
+    "strictPropertyInitialization": true /* Enable strict checking of property initialization in classes. */,
+    "noImplicitThis": true /* Raise error on 'this' expressions with an implied 'any' type. */
+  }
+}

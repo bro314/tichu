@@ -4,9 +4,8 @@
   "description": "Tichu for BoardGameArena",
   "main": "tichu.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
-    "watch": "tsc --watch",
+    "build": "npx bga-build",
+    "watch": "npx bga-build --watch",
     "format": "npx prettier --write ."
   },
   "repository": {
@@ -23,5 +22,8 @@
     "@prettier/plugin-php": "^0.19.6",
     "prettier": "^2.8.8",
     "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "bga-ts-template": "^1.1.8"
   }
 }
