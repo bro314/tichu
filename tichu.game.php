@@ -1258,7 +1258,7 @@ class Tichu extends Table
       // ! important ! Use DBPREFIX_<table_name> for all tables
       //checking if column exists
       //Utils::die("TEST");
-      $players = self::getObjectListFromDB("SELECT * FROM player");
+      $players = $this->getObjectListFromDB("SELECT * FROM player");
       if (!isset($players[0]["player_has_bomb"])) {
         self::applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
@@ -1282,7 +1282,7 @@ class Tichu extends Table
       self::DbQuery(
         "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
       );
-      $combos = self::getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
+      $combos = $this->getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
       $n = 0;
       $deck = CardManager::getDeck();
       foreach ($combos as $pId => $cardIds) {
@@ -1294,15 +1294,15 @@ class Tichu extends Table
         $combo = new Combo($cards);
         if (is_array($combo->phoenixValue)) {
           $combo->setPhoenixValue(
-            self::getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=29")
+            $this->getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=29")
           );
         }
         LogManager::playCombo($pId, $combo);
       }
-      $passes = self::getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=19");
+      $passes = $this->getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=19");
       $deck->moveAllCardsInLocation("lastcombo", "combos");
       $deck->moveAllCardsInLocation("allcombos", "combos");
-      $playerids = self::getObjectListFromDB(
+      $playerids = $this->getObjectListFromDB(
         "SELECT player_id FROM player ORDER BY player_no",
         true
       );
@@ -1337,7 +1337,7 @@ class Tichu extends Table
   {
     if ($from_version <= 2101032301) {
       // ! important ! Use DBPREFIX_<table_name> for all tables
-      $players = self::getObjectListFromDB("SELECT * FROM player");
+      $players = $this->getObjectListFromDB("SELECT * FROM player");
       if (!isset($players[0]["player_has_bomb"])) {
         self::applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
@@ -1361,7 +1361,7 @@ class Tichu extends Table
       self::applyDbUpgradeToAllDB(
         "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
       );
-      $combos = self::getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
+      $combos = $this->getCollectionFromDb("SELECT combo_player_id, combo_display FROM combo", true);
       $n = 0;
       $deck = CardManager::getDeck();
       foreach ($combos as $pId => $cardIds) {
@@ -1375,7 +1375,7 @@ class Tichu extends Table
         $combo = new Combo($cards);
         if (is_array($combo->phoenixValue)) {
           $combo->setPhoenixValue(
-            self::getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=29")
+            $this->getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=29")
           );
         }
         $cards = Utils::filterColumns($combo->cards, ["id", "type", "type_arg"]);
@@ -1392,7 +1392,7 @@ class Tichu extends Table
       self::applyDbUpgradeToAllDB(
         "UPDATE DBPREFIX_card SET card_location='combos' WHERE card_location IN ('lastcombo', 'allcombos')"
       );
-      $playerids = self::getObjectListFromDB("SELECT player_id FROM player ORDER BY player_no");
+      $playerids = $this->getObjectListFromDB("SELECT player_id FROM player ORDER BY player_no");
       switch ($state) {
         case "grandTichuBets":
         case "giveCards":
