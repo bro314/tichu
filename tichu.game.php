@@ -11,7 +11,7 @@ class Tichu extends Table
     self::$instance = $this;
     Combo::$noCombo = new Combo([], NO_COMBO);
 
-    self::initGameStateLabels([
+    $this->initGameStateLabels([
       // globals
       "firstOutPlayer" => 21, // first player getting rid of his cards
       "secondOutPlayer" => 22, // second player getting rid of his cards
@@ -50,23 +50,23 @@ class Tichu extends Table
     CardManager::setupCards();
 
     // Init globals
-    self::setGameStateInitialValue("firstOutPlayer", 0);
-    self::setGameStateInitialValue("secondOutPlayer", 0);
-    self::setGameStateInitialValue("doubleVictory", -1);
-    self::setGameStateInitialValue("mahjongWish", 0);
-    self::setGameStateInitialValue("mahjongOwner", 0);
-    self::setGameStateInitialValue("isAllInfoExposed", $this->isAsync() ? 1 : 0);
+    $this->setGameStateInitialValue("firstOutPlayer", 0);
+    $this->setGameStateInitialValue("secondOutPlayer", 0);
+    $this->setGameStateInitialValue("doubleVictory", -1);
+    $this->setGameStateInitialValue("mahjongWish", 0);
+    $this->setGameStateInitialValue("mahjongOwner", 0);
+    $this->setGameStateInitialValue("isAllInfoExposed", $this->isAsync() ? 1 : 0);
 
     // Init statistics
-    self::initStat("table", "round_number", 0);
-    self::initStat("table", "trick_number", 0);
-    self::initStat("player", "tricks_win", 0);
-    self::initStat("player", "bomb_number", 0);
-    self::initStat("player", "tichu_number", 0);
-    self::initStat("player", "grandtichu_number", 0);
-    self::initStat("player", "tichu_won_number", 0);
-    self::initStat("player", "grandtichu_won_number", 0);
-    self::initStat("player", "bombs_completed_by_partner", 0);
+    $this->initStat("table", "round_number", 0);
+    $this->initStat("table", "trick_number", 0);
+    $this->initStat("player", "tricks_win", 0);
+    $this->initStat("player", "bomb_number", 0);
+    $this->initStat("player", "tichu_number", 0);
+    $this->initStat("player", "grandtichu_number", 0);
+    $this->initStat("player", "tichu_won_number", 0);
+    $this->initStat("player", "grandtichu_won_number", 0);
+    $this->initStat("player", "bombs_completed_by_partner", 0);
 
     $this->activeNextPlayer();
   }
@@ -79,7 +79,7 @@ class Tichu extends Table
   {
     // In the future we can just return the "isAllInfoExposed" game state. We are only setting
     // a default value for migrating in-progress games correctly.
-    return self::getGameStateValue("isAllInfoExposed", self::isAsync() ? 1 : 0) == 1;
+    return $this->getGameStateValue("isAllInfoExposed", $this->isAsync() ? 1 : 0) == 1;
   }
 
   /*
@@ -95,7 +95,7 @@ class Tichu extends Table
   {
     $deck = CardManager::getDeck();
     $players = PlayerManager::getPlayers();
-    $current_player_id = self::getCurrentPlayerId(); // !! We must only return informations visible by this player !!
+    $current_player_id = $this->getCurrentPlayerId(); // !! We must only return informations visible by this player !!
     $names = [];
     $result = [];
     foreach ($players as $player) {
@@ -117,9 +117,9 @@ class Tichu extends Table
     $result["hand"] = array_values($deck->getCardsInLocation("hand", $current_player_id));
     $result["handcount"] = $deck->countCardsByLocationArgs("hand");
     $result["capturedpoints"] = CardManager::calculatCapturedPoints();
-    $result["firstoutplayer"] = intval(self::getGameStateValue("firstOutPlayer"));
-    $result["mahjongOwner"] = intval(self::getGameStateValue("mahjongOwner"));
-    $result["mahjongWish"] = intval(self::getGameStateValue("mahjongWish"));
+    $result["firstoutplayer"] = intval($this->getGameStateValue("firstOutPlayer"));
+    $result["mahjongOwner"] = intval($this->getGameStateValue("mahjongOwner"));
+    $result["mahjongWish"] = intval($this->getGameStateValue("mahjongWish"));
     $result["isAllInfoExposed"] = intval($this->isAllInfoExposed());
 
     $lastCombo = LogManager::getLastCombo();
@@ -156,7 +156,7 @@ class Tichu extends Table
 	*/
   function getGameProgression()
   {
-    $p = [5, 10, 20][self::getGameStateValue("gameLength") - 1];
+    $p = [5, 10, 20][$this->getGameStateValue("gameLength") - 1];
     return round(min(100, PlayerManager::getHighestScore() / $p));
   }
 
@@ -168,8 +168,8 @@ class Tichu extends Table
   function completePlayCombo($playerId, $combo)
   {
     $player = PlayerManager::getPlayer($playerId);
-    $mahjongOwner = self::getGameStateValue("mahjongOwner");
-    $wish = self::getGameStateValue("mahjongWish");
+    $mahjongOwner = $this->getGameStateValue("mahjongOwner");
+    $wish = $this->getGameStateValue("mahjongWish");
     $cards = $combo->cards;
     $cardIds = array_column($combo->cards, "id");
     $deck = CardManager::getDeck();
@@ -187,10 +187,10 @@ class Tichu extends Table
     }
 
     if ($combo->type == DOG_COMBO && $lastCombo->type != NO_COMBO) {
-      throw new feException(self::_("the Dog can only be played as a lead"), true);
+      throw new feException($this->_("the Dog can only be played as a lead"), true);
     }
     if (!$combo->canBeat($lastCombo)) {
-      throw new feException(self::_("This combo can't beat the last combo"), true);
+      throw new feException($this->_("This combo can't beat the last combo"), true);
     }
 
     $notification_description = clienttranslate('${player_name} plays ${combo_name}');
@@ -199,13 +199,13 @@ class Tichu extends Table
         $notification_description = clienttranslate(
           '${player_name} plays ${combo_name} and grants Mahjong\'s owner wish'
         );
-        self::setGameStateValue("mahjongWish", 0);
+        $this->setGameStateValue("mahjongWish", 0);
         NotificationManager::mahjongGranted();
       } else {
         if ($combo->type != BOMB_COMBO && $currentHand->canFulFillWish($wish, $lastCombo)) {
           throw new feException(
             sprintf(
-              self::_("You must grant the Mahjong Wish and play a %s"),
+              $this->_("You must grant the Mahjong Wish and play a %s"),
               CardManager::cardToStr($wish)
             ),
             true
@@ -216,7 +216,7 @@ class Tichu extends Table
 
     if (count($cardsInHand) == 14 && $player["call_tichu"] == -1) {
       PlayerManager::tichuBet($playerId, 0);
-      NotificationManager::tichuBet($playerId, self::getCurrentPlayerName(), 0);
+      NotificationManager::tichuBet($playerId, $this->getCurrentPlayerName(), 0);
     }
 
     if ($player["has_bomb"] && !$remainingHand->hasBomb()) {
@@ -226,14 +226,14 @@ class Tichu extends Table
 
     NotificationManager::playCombo(
       $playerId,
-      self::getCurrentPlayerName(),
+      $this->getCurrentPlayerName(),
       $combo,
       $notification_description
     );
     $deck->moveCards($cardIds, "combos");
 
     if ($combo->type == BOMB_COMBO) {
-      self::incStat(1, "bomb_number", $playerId);
+      $this->incStat(1, "bomb_number", $playerId);
     }
 
     if ($combo->hasMahjong()) {
@@ -245,13 +245,13 @@ class Tichu extends Table
 
   function chooseDragonGift($playertogive)
   {
-    self::checkAction("chooseDragonGift");
+    $this->checkAction("chooseDragonGift");
     $players = PlayerManager::getPlayers();
     $trickWinner = LogManager::getLastComboPlayer();
     $nextPlayers = PlayerManager::getNextPlayers($trickWinner);
     $dragonGivenToId = $nextPlayers[$playertogive * 2]["id"];
 
-    self::incStat(1, "tricks_win", $trickWinner);
+    $this->incStat(1, "tricks_win", $trickWinner);
     $deck = CardManager::getDeck();
 
     $cardsCaptured = $deck->getCardsInLocation("combos");
@@ -272,7 +272,7 @@ class Tichu extends Table
     $doubleVic =
       count($inPlay) == 2 && $players[$inPlay[0]]["team"] == $players[$inPlay[1]]["team"];
     if ($doubleVic) {
-      self::setGameStateValue("doubleVictory", 1 - $players[$inPlay[0]]["team"]);
+      $this->setGameStateValue("doubleVictory", 1 - $players[$inPlay[0]]["team"]);
     }
     if (count($inPlay) == 1 || $doubleVic) {
       $this->gamestate->nextState("endRound");
@@ -286,24 +286,24 @@ class Tichu extends Table
   {
     foreach ($cards as $card) {
       if ($card["location"] != "hand" || $card["location_arg"] != $player_id) {
-        throw new feException(self::_("Some of these cards are not in your hand"));
+        throw new feException($this->_("Some of these cards are not in your hand"));
       }
     }
   }
 
   function giveTheCards($card_ids)
   {
-    self::checkAction("giveCards");
+    $this->checkAction("giveCards");
 
-    $player_id = self::getCurrentPlayerId();
+    $player_id = $this->getCurrentPlayerId();
 
     if (count($card_ids) != 3) {
-      throw new feException(self::_("You must give exactly 3 cards"));
+      throw new feException($this->_("You must give exactly 3 cards"));
     }
 
     $cards = CardManager::getDeck()->getCards($card_ids);
     if (count($cards) != 3) {
-      throw new feException(self::_("Some of these cards don't exist"));
+      throw new feException($this->_("Some of these cards don't exist"));
     }
     $this->checkCardsInHand($cards, $player_id);
 
@@ -323,26 +323,26 @@ class Tichu extends Table
   {
     $name = $this->gamestate->state()["name"];
     if ($name != "playCombo" && $name != "confirmTrick") {
-      throw new feException(self::_("You can't play a bomb right now"), true);
+      throw new feException($this->_("You can't play a bomb right now"), true);
     }
 
-    $playerId = self::getCurrentPlayerId();
+    $playerId = $this->getCurrentPlayerId();
     $lastCombo = LogManager::getLastCombo();
-    if ($lastCombo == null && $playerId != self::getActivePlayerId()) {
-      throw new feException(self::_('You can\'t bomb before the trick starts'), true);
+    if ($lastCombo == null && $playerId != $this->getActivePlayerId()) {
+      throw new feException($this->_('You can\'t bomb before the trick starts'), true);
     }
 
     if (
       $lastCombo != null &&
       $lastCombo->type == DOG_COMBO &&
-      $playerId != self::getActivePlayerId()
+      $playerId != $this->getActivePlayerId()
     ) {
-      throw new feException(self::_('You can\'t bomb the dog'), true);
+      throw new feException($this->_('You can\'t bomb the dog'), true);
     }
 
-    LogManager::insert(self::getCurrentPlayerId(), "changePlayer", [
+    LogManager::insert($this->getCurrentPlayerId(), "changePlayer", [
       "transition" => "playBomb",
-      "active" => self::getActivePlayerId(),
+      "active" => $this->getActivePlayerId(),
       "last" => $name,
     ]);
     $this->gamestate->nextState("changePlayer");
@@ -350,12 +350,12 @@ class Tichu extends Table
 
   function choosePhoenix($phoenixValue)
   {
-    self::checkAction("phoenixPlay");
-    $pId = self::getActivePlayerId();
+    $this->checkAction("phoenixPlay");
+    $pId = $this->getActivePlayerId();
     $combo = LogManager::getLastCombo(0, "phoenix");
     if (!in_array($phoenixValue, $combo->phoenixValue)) {
       throw new feException(
-        self::_("You have chosen an invalid value for the phoenix, choose a new hand"),
+        $this->_("You have chosen an invalid value for the phoenix, choose a new hand"),
         true
       );
     }
@@ -366,17 +366,17 @@ class Tichu extends Table
 
   function playCombo($cards_ids)
   {
-    self::checkAction("playCombo");
-    $playerId = self::getCurrentPlayerId();
+    $this->checkAction("playCombo");
+    $playerId = $this->getCurrentPlayerId();
     $cards = array_values(CardManager::getDeck()->getCards($cards_ids));
     $this->checkCardsInHand($cards, $playerId);
 
     $combo = new Combo($cards);
     if ($combo->type == INVALID_COMBO) {
-      throw new feException(self::_("You must play a valid combo"), true);
+      throw new feException($this->_("You must play a valid combo"), true);
     }
     if ($this->gamestate->state()["name"] == "playBomb" && $combo->type != BOMB_COMBO) {
-      throw new feException(self::_("This is not a valid bomb"), true);
+      throw new feException($this->_("This is not a valid bomb"), true);
     }
     if (is_array($combo->phoenixValue)) {
       $combo->recheckPhoenix();
@@ -394,24 +394,24 @@ class Tichu extends Table
   function pass($onlyOnce)
   {
     if ($this->gamestate->state()["name"] != "playCombo") {
-      throw new feException(self::_("You can't pass right now"), true);
+      throw new feException($this->_("You can't pass right now"), true);
     }
 
-    $player_id = self::getCurrentPlayerId();
-    if ($player_id != self::getActivePlayerId()) {
+    $player_id = $this->getCurrentPlayerId();
+    if ($player_id != $this->getActivePlayerId()) {
       PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
       NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
       return;
     }
 
-    $currentMahjongWish = self::getGameStateValue("mahjongWish");
+    $currentMahjongWish = $this->getGameStateValue("mahjongWish");
     if ($currentMahjongWish > 0) {
       $cardsInHand = CardManager::getDeck()->getPlayerHand($player_id);
       $hand = new Hand($cardsInHand, $this);
       if ($hand->canFulfillWish($currentMahjongWish, LogManager::getLastCombo())) {
         throw new feException(
           sprintf(
-            self::_("You must grant the Mahjong Wish and play a %s "),
+            $this->_("You must grant the Mahjong Wish and play a %s "),
             CardManager::cardToStr($currentMahjongWish)
           ),
           true
@@ -420,7 +420,7 @@ class Tichu extends Table
     }
 
     LogManager::insert($player_id, "pass");
-    NotificationManager::pass($player_id, self::getActivePlayerName());
+    NotificationManager::pass($player_id, $this->getActivePlayerName());
     if (!$onlyOnce) {
       PlayerManager::setAutopass(2, $player_id);
       NotificationManager::autopass(2, $player_id);
@@ -430,8 +430,8 @@ class Tichu extends Table
 
   function cancelAutopass()
   {
-    PlayerManager::setAutopass(0, self::getCurrentPlayerId());
-    NotificationManager::autopass(0, self::getCurrentPlayerId());
+    PlayerManager::setAutopass(0, $this->getCurrentPlayerId());
+    NotificationManager::autopass(0, $this->getCurrentPlayerId());
   }
 
   function cancel()
@@ -445,8 +445,8 @@ class Tichu extends Table
 
   function grandTichuBet($bet, $confirmed = false)
   {
-    self::checkAction("grandTichuBet");
-    $player_id = self::getCurrentPlayerId();
+    $this->checkAction("grandTichuBet");
+    $player_id = $this->getCurrentPlayerId();
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_tichu"] != -1) {
       return;
@@ -471,7 +471,7 @@ class Tichu extends Table
         return;
       }
       LogManager::insert($player_id, "tichuCall", $now);
-      self::incStat(1, "grandtichu_number", $player_id);
+      $this->incStat(1, "grandtichu_number", $player_id);
     }
     PlayerManager::grandTichuBet($player_id, $bet);
     NotificationManager::grandTichuBet($player_id, $player["name"], $bet);
@@ -480,7 +480,7 @@ class Tichu extends Table
 
   function tichuBet($confirmed = false)
   {
-    $player_id = self::getCurrentPlayerId();
+    $player_id = $this->getCurrentPlayerId();
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_grand_tichu"] == 200) {
       throw new feException("You already made a grand tichu bet.");
@@ -505,9 +505,9 @@ class Tichu extends Table
       return;
     }
     LogManager::insert($player_id, "tichuCall", $now);
-    self::incStat(1, "tichu_number", $player_id);
+    $this->incStat(1, "tichu_number", $player_id);
     PlayerManager::tichuBet($player_id, 100);
-    NotificationManager::tichuBet($player_id, self::getCurrentPlayerName(), 100);
+    NotificationManager::tichuBet($player_id, $this->getCurrentPlayerName(), 100);
     if ($state["name"] == "grandTichuBets") {
       $this->gamestate->setPlayerNonMultiactive($player_id, "dealLastCards");
     }
@@ -575,7 +575,7 @@ class Tichu extends Table
     }
 
     // The pass was not natural and completed a bomb. Count it!
-    self::incStat(1, "bombs_completed_by_partner", $player_id);
+    $this->incStat(1, "bombs_completed_by_partner", $player_id);
   }
 
   /**
@@ -597,7 +597,7 @@ class Tichu extends Table
    */
   function acceptCards()
   {
-    $player_id = self::getCurrentPlayerId();
+    $player_id = $this->getCurrentPlayerId();
     $this->acceptCardsForPlayer($player_id);
     $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
   }
@@ -608,7 +608,7 @@ class Tichu extends Table
    */
   function acceptCardsForPlayer($player_id)
   {
-    self::detectBombPassing($player_id);
+    $this->detectBombPassing($player_id);
 
     NotificationManager::acceptCards($player_id);
 
@@ -621,19 +621,19 @@ class Tichu extends Table
 
   function makeAWish($wish)
   {
-    self::checkAction("makeAWish");
+    $this->checkAction("makeAWish");
 
     if ($wish == 15) {
       $msg = clienttranslate('${player_name} owns the Mahjong and has no wish');
       $textValue = "0";
     } else {
-      self::setGameStateValue("mahjongWish", $wish);
+      $this->setGameStateValue("mahjongWish", $wish);
       $textValue = $this->values_label[$wish];
       $msg = clienttranslate('${player_name} owns the Mahjong and wants a ${text_value}');
     }
     NotificationManager::wishMade(
-      self::getActivePlayerId(),
-      self::getActivePlayerName(),
+      $this->getActivePlayerId(),
+      $this->getActivePlayerName(),
       $wish,
       $textValue,
       $msg
@@ -643,7 +643,7 @@ class Tichu extends Table
 
   function collect()
   {
-    self::checkAction("collect");
+    $this->checkAction("collect");
     $action = LogManager::getLastAction("confirm");
     $pId = $action["player"];
     $action = $action["arg"];
@@ -653,7 +653,7 @@ class Tichu extends Table
       $deck = CardManager::getDeck();
       $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
       $deck->moveAllCardsInLocation("combos", "captured", null, $pId);
-      NotificationManager::captureCards($pId, self::getCurrentPlayerName(), $trickValue);
+      NotificationManager::captureCards($pId, $this->getCurrentPlayerName(), $trickValue);
       $this->gamestate->nextState("newTrick");
     }
   }
@@ -716,13 +716,13 @@ class Tichu extends Table
   function stNewRound()
   {
     LogManager::insert(0, "newRound");
-    self::setGameStateValue("firstOutPlayer", 0);
-    self::setGameStateValue("secondOutPlayer", 0);
-    self::setGameStateValue("doubleVictory", -1);
-    self::setGameStateValue("mahjongWish", 0);
-    self::setGameStateValue("mahjongOwner", 0);
+    $this->setGameStateValue("firstOutPlayer", 0);
+    $this->setGameStateValue("secondOutPlayer", 0);
+    $this->setGameStateValue("doubleVictory", -1);
+    $this->setGameStateValue("mahjongWish", 0);
+    $this->setGameStateValue("mahjongOwner", 0);
 
-    self::incStat(1, "round_number");
+    $this->incStat(1, "round_number");
 
     CardManager::resetPassedCards();
     $deck = CardManager::getDeck();
@@ -783,7 +783,7 @@ class Tichu extends Table
 	*/
   function stNewTrick()
   {
-    self::incStat(1, "trick_number");
+    $this->incStat(1, "trick_number");
     $lastWinner = LogManager::getLastComboPlayer();
     LogManager::insert(0, "newTrick");
     PlayerManager::setAutopass(0);
@@ -794,7 +794,7 @@ class Tichu extends Table
     if ($lastWinner == 0) {
       $card = array_values($deck->getCardsOfType(TYPE_MAHJONG, 1))[0];
       $mahjongOwnerId = $card["location_arg"];
-      self::setGameStateValue("mahjongOwner", $mahjongOwnerId);
+      $this->setGameStateValue("mahjongOwner", $mahjongOwnerId);
       $this->gamestate->changeActivePlayer($mahjongOwnerId);
       $this->giveExtraTime($mahjongOwnerId);
       $notify = 'A new round starts. ${player_name} has the Mahjong';
@@ -825,7 +825,7 @@ class Tichu extends Table
       }
     }
     NotificationManager::log($notify, [
-      "player_name" => self::getActivePlayerName(),
+      "player_name" => $this->getActivePlayerName(),
     ]);
 
     $this->gamestate->nextState("firstCombo");
@@ -849,29 +849,29 @@ class Tichu extends Table
       $player_id = LogManager::getLastActions(["combo", "pass"])[0]["player"];
       $this->gamestate->changeActivePlayer($player_id);
     } else {
-      $player_id = self::getActivePlayerId();
+      $player_id = $this->getActivePlayerId();
     }
     $players = PlayerManager::getPlayers();
     $doubleVictory = null;
     $deck = CardManager::getDeck();
     if ($deck->countCardInLocation("hand", $player_id) == 0) {
       // This player gets out of the trick
-      $firstOutPlayer = self::getGameStateValue("firstOutPlayer");
+      $firstOutPlayer = $this->getGameStateValue("firstOutPlayer");
       if ($firstOutPlayer == 0) {
         // If he is the first, record it
-        self::setGameStateValue("firstOutPlayer", $player_id);
+        $this->setGameStateValue("firstOutPlayer", $player_id);
         $firstOutPlayer = $player_id;
-      } elseif (self::getGameStateValue("secondOutPlayer") == 0) {
+      } elseif ($this->getGameStateValue("secondOutPlayer") == 0) {
         // If he is the second, record it
-        self::setGameStateValue("secondOutPlayer", $player_id);
+        $this->setGameStateValue("secondOutPlayer", $player_id);
         $secondOutPlayerTeam = $players[$player_id]["team"];
         if ($players[$firstOutPlayer]["team"] == $secondOutPlayerTeam) {
-          self::setGameStateValue("doubleVictory", $secondOutPlayerTeam);
+          $this->setGameStateValue("doubleVictory", $secondOutPlayerTeam);
           $this->gamestate->nextState("endRound");
           return;
         }
       }
-      NotificationManager::playerGoOut($player_id, self::getActivePlayerName(), $firstOutPlayer);
+      NotificationManager::playerGoOut($player_id, $this->getActivePlayerName(), $firstOutPlayer);
     }
 
     // get number of players still in round
@@ -947,7 +947,7 @@ class Tichu extends Table
       // trick is complete(either because the 3rd player finished or all players passed)
       $dragon = $lastCombo->hasDragon();
       if ($player_still_in_round == 1) {
-        self::incStat(1, "tricks_win", $lastComboPlayer);
+        $this->incStat(1, "tricks_win", $lastComboPlayer);
         if ($dragon) {
           $this->gamestate->changeActivePlayer($lastComboPlayer);
           $this->giveExtraTime($lastComboPlayer);
@@ -989,11 +989,11 @@ class Tichu extends Table
     $team_points_T = [0, 0];
     $deck = CardManager::getDeck();
 
-    $firstOutPlayer = self::getGameStateValue("firstOutPlayer");
+    $firstOutPlayer = $this->getGameStateValue("firstOutPlayer");
 
     $players = PlayerManager::getPlayers();
 
-    $doubleVic = self::getGameStateValue("doubleVictory");
+    $doubleVic = $this->getGameStateValue("doubleVictory");
     if ($doubleVic >= 0) {
       $team_points[$doubleVic] = 200;
       NotificationManager::log(
@@ -1030,7 +1030,7 @@ class Tichu extends Table
       if ($player["call_grand_tichu"] == 200) {
         $bBetsGTMade = true;
         if ($player_id == $firstOutPlayer) {
-          self::incStat(1, "grandtichu_won_number", $player_id);
+          $this->incStat(1, "grandtichu_won_number", $player_id);
           $team_points[$player["team"]] += 200;
           $team_points_GT[$player["team"]] += 200;
           NotificationManager::log(
@@ -1050,7 +1050,7 @@ class Tichu extends Table
       if ($player["call_tichu"] == 100) {
         $bBetsTMade = true;
         if ($player_id == $firstOutPlayer) {
-          self::incStat(1, "tichu_won_number", $player_id);
+          $this->incStat(1, "tichu_won_number", $player_id);
           $team_points[$player["team"]] += 100;
           $team_points_T[$player["team"]] += 100;
           NotificationManager::log(
@@ -1143,7 +1143,7 @@ class Tichu extends Table
 
     $max_score = max($newScores);
 
-    $end_points = [500, 1000, 2000][self::getGameStateValue("gameLength") - 1];
+    $end_points = [500, 1000, 2000][$this->getGameStateValue("gameLength") - 1];
 
     if ($max_score >= $end_points) {
       $scores = array_unique($newScores);
@@ -1230,7 +1230,7 @@ class Tichu extends Table
   function zombiGiveCards()
   {
     //3 random cards are given
-    $player_idm = self::getCurrentPlayerId();
+    $player_idm = $this->getCurrentPlayerId();
     $cards = CardManager::getDeck()->getCardsInLocation("hand", $player_idm);
     shuffle($cards);
     $cards_ids = array_column(array_splice($cards, 0, 3), "id");
@@ -1260,16 +1260,16 @@ class Tichu extends Table
       //Utils::die("TEST");
       $players = $this->getObjectListFromDB("SELECT * FROM player");
       if (!isset($players[0]["player_has_bomb"])) {
-        self::applyDbUpgradeToAllDB(
+        $this->applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
         );
       }
       if (!isset($players[0]["player_pass"])) {
-        self::applyDbUpgradeToAllDB(
+        $this->applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_pass` INT NOT NULL DEFAULT '0'"
         );
       }
-      self::applyDbUpgradeToAllDB("CREATE TABLE IF NOT EXISTS DBPREFIX_actionlog (
+      $this->applyDbUpgradeToAllDB("CREATE TABLE IF NOT EXISTS DBPREFIX_actionlog (
 				`log_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
 				`log_player` int(10) NOT NULL,
 				`log_round` int(10) unsigned NOT NULL,
@@ -1342,16 +1342,16 @@ class Tichu extends Table
       // ! important ! Use DBPREFIX_<table_name> for all tables
       $players = $this->getObjectListFromDB("SELECT * FROM player");
       if (!isset($players[0]["player_has_bomb"])) {
-        self::applyDbUpgradeToAllDB(
+        $this->applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
         );
       }
       if (!isset($players[0]["player_pass"])) {
-        self::applyDbUpgradeToAllDB(
+        $this->applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_pass` INT NOT NULL DEFAULT '0'"
         );
       }
-      self::applyDbUpgradeToAllDB("CREATE TABLE IF NOT EXISTS DBPREFIX_actionlog (
+      $this->applyDbUpgradeToAllDB("CREATE TABLE IF NOT EXISTS DBPREFIX_actionlog (
 				`log_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
 				`log_player` int(10) NOT NULL,
 				`log_round` int(10) unsigned NOT NULL,
@@ -1361,7 +1361,7 @@ class Tichu extends Table
 				PRIMARY KEY (`log_id`)
 			) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1;");
       $state = $this->gamestate->state()["name"];
-      self::applyDbUpgradeToAllDB(
+      $this->applyDbUpgradeToAllDB(
         "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
       );
       $combos = $this->getCollectionFromDb(
@@ -1372,7 +1372,7 @@ class Tichu extends Table
       $deck = CardManager::getDeck();
       foreach ($combos as $pId => $cardIds) {
         if (strlen($cardIds) == 0) {
-          self::applyDbUpgradeToAllDB(
+          $this->applyDbUpgradeToAllDB(
             "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($pId,0,0, 'pass', '')"
           );
           continue;
@@ -1391,11 +1391,11 @@ class Tichu extends Table
           "cards" => $cards,
           "phoenixValue" => $combo->phoenixValue,
         ]);
-        self::applyDbUpgradeToAllDB(
+        $this->applyDbUpgradeToAllDB(
           "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($pId,0,0, 'combo', '$args')"
         );
       }
-      self::applyDbUpgradeToAllDB(
+      $this->applyDbUpgradeToAllDB(
         "UPDATE DBPREFIX_card SET card_location='combos' WHERE card_location IN ('lastcombo', 'allcombos')"
       );
       $playerids = $this->getObjectListFromDB("SELECT player_id FROM player ORDER BY player_no");
@@ -1403,7 +1403,7 @@ class Tichu extends Table
         case "grandTichuBets":
         case "giveCards":
         case "showPassedCards":
-          self::applyDbUpgradeToAllDB(
+          $this->applyDbUpgradeToAllDB(
             "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,1,0, 'newRound', '')"
           );
           break;
@@ -1418,11 +1418,11 @@ class Tichu extends Table
             "cards" => $cards,
             "phoenixValue" => $combo->phoenixValue,
           ]);
-          self::applyDbUpgradeToAllDB(
+          $this->applyDbUpgradeToAllDB(
             "INSERT INTO DBPREFIX_actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($player,0,0, 'phoenix', '$args')"
           );
           $deck->moveAllCardsInLocation("phoenixPlay", "hand", null, $player);
-          self::applyDbUpgradeToAllDB(
+          $this->applyDbUpgradeToAllDB(
             "UPDATE DBPREFIX_card SET card_location='hand' WHERE card_location='phoenixPlay'"
           );
           break;

@@ -13,25 +13,25 @@ class view_tichu_tichu extends game_view
     $players = $this->game->loadPlayersBasicInfos();
     $numPlayers = count($players);
 
-    $this->tpl["MAHJONG"] = self::_("Mahjong Wish");
-    $this->tpl["PHOENIX"] = self::_("Phoenix Choice");
-    $this->tpl["MY_HAND"] = self::_("My hand");
-    $this->tpl["AUTO_ACCEPT"] = self::_("Auto accepting in 2 seconds ...");
-    $this->tpl["AUTO_COLLECT"] = self::_("Auto collecting in 2 seconds ...");
-    $this->tpl["REORDER_CARDS_BY_RANK"] = self::_("Reorder cards by rank");
-    $this->tpl["REORDER_CARDS_BY_COLOR"] = self::_("Reorder cards by color");
-    $this->tpl["SQUARE_TABLE"] = self::_("Square table");
-    $this->tpl["LIST_TABLE"] = self::_("List table");
-    $this->tpl["LAST_COMBO_PLAYED"] = self::_("Last Combo played");
-    $this->tpl["CARDS_PLAYED"] = self::_("Cards played");
-    $this->tpl["GRANDTICHU"] = self::_("Grand Tichu");
-    $this->tpl["TICHU"] = self::_("Tichu");
-    $this->tpl["NO_BET"] = self::_("No bet");
-    $this->tpl["BET_EXPLANATION"] = self::_(
+    $this->tpl["MAHJONG"] = $this->_("Mahjong Wish");
+    $this->tpl["PHOENIX"] = $this->_("Phoenix Choice");
+    $this->tpl["MY_HAND"] = $this->_("My hand");
+    $this->tpl["AUTO_ACCEPT"] = $this->_("Auto accepting in 2 seconds ...");
+    $this->tpl["AUTO_COLLECT"] = $this->_("Auto collecting in 2 seconds ...");
+    $this->tpl["REORDER_CARDS_BY_RANK"] = $this->_("Reorder cards by rank");
+    $this->tpl["REORDER_CARDS_BY_COLOR"] = $this->_("Reorder cards by color");
+    $this->tpl["SQUARE_TABLE"] = $this->_("Square table");
+    $this->tpl["LIST_TABLE"] = $this->_("List table");
+    $this->tpl["LAST_COMBO_PLAYED"] = $this->_("Last Combo played");
+    $this->tpl["CARDS_PLAYED"] = $this->_("Cards played");
+    $this->tpl["GRANDTICHU"] = $this->_("Grand Tichu");
+    $this->tpl["TICHU"] = $this->_("Tichu");
+    $this->tpl["NO_BET"] = $this->_("No bet");
+    $this->tpl["BET_EXPLANATION"] = $this->_(
       "Bet you will be the first to shed all cards from hand"
     );
-    $this->tpl["CLOCKWISE"] = self::_("Play clockwise");
-    $this->tpl["COUNTER_CLOCKWISE"] = self::_("Play counterclockwise");
+    $this->tpl["CLOCKWISE"] = $this->_("Play clockwise");
+    $this->tpl["COUNTER_CLOCKWISE"] = $this->_("Play counterclockwise");
 
     $player_to_dir = PlayerManager::getNextPlayers(null, true);
 
