@@ -12,6 +12,8 @@
 import Gamegui = require("ebg/core/gamegui");
 import Counter = require("ebg/counter");
 import Stock = require("ebg/stock");
+import { sayHello } from "./util";
+import { LitElement } from "./lit";
 import "ebg/counter";
 import "ebg/stock";
 
@@ -292,6 +294,10 @@ class Tichu extends Gamegui {
 
     this.setupCurrentTrick();
     this.updateCardsPlayed();
+
+    debug("before sayHello()");
+    sayHello();
+    debug("after sayHello()");
 
     debug("Ending game setup");
   }

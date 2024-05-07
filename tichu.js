@@ -13,7 +13,19 @@ var __extends = (this && this.__extends) || (function () {
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
-define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function (require, exports, Gamegui) {
+define("util", ["require", "exports"], function (require, exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.sayHello = void 0;
+    function sayHello() {
+        var playArea = document.getElementById("game_play_area");
+        var div = document.createElement("div");
+        div.innerText = "Hello!!!";
+        playArea === null || playArea === void 0 ? void 0 : playArea.appendChild(div);
+    }
+    exports.sayHello = sayHello;
+});
+define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/counter", "ebg/stock"], function (require, exports, Gamegui, util_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     var Bet;
@@ -124,6 +136,9 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "ebg/counter"
             this.setTheme((_j = (_h = this.prefs[104]) === null || _h === void 0 ? void 0 : _h.value) !== null && _j !== void 0 ? _j : 0);
             this.setupCurrentTrick();
             this.updateCardsPlayed();
+            debug("before sayHello()");
+            (0, util_1.sayHello)();
+            debug("after sayHello()");
             debug("Ending game setup");
         };
         Tichu.prototype.isAllInfoExposed = function () {
