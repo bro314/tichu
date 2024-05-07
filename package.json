@@ -4,9 +4,12 @@
   "description": "Tichu for BoardGameArena",
   "main": "tichu.js",
   "scripts": {
-    "build": "npx bga-build",
-    "watch": "npx bga-build --watch",
-    "format": "npx prettier --write ."
+    "bga-build": "npx bga-build",
+    "bga-watch": "npx bga-build --watch",
+    "format": "npx prettier --write .",
+    "elements-tsc": "tsc -p src/elements",
+    "elements-build": "node elements-build.js",
+    "build": "npm run bga-build && npm run elements-build && cat dist/bundle.js >> tichu.js"
   },
   "repository": {
     "type": "git",
@@ -20,10 +23,12 @@
   "homepage": "https://github.com/bro314/tichu#readme",
   "devDependencies": {
     "@prettier/plugin-php": "^0.19.6",
+    "esbuild": "^0.21.0",
     "prettier": "^2.8.8",
     "typescript": "^5.1.6"
   },
   "dependencies": {
-    "bga-ts-template": "^1.1.8"
+    "bga-ts-template": "^1.1.8",
+    "lit": "^3.1.3"
   }
 }

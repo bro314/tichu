@@ -13,7 +13,6 @@ import Gamegui = require("ebg/core/gamegui");
 import Counter = require("ebg/counter");
 import Stock = require("ebg/stock");
 import { sayHello } from "./util";
-import { LitElement } from "./lit";
 import "ebg/counter";
 import "ebg/stock";
 

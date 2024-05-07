@@ -3,4 +3,7 @@ export function sayHello() {
   const div = document.createElement("div");
   div.innerText = "Hello!!!";
   playArea?.appendChild(div);
+
+  const tiel = document.createElement("tichu-element");
+  playArea?.appendChild(tiel);
 }
