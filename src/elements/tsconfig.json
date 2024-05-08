@@ -1,28 +1,28 @@
 {
-  "files": ["elements.ts"],
   "compilerOptions": {
     "target": "es5",
     "module": "es2015",
     "outDir": "../../dist",
-
     "lib": ["dom", "esnext"],
     "moduleResolution": "node",
     "typeRoots": [
-      "../../node_modules/bga-ts-template/typescript/types", // NEVER CHANGE. This ensures modules have the correct paths.
-      "../../node_modules/@types" // Recommended (default when typeRoots not defined)
+      "../../node_modules/bga-ts-template/typescript/types",
+      "../../node_modules/@types"
     ],
-    /* Preference. This defaults to the most strict ts rules. */
+
+    "experimentalDecorators": true,
+    "removeComments": true,
+    "sourceMap": false,
+
     "strict": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "removeComments": true, // Comments are always removed from JS in production, so you don't need to remove them when compiling.
-    "sourceMap": false,
-    "noImplicitAny": true /* Raise error on expressions and declarations with an implied 'any' type. */,
-    "strictNullChecks": true /* Enable strict null checks. */,
-    "strictFunctionTypes": true /* Enable strict checking of function types. */,
-    "strictBindCallApply": true /* Enable strict 'bind', 'call', and 'apply' methods on functions. */,
-    "strictPropertyInitialization": true /* Enable strict checking of property initialization in classes. */,
-    "noImplicitThis": true /* Raise error on 'this' expressions with an implied 'any' type. */
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true
   }
 }

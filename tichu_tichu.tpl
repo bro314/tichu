@@ -37,18 +37,8 @@
     <!-- END last_played -->
 
   <div id="mahjongIndicator"></div>
-  <div id="currentTrickDiv">
-    <div>
-      Round: <span id="roundCounter">0</span>
-    </div>
-    <div>
-      Trick: <span id="trickCounter">0</span>
-    </div>
-    <div>
-      Trick Points: <span id="currentTrickCounter">0</span>
-    </div>
-    <div id="trick_button"></div>
-  </div>
+
+  <tichu-status></tichu-status>
 </div>
 
 <div id="playertables">

@@ -1,9 +1,7 @@
-export function sayHello() {
-  const playArea = document.getElementById("game_play_area");
-  const div = document.createElement("div");
-  div.innerText = "Hello!!!";
-  playArea?.appendChild(div);
+export function dojostyle(selector: string, attribute: string, value: string) {
+  (dojo.query(selector) as any).style(attribute, value);
+}
 
-  const tiel = document.createElement("tichu-element");
-  playArea?.appendChild(tiel);
+export function dojohtml(selector: string, html: string) {
+  (dojo.query(selector) as any).innerHTML(html);
 }

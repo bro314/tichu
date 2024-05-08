@@ -105,6 +105,10 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                     gamedatas.handcount[player_id] = 0;
             }
             this.setupGameBoards(gamedatas);
+            var playArea = document.getElementById("game_play_area_wrap");
+            this.statusEl = playArea.querySelector("tichu-status");
+            this.statusEl.addEventListener("show-current-trick", function () { return _this.showCurrentTrick(); });
+            this.updateStatus();
             this.addTooltipToClass("hand", _("Cards in hand"), "");
             this.addTooltipToClass("star", _("Points captured"), "");
             this.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
@@ -113,7 +117,6 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             this.addTooltipToClass("tichucolor", _("Tichu bet"), "");
             this.addTooltipToClass("firstoutcolor", _("First player out"), "");
             this.addTooltipToClass("cardback", _("has passed"), "");
-            this.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
             (_b = document
                 .getElementById("overall-content")) === null || _b === void 0 ? void 0 : _b.classList.toggle("tiki", ((_c = this.prefs[103]) === null || _c === void 0 ? void 0 : _c.value) == 1);
             this.updateMahjongWish(gamedatas.mahjongWish);
@@ -136,7 +139,6 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             }
             this.changeOrder(((_g = this.prefs[101]) === null || _g === void 0 ? void 0 : _g.value) != 1);
             this.setTheme((_j = (_h = this.prefs[104]) === null || _h === void 0 ? void 0 : _h.value) !== null && _j !== void 0 ? _j : 0);
-            this.setupCurrentTrick();
             this.updateCardsPlayed();
             debug("before sayHello()");
             (0, util_1.sayHello)();
@@ -146,16 +148,11 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         Tichu.prototype.isAllInfoExposed = function () {
             return this.gamedatas.isAllInfoExposed == 1;
         };
-        Tichu.prototype.setupCurrentTrick = function () {
-            this.roundCounter = new ebg.counter();
-            this.roundCounter.create("roundCounter");
-            this.roundCounter.setValue(this.gamedatas.round);
-            this.trickCounter = new ebg.counter();
-            this.trickCounter.create("trickCounter");
-            this.trickCounter.setValue(this.gamedatas.trick);
-            this.currentTrickCounter = new ebg.counter();
-            this.currentTrickCounter.create("currentTrickCounter");
-            this.currentTrickCounter.setValue(this.gamedatas.currentTrickValue);
+        Tichu.prototype.updateStatus = function () {
+            this.statusEl.setAttribute("roundCount", "".concat(this.gamedatas.round));
+            this.statusEl.setAttribute("trickCount", "".concat(this.gamedatas.trick));
+            this.statusEl.setAttribute("trickPoints", "".concat(this.gamedatas.currentTrickValue));
+            this.statusEl.setAttribute("trickSize", "".concat(this.gamedatas.currentTrick.length));
         };
         Tichu.prototype.setupGameBoards = function (gamedatas) {
             var _a, _b;
@@ -229,13 +226,12 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             document.body.classList.add("theme".concat(themeNo));
         };
         Tichu.prototype.removeMyActionButtons = function () {
-            var _a, _b, _c, _d, _e, _f;
-            (_a = document.getElementById("trick_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
-            (_b = document.getElementById("bomb_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
-            (_c = document.getElementById("play_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
-            (_d = document.getElementById("pass_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
-            (_e = document.getElementById("pass_trick_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
-            (_f = document.getElementById("tichu_button")) === null || _f === void 0 ? void 0 : _f.replaceChildren();
+            var _a, _b, _c, _d, _e;
+            (_a = document.getElementById("bomb_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
+            (_b = document.getElementById("play_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
+            (_c = document.getElementById("pass_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
+            (_d = document.getElementById("pass_trick_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
+            (_e = document.getElementById("tichu_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
             dojo.place(this.format_block("jstpl_my_hand", {}), $("play_button"), "only");
         };
         Tichu.prototype.addMyActionButton = function (id, label, method, color, dest) {
@@ -363,18 +359,19 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         Tichu.prototype.onEnteringStateNewRound = function (args) {
             dojohtml(".pointcount", "0");
             dojostyle(".cardback", "display", "none");
-            dojohtml(".mahjong_mini", "");
             this.resetLastCombos();
             this.gamedatas.capturedCards = [];
             this.gamedatas.hand = [];
             this.gamedatas.currentTrick = [];
+            this.gamedatas.currentTrickValue = 0;
             this.gamedatas.firstoutplayer = 0;
+            this.gamedatas.round++;
             for (var id in this.gamedatas.players) {
                 this.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
                 this.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
             }
             dojo.query(".last-played-container").removeClass("disabled");
-            this.roundCounter.incValue(1);
+            this.updateStatus();
             this.updateMahjongWish(0);
         };
         Tichu.prototype.onEnteringStateGrandTichuBets = function (args) {
@@ -405,10 +402,11 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         Tichu.prototype.onEnteringStateNewTrick = function (args) {
             var _a;
             this.resetLastCombos();
-            this.currentTrickCounter.setValue(0);
-            this.trickCounter.incValue(1);
             (_a = this.gamedatas.capturedCards).push.apply(_a, this.gamedatas.currentTrick);
             this.gamedatas.currentTrick = [];
+            this.gamedatas.currentTrickValue = 0;
+            this.gamedatas.trick++;
+            this.updateStatus();
         };
         Tichu.prototype.onEnteringStatePlayComboOpen = function (args) {
             var _a;
@@ -587,9 +585,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                     this.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
                 }
             }
-            if (this.gamedatas.currentTrick.length > 0) {
-                this.addMyActionButton("myShowTrick", _("Show current trick"), function () { return _this.showCurrentTrick(); }, "gray", "trick_button");
-            }
+            this.updateStatus();
         };
         Tichu.prototype.resetLastCombos = function () {
             for (var _i = 0, _a = Object.entries(this.tableCombos); _i < _a.length; _i++) {
@@ -970,7 +966,8 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
             $("playertable_" + playerId).classList.add("lastComboPlayer");
             (_a = this.gamedatas.currentTrick).push.apply(_a, notif.args.cards);
-            this.currentTrickCounter.incValue(notif.args.points);
+            this.gamedatas.currentTrickValue += notif.args.points;
+            this.updateStatus();
         };
         Tichu.prototype.notif_wishMade = function (notif) {
             debug("notif_wishMade", notif);
@@ -1078,22 +1075,33 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
 });
 "use strict";
 (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __decorateClass = (decorators, target, key, kind) => {
+    var result = kind > 1 ? void 0 : kind ? __getOwnPropDesc(target, key) : target;
+    for (var i4 = decorators.length - 1, decorator; i4 >= 0; i4--)
+      if (decorator = decorators[i4])
+        result = (kind ? decorator(target, key, result) : decorator(result)) || result;
+    if (kind && result) __defProp(target, key, result);
+    return result;
+  };
+
   // node_modules/@lit/reactive-element/css-tag.js
   var t = globalThis;
   var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
   var s = Symbol();
   var o = /* @__PURE__ */ new WeakMap();
   var n = class {
-    constructor(t3, e4, o4) {
-      if (this._$cssResult$ = true, o4 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
-      this.cssText = t3, this.t = e4;
+    constructor(t3, e5, o5) {
+      if (this._$cssResult$ = true, o5 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
+      this.cssText = t3, this.t = e5;
     }
     get styleSheet() {
       let t3 = this.o;
       const s4 = this.t;
       if (e && void 0 === t3) {
-        const e4 = void 0 !== s4 && 1 === s4.length;
-        e4 && (t3 = o.get(s4)), void 0 === t3 && ((this.o = t3 = new CSSStyleSheet()).replaceSync(this.cssText), e4 && o.set(s4, t3));
+        const e5 = void 0 !== s4 && 1 === s4.length;
+        e5 && (t3 = o.get(s4)), void 0 === t3 && ((this.o = t3 = new CSSStyleSheet()).replaceSync(this.cssText), e5 && o.set(s4, t3));
       }
       return t3;
     }
@@ -1102,17 +1110,25 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
   };
   var r = (t3) => new n("string" == typeof t3 ? t3 : t3 + "", void 0, s);
-  var S = (s4, o4) => {
-    if (e) s4.adoptedStyleSheets = o4.map((t3) => t3 instanceof CSSStyleSheet ? t3 : t3.styleSheet);
-    else for (const e4 of o4) {
-      const o5 = document.createElement("style"), n4 = t.litNonce;
-      void 0 !== n4 && o5.setAttribute("nonce", n4), o5.textContent = e4.cssText, s4.appendChild(o5);
+  var i = (t3, ...e5) => {
+    const o5 = 1 === t3.length ? t3[0] : e5.reduce((e6, s4, o6) => e6 + ((t4) => {
+      if (true === t4._$cssResult$) return t4.cssText;
+      if ("number" == typeof t4) return t4;
+      throw Error("Value passed to 'css' function must be a 'css' function result: " + t4 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
+    })(s4) + t3[o6 + 1], t3[0]);
+    return new n(o5, t3, s);
+  };
+  var S = (s4, o5) => {
+    if (e) s4.adoptedStyleSheets = o5.map((t3) => t3 instanceof CSSStyleSheet ? t3 : t3.styleSheet);
+    else for (const e5 of o5) {
+      const o6 = document.createElement("style"), n5 = t.litNonce;
+      void 0 !== n5 && o6.setAttribute("nonce", n5), o6.textContent = e5.cssText, s4.appendChild(o6);
     }
   };
   var c = e ? (t3) => t3 : (t3) => t3 instanceof CSSStyleSheet ? ((t4) => {
-    let e4 = "";
-    for (const s4 of t4.cssRules) e4 += s4.cssText;
-    return r(e4);
+    let e5 = "";
+    for (const s4 of t4.cssRules) e5 += s4.cssText;
+    return r(e5);
   })(t3) : t3;
 
   // node_modules/@lit/reactive-element/reactive-element.js
@@ -1163,21 +1179,21 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
     static createProperty(t3, s4 = y) {
       if (s4.state && (s4.attribute = false), this._$Ei(), this.elementProperties.set(t3, s4), !s4.noAccessor) {
-        const i4 = Symbol(), r5 = this.getPropertyDescriptor(t3, i4, s4);
-        void 0 !== r5 && e2(this.prototype, t3, r5);
+        const i4 = Symbol(), r6 = this.getPropertyDescriptor(t3, i4, s4);
+        void 0 !== r6 && e2(this.prototype, t3, r6);
       }
     }
     static getPropertyDescriptor(t3, s4, i4) {
-      const { get: e4, set: h3 } = r2(this.prototype, t3) ?? { get() {
+      const { get: e5, set: h3 } = r2(this.prototype, t3) ?? { get() {
         return this[s4];
       }, set(t4) {
         this[s4] = t4;
       } };
       return { get() {
-        return e4?.call(this);
+        return e5?.call(this);
       }, set(s5) {
-        const r5 = e4?.call(this);
-        h3.call(this, s5), this.requestUpdate(t3, r5, i4);
+        const r6 = e5?.call(this);
+        h3.call(this, s5), this.requestUpdate(t3, r6, i4);
       }, configurable: true, enumerable: true };
     }
     static getPropertyOptions(t3) {
@@ -1209,8 +1225,8 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     static finalizeStyles(s4) {
       const i4 = [];
       if (Array.isArray(s4)) {
-        const e4 = new Set(s4.flat(1 / 0).reverse());
-        for (const s5 of e4) i4.unshift(c(s5));
+        const e5 = new Set(s4.flat(1 / 0).reverse());
+        for (const s5 of e5) i4.unshift(c(s5));
       } else void 0 !== s4 && i4.push(c(s4));
       return i4;
     }
@@ -1251,17 +1267,17 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
       this._$AK(t3, i4);
     }
     _$EC(t3, s4) {
-      const i4 = this.constructor.elementProperties.get(t3), e4 = this.constructor._$Eu(t3, i4);
-      if (void 0 !== e4 && true === i4.reflect) {
-        const r5 = (void 0 !== i4.converter?.toAttribute ? i4.converter : u).toAttribute(s4, i4.type);
-        this._$Em = t3, null == r5 ? this.removeAttribute(e4) : this.setAttribute(e4, r5), this._$Em = null;
+      const i4 = this.constructor.elementProperties.get(t3), e5 = this.constructor._$Eu(t3, i4);
+      if (void 0 !== e5 && true === i4.reflect) {
+        const r6 = (void 0 !== i4.converter?.toAttribute ? i4.converter : u).toAttribute(s4, i4.type);
+        this._$Em = t3, null == r6 ? this.removeAttribute(e5) : this.setAttribute(e5, r6), this._$Em = null;
       }
     }
     _$AK(t3, s4) {
-      const i4 = this.constructor, e4 = i4._$Eh.get(t3);
-      if (void 0 !== e4 && this._$Em !== e4) {
-        const t4 = i4.getPropertyOptions(e4), r5 = "function" == typeof t4.converter ? { fromAttribute: t4.converter } : void 0 !== t4.converter?.fromAttribute ? t4.converter : u;
-        this._$Em = e4, this[e4] = r5.fromAttribute(s4, t4.type), this._$Em = null;
+      const i4 = this.constructor, e5 = i4._$Eh.get(t3);
+      if (void 0 !== e5 && this._$Em !== e5) {
+        const t4 = i4.getPropertyOptions(e5), r6 = "function" == typeof t4.converter ? { fromAttribute: t4.converter } : void 0 !== t4.converter?.fromAttribute ? t4.converter : u;
+        this._$Em = e5, this[e5] = r6.fromAttribute(s4, t4.type), this._$Em = null;
       }
     }
     requestUpdate(t3, s4, i4) {
@@ -1367,45 +1383,45 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     return void 0 !== s2 ? s2.createHTML(i4) : i4;
   }
   var P = (t3, i4) => {
-    const s4 = t3.length - 1, o4 = [];
-    let r5, l3 = 2 === i4 ? "<svg>" : "", c4 = f2;
+    const s4 = t3.length - 1, o5 = [];
+    let r6, l3 = 2 === i4 ? "<svg>" : "", c4 = f2;
     for (let i5 = 0; i5 < s4; i5++) {
       const s5 = t3[i5];
       let a3, u3, d3 = -1, y3 = 0;
-      for (; y3 < s5.length && (c4.lastIndex = y3, u3 = c4.exec(s5), null !== u3); ) y3 = c4.lastIndex, c4 === f2 ? "!--" === u3[1] ? c4 = v : void 0 !== u3[1] ? c4 = _ : void 0 !== u3[2] ? ($.test(u3[2]) && (r5 = RegExp("</" + u3[2], "g")), c4 = m) : void 0 !== u3[3] && (c4 = m) : c4 === m ? ">" === u3[0] ? (c4 = r5 ?? f2, d3 = -1) : void 0 === u3[1] ? d3 = -2 : (d3 = c4.lastIndex - u3[2].length, a3 = u3[1], c4 = void 0 === u3[3] ? m : '"' === u3[3] ? g : p2) : c4 === g || c4 === p2 ? c4 = m : c4 === v || c4 === _ ? c4 = f2 : (c4 = m, r5 = void 0);
+      for (; y3 < s5.length && (c4.lastIndex = y3, u3 = c4.exec(s5), null !== u3); ) y3 = c4.lastIndex, c4 === f2 ? "!--" === u3[1] ? c4 = v : void 0 !== u3[1] ? c4 = _ : void 0 !== u3[2] ? ($.test(u3[2]) && (r6 = RegExp("</" + u3[2], "g")), c4 = m) : void 0 !== u3[3] && (c4 = m) : c4 === m ? ">" === u3[0] ? (c4 = r6 ?? f2, d3 = -1) : void 0 === u3[1] ? d3 = -2 : (d3 = c4.lastIndex - u3[2].length, a3 = u3[1], c4 = void 0 === u3[3] ? m : '"' === u3[3] ? g : p2) : c4 === g || c4 === p2 ? c4 = m : c4 === v || c4 === _ ? c4 = f2 : (c4 = m, r6 = void 0);
       const x2 = c4 === m && t3[i5 + 1].startsWith("/>") ? " " : "";
-      l3 += c4 === f2 ? s5 + n3 : d3 >= 0 ? (o4.push(a3), s5.slice(0, d3) + e3 + s5.slice(d3) + h2 + x2) : s5 + h2 + (-2 === d3 ? i5 : x2);
+      l3 += c4 === f2 ? s5 + n3 : d3 >= 0 ? (o5.push(a3), s5.slice(0, d3) + e3 + s5.slice(d3) + h2 + x2) : s5 + h2 + (-2 === d3 ? i5 : x2);
     }
-    return [C(t3, l3 + (t3[s4] || "<?>") + (2 === i4 ? "</svg>" : "")), o4];
+    return [C(t3, l3 + (t3[s4] || "<?>") + (2 === i4 ? "</svg>" : "")), o5];
   };
   var V = class _V {
-    constructor({ strings: t3, _$litType$: s4 }, n4) {
-      let r5;
+    constructor({ strings: t3, _$litType$: s4 }, n5) {
+      let r6;
       this.parts = [];
       let c4 = 0, a3 = 0;
       const u3 = t3.length - 1, d3 = this.parts, [f3, v2] = P(t3, s4);
-      if (this.el = _V.createElement(f3, n4), E.currentNode = this.el.content, 2 === s4) {
+      if (this.el = _V.createElement(f3, n5), E.currentNode = this.el.content, 2 === s4) {
         const t4 = this.el.content.firstChild;
         t4.replaceWith(...t4.childNodes);
       }
-      for (; null !== (r5 = E.nextNode()) && d3.length < u3; ) {
-        if (1 === r5.nodeType) {
-          if (r5.hasAttributes()) for (const t4 of r5.getAttributeNames()) if (t4.endsWith(e3)) {
-            const i4 = v2[a3++], s5 = r5.getAttribute(t4).split(h2), e4 = /([.?@])?(.*)/.exec(i4);
-            d3.push({ type: 1, index: c4, name: e4[2], strings: s5, ctor: "." === e4[1] ? k : "?" === e4[1] ? H : "@" === e4[1] ? I : R }), r5.removeAttribute(t4);
-          } else t4.startsWith(h2) && (d3.push({ type: 6, index: c4 }), r5.removeAttribute(t4));
-          if ($.test(r5.tagName)) {
-            const t4 = r5.textContent.split(h2), s5 = t4.length - 1;
+      for (; null !== (r6 = E.nextNode()) && d3.length < u3; ) {
+        if (1 === r6.nodeType) {
+          if (r6.hasAttributes()) for (const t4 of r6.getAttributeNames()) if (t4.endsWith(e3)) {
+            const i4 = v2[a3++], s5 = r6.getAttribute(t4).split(h2), e5 = /([.?@])?(.*)/.exec(i4);
+            d3.push({ type: 1, index: c4, name: e5[2], strings: s5, ctor: "." === e5[1] ? k : "?" === e5[1] ? H : "@" === e5[1] ? I : R }), r6.removeAttribute(t4);
+          } else t4.startsWith(h2) && (d3.push({ type: 6, index: c4 }), r6.removeAttribute(t4));
+          if ($.test(r6.tagName)) {
+            const t4 = r6.textContent.split(h2), s5 = t4.length - 1;
             if (s5 > 0) {
-              r5.textContent = i3 ? i3.emptyScript : "";
-              for (let i4 = 0; i4 < s5; i4++) r5.append(t4[i4], l2()), E.nextNode(), d3.push({ type: 2, index: ++c4 });
-              r5.append(t4[s5], l2());
+              r6.textContent = i3 ? i3.emptyScript : "";
+              for (let i4 = 0; i4 < s5; i4++) r6.append(t4[i4], l2()), E.nextNode(), d3.push({ type: 2, index: ++c4 });
+              r6.append(t4[s5], l2());
             }
           }
-        } else if (8 === r5.nodeType) if (r5.data === o3) d3.push({ type: 2, index: c4 });
+        } else if (8 === r6.nodeType) if (r6.data === o3) d3.push({ type: 2, index: c4 });
         else {
           let t4 = -1;
-          for (; -1 !== (t4 = r5.data.indexOf(h2, t4 + 1)); ) d3.push({ type: 7, index: c4 }), t4 += h2.length - 1;
+          for (; -1 !== (t4 = r6.data.indexOf(h2, t4 + 1)); ) d3.push({ type: 7, index: c4 }), t4 += h2.length - 1;
         }
         c4++;
       }
@@ -1415,11 +1431,11 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
       return s4.innerHTML = t3, s4;
     }
   };
-  function N(t3, i4, s4 = t3, e4) {
+  function N(t3, i4, s4 = t3, e5) {
     if (i4 === w) return i4;
-    let h3 = void 0 !== e4 ? s4._$Co?.[e4] : s4._$Cl;
-    const o4 = c3(i4) ? void 0 : i4._$litDirective$;
-    return h3?.constructor !== o4 && (h3?._$AO?.(false), void 0 === o4 ? h3 = void 0 : (h3 = new o4(t3), h3._$AT(t3, s4, e4)), void 0 !== e4 ? (s4._$Co ??= [])[e4] = h3 : s4._$Cl = h3), void 0 !== h3 && (i4 = N(t3, h3._$AS(t3, i4.values), h3, e4)), i4;
+    let h3 = void 0 !== e5 ? s4._$Co?.[e5] : s4._$Cl;
+    const o5 = c3(i4) ? void 0 : i4._$litDirective$;
+    return h3?.constructor !== o5 && (h3?._$AO?.(false), void 0 === o5 ? h3 = void 0 : (h3 = new o5(t3), h3._$AT(t3, s4, e5)), void 0 !== e5 ? (s4._$Co ??= [])[e5] = h3 : s4._$Cl = h3), void 0 !== h3 && (i4 = N(t3, h3._$AS(t3, i4.values), h3, e5)), i4;
   }
   var S2 = class {
     constructor(t3, i4) {
@@ -1432,17 +1448,17 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
       return this._$AM._$AU;
     }
     u(t3) {
-      const { el: { content: i4 }, parts: s4 } = this._$AD, e4 = (t3?.creationScope ?? r3).importNode(i4, true);
-      E.currentNode = e4;
-      let h3 = E.nextNode(), o4 = 0, n4 = 0, l3 = s4[0];
+      const { el: { content: i4 }, parts: s4 } = this._$AD, e5 = (t3?.creationScope ?? r3).importNode(i4, true);
+      E.currentNode = e5;
+      let h3 = E.nextNode(), o5 = 0, n5 = 0, l3 = s4[0];
       for (; void 0 !== l3; ) {
-        if (o4 === l3.index) {
+        if (o5 === l3.index) {
           let i5;
-          2 === l3.type ? i5 = new M(h3, h3.nextSibling, this, t3) : 1 === l3.type ? i5 = new l3.ctor(h3, l3.name, l3.strings, this, t3) : 6 === l3.type && (i5 = new L(h3, this, t3)), this._$AV.push(i5), l3 = s4[++n4];
+          2 === l3.type ? i5 = new M(h3, h3.nextSibling, this, t3) : 1 === l3.type ? i5 = new l3.ctor(h3, l3.name, l3.strings, this, t3) : 6 === l3.type && (i5 = new L(h3, this, t3)), this._$AV.push(i5), l3 = s4[++n5];
         }
-        o4 !== l3?.index && (h3 = E.nextNode(), o4++);
+        o5 !== l3?.index && (h3 = E.nextNode(), o5++);
       }
-      return E.currentNode = r3, e4;
+      return E.currentNode = r3, e5;
     }
     p(t3) {
       let i4 = 0;
@@ -1453,8 +1469,8 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     get _$AU() {
       return this._$AM?._$AU ?? this._$Cv;
     }
-    constructor(t3, i4, s4, e4) {
-      this.type = 2, this._$AH = T, this._$AN = void 0, this._$AA = t3, this._$AB = i4, this._$AM = s4, this.options = e4, this._$Cv = e4?.isConnected ?? true;
+    constructor(t3, i4, s4, e5) {
+      this.type = 2, this._$AH = T, this._$AN = void 0, this._$AA = t3, this._$AB = i4, this._$AM = s4, this.options = e5, this._$Cv = e5?.isConnected ?? true;
     }
     get parentNode() {
       let t3 = this._$AA.parentNode;
@@ -1480,10 +1496,10 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
       this._$AH !== T && c3(this._$AH) ? this._$AA.nextSibling.data = t3 : this.T(r3.createTextNode(t3)), this._$AH = t3;
     }
     $(t3) {
-      const { values: i4, _$litType$: s4 } = t3, e4 = "number" == typeof s4 ? this._$AC(t3) : (void 0 === s4.el && (s4.el = V.createElement(C(s4.h, s4.h[0]), this.options)), s4);
-      if (this._$AH?._$AD === e4) this._$AH.p(i4);
+      const { values: i4, _$litType$: s4 } = t3, e5 = "number" == typeof s4 ? this._$AC(t3) : (void 0 === s4.el && (s4.el = V.createElement(C(s4.h, s4.h[0]), this.options)), s4);
+      if (this._$AH?._$AD === e5) this._$AH.p(i4);
       else {
-        const t4 = new S2(e4, this), s5 = t4.u(this.options);
+        const t4 = new S2(e5, this), s5 = t4.u(this.options);
         t4.p(i4), this.T(s5), this._$AH = t4;
       }
     }
@@ -1494,9 +1510,9 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     k(t3) {
       a2(this._$AH) || (this._$AH = [], this._$AR());
       const i4 = this._$AH;
-      let s4, e4 = 0;
-      for (const h3 of t3) e4 === i4.length ? i4.push(s4 = new _M(this.S(l2()), this.S(l2()), this, this.options)) : s4 = i4[e4], s4._$AI(h3), e4++;
-      e4 < i4.length && (this._$AR(s4 && s4._$AB.nextSibling, e4), i4.length = e4);
+      let s4, e5 = 0;
+      for (const h3 of t3) e5 === i4.length ? i4.push(s4 = new _M(this.S(l2()), this.S(l2()), this, this.options)) : s4 = i4[e5], s4._$AI(h3), e5++;
+      e5 < i4.length && (this._$AR(s4 && s4._$AB.nextSibling, e5), i4.length = e5);
     }
     _$AR(t3 = this._$AA.nextSibling, i4) {
       for (this._$AP?.(false, true, i4); t3 && t3 !== this._$AB; ) {
@@ -1515,19 +1531,19 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     get _$AU() {
       return this._$AM._$AU;
     }
-    constructor(t3, i4, s4, e4, h3) {
-      this.type = 1, this._$AH = T, this._$AN = void 0, this.element = t3, this.name = i4, this._$AM = e4, this.options = h3, s4.length > 2 || "" !== s4[0] || "" !== s4[1] ? (this._$AH = Array(s4.length - 1).fill(new String()), this.strings = s4) : this._$AH = T;
+    constructor(t3, i4, s4, e5, h3) {
+      this.type = 1, this._$AH = T, this._$AN = void 0, this.element = t3, this.name = i4, this._$AM = e5, this.options = h3, s4.length > 2 || "" !== s4[0] || "" !== s4[1] ? (this._$AH = Array(s4.length - 1).fill(new String()), this.strings = s4) : this._$AH = T;
     }
-    _$AI(t3, i4 = this, s4, e4) {
+    _$AI(t3, i4 = this, s4, e5) {
       const h3 = this.strings;
-      let o4 = false;
-      if (void 0 === h3) t3 = N(this, t3, i4, 0), o4 = !c3(t3) || t3 !== this._$AH && t3 !== w, o4 && (this._$AH = t3);
+      let o5 = false;
+      if (void 0 === h3) t3 = N(this, t3, i4, 0), o5 = !c3(t3) || t3 !== this._$AH && t3 !== w, o5 && (this._$AH = t3);
       else {
-        const e5 = t3;
-        let n4, r5;
-        for (t3 = h3[0], n4 = 0; n4 < h3.length - 1; n4++) r5 = N(this, e5[s4 + n4], i4, n4), r5 === w && (r5 = this._$AH[n4]), o4 ||= !c3(r5) || r5 !== this._$AH[n4], r5 === T ? t3 = T : t3 !== T && (t3 += (r5 ?? "") + h3[n4 + 1]), this._$AH[n4] = r5;
+        const e6 = t3;
+        let n5, r6;
+        for (t3 = h3[0], n5 = 0; n5 < h3.length - 1; n5++) r6 = N(this, e6[s4 + n5], i4, n5), r6 === w && (r6 = this._$AH[n5]), o5 ||= !c3(r6) || r6 !== this._$AH[n5], r6 === T ? t3 = T : t3 !== T && (t3 += (r6 ?? "") + h3[n5 + 1]), this._$AH[n5] = r6;
       }
-      o4 && !e4 && this.j(t3);
+      o5 && !e5 && this.j(t3);
     }
     j(t3) {
       t3 === T ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t3 ?? "");
@@ -1550,13 +1566,13 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
   };
   var I = class extends R {
-    constructor(t3, i4, s4, e4, h3) {
-      super(t3, i4, s4, e4, h3), this.type = 5;
+    constructor(t3, i4, s4, e5, h3) {
+      super(t3, i4, s4, e5, h3), this.type = 5;
     }
     _$AI(t3, i4 = this) {
       if ((t3 = N(this, t3, i4, 0) ?? T) === w) return;
-      const s4 = this._$AH, e4 = t3 === T && s4 !== T || t3.capture !== s4.capture || t3.once !== s4.once || t3.passive !== s4.passive, h3 = t3 !== T && (s4 === T || e4);
-      e4 && this.element.removeEventListener(this.name, this, s4), h3 && this.element.addEventListener(this.name, this, t3), this._$AH = t3;
+      const s4 = this._$AH, e5 = t3 === T && s4 !== T || t3.capture !== s4.capture || t3.once !== s4.once || t3.passive !== s4.passive, h3 = t3 !== T && (s4 === T || e5);
+      e5 && this.element.removeEventListener(this.name, this, s4), h3 && this.element.addEventListener(this.name, this, t3), this._$AH = t3;
     }
     handleEvent(t3) {
       "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t3) : this._$AH.handleEvent(t3);
@@ -1576,11 +1592,11 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
   var Z = t2.litHtmlPolyfillSupport;
   Z?.(V, M), (t2.litHtmlVersions ??= []).push("3.1.3");
   var j = (t3, i4, s4) => {
-    const e4 = s4?.renderBefore ?? i4;
-    let h3 = e4._$litPart$;
+    const e5 = s4?.renderBefore ?? i4;
+    let h3 = e5._$litPart$;
     if (void 0 === h3) {
       const t4 = s4?.renderBefore ?? null;
-      e4._$litPart$ = h3 = new M(i4.insertBefore(l2(), t4), t4, void 0, s4 ?? {});
+      e5._$litPart$ = h3 = new M(i4.insertBefore(l2(), t4), t4, void 0, s4 ?? {});
     }
     return h3._$AI(t3), h3;
   };
@@ -1613,13 +1629,113 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
   r4?.({ LitElement: s3 });
   (globalThis.litElementVersions ??= []).push("4.0.5");
 
-  // src/elements/elements.ts
-  var TichuElement = class extends s3 {
+  // node_modules/@lit/reactive-element/decorators/property.js
+  var o4 = { attribute: true, type: String, converter: u, reflect: false, hasChanged: f };
+  var r5 = (t3 = o4, e5, r6) => {
+    const { kind: n5, metadata: i4 } = r6;
+    let s4 = globalThis.litPropertyMetadata.get(i4);
+    if (void 0 === s4 && globalThis.litPropertyMetadata.set(i4, s4 = /* @__PURE__ */ new Map()), s4.set(r6.name, t3), "accessor" === n5) {
+      const { name: o5 } = r6;
+      return { set(r7) {
+        const n6 = e5.get.call(this);
+        e5.set.call(this, r7), this.requestUpdate(o5, n6, t3);
+      }, init(e6) {
+        return void 0 !== e6 && this.P(o5, void 0, t3), e6;
+      } };
+    }
+    if ("setter" === n5) {
+      const { name: o5 } = r6;
+      return function(r7) {
+        const n6 = this[o5];
+        e5.call(this, r7), this.requestUpdate(o5, n6, t3);
+      };
+    }
+    throw Error("Unsupported decorator location: " + n5);
+  };
+  function n4(t3) {
+    return (e5, o5) => "object" == typeof o5 ? r5(t3, e5, o5) : ((t4, e6, o6) => {
+      const r6 = e6.hasOwnProperty(o6);
+      return e6.constructor.createProperty(o6, r6 ? { ...t4, wrapped: true } : t4), r6 ? Object.getOwnPropertyDescriptor(e6, o6) : void 0;
+    })(t3, e5, o5);
+  }
+
+  // src/elements/styles.ts
+  var button = i`
+  button {
+    display: inline-block;
+    font-family: Roboto, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    margin-top: 10px;
+    border: 1px solid #060606;
+    border-radius: 6px;
+    padding: 6px 12px;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: none;
+    text-shadow: none;
+    color: #060606;
+    background: transparent;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`;
+
+  // src/elements/utils.ts
+  function fire(el, eventName) {
+    el.dispatchEvent(new CustomEvent(eventName, { composed: true, bubbles: true }));
+  }
+
+  // src/elements/tichu-status.ts
+  var TichuStatus = class extends s3 {
+    constructor() {
+      super(...arguments);
+      this.roundCount = 0;
+      this.trickCount = 0;
+      this.trickPoints = 0;
+      this.trickSize = 0;
+    }
+    static get styles() {
+      return [button];
+    }
     render() {
-      return x`<div>Hello, lit world?</div>`;
+      return x`
+      <div>
+        <div>Round: <span id="roundCounter">${this.roundCount}</span></div>
+        <div>Trick: <span id="trickCounter">${this.trickCount}</span></div>
+        <div>Trick Points: <span id="currentTrickCounter">${this.trickPoints}</span></div>
+        <div>${this.renderButton()}</div>
+      </div>
+    `;
+    }
+    renderButton() {
+      if (this.trickSize === 0) return;
+      return x`
+      <button class="action-button bgabutton bgabutton_gray" @click=${this.onShowClick}>
+        Show current trick
+      </button>
+    `;
+    }
+    onShowClick() {
+      fire(this, "show-current-trick");
     }
   };
-  customElements.define("tichu-element", TichuElement);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStatus.prototype, "roundCount", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStatus.prototype, "trickCount", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStatus.prototype, "trickPoints", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStatus.prototype, "trickSize", 2);
+  customElements.define("tichu-status", TichuStatus);
 })();
 /*! Bundled license information:
 
@@ -1655,6 +1771,76 @@ lit-html/is-server.js:
   (**
    * @license
    * Copyright 2022 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/custom-element.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/property.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/state.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/event-options.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/base.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/query.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/query-all.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/query-async.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/query-assigned-elements.js:
+  (**
+   * @license
+   * Copyright 2021 Google LLC
+   * SPDX-License-Identifier: BSD-3-Clause
+   *)
+
+@lit/reactive-element/decorators/query-assigned-nodes.js:
+  (**
+   * @license
+   * Copyright 2017 Google LLC
    * SPDX-License-Identifier: BSD-3-Clause
    *)
 */

@@ -10,9 +10,8 @@
 /// <amd-module name="bgagame/tichu"/>
 
 import Gamegui = require("ebg/core/gamegui");
-import Counter = require("ebg/counter");
 import Stock = require("ebg/stock");
-import { sayHello } from "./util";
+import { dojohtml, dojostyle } from "./util";
 import "ebg/counter";
 import "ebg/stock";
 
@@ -180,14 +179,6 @@ function addItemToStock(stock: TichuStock, item: StockItem) {
   stock.addToStockWithId(item.type, Number(item.id));
 }
 
-function dojostyle(selector: string, attribute: string, value: string) {
-  (dojo.query(selector) as any).style(attribute, value);
-}
-
-function dojohtml(selector: string, html: string) {
-  (dojo.query(selector) as any).innerHTML(html);
-}
-
 class Tichu extends Gamegui {
   private readonly cardwidth = 100;
   private readonly cardheight = 150;
@@ -199,15 +190,14 @@ class Tichu extends Gamegui {
   private phoenixValues!: TichuStock;
   private allLastCombos: Record<number, Combo | undefined> = {};
   private clockwise: boolean = false;
-  private roundCounter!: Counter;
-  private trickCounter!: Counter;
-  private currentTrickCounter!: Counter;
   private playerHand!: TichuStock;
   private active_player?: string;
   private stateName!: string;
   private allowedValues: number[] = [];
   private autoCollectTimeout?: number;
   private autoAcceptTimeout?: number;
+
+  private statusEl!: HTMLElement;
 
   rescale() {
     const areaElement = document.getElementById("game_play_area")!;
@@ -250,6 +240,11 @@ class Tichu extends Gamegui {
 
     this.setupGameBoards(gamedatas);
 
+    const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
+    this.statusEl = playArea.querySelector("tichu-status") as HTMLElement;
+    this.statusEl.addEventListener("show-current-trick", () => this.showCurrentTrick());
+    this.updateStatus();
+
     this.addTooltipToClass("hand", _("Cards in hand"), "");
     this.addTooltipToClass("star", _("Points captured"), "");
     this.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
@@ -258,7 +253,6 @@ class Tichu extends Gamegui {
     this.addTooltipToClass("tichucolor", _("Tichu bet"), "");
     this.addTooltipToClass("firstoutcolor", _("First player out"), "");
     this.addTooltipToClass("cardback", _("has passed"), "");
-    this.addTooltipToClass("mahjong_mini", _("Mahjong wish"), "");
 
     document
       .getElementById("overall-content")
@@ -291,12 +285,7 @@ class Tichu extends Gamegui {
     this.changeOrder(this.prefs[101]?.value != 1);
     this.setTheme((this.prefs[104]?.value as number) ?? 0);
 
-    this.setupCurrentTrick();
     this.updateCardsPlayed();
-
-    debug("before sayHello()");
-    sayHello();
-    debug("after sayHello()");
 
     debug("Ending game setup");
   }
@@ -305,18 +294,11 @@ class Tichu extends Gamegui {
     return this.gamedatas.isAllInfoExposed == 1;
   }
 
-  private setupCurrentTrick() {
-    this.roundCounter = new ebg.counter();
-    this.roundCounter.create("roundCounter");
-    this.roundCounter.setValue(this.gamedatas.round);
-
-    this.trickCounter = new ebg.counter();
-    this.trickCounter.create("trickCounter");
-    this.trickCounter.setValue(this.gamedatas.trick);
-
-    this.currentTrickCounter = new ebg.counter();
-    this.currentTrickCounter.create("currentTrickCounter");
-    this.currentTrickCounter.setValue(this.gamedatas.currentTrickValue);
+  private updateStatus() {
+    this.statusEl.setAttribute("roundCount", `${this.gamedatas.round}`);
+    this.statusEl.setAttribute("trickCount", `${this.gamedatas.trick}`);
+    this.statusEl.setAttribute("trickPoints", `${this.gamedatas.currentTrickValue}`);
+    this.statusEl.setAttribute("trickSize", `${this.gamedatas.currentTrick.length}`);
   }
 
   private setupGameBoards(gamedatas: Gamedatas) {
@@ -404,7 +386,6 @@ class Tichu extends Gamegui {
   }
 
   private removeMyActionButtons() {
-    document.getElementById("trick_button")?.replaceChildren();
     document.getElementById("bomb_button")?.replaceChildren();
     document.getElementById("play_button")?.replaceChildren();
     document.getElementById("pass_button")?.replaceChildren();
@@ -563,19 +544,20 @@ class Tichu extends Gamegui {
   onEnteringStateNewRound(args: any) {
     dojohtml(".pointcount", "0");
     dojostyle(".cardback", "display", "none");
-    dojohtml(".mahjong_mini", "");
     this.resetLastCombos();
     this.gamedatas.capturedCards = [];
     this.gamedatas.hand = [];
     this.gamedatas.currentTrick = [];
+    this.gamedatas.currentTrickValue = 0;
     this.gamedatas.firstoutplayer = 0;
+    this.gamedatas.round++;
     for (const id in this.gamedatas.players) {
       this.gamedatas.players[id]!.call_tichu = Bet.NO_BET_YET;
       this.gamedatas.players[id]!.call_grand_tichu = Bet.NO_BET_YET;
     }
     (dojo.query(".last-played-container") as any).removeClass("disabled");
 
-    this.roundCounter.incValue(1);
+    this.updateStatus();
     this.updateMahjongWish(0);
   }
 
@@ -614,10 +596,11 @@ class Tichu extends Gamegui {
 
   onEnteringStateNewTrick(args: any) {
     this.resetLastCombos();
-    this.currentTrickCounter.setValue(0);
-    this.trickCounter.incValue(1);
     this.gamedatas.capturedCards.push(...this.gamedatas.currentTrick);
     this.gamedatas.currentTrick = [];
+    this.gamedatas.currentTrickValue = 0;
+    this.gamedatas.trick++;
+    this.updateStatus();
   }
 
   onEnteringStatePlayComboOpen(args: any) {
@@ -914,15 +897,7 @@ class Tichu extends Gamegui {
       }
     }
 
-    if (this.gamedatas.currentTrick.length > 0) {
-      this.addMyActionButton(
-        "myShowTrick",
-        _("Show current trick"),
-        () => this.showCurrentTrick(),
-        "gray",
-        "trick_button"
-      );
-    }
+    this.updateStatus();
   }
 
   private resetLastCombos() {
@@ -1410,7 +1385,8 @@ class Tichu extends Gamegui {
     (dojo.query(".lastComboPlayer") as any).removeClass("lastComboPlayer");
     $("playertable_" + playerId)!.classList.add("lastComboPlayer");
     this.gamedatas.currentTrick.push(...notif.args.cards);
-    this.currentTrickCounter.incValue(notif.args.points);
+    this.gamedatas.currentTrickValue += notif.args.points;
+    this.updateStatus();
   }
 
   private notif_wishMade(notif: Notif & { args: NotifTypes["wishMade"] }) {
