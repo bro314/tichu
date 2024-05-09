@@ -132,7 +132,6 @@ declare global {
     capturedpoints: Record<number, number>;
     // deck location "captured"
     capturedCards: Card[];
-    cardslastcombo: Card[];
     // deck location "combo"
     currentTrick: Card[];
     currentTrickValue: number;
