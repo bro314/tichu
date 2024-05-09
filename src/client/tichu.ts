@@ -1248,7 +1248,7 @@ class Tichu extends Gamegui {
   setupNotifications() {
     debug("notifications subscriptions setup");
 
-    // Make sure to read the documentation about "Synchronous Nnotifications" in the BGA Studio docs
+    // Make sure to read the documentation about "Synchronous Notifications" in the BGA Studio docs
     // before making any changes here.
     // Be aware that using `undefined` here means that you have to make abolutely sure that
     // `setSynchronousDuration` is called in your handler.
@@ -1309,9 +1309,9 @@ class Tichu extends Gamegui {
       playSound("tichu_laser");
       this.notifqueue.setSynchronousDuration(1000);
     } else {
-      // If the notification was just a "this player has made no bet", then there is good reason
-      // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
-      this.notifqueue.setSynchronousDuration(100);
+      // If the notification was just a "this player has made no bet", then there is no good reason
+      // to freeze the UI for 1 second. 1 ms should be fine.
+      this.notifqueue.setSynchronousDuration(1);
     }
 
     this.onUpdateActionButtons(this.stateName, {});
@@ -1334,8 +1334,8 @@ class Tichu extends Gamegui {
     } else {
       // If the notification was just a "this player has made no bet" or "this player has already
       // played their first card, so cannot bet anymore", then there is no good reason
-      // to freeze the UI for 1 second. 100 ms should be fine. Maybe 0 ms would also be ok.
-      this.notifqueue.setSynchronousDuration(100);
+      // to freeze the UI for 1 second. 1 ms should be fine.
+      this.notifqueue.setSynchronousDuration(1);
     }
 
     this.onUpdateActionButtons(this.stateName, {});
