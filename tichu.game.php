@@ -102,17 +102,14 @@ class Tichu extends Table
       $names[$player["no"]] = $player["name"];
     }
     foreach ($players as &$player) {
-      if ($player["id"] == $current_player_id) {
-        $result["hasBomb"] = $player["has_bomb"] == 1;
-      } else {
+      if ($player["id"] != $current_player_id) {
         // hide secret fields
-        unset($player["has_bomb"]);
         unset($player["pass"]);
       }
     }
     unset($player);
 
-    $result["players"] = Utils::parseInt($players, ["id", "no", "has_bomb"]);
+    $result["players"] = Utils::parseInt($players, ["id", "no"]);
 
     $result["hand"] = array_values($deck->getCardsInLocation("hand", $current_player_id));
     $result["handcount"] = $deck->countCardsByLocationArgs("hand");
@@ -217,11 +214,6 @@ class Tichu extends Table
     if (count($cardsInHand) == 14 && $player["call_tichu"] == -1) {
       PlayerManager::tichuBet($playerId, 0);
       NotificationManager::tichuBet($playerId, $this->getCurrentPlayerName(), 0);
-    }
-
-    if ($player["has_bomb"] && !$remainingHand->hasBomb()) {
-      NotificationManager::hasBomb($playerId, false);
-      PlayerManager::setHasBomb($playerId, 0);
     }
 
     NotificationManager::playCombo(
@@ -614,9 +606,6 @@ class Tichu extends Table
 
     $deck = CardManager::getDeck();
     $deck->moveAllCardsInLocation("temporary", "hand", $player_id, $player_id);
-
-    $hand = new Hand($deck->getCardsInLocation("hand", $player_id));
-    PlayerManager::setHasBomb($player_id, $hand->hasBomb() ? 1 : 0);
   }
 
   function makeAWish($wish)
@@ -798,10 +787,6 @@ class Tichu extends Table
       $this->gamestate->changeActivePlayer($mahjongOwnerId);
       $this->giveExtraTime($mahjongOwnerId);
       $notify = 'A new round starts. ${player_name} has the Mahjong';
-      $bombs = PlayerManager::getBombStatus();
-      foreach ($bombs as $k => $v) {
-        NotificationManager::hasBomb($k, $v);
-      }
     } else {
       //this is not the first trick
       $hand_count = $deck->countCardsByLocationArgs("hand");
@@ -1259,6 +1244,7 @@ class Tichu extends Table
       //checking if column exists
       //Utils::die("TEST");
       $players = $this->getObjectListFromDB("SELECT * FROM player");
+      // player_has_bomb is obsolete.
       if (!isset($players[0]["player_has_bomb"])) {
         $this->applyDbUpgradeToAllDB(
           "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
@@ -1302,20 +1288,8 @@ class Tichu extends Table
         }
         LogManager::playCombo($pId, $combo);
       }
-      $passes = $this->getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=19");
       $deck->moveAllCardsInLocation("lastcombo", "combos");
       $deck->moveAllCardsInLocation("allcombos", "combos");
-      $playerids = $this->getObjectListFromDB(
-        "SELECT player_id FROM player ORDER BY player_no",
-        true
-      );
-      foreach ($playerids as $pId) {
-        $handcards = $deck->getCardsInLocation("hand", $pId);
-        $hand = new Hand($handcards);
-        if ($hand->hasBomb()) {
-          PlayerManager::setHasBomb($pId, 1);
-        }
-      }
       switch ($state) {
         case "grandTichuBets":
         case "giveCards":
@@ -1340,6 +1314,7 @@ class Tichu extends Table
   {
     if ($from_version <= 2101032301) {
       // ! important ! Use DBPREFIX_<table_name> for all tables
+      // player_has_bomb is obsolete.
       $players = $this->getObjectListFromDB("SELECT * FROM player");
       if (!isset($players[0]["player_has_bomb"])) {
         $this->applyDbUpgradeToAllDB(

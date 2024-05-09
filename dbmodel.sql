@@ -23,6 +23,7 @@
 ALTER TABLE `player` ADD `player_team` int(3) NOT NULL DEFAULT '-1' COMMENT 'Team 0 or 1, 2 players on each team and not next to each other';
 ALTER TABLE `player` ADD `player_call_tichu` INT NOT NULL DEFAULT '-1' COMMENT '-1=call possible, 0=no bet, 100=called';
 ALTER TABLE `player` ADD `player_call_grand_tichu` INT NOT NULL DEFAULT '-1';
+-- player_has_bomb is obsolete and can be removed
 ALTER TABLE `player` ADD `player_has_bomb` INT NOT NULL DEFAULT '0';
 ALTER TABLE `player` ADD `player_pass` INT NOT NULL DEFAULT '0';
 

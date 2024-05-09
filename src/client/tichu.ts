@@ -94,7 +94,6 @@ declare global {
     "grandTichuBet": { bet: number; player_id: number };
     "tichuBet": { bet: number; player_id: number };
     "confirmTichu": { grand: boolean; msg: string };
-    "hasBomb": { hasBomb: boolean };
     "playCombo": { cards: Card[]; player_id: number; combo_name: string; points: number };
     "wishMade": { wish: number };
     "mahjongWishGranted": {};
@@ -141,7 +140,6 @@ declare global {
     // deck location "hand" (current user only)
     hand: Card[];
     handcount: Record<number, number>;
-    hasBomb: boolean;
     lastComboDescription: string;
     lastComboPlayer: string;
     mahjongOwner: number;
@@ -802,7 +800,6 @@ class Tichu extends Gamegui {
               "play_button"
             );
           }
-          // TODO: Bring back the "this.gamedatas.hasBomb" check, but only if the new game option was selected.
           this.addMyActionButton(
             "myPlayBomb",
             _("Play a Bomb"),
@@ -854,7 +851,6 @@ class Tichu extends Gamegui {
           ""
         );
       }
-      // TODO: Bring back the "this.gamedatas.hasBomb" check, but only if the new game option was selected.
       this.addMyActionButton(
         "myPlayBomb",
         _("Play a Bomb"),
@@ -1258,7 +1254,6 @@ class Tichu extends Gamegui {
       grandTichuBet: undefined,
       tichuBet: undefined,
       confirmTichu: 1,
-      hasBomb: 1,
       playCombo: 300,
       wishMade: 200,
       mahjongWishGranted: 1,
@@ -1361,12 +1356,6 @@ class Tichu extends Gamegui {
     this.addActionButton("confirmTichu", _("confirm"), () =>
       this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU })
     );
-  }
-
-  private notif_hasBomb(notif: Notif & { args: NotifTypes["hasBomb"] }) {
-    debug("notif_hasBomb", notif);
-
-    this.gamedatas.hasBomb = notif.args.hasBomb;
   }
 
   private notif_playCombo(notif: Notif & { args: NotifTypes["playCombo"] }) {

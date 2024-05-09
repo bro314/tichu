@@ -78,17 +78,7 @@ class PlayerManager extends APP_GameClass
 
   private static function getSelectStmnt($where = [])
   {
-    $fields = [
-      "id",
-      "team",
-      "name",
-      "no",
-      "score",
-      "call_grand_tichu",
-      "call_tichu",
-      "has_bomb",
-      "pass",
-    ];
+    $fields = ["id", "team", "name", "no", "score", "call_grand_tichu", "call_tichu", "pass"];
     $selects = implode(
       ", ",
       array_map(function ($s) {
@@ -182,22 +172,6 @@ class PlayerManager extends APP_GameClass
     );
   }
 
-  public static function getBombs()
-  {
-    return self::getInstance()->getObjectListFromDB(
-      "SELECT player_id FROM player WHERE player_has_bomb=1",
-      true
-    );
-  }
-
-  public static function getBombStatus()
-  {
-    return self::getInstance()->getCollectionFromDb(
-      "SELECT player_id, player_has_bomb FROM player",
-      true
-    );
-  }
-
   public static function resetTichus()
   {
     self::getInstance()->DbQuery(
@@ -220,11 +194,6 @@ class PlayerManager extends APP_GameClass
     self::getInstance()->DbQuery(
       "UPDATE player SET player_call_tichu=$bet, player_call_grand_tichu=0 WHERE player_id=$pId"
     );
-  }
-
-  public static function setHasBomb($pId, $hasBomb)
-  {
-    self::getInstance()->DbQuery("UPDATE player SET player_has_bomb=$hasBomb WHERE player_id=$pId");
   }
 
   public static function updateScores($team_points)

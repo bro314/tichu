@@ -32,13 +32,6 @@ class NotificationManager extends APP_GameClass
     ]);
   }
 
-  public static function hasBomb($player_id, $hasBomb)
-  {
-    Tichu::$instance->notifyPlayer($player_id, "hasBomb", "", [
-      "hasBomb" => $hasBomb,
-    ]);
-  }
-
   public static function log($msg, $args)
   {
     Tichu::$instance->notifyAllPlayers("log", clienttranslate($msg), $args);

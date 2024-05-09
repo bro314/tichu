@@ -16,16 +16,15 @@ var __extends = (this && this.__extends) || (function () {
 define("util", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    exports.sayHello = void 0;
-    function sayHello() {
-        var playArea = document.getElementById("game_play_area");
-        var div = document.createElement("div");
-        div.innerText = "Hello!!!";
-        playArea === null || playArea === void 0 ? void 0 : playArea.appendChild(div);
-        var tiel = document.createElement("tichu-element");
-        playArea === null || playArea === void 0 ? void 0 : playArea.appendChild(tiel);
+    exports.dojohtml = exports.dojostyle = void 0;
+    function dojostyle(selector, attribute, value) {
+        dojo.query(selector).style(attribute, value);
     }
-    exports.sayHello = sayHello;
+    exports.dojostyle = dojostyle;
+    function dojohtml(selector, html) {
+        dojo.query(selector).innerHTML(html);
+    }
+    exports.dojohtml = dojohtml;
 });
 define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/counter", "ebg/stock"], function (require, exports, Gamegui, util_1) {
     "use strict";
@@ -54,12 +53,6 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
     function addItemToStock(stock, item) {
         stock.addToStockWithId(item.type, Number(item.id));
-    }
-    function dojostyle(selector, attribute, value) {
-        dojo.query(selector).style(attribute, value);
-    }
-    function dojohtml(selector, html) {
-        dojo.query(selector).innerHTML(html);
     }
     var Tichu = (function (_super) {
         __extends(Tichu, _super);
@@ -140,9 +133,6 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             this.changeOrder(((_g = this.prefs[101]) === null || _g === void 0 ? void 0 : _g.value) != 1);
             this.setTheme((_j = (_h = this.prefs[104]) === null || _h === void 0 ? void 0 : _h.value) !== null && _j !== void 0 ? _j : 0);
             this.updateCardsPlayed();
-            debug("before sayHello()");
-            (0, util_1.sayHello)();
-            debug("after sayHello()");
             debug("Ending game setup");
         };
         Tichu.prototype.isAllInfoExposed = function () {
@@ -163,17 +153,17 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                 var isCurrent = player_id === this.player_id;
                 dojo.place(this.format_block("jstpl_player_board", player), player_board_div);
                 if (player.call_grand_tichu === Bet.GRAND_TICHU) {
-                    dojostyle(".grandtichucolor." + player_id, "display", "inline-block");
-                    dojostyle(".tichublack." + player_id, "display", "none");
+                    (0, util_1.dojostyle)(".grandtichucolor." + player_id, "display", "inline-block");
+                    (0, util_1.dojostyle)(".tichublack." + player_id, "display", "none");
                 }
                 if (player.call_grand_tichu === Bet.NO_BET_YET) {
-                    dojostyle(".grandtichublack." + player_id, "display", "inline-block");
+                    (0, util_1.dojostyle)(".grandtichublack." + player_id, "display", "inline-block");
                 }
                 if (player.call_tichu === Bet.TICHU) {
-                    dojostyle(".tichucolor." + player_id, "display", "inline-block");
+                    (0, util_1.dojostyle)(".tichucolor." + player_id, "display", "inline-block");
                 }
                 if (player.call_tichu === Bet.NO_BET_YET) {
-                    dojostyle(".tichublack." + player_id, "display", "inline-block");
+                    (0, util_1.dojostyle)(".tichublack." + player_id, "display", "inline-block");
                 }
                 dojo.query(".handcount." + player_id).innerHTML(gamedatas.handcount[player_id]);
                 if (gamedatas.handcount[player_id] === 0) {
@@ -357,8 +347,8 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                 thisMethods[methodName](stateObject.args);
         };
         Tichu.prototype.onEnteringStateNewRound = function (args) {
-            dojohtml(".pointcount", "0");
-            dojostyle(".cardback", "display", "none");
+            (0, util_1.dojohtml)(".pointcount", "0");
+            (0, util_1.dojostyle)(".cardback", "display", "none");
             this.resetLastCombos();
             this.gamedatas.capturedCards = [];
             this.gamedatas.hand = [];
@@ -385,7 +375,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         };
         Tichu.prototype.showPassedCards = function (args) {
             var _this = this;
-            dojohtml(".handcount", "14");
+            (0, util_1.dojohtml)(".handcount", "14");
             if (args._private === undefined)
                 return;
             args._private.forEach(function (card, i) {
@@ -415,7 +405,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         };
         Tichu.prototype.onEnteringStateMahjongPlay = function (args) {
             if (this.isCurrentPlayerActive()) {
-                dojostyle("#mahjongpanel", "display", "block");
+                (0, util_1.dojostyle)("#mahjongpanel", "display", "block");
                 this.mahjongValues.updateDisplay("");
             }
             this.playerHand.unselectAll();
@@ -423,7 +413,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         Tichu.prototype.onEnteringStatePhoenixPlay = function (args) {
             var _this = this;
             if (this.isCurrentPlayerActive()) {
-                dojostyle("#phoenixpanel", "display", "block");
+                (0, util_1.dojostyle)("#phoenixpanel", "display", "block");
                 this.allowedValues = args._private.values;
                 this.phoenixValues.removeAll();
                 args._private.values.forEach(function (value) {
@@ -597,14 +587,14 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
         };
         Tichu.prototype.cleanPlayersPanel = function () {
-            dojohtml(".handcount", "0");
-            dojohtml(".pointcount", "0");
-            dojostyle(".grandtichublack", "display", "inline-block");
-            dojostyle(".tichublack", "display", "inline-block");
-            dojostyle(".grandtichucolor", "display", "none");
-            dojostyle(".tichucolor", "display", "none");
-            dojostyle(".firstoutcolor", "display", "none");
-            dojostyle(".cardback", "display", "none");
+            (0, util_1.dojohtml)(".handcount", "0");
+            (0, util_1.dojohtml)(".pointcount", "0");
+            (0, util_1.dojostyle)(".grandtichublack", "display", "inline-block");
+            (0, util_1.dojostyle)(".tichublack", "display", "inline-block");
+            (0, util_1.dojostyle)(".grandtichucolor", "display", "none");
+            (0, util_1.dojostyle)(".tichucolor", "display", "none");
+            (0, util_1.dojostyle)(".firstoutcolor", "display", "none");
+            (0, util_1.dojostyle)(".cardback", "display", "none");
         };
         Tichu.prototype.getCardValueByTypeID = function (cardTypeID) {
             return (cardTypeID % 14) + 1;
@@ -750,7 +740,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             if (items.length === 1) {
                 if (this.allowedValues.indexOf(items[0].type + 2) < 0)
                     return;
-                dojostyle("#phoenixpanel", "display", "none");
+                (0, util_1.dojostyle)("#phoenixpanel", "display", "none");
                 evt.preventDefault();
                 this.takeAction("choosePhoenix", { phoenixValue: items[0].type + 2 });
             }
@@ -855,7 +845,6 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                 grandTichuBet: undefined,
                 tichuBet: undefined,
                 confirmTichu: 1,
-                hasBomb: 1,
                 playCombo: 300,
                 wishMade: 200,
                 mahjongWishGranted: 1,
@@ -887,23 +876,23 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             }
             this.updateStockOverlap(this.playerHand);
             var totalCards = notif.args.cards.length === 8 ? 8 : 14;
-            dojohtml(".handcount", "".concat(totalCards));
+            (0, util_1.dojohtml)(".handcount", "".concat(totalCards));
         };
         Tichu.prototype.notif_grandTichuBet = function (notif) {
             debug("notif_grandTichuBet", notif);
             var bet = String(notif.args.bet);
             this.gamedatas.players[notif.args.player_id].call_grand_tichu = bet;
-            dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+            (0, util_1.dojostyle)(".grandtichublack." + notif.args.player_id, "display", "none");
             if (bet === Bet.GRAND_TICHU) {
                 this.gamedatas.players[notif.args.player_id].call_tichu = Bet.NO_BET;
-                dojostyle(".grandtichucolor." + notif.args.player_id, "display", "inline-block");
-                dojostyle(".tichublack." + notif.args.player_id, "display", "none");
+                (0, util_1.dojostyle)(".grandtichucolor." + notif.args.player_id, "display", "inline-block");
+                (0, util_1.dojostyle)(".tichublack." + notif.args.player_id, "display", "none");
                 this.animateIcon("grandtichucolor", notif.args.player_id);
                 playSound("tichu_laser");
                 this.notifqueue.setSynchronousDuration(1000);
             }
             else {
-                this.notifqueue.setSynchronousDuration(100);
+                this.notifqueue.setSynchronousDuration(1);
             }
             this.onUpdateActionButtons(this.stateName, {});
         };
@@ -912,16 +901,16 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             var bet = String(notif.args.bet);
             this.gamedatas.players[notif.args.player_id].call_tichu = bet;
             this.gamedatas.players[notif.args.player_id].call_grand_tichu = Bet.NO_BET;
-            dojostyle(".tichublack." + notif.args.player_id, "display", "none");
-            dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+            (0, util_1.dojostyle)(".tichublack." + notif.args.player_id, "display", "none");
+            (0, util_1.dojostyle)(".grandtichublack." + notif.args.player_id, "display", "none");
             if (bet === Bet.TICHU) {
-                dojostyle(".tichucolor." + notif.args.player_id, "display", "inline-block");
+                (0, util_1.dojostyle)(".tichucolor." + notif.args.player_id, "display", "inline-block");
                 this.animateIcon("tichucolor", notif.args.player_id);
                 playSound("tichu_laser");
                 this.notifqueue.setSynchronousDuration(1000);
             }
             else {
-                this.notifqueue.setSynchronousDuration(100);
+                this.notifqueue.setSynchronousDuration(1);
             }
             this.onUpdateActionButtons(this.stateName, {});
         };
@@ -946,17 +935,13 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
                 return _this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU });
             });
         };
-        Tichu.prototype.notif_hasBomb = function (notif) {
-            debug("notif_hasBomb", notif);
-            this.gamedatas.hasBomb = notif.args.hasBomb;
-        };
         Tichu.prototype.notif_playCombo = function (notif) {
             var _a;
             debug("notif_playCombo", notif);
             var playerId = Number(notif.args.player_id);
             this.resetComboStock(playerId);
             this.addCardsToStock(this.tableCombos[playerId], notif.args.cards, playerId);
-            dojohtml("pass", "");
+            (0, util_1.dojohtml)("pass", "");
             $("cardback_" + playerId).style.display = "none";
             this.setDescription(playerId, notif.args.combo_name);
             dojo.query(".handcount." + playerId).forEach(function (node) {
@@ -971,7 +956,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
         };
         Tichu.prototype.notif_wishMade = function (notif) {
             debug("notif_wishMade", notif);
-            dojostyle("#mahjongpanel", "display", "none");
+            (0, util_1.dojostyle)("#mahjongpanel", "display", "none");
             this.updateMahjongWish(notif.args.wish);
         };
         Tichu.prototype.updateMahjongWish = function (wish) {
@@ -1023,8 +1008,8 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             var trick_value = notif.args.trick_value;
             var old_score = parseInt($("pointcount_" + playerId).innerHTML);
             var new_score = old_score + trick_value;
-            dojohtml(".pointcount." + playerId, "".concat(new_score));
-            dojostyle(".cardback", "display", "none");
+            (0, util_1.dojohtml)(".pointcount." + playerId, "".concat(new_score));
+            (0, util_1.dojostyle)(".cardback", "display", "none");
         };
         Tichu.prototype.notif_newScores = function (notif) {
             debug("notif_newScores", notif);
@@ -1713,11 +1698,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
     renderButton() {
       if (this.trickSize === 0) return;
-      return x`
-      <button class="action-button bgabutton bgabutton_gray" @click=${this.onShowClick}>
-        Show current trick
-      </button>
-    `;
+      return x`<button @click=${this.onShowClick}>Show current trick</button>`;
     }
     onShowClick() {
       fire(this, "show-current-trick");
