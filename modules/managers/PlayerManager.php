@@ -109,19 +109,9 @@ class PlayerManager extends APP_GameClass
     return self::getInstance()->getCollectionFromDb(self::getSelectStmnt());
   }
 
-  private static function resToObjects($res)
-  {
-    return array_map(["tichu\managers\PlayerManager", "getPlayer()"], $res);
-  }
-
   public static function getPlayer($id)
   {
     return self::getInstance()->getObjectFromDB(self::getSelectStmnt(["id" => $id]));
-  }
-
-  public static function numPlayersStillInRound()
-  {
-    return count(CardManager::getDeck()->countCardsByLocationArgs("hand"));
   }
 
   public static function getHighestScore()
@@ -215,16 +205,6 @@ class PlayerManager extends APP_GameClass
       $sql .= " WHERE player_id=$pId";
     }
     self::getInstance()->DbQuery($sql);
-  }
-
-  public static function canPass($pId, $wish, $lastCombo)
-  {
-    if ($wish == 0) {
-      return true;
-    }
-    $cards = CardManager::getDeck()->getCardsInLocation("hand", $pId);
-    $hand = new Hand($cards);
-    return !$hand->canFulFillWish($wish, $lastCombo);
   }
 }
 ?>

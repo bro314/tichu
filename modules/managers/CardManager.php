@@ -63,7 +63,7 @@ class CardManager extends APP_GameClass
     return self::getInstance()->getObjectListFromDB($sql);
   }
 
-  public static function calculatCapturedPoints()
+  public static function calculateCapturedPoints()
   {
     $captured_points = [];
     $players = PlayerManager::getPlayerIds();
@@ -186,6 +186,21 @@ class CardManager extends APP_GameClass
       }
     }
     return $asTable ? ["table" => $table, "special" => $special, "score" => $score] : $score;
+  }
+
+  public static function numPlayersStillInRound()
+  {
+    return count(self::getDeck()->countCardsByLocationArgs("hand"));
+  }
+
+  public static function canPass($pId, $wish, $lastCombo)
+  {
+    if ($wish == 0) {
+      return true;
+    }
+    $cards = self::getDeck()->getCardsInLocation("hand", $pId);
+    $hand = new Hand($cards);
+    return !$hand->canFulFillWish($wish, $lastCombo);
   }
 }
 ?>

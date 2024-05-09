@@ -113,7 +113,7 @@ class Tichu extends Table
 
     $result["hand"] = array_values($deck->getCardsInLocation("hand", $current_player_id));
     $result["handcount"] = $deck->countCardsByLocationArgs("hand");
-    $result["capturedpoints"] = CardManager::calculatCapturedPoints();
+    $result["capturedpoints"] = CardManager::calculateCapturedPoints();
     $result["firstoutplayer"] = intval($this->getGameStateValue("firstOutPlayer"));
     $result["mahjongOwner"] = intval($this->getGameStateValue("mahjongOwner"));
     $result["mahjongWish"] = intval($this->getGameStateValue("mahjongWish"));
@@ -860,7 +860,7 @@ class Tichu extends Table
     }
 
     // get number of players still in round
-    $player_still_in_round = PlayerManager::numPlayersStillInRound();
+    $player_still_in_round = CardManager::numPlayersStillInRound();
 
     $next_players = PlayerManager::getNextPlayers($player_id); //next players (including those without cards)
     $handCounts = $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
@@ -913,7 +913,7 @@ class Tichu extends Table
       if (!isset($handCounts[$pId])) {
         continue;
       }
-      $autoPass = $player["pass"] > 0 && PlayerManager::canPass($pId, $wish, $lastCombo);
+      $autoPass = $player["pass"] > 0 && CardManager::canPass($pId, $wish, $lastCombo);
       $cantBeat = $handCounts[$pId] < $amount || ($this->isAllInfoExposed() && $impossibleToBeat);
       if ($autoPass || $cantBeat) {
         $autoPassOnlyOnce = $player["pass"] == 1;
