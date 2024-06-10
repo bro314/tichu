@@ -32,6 +32,7 @@ class view_tichu_tichu extends game_view
     );
     $this->tpl["CLOCKWISE"] = $this->_("Play clockwise");
     $this->tpl["COUNTER_CLOCKWISE"] = $this->_("Play counterclockwise");
+    $this->tpl["EXP_REPLAY"] = $this->_("Experimental Replay");
 
     $player_to_dir = PlayerManager::getNextPlayers(null, true);
 

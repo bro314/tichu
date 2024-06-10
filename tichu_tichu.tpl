@@ -83,6 +83,7 @@
       <a href="#" class="reordercards" id="square_table">[{SQUARE_TABLE}]</a>
       <a href="#" class="reordercards" id="clockwise">[{CLOCKWISE}]</a>
       <a href="#" class="reordercards" id="counterClockwise">[{COUNTER_CLOCKWISE}]</a>
+      <a href="#" class="reordercards" id="expReplay">[{EXP_REPLAY}]</a>
     </div>
     <div id="themes">
       <span>Color Themes:</span>

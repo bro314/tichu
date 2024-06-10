@@ -747,5 +747,39 @@ span.pass img {
 .clockwise #counterClockwise {
   display: inline;
 }
+#expReplay {
+  display: none;
+}
+.archiveMode #expReplay {
+  display: inline;
+}
+
+#game_play_replay {
+  display: none;
+}
+#game_play_area {
+  display: block;
+}
+#page-title {
+  display: block;
+}
+.experimentalArchiveMode #game_play_replay {
+  display: block;
+}
+.experimentalArchiveMode #game_play_area {
+  display: none;
+}
+.experimentalArchiveMode #page-title {
+  display: none;
+}
+.experimentalArchiveMode .player-board {
+  opacity: 0.1;
+}
+.experimentalArchiveMode #topbar {
+  visibility: hidden;
+}
+.experimentalArchiveMode #game_play_area_wrap {
+  margin: 0px 0px 50px 0px;
+}
 
 /*# sourceMappingURL=tichu.css.map */

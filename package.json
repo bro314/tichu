@@ -9,7 +9,7 @@
     "format": "npx prettier --write .",
     "elements-tsc": "tsc -p src/elements",
     "elements-build": "node elements-build.js",
-    "build": "npm run bga-build && npm run elements-build && cat dist/bundle.js >> tichu.js"
+    "build": "npm run elements-tsc && npm run bga-build && npm run elements-build && cat dist/bundle.js >> tichu.js"
   },
   "repository": {
     "type": "git",
@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "bga-ts-template": "^1.1.8",
-    "lit": "^3.1.3"
+    "lit": "^3.1.3",
+    "rxjs": "^7.8.1"
   }
 }

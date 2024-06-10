@@ -187,6 +187,7 @@ class Tichu extends Gamegui {
   private phoenixValues!: TichuStock;
   private allLastCombos: Record<number, Combo | undefined> = {};
   private clockwise: boolean = false;
+  private experimentalArchiveModeEnabled: boolean = false;
   private playerHand!: TichuStock;
   private active_player?: string;
   private stateName!: string;
@@ -198,13 +199,15 @@ class Tichu extends Gamegui {
 
   rescale() {
     const areaElement = document.getElementById("game_play_area")!;
+    const replayElement = document.getElementById("game_play_replay")!;
+    const gameElement = this.experimentalArchiveModeEnabled ? replayElement : areaElement;
     const areaWrapElement = document.getElementById("game_play_area_wrap")!;
     const widthAvailable = areaWrapElement.clientWidth;
     const heightAvailable = document.documentElement.clientHeight - 120;
 
     const widthMax = 1200;
-    const widthMin = 900;
-    const heightMin = 800;
+    const widthMin = this.experimentalArchiveModeEnabled ? 1000 : 900;
+    const heightMin = this.experimentalArchiveModeEnabled ? 600 : 800;
 
     const widthFactor = Math.max(widthAvailable / widthMin, 0.4);
     const heightFactor = Math.max(heightAvailable / heightMin, 0.7);
@@ -212,7 +215,7 @@ class Tichu extends Gamegui {
 
     areaWrapElement.style.transform = `scale(${factor})`;
     areaWrapElement.style.transformOrigin = factor === 1.0 ? "top center" : "top left";
-    areaElement.style.width = `${Math.max(
+    gameElement.style.width = `${Math.max(
       Math.min(widthAvailable / factor, widthMax),
       widthMin
     )}px`;
@@ -239,7 +242,7 @@ class Tichu extends Gamegui {
 
     const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
     this.statusEl = playArea.querySelector("tichu-status") as HTMLElement;
-    this.statusEl.addEventListener("show-current-trick", () => this.showCurrentTrick());
+    this.statusEl?.addEventListener("show-current-trick", () => this.showCurrentTrick());
     this.updateStatus();
 
     this.addTooltipToClass("hand", _("Cards in hand"), "");
@@ -254,6 +257,7 @@ class Tichu extends Gamegui {
     document
       .getElementById("overall-content")
       ?.classList.toggle("tiki", this.prefs[103]?.value == 1);
+    document.getElementById("overall-content")?.classList.toggle("archiveMode", !!g_archive_mode);
     this.updateMahjongWish(gamedatas.mahjongWish);
 
     if (gamedatas.firstoutplayer != 0) {
@@ -292,10 +296,10 @@ class Tichu extends Gamegui {
   }
 
   private updateStatus() {
-    this.statusEl.setAttribute("roundCount", `${this.gamedatas.round}`);
-    this.statusEl.setAttribute("trickCount", `${this.gamedatas.trick}`);
-    this.statusEl.setAttribute("trickPoints", `${this.gamedatas.currentTrickValue}`);
-    this.statusEl.setAttribute("trickSize", `${this.gamedatas.currentTrick.length}`);
+    this.statusEl?.setAttribute("roundCount", `${this.gamedatas.round}`);
+    this.statusEl?.setAttribute("trickCount", `${this.gamedatas.trick}`);
+    this.statusEl?.setAttribute("trickPoints", `${this.gamedatas.currentTrickValue}`);
+    this.statusEl?.setAttribute("trickSize", `${this.gamedatas.currentTrick.length}`);
   }
 
   private setupGameBoards(gamedatas: Gamedatas) {
@@ -358,6 +362,7 @@ class Tichu extends Gamegui {
     dojo.connect($("square_table"), "onclick", this, () => this.onReorderTable(true));
     dojo.connect($("clockwise"), "onclick", this, () => this.changeOrder(true));
     dojo.connect($("counterClockwise"), "onclick", this, () => this.changeOrder(false));
+    dojo.connect($("expReplay"), "onclick", this, () => this.toggleExperimentalReplay(true));
 
     this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
     this.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
@@ -1145,6 +1150,24 @@ class Tichu extends Gamegui {
       dojo.style("square_table", "display", "inline");
       dojo.style("list_table", "display", "none");
     }
+  }
+
+  private toggleExperimentalReplay(enabled: boolean) {
+    this.experimentalArchiveModeEnabled = enabled;
+    document
+      .getElementById("overall-content")
+      ?.classList.toggle("experimentalArchiveMode", enabled);
+
+    const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
+    let replayEl: any = playArea.querySelector("tichu-replay#game_play_replay");
+    if (!replayEl) {
+      replayEl = document.createElement("tichu-replay");
+      replayEl.id = "game_play_replay";
+      playArea.insertBefore(replayEl, playArea.firstChild);
+      replayEl.addEventListener("exit", () => this.toggleExperimentalReplay(false));
+    }
+
+    this.rescale();
   }
 
   // client side action only
