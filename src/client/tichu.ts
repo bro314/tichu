@@ -362,7 +362,9 @@ class Tichu extends Gamegui {
     dojo.connect($("square_table"), "onclick", this, () => this.onReorderTable(true));
     dojo.connect($("clockwise"), "onclick", this, () => this.changeOrder(true));
     dojo.connect($("counterClockwise"), "onclick", this, () => this.changeOrder(false));
-    dojo.connect($("expReplay"), "onclick", this, () => this.toggleExperimentalReplay(true));
+    if ($("expReplay")) {
+      dojo.connect($("expReplay"), "onclick", this, () => this.toggleExperimentalReplay(true));
+    }
 
     this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
     this.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
@@ -1159,7 +1161,7 @@ class Tichu extends Gamegui {
       ?.classList.toggle("experimentalArchiveMode", enabled);
 
     const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
-    let replayEl: any = playArea.querySelector("tichu-replay#game_play_replay");
+    let replayEl: any = playArea?.querySelector("tichu-replay#game_play_replay");
     if (!replayEl) {
       replayEl = document.createElement("tichu-replay");
       replayEl.id = "game_play_replay";

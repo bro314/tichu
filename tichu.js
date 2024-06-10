@@ -208,7 +208,9 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             dojo.connect($("square_table"), "onclick", this, function () { return _this.onReorderTable(true); });
             dojo.connect($("clockwise"), "onclick", this, function () { return _this.changeOrder(true); });
             dojo.connect($("counterClockwise"), "onclick", this, function () { return _this.changeOrder(false); });
-            dojo.connect($("expReplay"), "onclick", this, function () { return _this.toggleExperimentalReplay(true); });
+            if ($("expReplay")) {
+                dojo.connect($("expReplay"), "onclick", this, function () { return _this.toggleExperimentalReplay(true); });
+            }
             this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
             this.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
             this.addTooltipHtml("clockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
@@ -785,7 +787,7 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
             (_a = document
                 .getElementById("overall-content")) === null || _a === void 0 ? void 0 : _a.classList.toggle("experimentalArchiveMode", enabled);
             var playArea = document.getElementById("game_play_area_wrap");
-            var replayEl = playArea.querySelector("tichu-replay#game_play_replay");
+            var replayEl = playArea === null || playArea === void 0 ? void 0 : playArea.querySelector("tichu-replay#game_play_replay");
             if (!replayEl) {
                 replayEl = document.createElement("tichu-replay");
                 replayEl.id = "game_play_replay";
