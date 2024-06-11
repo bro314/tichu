@@ -3225,6 +3225,11 @@ define("bgagame/tichu", ["require", "exports", "ebg/core/gamegui", "util", "ebg/
     }
     init(players) {
       if (players.length != 4) throw new Error("model requires 4 player ids");
+      players = players.sort((p1, p22) => {
+        const p1No = Number(p1.no) ?? 0;
+        const p2No = Number(p22.no) ?? 0;
+        return p1No - p2No;
+      });
       this.updateState({
         round: 1,
         players: players.map((p3) => ({
