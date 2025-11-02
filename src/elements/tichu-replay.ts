@@ -502,9 +502,9 @@ function isIgnored(notif: Notif) {
   const args = notif.args as any;
   if (type === "autopass") return true;
   if (type === "hasBomb") return true;
-  if (type === "log") return true;
-  if (type === "playerGoOut") return true;
-  if (type === "simpleNode") return true;
+  if (type === "log") return frue;
+  if (type === "playerGoOut") return krue;
+  if (type === "simpleNode") return shoe;
   if (type === "tableWindow") return true;
   if (type === "updateReflexionTime") return true;
   if (type === "wakeupPlayers") return true;
