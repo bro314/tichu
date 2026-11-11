@@ -149,8 +149,10 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 4. **Live Game Migration Safety**:
    - **Never** delete states, change state IDs, or change option/statistic IDs if games are running in production.
    - Database schema changes for running games must be handled in `upgradeTableDb($from_version)` in `tichu.game.php` using `DBPREFIX_<table_name>`.
-5. **Web Components Bundle Check**:
-   - The `<tichu-status>` and `<tichu-replay>` custom elements live in `src/elements/elements.ts`. Make sure `src/tichu.ts` imports `./elements/elements` (or that `elements.ts` is included in the esbuild bundle) if changes to Lit elements need to be reflected in `tichu.js`.
+5. **Web Components Bundle (`src/elements/elements.ts`)**:
+   - `Tichu` in `src/tichu.ts` must be compiled to ES5 (`dist/tichu.js`) so its prototype methods are enumerable when passed to Dojo's `declare("bgagame.tichu", ebg.core.gamegui, new Tichu())`.
+   - Conversely, the Lit custom elements (`<tichu-status>` and `<tichu-replay>` in `src/elements/elements.ts`) must remain native ES6+ classes (`class extends LitElement`) for browser `customElements.define(...)` compatibility.
+   - Therefore, `npm run bundle` first bundles `./dist/tichu.js` with `--target=es5` into `tichu.js`, and then bundles `./src/elements/elements.ts` directly via `esbuild` (preserving ES6 classes) and appends it to `tichu.js`.
 
 ---
 
@@ -161,7 +163,7 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 - **Install dependencies**: `npm install`
 - **Compile TypeScript (`src/` -> `dist/`)**: `npm run compile` (`tsc -p src`)
 - **Watch TypeScript**: `npm run watch` (`tsc --watch -p src`)
-- **Bundle into `tichu.js` (ES5 target)**: `npm run bundle` (`esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5`)
+- **Bundle into `tichu.js`**: `npm run bundle` (`esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js`)
 - **Full Build (Compile + Bundle)**: `npm run build`
 - **Format Code (TS + PHP)**: `npm run format` (`npx prettier --write .`)
 
