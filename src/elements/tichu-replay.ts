@@ -11,15 +11,23 @@ import { subscribe } from "./subscription-controller";
 const fakeGamelogs: NotifsPacket[] = [];
 const fakePlayers = {};
 
+interface NotifsPacket {
+  packet_type: "single" | "sequence" | "resend" | "history";
+  data: Notif[];
+  channel: string;
+  move_id: string;
+  table_id?: number;
+  packet_id: string;
+  prevpacket?: Record<number, number>;
+  time?: string;
+}
+
 declare global {
   interface Window {
     g_gamelogs: NotifsPacket[];
     g_archive_mode: boolean;
     model: Model;
     gameui: { gamedatas: Gamedatas };
-  }
-  interface Notif {
-    player_id: number;
   }
 }
 
@@ -247,24 +255,24 @@ export class TichuReplay extends LitElement {
         ...packet.data.map((data) => {
           const player_id = playerIdFromChannel(packet.channel);
           return { ...data, player_id, move_id: packet.move_id };
-        })
+        }),
       );
     }
 
     subscribe(
       this,
       () => this.model.wish$,
-      (x) => (this.wish = x)
+      (x) => (this.wish = x),
     );
     subscribe(
       this,
       () => this.model.playerIds$,
-      (x) => (this.playerIds = x)
+      (x) => (this.playerIds = x),
     );
     subscribe(
       this,
       () => this.model.playerIds$,
-      (x) => (this.scoreBoard = createScoreBoard(this.notifs, x))
+      (x) => (this.scoreBoard = createScoreBoard(this.notifs, x)),
     );
   }
 
@@ -582,14 +590,14 @@ function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
       thisPacket.data.some(
         (notif) =>
           (notif.type as string) === "passCards" ||
-          (notif.type as string) === "gameStateMultipleActiveUpdate"
+          (notif.type as string) === "gameStateMultipleActiveUpdate",
       );
     const prevpc =
       prevPacket.data.length === 1 &&
       prevPacket.data.some(
         (notif) =>
           (notif.type as string) === "passCards" ||
-          (notif.type as string) === "gameStateMultipleActiveUpdate"
+          (notif.type as string) === "gameStateMultipleActiveUpdate",
       );
     if (thispc && prevpc) thisPacket.move_id = prevPacket.move_id;
 

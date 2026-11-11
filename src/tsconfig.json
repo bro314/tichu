@@ -1,14 +1,20 @@
+/*
+ *------
+ * BGA framework: Gregory Isabelli & Emmanuel Colin & BoardGameArena
+ * Tichu implementation : © Ben Rohlfs et al.
+ *
+ * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
+ * See http://en.boardgamearena.com/#!doc/Studio for more information.
+ * -----
+ */
 {
   "compilerOptions": {
     "target": "es5",
-    "module": "es2015",
-    "outDir": "../../dist",
+    "module": "esnext",
+    "outDir": "../dist",
     "lib": ["dom", "esnext"],
     "moduleResolution": "node",
-    "typeRoots": [
-      "../../node_modules/bga-ts-template/typescript/types",
-      "../../node_modules/@types"
-    ],
+    "typeRoots": ["./types", "../node_modules/@types"],
 
     "experimentalDecorators": true,
     "removeComments": true,

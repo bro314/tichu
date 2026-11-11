@@ -7,13 +7,7 @@
  * See http://en.boardgamearena.com/#!doc/Studio for more information.
  * -----
  */
-/// <amd-module name="bgagame/tichu"/>
-
-import Gamegui = require("ebg/core/gamegui");
-import Stock = require("ebg/stock");
 import { dojohtml, dojostyle } from "./util";
-import "ebg/counter";
-import "ebg/stock";
 
 interface StockItem {
   id: number;
@@ -125,6 +119,7 @@ declare global {
     call_grand_tichu: Bet;
     // number as string
     pass: string;
+    no: number;
   }
 
   interface Gamedatas {
@@ -154,7 +149,11 @@ declare global {
 type TichuStock = Stock & {
   image_items_per_row: number;
   item_width: number;
+  item_margin: number;
+  extraClasses: string;
   items: StockItem[];
+  changeItemsWeight: (weights: Weights) => void;
+  getAllItems(): StockItem[];
 };
 
 const isDebug = window.location.host === "studio.boardgamearena.com";
@@ -169,14 +168,14 @@ function stockType(color: number, value: number): number {
 }
 
 function addCardToStock(stock: TichuStock | undefined, card: Card) {
-  stock?.addToStockWithId(cardToStockType(card), Number(card.id));
+  stock?.addToStockWithId(cardToStockType(card), card.id);
 }
 
 function addItemToStock(stock: TichuStock, item: StockItem) {
-  stock.addToStockWithId(item.type, Number(item.id));
+  stock.addToStockWithId(item.type, String(item.id));
 }
 
-class Tichu extends Gamegui {
+export class Tichu {
   private readonly cardwidth = 100;
   private readonly cardheight = 150;
   private readonly cardChoiceWidth = 70;
@@ -217,7 +216,7 @@ class Tichu extends Gamegui {
     areaWrapElement.style.transformOrigin = factor === 1.0 ? "top center" : "top left";
     gameElement.style.width = `${Math.max(
       Math.min(widthAvailable / factor, widthMax),
-      widthMin
+      widthMin,
     )}px`;
   }
 
@@ -227,7 +226,7 @@ class Tichu extends Gamegui {
     // Replaces BGA css zoom feature, which is not supported on Firefox.
     // The css zoom is disabled in tichu.css.
     new ResizeObserver(() => requestAnimationFrame(() => this.rescale())).observe(
-      document.getElementById("game_play_area_wrap")!
+      document.getElementById("game_play_area_wrap")!,
     );
     window.addEventListener("resize", () => requestAnimationFrame(() => this.rescale()));
     $("game_play_area")?.classList.toggle("isAllInfoExposed", this.isAllInfoExposed());
@@ -256,7 +255,7 @@ class Tichu extends Gamegui {
 
     document
       .getElementById("overall-content")
-      ?.classList.toggle("tiki", this.prefs[103]?.value == 1);
+      ?.classList.toggle("tiki", this.getGameUserPreference(103) == 1);
     document.getElementById("overall-content")?.classList.toggle("archiveMode", !!g_archive_mode);
     this.updateMahjongWish(gamedatas.mahjongWish);
 
@@ -274,17 +273,21 @@ class Tichu extends Gamegui {
     this.displayLastCombos(player_ids, gamedatas["passes"]);
 
     Array.from($("playertables")?.children ?? []).forEach((el, i) => {
-      dojo.connect(el.children[0], "onclick", this, () => this.onGiveCard(i));
+      dojo.connect(
+        el.children[0] as HTMLElement,
+        "onclick",
+        dojo.hitch(this, () => this.onGiveCard(i)),
+      );
     });
 
     this.setupNotifications();
 
-    if (this.prefs[100]?.value == 2) {
+    if (this.getGameUserPreference(100) == 2) {
       this.onReorderTable(true);
     }
 
-    this.changeOrder(this.prefs[101]?.value != 1);
-    this.setTheme((this.prefs[104]?.value as number) ?? 0);
+    this.changeOrder(this.getGameUserPreference(101) != 1);
+    this.setTheme((this.getGameUserPreference(104) as number) ?? 0);
 
     this.updateCardsPlayed();
 
@@ -305,9 +308,11 @@ class Tichu extends Gamegui {
   private setupGameBoards(gamedatas: Gamedatas) {
     for (const player of Object.values(gamedatas.players)) {
       const player_id = player.id;
-      const player_board_div = $("player_board_" + player_id);
       const isCurrent = player_id === this.player_id;
-      dojo.place(this.format_block("jstpl_player_board", player), player_board_div!);
+      dojo.place(
+        this.format_block("jstpl_player_board", player as Object as { [key: string]: string }),
+        "player_board_" + player_id,
+      );
 
       if (player.call_grand_tichu === Bet.GRAND_TICHU) {
         dojostyle(".grandtichucolor." + player_id, "display", "inline-block");
@@ -334,7 +339,7 @@ class Tichu extends Gamegui {
       }
 
       (dojo.query(".pointcount." + player_id) as any).innerHTML(
-        gamedatas.capturedpoints[player_id]
+        gamedatas.capturedpoints[player_id],
       );
     }
 
@@ -353,17 +358,48 @@ class Tichu extends Gamegui {
     this.updateStockOverlap(this.playerHand);
 
     for (const themeNo of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
-      dojo.connect($(`theme${themeNo}`), "onclick", this, (e: Event) => this.setTheme(themeNo));
+      dojo.connect(
+        $(`theme${themeNo}`),
+        "onclick",
+        dojo.hitch(this, (e: Event) => this.setTheme(themeNo)),
+      );
     }
-
-    dojo.connect($("order_by_rank"), "onclick", this, (e: Event) => this.onReorderByRank(e));
-    dojo.connect($("order_by_color"), "onclick", this, (e: Event) => this.onReorderByColor(e));
-    dojo.connect($("list_table"), "onclick", this, () => this.onReorderTable(false));
-    dojo.connect($("square_table"), "onclick", this, () => this.onReorderTable(true));
-    dojo.connect($("clockwise"), "onclick", this, () => this.changeOrder(true));
-    dojo.connect($("counterClockwise"), "onclick", this, () => this.changeOrder(false));
+    dojo.connect(
+      $("order_by_rank"),
+      "onclick",
+      dojo.hitch(this, (e: Event) => this.onReorderByRank(e)),
+    );
+    dojo.connect(
+      $("order_by_color"),
+      "onclick",
+      dojo.hitch(this, (e: Event) => this.onReorderByColor(e)),
+    );
+    dojo.connect(
+      $("list_table"),
+      "onclick",
+      dojo.hitch(this, () => this.onReorderTable(false)),
+    );
+    dojo.connect(
+      $("square_table"),
+      "onclick",
+      dojo.hitch(this, () => this.onReorderTable(true)),
+    );
+    dojo.connect(
+      $("clockwise"),
+      "onclick",
+      dojo.hitch(this, () => this.changeOrder(true)),
+    );
+    dojo.connect(
+      $("counterClockwise"),
+      "onclick",
+      dojo.hitch(this, () => this.changeOrder(false)),
+    );
     if ($("expReplay")) {
-      dojo.connect($("expReplay"), "onclick", this, () => this.toggleExperimentalReplay(true));
+      dojo.connect(
+        $("expReplay"),
+        "onclick",
+        dojo.hitch(this, () => this.toggleExperimentalReplay(true)),
+      );
     }
 
     this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
@@ -371,14 +407,14 @@ class Tichu extends Gamegui {
     this.addTooltipHtml(
       "clockwise",
       _(
-        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"
-      )
+        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings",
+      ),
     );
     this.addTooltipHtml(
       "counterClockwise",
       _(
-        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"
-      )
+        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings",
+      ),
     );
   }
 
@@ -395,7 +431,7 @@ class Tichu extends Gamegui {
     document.getElementById("pass_button")?.replaceChildren();
     document.getElementById("pass_trick_button")?.replaceChildren();
     document.getElementById("tichu_button")?.replaceChildren();
-    dojo.place(this.format_block("jstpl_my_hand", {}), $("play_button")!, "only");
+    dojo.place(this.format_block("jstpl_my_hand", {}), "play_button", "only");
   }
 
   private addMyActionButton(
@@ -403,7 +439,7 @@ class Tichu extends Gamegui {
     label: string,
     method: EventListener,
     color: string,
-    dest: string
+    dest: string,
   ) {
     const args = {
       id,
@@ -411,19 +447,20 @@ class Tichu extends Gamegui {
       addclass: `bgabutton bgabutton_${color}`,
     };
     dojo.place(this.format_block("jstpl_my_action_button", args), dest, "only");
-    dojo.connect($(id), "onclick", this, method);
+    dojo.connect($(id), "onclick", dojo.hitch(this, method));
   }
 
-  private createStock(element: Element, cardWidth: number, cardHeight: number) {
+  private createStock(element: HTMLElement, cardWidth: number, cardHeight: number) {
     const stock = new ebg.stock() as TichuStock;
     stock.create(this, element, cardWidth, cardHeight);
     stock.setSelectionAppearance("class");
     stock.setOverlap(30, 0);
     new ResizeObserver(() => requestAnimationFrame(() => this.updateStockOverlap(stock))).observe(
-      element
+      element,
     );
     stock.image_items_per_row = 14;
-    const cardImgFile = this.prefs[103]!.value == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
+    const cardImgFile =
+      this.getGameUserPreference(103) == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
     for (let color = 1; color <= 4; color++) {
       for (let value = 1; value <= 14; value++) {
         const type = stockType(color, value);
@@ -449,7 +486,7 @@ class Tichu extends Gamegui {
       (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) /
       (stock.items.length - 1);
     let overlap = Math.floor(
-      ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100
+      ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100,
     );
     if (overlap > 60) overlap = 60;
     if (overlap < 12) overlap = 12;
@@ -465,7 +502,7 @@ class Tichu extends Gamegui {
 
     for (let value = 0; value < count; value++) {
       valueChoice.addItemType(value, value, g_gamethemeurl + "img/tichu-icons-table.png", value);
-      valueChoice.addToStockWithId(value, value + 2);
+      valueChoice.addToStockWithId(value, String(value + 2));
     }
     return valueChoice;
   }
@@ -491,7 +528,7 @@ class Tichu extends Gamegui {
       this.tableCombos[playerId] = this.createStock(
         $("lastcombo_" + playerId)!,
         this.cardwidth * 0.75,
-        this.cardheight * 0.75
+        this.cardheight * 0.75,
       );
       this.tableCombos[playerId]!.extraClasses = "smallCards";
       this.tableCombos[playerId]!.setSelectionMode(0);
@@ -508,7 +545,7 @@ class Tichu extends Gamegui {
     let i = 0;
     for (const card of cards) {
       if (playerId === this.player_id) {
-        this.playerHand!.removeFromStockById(Number(card.id));
+        this.playerHand!.removeFromStockById(card.id);
       }
       addCardToStock(stock, card);
       weights[cardToStockType(card)] = i++;
@@ -521,16 +558,16 @@ class Tichu extends Gamegui {
   private animateIcon(clazz: string, player_id: number) {
     const block = this.format_block("jstpl_temp", {
       clazz: clazz,
-      id: player_id,
+      id: String(player_id),
     });
     const e = dojo.place(block, "game_play_area");
 
     this.fadeOutAndDestroy(e, 1000, 1000);
   }
 
-  onEnteringState(stateName: string, stateObject: CurrentStateArgs) {
+  onEnteringState(stateName: string, stateObject: any) {
     debug("Entering state: " + stateName, stateObject);
-    this.active_player = stateObject.active_player as any;
+    this.active_player = stateObject.active_player;
     this.stateName = stateName;
 
     if (stateName !== "confirmTrick") {
@@ -588,12 +625,12 @@ class Tichu extends Gamegui {
       const y = this.cardheight * (Number(card.type) - 1);
       dojo.place(
         this.format_block("jstpl_cardontable", {
-          x,
-          y,
+          x: String(x),
+          y: String(y),
           player_id: card.location_arg,
           card_id: card.id,
         }),
-        "receiveplayertable_" + card.passed_from
+        "receiveplayertable_" + card.passed_from,
       );
     });
   }
@@ -649,10 +686,10 @@ class Tichu extends Gamegui {
     const left = this.clockwise ? 0 : 1;
     const right = this.clockwise ? 1 : 0;
     this.addActionButton("giveDragonBefore_button", _("Give cards to " + args.enemies[left]), () =>
-      this.onGiveDragon(left)
+      this.onGiveDragon(left),
     );
     this.addActionButton("giveDragonAfter_button", _("Give cards to " + args.enemies[right]), () =>
-      this.onGiveDragon(right)
+      this.onGiveDragon(right),
     );
   }
 
@@ -718,7 +755,7 @@ class Tichu extends Gamegui {
             "onResetPassCards",
             undefined,
             false,
-            "gray"
+            "gray",
           );
           this.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
           break;
@@ -726,7 +763,7 @@ class Tichu extends Gamegui {
         case "showPassedCards":
           clearTimeout(this.autoAcceptTimeout);
           if (document.visibilityState === "visible") {
-            dojo.place(this.format_block("jstpl_auto_accept", {}), $("play_button")!, "only");
+            dojo.place(this.format_block("jstpl_auto_accept", {}), "play_button", "only");
             clearTimeout(this.autoAcceptTimeout);
             this.autoAcceptTimeout = setTimeout(() => this.onAcceptCards(), 2000);
           }
@@ -739,7 +776,7 @@ class Tichu extends Gamegui {
           this.addActionButton(
             "choosePhoenix",
             _("Choose a value for the Phoenix"),
-            "onChoosePhoenix"
+            "onChoosePhoenix",
           );
           this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
           break;
@@ -749,7 +786,7 @@ class Tichu extends Gamegui {
             _("Play selected cards"),
             () => this.playCombo("playCombo"),
             "blue",
-            "play_button"
+            "play_button",
           );
           break;
         case "playCombo":
@@ -758,21 +795,21 @@ class Tichu extends Gamegui {
             _("Play selected cards"),
             () => this.playCombo("playCombo"),
             "blue",
-            "play_button"
+            "play_button",
           );
           this.addMyActionButton(
             "myPass",
             _("Pass"),
             () => this.onPass(true),
             "red",
-            "pass_button"
+            "pass_button",
           );
           this.addMyActionButton(
             "myPassTrick",
             _("Auto-Pass this Trick"),
             () => this.onPass(false),
             "gray",
-            "pass_trick_button"
+            "pass_trick_button",
           );
           this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
           break;
@@ -782,19 +819,19 @@ class Tichu extends Gamegui {
             _("Play selected cards"),
             () => this.playCombo("playCombo"),
             "blue",
-            "play_button"
+            "play_button",
           );
           this.addMyActionButton(
             "myCancel",
             _("Cancel"),
             () => this.takeAction("cancel"),
             "red",
-            "pass_button"
+            "pass_button",
           );
           break;
         case "confirmTrick":
           if (this.bRealtime) {
-            dojo.place(this.format_block("jstpl_auto_collect", {}), $("play_button")!, "only");
+            dojo.place(this.format_block("jstpl_auto_collect", {}), "play_button", "only");
             clearTimeout(this.autoCollectTimeout);
             this.autoCollectTimeout = setTimeout(() => this.collect(), 2000);
           } else {
@@ -803,7 +840,7 @@ class Tichu extends Gamegui {
               _("Collect"),
               () => this.collect(),
               "blue",
-              "play_button"
+              "play_button",
             );
           }
           this.addMyActionButton(
@@ -811,7 +848,7 @@ class Tichu extends Gamegui {
             _("Play a Bomb"),
             () => this.playCombo("playBomb"),
             "gray",
-            "bomb_button"
+            "bomb_button",
           );
       }
     } else if (
@@ -825,7 +862,7 @@ class Tichu extends Gamegui {
           _("Auto-Pass this Trick"),
           () => this.onPass(false),
           "gray",
-          "pass_trick_button"
+          "pass_trick_button",
         );
         this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
       }
@@ -835,12 +872,12 @@ class Tichu extends Gamegui {
           _("Auto-Pass once"),
           () => this.onPass(true),
           "red",
-          "pass_button"
+          "pass_button",
         );
         this.addTooltip(
           "myPassOnce",
           _("Automatically pass next time(unless a new trick starts)"),
-          ""
+          "",
         );
       }
       if (Number(player.pass) > 0) {
@@ -849,12 +886,12 @@ class Tichu extends Gamegui {
           _("Cancel Auto-Pass"),
           () => this.cancelAutopass(),
           "red",
-          "pass_button"
+          "pass_button",
         );
         this.addTooltip(
           "myCancelAutopass",
           _("You have chosen to automatically pass during this trick. Click to cancel"),
-          ""
+          "",
         );
       }
       this.addMyActionButton(
@@ -862,7 +899,7 @@ class Tichu extends Gamegui {
         _("Play a Bomb"),
         () => this.playCombo("playBomb"),
         "gray",
-        "bomb_button"
+        "bomb_button",
       );
     }
 
@@ -874,7 +911,7 @@ class Tichu extends Gamegui {
           () => this.onGrandTichuBet(Bet.NO_BET),
           undefined,
           false,
-          "gray"
+          "gray",
         );
         this.addTooltip("noBet", _("Don't call Grand Tichu"), "");
         this.addActionButton(
@@ -883,7 +920,7 @@ class Tichu extends Gamegui {
           () => this.onGrandTichuBet(Bet.GRAND_TICHU),
           undefined,
           false,
-          "red"
+          "red",
         );
         this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
       }
@@ -893,7 +930,7 @@ class Tichu extends Gamegui {
           _("Tichu"),
           () => this.onTichuBet(),
           "green",
-          "tichu_button"
+          "tichu_button",
         );
         this.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
       }
@@ -934,7 +971,7 @@ class Tichu extends Gamegui {
 
   private setPass(playerId: number) {
     const cardImgFile =
-      this.prefs[103]!.value == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+      this.getGameUserPreference(103) == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
     const img = g_gamethemeurl + cardImgFile;
     $("lastcombo_" + playerId)!.innerHTML =
       "<span class = 'pass'> <img src='" +
@@ -956,31 +993,31 @@ class Tichu extends Gamegui {
       this.addTooltip(
         card_div.id,
         _("Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."),
-        ""
+        "",
       );
     if (card_type_id === 14)
       this.addTooltip(
         card_div.id,
         _(
-          "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5."
+          "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5.",
         ),
-        ""
+        "",
       );
     if (card_type_id === 28)
       this.addTooltip(
         card_div.id,
         _(
-          "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead."
+          "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead.",
         ),
-        ""
+        "",
       );
     if (card_type_id === 42)
       this.addTooltip(
         card_div.id,
         _(
-          "The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible."
+          "The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible.",
         ),
-        ""
+        "",
       );
   }
 
@@ -998,7 +1035,7 @@ class Tichu extends Gamegui {
     let stock = this.createStock(
       $("currentTrickCards")!,
       this.cardwidth * 0.75,
-      this.cardheight * 0.75
+      this.cardheight * 0.75,
     );
     stock.extraClasses = "smallCards";
     stock.setSelectionMode(0);
@@ -1046,16 +1083,16 @@ class Tichu extends Gamegui {
 
       dojo.place(
         this.format_block("jstpl_cardontable", {
-          x: x,
-          y: y,
-          player_id: player_id,
-          card_id: card.id,
+          x: String(x),
+          y: String(y),
+          player_id: String(player_id),
+          card_id: String(card.id),
         }),
-        "giveplayertable_" + direction
+        "giveplayertable_" + direction,
       );
 
       if ($("myhand_item_" + card.id)) {
-        this.playerHand!.removeFromStockById(Number(card.id));
+        this.playerHand!.removeFromStockById(String(card.id));
       } else {
         debug("Failed to remove card from hand");
       }
@@ -1174,7 +1211,7 @@ class Tichu extends Gamegui {
 
   // client side action only
   private changeOrder(clockwise: boolean) {
-    debug(`changeOrder ${clockwise} ${this.prefs[101]!.value}`);
+    debug(`changeOrder ${clockwise} ${this.getGameUserPreference(101)}`);
 
     this.clockwise = clockwise;
     $("game_play_area")!.classList.toggle("clockwise", clockwise);
@@ -1232,12 +1269,12 @@ class Tichu extends Gamegui {
     // Note that we cannot check the action here, because it may not be the player's turn.
     // But you can auto-pass out of turn.
 
-    if (this.prefs[102]!.value == 1 && this.playerHand!.getSelectedItems().length > 0) {
+    if (this.getGameUserPreference(102) == 1 && this.playerHand!.getSelectedItems().length > 0) {
       this.showMessage(
         _(
-          "You have to unselect your cards first. (You can disable this safeguard in the user settings)"
+          "You have to unselect your cards first. (You can disable this safeguard in the user settings)",
         ),
-        "error"
+        "error",
       );
       return;
     }
@@ -1378,7 +1415,7 @@ class Tichu extends Gamegui {
       this.onUpdateActionButtons(this.stateName, {});
     });
     this.addActionButton("confirmTichu", _("confirm"), () =>
-      this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU })
+      this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU }),
     );
   }
 
@@ -1417,11 +1454,11 @@ class Tichu extends Gamegui {
       const y = (w - x) / 7;
       dojo.place(
         this.format_block("jstpl_mahjong", {
-          value: wish,
-          x: x * 75,
-          y: y * 112.5,
+          value: String(wish),
+          x: String(x * 75),
+          y: String(y * 112.5),
         }),
-        indicator
+        "mahjongIndicator",
       );
       indicator.style.display = "block";
     } else {
@@ -1477,7 +1514,7 @@ class Tichu extends Gamegui {
 
     const newScores = notif.args.newScores;
     for (const player_id in newScores) {
-      this.scoreCtrl[player_id]!.toValue(newScores[player_id]!);
+      this.scoreCtrl[Number(player_id)]!.toValue(newScores[player_id]!);
     }
   }
 
@@ -1514,11 +1551,19 @@ class Tichu extends Gamegui {
 
     for (const id of ids) {
       this.gamedatas.hand = this.gamedatas.hand.filter((c) => c.id !== id);
-      this.playerHand.removeFromStockById(Number(id));
+      this.playerHand.removeFromStockById(id);
     }
     this.updateStockOverlap(this.playerHand);
   }
 }
 
-// The global 'bgagame.tichu' class is instantiated when the page is loaded. The following code sets this variable to your game class.
-dojo.setObject("bgagame.tichu", Tichu);
+export interface Tichu extends GameGui {}
+
+define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function (
+  // @ts-ignore
+  dojo,
+  // @ts-ignore
+  declare,
+) {
+  return declare("bgagame.tichu", ebg.core.gamegui, new Tichu());
+});
