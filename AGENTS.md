@@ -227,11 +227,15 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      "
      ```
    - **Files Ignored from SFTP Upload**:
-     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `README.md`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
-   - Log into `https://studio.boardgamearena.com` using `dashwood0` (credentials in `.vscode/bga-credentials.json`).
-   - Launch or open a test table for `tichu`. You can test multiplayer flows using `dashwood0`, `dashwood1`, `dashwood2`, `dashwood3` (up to `dashwood9`) and switch between active test accounts using the one-click switcher in the player panels.
+   - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and include its key instructions/snippets in the subagent prompt!
+   - Key highlights from `BGA_STUDIO_TESTING.md`:
+     - **Player IDs**: `dashwood0` = `2385074`, `dashwood1` = `2385075`, `dashwood2` = `2385076`, `dashwood3` = `2385077`.
+     - **Express Start**: Always click **`Express start`** directly from `https://studio.boardgamearena.com/gamepanel?game=tichu` (never create a lobby table first and click Express Start inside the lobby table, as that causes `Duplicate entry '1' for key 'player.PRIMARY'`).
+     - **Fast Player Switching**: Switch players by navigating directly to `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>` (or keeping 4 tabs open to those URLs) rather than hunting for the tiny `➔` arrow in the DOM.
+     - **Avoid Overlapping Card Clicks**: Use `window.gameui.playerHand.unselectAll()` and `window.gameui.playerHand.selectItem(String(cardId))` (and `window.gameui.onGiveCard(slotIdx)` for passing 3 cards) via `page.evaluate(...)` instead of coordinate-clicking overlapping `.stockitem` divs.
    - **When to restart vs. refresh**:
      - Modifying `tichu.js`, `tichu.css`, `tichu.view.php`, or `tichu_tichu.tpl`: Refresh browser (`F5`).
      - Modifying `tichu.game.php`, `tichu.action.php`, or `modules/*.php`: Takes effect on the next AJAX action or page refresh (`F5`).
