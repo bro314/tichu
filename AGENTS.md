@@ -189,3 +189,12 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      - Modifying `states.inc.php`, `gameinfos.inc.php`, `gameoptions.inc.php`, or `stats.inc.php`: Use the BGA Studio **Control Panel -> Manage Game** buttons ("Reload game informations", "Reload game options configuration", "Reload statistics configuration") or restart the game.
 3. **Production Release**:
    - Production releases are created from the BGA Studio **Control Panel** ("Manage Game" -> `tichu` -> "Release" / "Build a new release") which snapshots the files currently synced to the Studio SFTP directory and deploys them to `boardgamearena.com`.
+
+### Git & GitHub Push Quirk (HTTPS vs. SSH)
+- The user's global `~/.gitconfig` has a rewrite rule (`url.git@github.com:.insteadof = https://github.com/`), while GitHub authentication on this machine is configured via the GitHub CLI (`gh auth git-credential`) over HTTPS rather than SSH keys.
+- As a result, a standard `git push` or `git push origin main` rewrites the remote URL to `git@github.com:bro314/tichu.git` and fails with `Permission denied (publickey)`.
+- **Solution**: Push using `https://www.github.com/bro314/tichu.git` (which bypasses the `https://github.com/` `insteadOf` prefix and redirects to HTTPS with `gh` credentials) and update the remote tracking ref:
+  ```bash
+  git push https://www.github.com/bro314/tichu.git main && git update-ref refs/remotes/origin/main HEAD
+  ```
+
