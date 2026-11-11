@@ -1,5 +1,5 @@
 <?php
-class NotificationManager extends APP_GameClass
+class NotificationManager
 {
   public static function dealCards($player_id, $cards, $msg)
   {

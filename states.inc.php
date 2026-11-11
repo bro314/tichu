@@ -50,15 +50,6 @@
 //		!! It is not a good idea to modify this file when a game is running !!
 
 $machinestates = [
-  // The initial state. Please do not modify.
-  ST_GAME_SETUP => [
-    "name" => "gameSetup",
-    "description" => "",
-    "type" => "manager",
-    "action" => "stGameSetup",
-    "transitions" => ["" => ST_NEW_ROUND],
-  ],
-
   ST_NEW_ROUND => [
     "name" => "newRound",
     "description" => "",
@@ -271,15 +262,5 @@ $machinestates = [
       "endGame" => ST_GAME_END,
       "newRound" => ST_NEW_ROUND,
     ],
-  ],
-
-  // Final state.
-  // Please do not modify.
-  ST_GAME_END => [
-    "name" => "gameEnd",
-    "description" => clienttranslate("End of game"),
-    "type" => "manager",
-    "action" => "stGameEnd",
-    "args" => "argGameEnd",
   ],
 ];

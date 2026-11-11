@@ -1,7 +1,10 @@
 <?php
-class CardManager extends APP_GameClass
+
+use Bga\GameFramework\Table;
+
+class CardManager
 {
-  private static $instance = null;
+  private static ?CardManager $instance = null;
   public static function getInstance()
   {
     if (self::$instance == null) {
@@ -14,8 +17,7 @@ class CardManager extends APP_GameClass
   public static function getDeck()
   {
     if (self::$deck == null) {
-      self::$deck = self::getInstance()->getNew("module.common.deck");
-      self::$deck->init("card");
+      self::$deck = Tichu::$instance->bga->deckFactory->createDeck("card");
     }
     return self::$deck;
   }
@@ -41,7 +43,7 @@ class CardManager extends APP_GameClass
   {
     $sql =
       "SELECT card_id id, card_type type, card_type_arg type_arg, card_location_arg location_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary'";
-    $res = self::getInstance()->getObjectListFromDB($sql);
+    $res = Table::getObjectListFromDB($sql);
     $ret = [];
     foreach ($res as $row) {
       $pId = $row["location_arg"];
@@ -60,7 +62,7 @@ class CardManager extends APP_GameClass
     FROM card
     WHERE card_location = '$location' AND card_location_arg = $location_arg
     ";
-    return self::getInstance()->getObjectListFromDB($sql);
+    return Table::getObjectListFromDB($sql);
   }
 
   public static function calculateCapturedPoints()
@@ -79,7 +81,7 @@ class CardManager extends APP_GameClass
   public static function getCardsPassedTo($pId)
   {
     $cardsEntries = array_values(
-      self::getInstance()->getObjectListFromDB(
+      Table::getObjectListFromDB(
         "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
       )
     );
@@ -99,13 +101,13 @@ class CardManager extends APP_GameClass
 
   public static function resetPassedCards()
   {
-    self::getInstance()->DbQuery("UPDATE card SET card_passed_from=NULL ");
+    Table::DbQuery("UPDATE card SET card_passed_from=NULL ");
   }
 
   public static function setPassedCards($ids, $playerId)
   {
     $join = implode(",", $ids);
-    self::getInstance()->DbQuery(
+    Table::DbQuery(
       "UPDATE card SET card_passed_from=$playerId WHERE card_id IN ($join)"
     );
   }

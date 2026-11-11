@@ -78,14 +78,3 @@ $this->play_type = [
   20 => clienttranslate("the Hound"),
   30 => clienttranslate("a Bomb"),
 ];
-/*
-
-Example:
-
-$this->card_types = array(
-    1 => array( "card_name" => ...,
-                ...
-              )
-);
-
-*/

@@ -90,12 +90,6 @@ class APP_DbObject extends APP_Object {
 class APP_Action extends APP_DbObject {
 }
 
-class APP_GameClass extends APP_DbObject {
-
-    public function __construct() {
-    }
-}
-
 class GameState {
     public $table_globals;
     private $current_state = 2;
@@ -257,7 +251,7 @@ class feException extends Exception {
     }
 }
 
-abstract class Table extends APP_GameClass {
+abstract class Table extends APP_DbObject {
     var $players = array();
     public $gamename;
     public $gamestate = null;
@@ -271,9 +265,6 @@ abstract class Table extends APP_GameClass {
             2 => array('player_name' => 'player2', 'player_color' => '0000ff')
         );
     }
-
-    /** Report gamename for translation function */
-    abstract protected function getGameName();
 
     function getAllTableDatas() {
         return [];
@@ -453,10 +444,6 @@ abstract class Table extends APP_GameClass {
     function reloadPlayersBasicInfos() {
     }
 
-    function getNew($deck_definition): object {
-        return null;
-    }
-
     // Give standard extra time to this player
     // (standard extra time is a game option)
     function giveExtraTime($player_id, $specific_time = null) {
@@ -582,10 +569,6 @@ function totranslate($text) {
 
 function clienttranslate($x) {
     return $x;
-}
-
-function mysql_fetch_assoc($res) {
-    return array();
 }
 
 function bga_rand($min, $max) {

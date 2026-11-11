@@ -1,7 +1,10 @@
 <?php
-class LogManager extends APP_GameClass
+
+use Bga\GameFramework\Table;
+
+class LogManager
 {
-  private static $instance = null;
+  private static ?LogManager $instance = null;
   public static function getInstance()
   {
     if (self::$instance == null) {
@@ -28,7 +31,7 @@ class LogManager extends APP_GameClass
     }
 
     $actionArgs = json_encode($args);
-    self::getInstance()->DbQuery(
+    Table::DbQuery(
       "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($playerId, $round, $trick, '$action', '$actionArgs')"
     );
   }
@@ -44,7 +47,7 @@ class LogManager extends APP_GameClass
       $sql .= " AND " . self::getCurrentTrickCond();
     }
     $sql .= " ORDER BY log_id DESC";
-    $res = self::getInstance()->getObjectListFromDB($sql);
+    $res = Table::getObjectListFromDB($sql);
 
     if (count($res) == 0) {
       return $single ? null : [];
@@ -67,7 +70,7 @@ class LogManager extends APP_GameClass
 
   public static function getCurrentRoundAndTrick()
   {
-    return self::getInstance()->getObjectFromDB(
+    return Table::getObjectFromDB(
       "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog"
     );
   }

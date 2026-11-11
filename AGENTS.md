@@ -26,17 +26,17 @@ BGA games use an event-driven client-server architecture built on a finite state
    - Every table has its own isolated MySQL database created from `dbmodel.sql` at game setup (`setupNewGame`).
    - Standard BGA tables (`player`, `global`, `stats`, `gamelog`) are created automatically by the platform; `dbmodel.sql` adds custom columns to `player` and creates game-specific tables (`card`, `actionlog`).
    - `states.inc.php` defines the state machine (`$machinestates`). States have four types:
-     - `manager`: Initial (`ST_GAME_SETUP` = 1) and final (`ST_GAME_END` = 99) states managed by BGA.
+     - `manager`: Initial (`ST_GAME_SETUP` = 1) and final (`ST_GAME_END` = 99) states managed automatically by the BGA framework (`setupNewGame` returns `\ST_NEW_ROUND`).
      - `game`: Automatic server-side transition states that execute a PHP `action` method (`st<StateName>`) and transition via `$this->gamestate->nextState('<transition>')`.
      - `activeplayer`: Waits for a single active player to take one of the `possibleactions`.
      - `multipleactiveplayer`: Waits for multiple players simultaneously (e.g., Grand Tichu betting, passing 3 cards). Uses `$this->gamestate->setAllPlayersMultiactive()` and `$this->gamestate->setPlayerNonMultiactive($player_id, '<transition>')`.
 2. **Page Load & Initial Hydration (`getAllDatas`)**:
-   - When a player opens or refreshes (`F5`) the table, `tichu.view.php` renders `tichu_tichu.tpl` and `Tichu::getAllDatas()` in `tichu.game.php` returns all game state visible to `$this->getCurrentPlayerId()` (hiding secret info like other players' hands and `player_pass` autopass settings).
+   - When a player opens or refreshes (`F5`) the table, `tichu.view.php` renders `tichu_tichu.tpl` and `Tichu::getAllDatas(int $currentPlayerId)` in `tichu.game.php` returns all game state visible to `$currentPlayerId` (hiding secret info like other players' hands and `player_pass` autopass settings).
    - On the client, Dojo instantiates `bgagame.tichu` (extending `ebg.core.gamegui`) and calls `setup(gamedatas)`.
 3. **Player Actions (Client -> Server)**:
    - Client calls `this.ajaxcall("/tichu/tichu/<action>.html", args, ...)` via helper `this.takeAction(action, args)`.
    - `tichu.action.php` (`class action_tichu extends APP_GameAction`) validates request parameters (`getArg`) and delegates to `$this->game-><action>(...)` in `tichu.game.php`.
-   - `tichu.game.php` verifies legality (`$this->checkAction('<action>')`, except for out-of-turn actions like `tichuBet`, `playBomb`, `pass` autopass, and `cancelAutopass`), mutates the DB, logs actions, sends notifications, and advances the state machine.
+   - `tichu.game.php` verifies legality (`$this->checkAction('<action>')`, except for out-of-turn actions like `tichuBet`, `playBomb`, `pass` autopass, and `cancelAutopass`), throws `Bga\GameFramework\UserException` on invalid player moves, mutates the DB via `Bga\GameFramework\Table::DbQuery(...)`, logs actions, sends notifications, and advances the state machine.
 4. **Notifications (Server -> Client)**:
    - Server sends public updates via `$this->notifyAllPlayers($type, $logMsg, $args)` or private updates (e.g., dealt/passed cards, confirm dialogs, autopass status) via `$this->notifyPlayer($playerId, $type, $logMsg, $args)`.
    - Client subscribes to notifications in `setupNotifications()` via `dojo.subscribe(type, this, "notif_" + type)` and controls animation pacing with `this.notifqueue.setSynchronous(type, duration)`.
@@ -173,22 +173,84 @@ Backend card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` is u
 - When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
 
 ### Deployment & Live Testing on BGA Studio
-BGA games cannot execute full multiplayer lifecycle locally; they run on the remote **BGA Studio** environment (`https://studio.boardgamearena.com`).
+BGA games cannot execute full multiplayer lifecycle locally; they run on the remote **BGA Studio** environment (`https://studio.boardgamearena.com`). The user does **not** use the VS Code SFTP extension; all SFTP syncing and BGA Studio testing/management are handled directly by the AI agent.
 
-1. **SFTP Synchronization**:
-   - The workspace syncs with `1.studio.boardgamearena.com:2022` (remote path `/tichu/`) via SFTP.
-   - Configuration is stored locally in `.vscode/sftp.json` (gitignored). With the VS Code SFTP extension enabled (`uploadOnSave: true`, `watcher.autoUpload: true`), saving files or running `npm run build` (which writes `tichu.js`) automatically uploads changes to the BGA Studio server.
-   - Ignored from SFTP upload: `.vscode`, `.git`, `node_modules`, `dist`, `_ide_helper.php`, etc. Note that `tichu.js` **must** be uploaded to BGA Studio even though it is in `.gitignore`.
-2. **Testing on BGA Studio**:
-   - Open `https://studio.boardgamearena.com` and launch a test table for `tichu`.
-   - BGA Studio creates 4 test accounts (`<username>_0`, `<username>_1`, etc.) with one-click switching between players.
+1. **Credentials Storage (`.vscode/bga-credentials.json` & `.vscode/sftp.json`)**:
+   - All SFTP and BGA Studio web credentials are stored locally in `.vscode/bga-credentials.json` (and `.vscode/sftp.json`), which are gitignored under `.vscode` (**never** commit credentials to git).
+   - **SFTP Server**:
+     - Host: `1.studio.boardgamearena.com`, Port: `2022`, Protocol: `sftp`, Remote Path: `/tichu/`.
+     - Username and password: Read from `.vscode/bga-credentials.json` (`.sftp.username` / `.sftp.password`).
+   - **BGA Studio Web Accounts (`https://studio.boardgamearena.com`)**:
+     - Main account: `dashwood0` (Administrator on the `tichu` project).
+     - Test accounts for multiplayer testing: `dashwood0` through `dashwood9` (10 accounts total).
+     - Password for all `dashwood0`..`dashwood9` accounts: Read from `.vscode/bga-credentials.json` (`.studioWeb.password`).
+
+2. **Direct CLI SFTP Synchronization (Agent Workflow)**:
+   - Because `sshpass` and `lftp` are not installed on this machine, use `/usr/bin/expect` with `/usr/local/bin/sftp` to upload or download files non-interactively.
+   - **Important**: Always run `npm run build` before uploading if any `.ts` file in `src/` was modified, and ensure `tichu.js` is uploaded to `/tichu/tichu.js` (even though `tichu.js` is gitignored locally, BGA Studio serves `/tichu/tichu.js` directly).
+   - **Uploading Specific Changed Files to BGA Studio**:
+     ```bash
+     PW=$(jq -r '.sftp.password' .vscode/bga-credentials.json)
+     USER=$(jq -r '.sftp.username' .vscode/bga-credentials.json)
+     expect -c "
+     set timeout 30
+     spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
+     expect -nocase \"password:\"
+     send \"${PW}\r\"
+     expect \"sftp>\"
+     # Example: upload modified files to their matching remote paths under /tichu/
+     send \"put tichu.js /tichu/tichu.js\r\"
+     expect \"sftp>\"
+     send \"put tichu.css /tichu/tichu.css\r\"
+     expect \"sftp>\"
+     send \"bye\r\"
+     expect eof
+     "
+     ```
+   - **Downloading / Diffing Remote BGA Studio Files Against Local**:
+     ```bash
+     PW=$(jq -r '.sftp.password' .vscode/bga-credentials.json)
+     USER=$(jq -r '.sftp.username' .vscode/bga-credentials.json)
+     mkdir -p /tmp/studio_tichu
+     expect -c "
+     set timeout 60
+     spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
+     expect -nocase \"password:\"
+     send \"${PW}\r\"
+     expect \"sftp>\"
+     send \"lcd /tmp/studio_tichu\r\"
+     expect \"sftp>\"
+     send \"get -r /tichu/* .\r\"
+     expect \"sftp>\"
+     send \"bye\r\"
+     expect eof
+     "
+     ```
+   - **Files Ignored from SFTP Upload**:
+     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `README.md`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+
+3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
+   - Log into `https://studio.boardgamearena.com` using `dashwood0` (credentials in `.vscode/bga-credentials.json`).
+   - Launch or open a test table for `tichu`. You can test multiplayer flows using `dashwood0`, `dashwood1`, `dashwood2`, `dashwood3` (up to `dashwood9`) and switch between active test accounts using the one-click switcher in the player panels.
    - **When to restart vs. refresh**:
      - Modifying `tichu.js`, `tichu.css`, `tichu.view.php`, or `tichu_tichu.tpl`: Refresh browser (`F5`).
      - Modifying `tichu.game.php`, `tichu.action.php`, or `modules/*.php`: Takes effect on the next AJAX action or page refresh (`F5`).
      - Modifying `dbmodel.sql`: Must **start a new game** (or use Studio's "Restart game" button) for the schema to be recreated.
-     - Modifying `states.inc.php`, `gameinfos.inc.php`, `gameoptions.inc.php`, or `stats.inc.php`: Use the BGA Studio **Control Panel -> Manage Game** buttons ("Reload game informations", "Reload game options configuration", "Reload statistics configuration") or restart the game.
-3. **Production Release**:
-   - Production releases are created from the BGA Studio **Control Panel** ("Manage Game" -> `tichu` -> "Release" / "Build a new release") which snapshots the files currently synced to the Studio SFTP directory and deploys them to `boardgamearena.com`.
+     - Modifying `states.inc.php`, `gameinfos.inc.php`, `gameoptions.inc.php`, or `stats.inc.php`: Navigate to `https://studio.boardgamearena.com/studiogame?game=tichu` (Control Panel -> Manage games -> `tichu`) and click the corresponding button under **Game configuration**:
+       - `Reload game informations`
+       - `Reload statistics configuration`
+       - `Reload game options configuration`
+
+4. **Pushing a Release to Production (`boardgamearena.com`)**:
+   - **CRITICAL SAFETY GUARDRAIL**: **NEVER** build a release or deploy a new version to production without getting **explicit, clear confirmation from the user first**. Safe actions like `Reload game informations` or `Dry run build (to check code warnings)` can be clicked anytime, but committing/building/deploying a release requires user approval.
+   - Once confirmed by the user, follow these steps on `https://studio.boardgamearena.com/studiogame?game=tichu`:
+     1. Ensure all local changes are compiled (`npm run build`), synced via SFTP to `/tichu/`, and verified on a Studio test table.
+     2. Under the **Build a new release version** section on `https://studio.boardgamearena.com/studiogame?game=tichu`:
+        - Click **`⇨ Dry run build (to check code warnings)`** first and verify there are no blocking warnings or errors in the modal popup.
+        - Fill in the **`Release note: what has changed since the last release?`** input field (max 250 chars).
+        - Click **`⇨ Commit & build a new version now`**. This snapshots the SFTP `/tichu/` files into BGA's internal SVN/release system and builds a numbered release package (e.g., `YYMMDD-HHMM`).
+     3. Under the **Versions available for production** section:
+        - Locate the newly built version row and click its **Deploy** button to push it live to `boardgamearena.com`.
 
 ### Git & GitHub Push Quirk (HTTPS vs. SSH)
 - The user's global `~/.gitconfig` has a rewrite rule (`url.git@github.com:.insteadof = https://github.com/`), while GitHub authentication on this machine is configured via the GitHub CLI (`gh auth git-credential`) over HTTPS rather than SSH keys.
