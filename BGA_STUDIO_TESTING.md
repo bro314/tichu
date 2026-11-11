@@ -20,14 +20,14 @@ All 10 test accounts on `https://studio.boardgamearena.com` share the password s
 
 ---
 
-## 2. CRITICAL: `/tableview` Uses an `iframe`!
+## 2. CRITICAL: `/tableview` and `/tablereplay` Use an `iframe`!
 
-When you open `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>`:
-- The outer page (`/tableview`) is just a wrapper shell.
-- **The entire BGA game UI (`#noBet`, `#passCards_button`, `#myhand`, `#myPlayCombo`, `#myPass`, and `window.gameui`) lives inside the child `iframe` (`/1/tichu/tichu/...`)!**
+When you open `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>` or `https://studio.boardgamearena.com/tablereplay?...`:
+- The outer page (`/tableview` or `/tablereplay`) is just a wrapper shell.
+- **The entire BGA game UI (`#noBet`, `#passCards_button`, `#myhand`, `#myPlayCombo`, `#myPass`, `#expReplay`, `tichu-replay#game_play_replay`, and `window.gameui`) lives inside the child `iframe` (`/1/tichu/tichu/...` or `/archive/archive/frame.html...`)!**
 - Therefore:
-  - **NEVER** use `page.locator('#noBet')` on `/tableview` — it will time out for 30 seconds!
-  - **ALWAYS** use `const frame = page.frameLocator('iframe');` for Playwright locators (e.g., `frame.locator('#noBet')`), **OR** `const gameFrame = page.frames().find(f => f.url().includes('/tichu'));` when calling `gameFrame.evaluate(() => window.gameui...)`!
+  - **NEVER** use `page.locator('#noBet')` on `/tableview` or `/tablereplay` — it will time out for 30 seconds!
+  - **ALWAYS** use `const frame = page.frameLocator('iframe');` for Playwright locators (e.g., `frame.locator('#noBet')` or `frame.locator('#expReplay')`), **OR** `const gameFrame = page.frames().find(f => f.url().includes('/tichu') || f.url().includes('/archive/'));` when calling `gameFrame.evaluate(() => window.gameui...)`!
 
 ---
 
