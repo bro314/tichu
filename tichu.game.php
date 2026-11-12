@@ -449,7 +449,7 @@ class Tichu extends Table
       throw new UserException("Can't make bet: you already bet");
     }
 
-    $lastTichuCall = LogManager::getLastAction("tichuCall");
+    $lastTichuCall = LogManager::getLastAction("tichuCall", false);
     $now = time();
     if ($bet == 200) {
       if (
@@ -476,7 +476,7 @@ class Tichu extends Table
       throw new UserException("You already made a grand tichu bet.");
     }
     $stateName = $this->gamestate->getCurrentMainState()->name;
-    $lastTichuCall = LogManager::getLastAction("tichuCall");
+    $lastTichuCall = LogManager::getLastAction("tichuCall", false);
     $now = time();
     if (
       !$confirmed &&

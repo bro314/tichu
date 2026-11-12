@@ -206,6 +206,26 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   foreach ([P0, P1, P2, P3] as $pId) {
     assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should now have 14 cards");
   }
+
+  // Pass 3 cards for all 4 players so the game transitions to playComboOpen (trick 1, log_trick = 1)
+  foreach ([P0, P1, P2, P3] as $pId) {
+    $handCards = array_values($deck->getCardsInLocation('hand', $pId));
+    $passIds = [$handCards[0]['id'], $handCards[1]['id'], $handCards[2]['id']];
+    callAction($game, $pId, 'giveTheCards', ['cards' => implode(';', $passIds) . ';']);
+  }
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Should transition to playComboOpen in Trick 1');
+  assertSameVal(1, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Trick should now be 1');
+
+  // P3 calls Tichu (100) in playComboOpen (log_trick = 1) right after P2's tichuCall in grandTichuBets (log_trick = 0):
+  // Must still trigger confirmTichu across the newTrick boundary!
+  callAction($game, P3, 'tichuBet', ['bet' => '100']);
+  assertSameVal(
+    '-1',
+    (string) \PlayerManager::getPlayer(P3)['call_tichu'],
+    'P3 tichuBet in playComboOpen should still require confirmation after a recent tichuCall in log_trick=0'
+  );
+  callAction($game, P3, 'confirmTichu', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'P3 call_tichu should be 100 after confirmTichu');
 }
 
 // ============================================================================
@@ -624,6 +644,21 @@ function test_double_victory_and_normal_round_scoring(): void
   assertSameVal(-200, (int) $scores[P3], 'Team 1 (P3) should score -200');
   assertSameVal('grandTichuBets', $game->gamestate->state()['name'], 'Game should transition to Round 2 grandTichuBets');
   assertSameVal(2, (int) \LogManager::getCurrentRoundAndTrick()['round'], 'Round counter should now be 2');
+  assertSameVal(0, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Trick counter should reset to 0 at start of Round 2');
+
+  // Advance Round 2 through grandTichuBets and giveCards into Trick 1 (playComboOpen)
+  foreach ([P0, P1, P2, P3] as $pId) {
+    callAction($game, $pId, 'grandTichuBet', ['bet' => '0']);
+  }
+  $deckR2 = \CardManager::getDeck();
+  foreach ([P0, P1, P2, P3] as $pId) {
+    $handCards = array_values($deckR2->getCardsInLocation('hand', $pId));
+    $passIds = [$handCards[0]['id'], $handCards[1]['id'], $handCards[2]['id']];
+    callAction($game, $pId, 'giveTheCards', ['cards' => implode(';', $passIds) . ';']);
+  }
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Round 2 should advance to playComboOpen');
+  assertSameVal(2, (int) \LogManager::getCurrentRoundAndTrick()['round'], 'Round counter should remain 2');
+  assertSameVal(1, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Round 2 first trick counter should be 1');
 
   // Part B: Normal Round Scoring (3 players go out, 4th player's captured cards -> firstOutPlayer, hand -> opposing team)
   \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);
@@ -701,6 +736,9 @@ function test_full_multi_round_game_to_completion(): void
     // In Round 2+, let P0 bet Grand Tichu in grandTichuBets
     if ($stateName === 'grandTichuBets' && $game->gamestate->isPlayerActive(P0) && $curRound >= 2) {
       callAction($game, P0, 'grandTichuBet', ['bet' => '200']);
+      if ($game->gamestate->isPlayerActive(P0)) {
+        callAction($game, P0, 'confirmTichu', ['bet' => '200']);
+      }
       $steps++;
       continue;
     }

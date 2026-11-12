@@ -71,7 +71,7 @@ class LogManager
   public static function getCurrentRoundAndTrick()
   {
     return Table::getObjectFromDB(
-      "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog"
+      "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog WHERE log_round = (SELECT IFNULL(MAX(log_round), 0) FROM actionlog)"
     );
   }
 
