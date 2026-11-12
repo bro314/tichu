@@ -402,15 +402,22 @@ class Tichu extends Table
 
   function pass($onlyOnce)
   {
-    if ($this->gamestate->getCurrentMainState()->name != "playCombo") {
-      throw new UserException(clienttranslate("You can't pass right now"));
-    }
-
+    $name = $this->gamestate->getCurrentMainState()->name;
     $player_id = $this->getCurrentPlayerId();
     if ($player_id != $this->getActivePlayerId()) {
+      if (
+        !in_array($name, ["playCombo", "confirmTrick"]) ||
+        CardManager::getDeck()->countCardInLocation("hand", $player_id) == 0
+      ) {
+        throw new UserException(clienttranslate("You cannot pass now"));
+      }
       PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
       NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
       return;
+    }
+
+    if ($name != "playCombo") {
+      throw new UserException(clienttranslate("You cannot pass now"));
     }
 
     $currentMahjongWish = $this->getGameStateValue("mahjongWish");
@@ -493,9 +500,47 @@ class Tichu extends Table
     $player_id = $this->getCurrentPlayerId();
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_grand_tichu"] == 200) {
-      throw new UserException("You already made a grand tichu bet.");
+      throw new UserException(clienttranslate("You already made a grand tichu bet."));
+    }
+    if ($player["call_tichu"] == 100) {
+      throw new UserException(clienttranslate("You cannot call Tichu anymore"));
     }
     $stateName = $this->gamestate->getCurrentMainState()->name;
+    if (
+      !in_array($stateName, [
+        "grandTichuBets",
+        "giveCards",
+        "showPassedCards",
+        "acceptPassedCards",
+        "newTrick",
+        "playComboOpen",
+        "playCombo",
+        "mahjongPlay",
+        "phoenixPlay",
+        "playBomb",
+        "confirmTrick",
+        "chooseDragonGift",
+      ])
+    ) {
+      throw new UserException(clienttranslate("You cannot call Tichu anymore"));
+    }
+    $deck = CardManager::getDeck();
+    if ($stateName == "grandTichuBets") {
+      if ($deck->countCardInLocation("hand", $player_id) != 8) {
+        throw new UserException(clienttranslate("You cannot call Tichu after playing a card"));
+      }
+    } elseif ($stateName != "giveCards") {
+      if (
+        $deck->countCardInLocation("hand", $player_id) +
+          $deck->countCardInLocation("temporary", $player_id) !=
+        14
+      ) {
+        throw new UserException(clienttranslate("You cannot call Tichu after playing a card"));
+      }
+    }
+    if ($player["call_tichu"] != -1) {
+      throw new UserException(clienttranslate("You cannot call Tichu anymore"));
+    }
     $lastTichuCall = LogManager::getLastAction("tichuCall", false);
     $now = time();
     if (
@@ -979,6 +1024,10 @@ class Tichu extends Table
         LogManager::insert($pId, "pass");
         NotificationManager::pass($pId, $player["name"]);
         continue;
+      }
+      if ($player["pass"] == AUTOPASS_ONCE) {
+        PlayerManager::setAutopass(AUTOPASS_NONE, $pId);
+        NotificationManager::autopass(AUTOPASS_NONE, $pId);
       }
       $next = $pId;
       break;

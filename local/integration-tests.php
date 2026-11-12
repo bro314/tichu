@@ -127,6 +127,45 @@ function test_new_game_and_deal_8_cards(): void
   assertSameVal('1', (string) $payload['players'][P1]['team'], 'P1 should be on Team 1');
   assertSameVal('0', (string) $payload['players'][P2]['team'], 'P2 should be on Team 0');
   assertSameVal('1', (string) $payload['players'][P3]['team'], 'P3 should be on Team 1');
+  assertSameVal('000000', (string) $payload['players'][P0]['color'], 'P0 color in TEAM_1_3 should be 000000');
+  assertSameVal('ff0000', (string) $payload['players'][P1]['color'], 'P1 color in TEAM_1_3 should be ff0000');
+
+  // Verify TEAM_1_2 player_color and team assignments
+  $game->createNewGame([
+    'gameLength' => 1,
+    'playerTeams' => TEAM_1_2,
+    'turnBased' => 0,
+  ]);
+  $payload12 = $game->getFullClientPayload(P0);
+  assertSameVal('0', (string) $payload12['players'][P0]['team'], 'P0 should be on Team 0 in TEAM_1_2');
+  assertSameVal('0', (string) $payload12['players'][P1]['team'], 'P1 should be on Team 0 in TEAM_1_2');
+  assertSameVal('1', (string) $payload12['players'][P2]['team'], 'P2 should be on Team 1 in TEAM_1_2');
+  assertSameVal('1', (string) $payload12['players'][P3]['team'], 'P3 should be on Team 1 in TEAM_1_2');
+  assertSameVal('000000', (string) $payload12['players'][P0]['color'], 'P0 color in TEAM_1_2 should be 000000');
+  assertSameVal('000000', (string) $payload12['players'][P1]['color'], 'P1 color in TEAM_1_2 should be 000000');
+  assertSameVal('ff0000', (string) $payload12['players'][P2]['color'], 'P2 color in TEAM_1_2 should be ff0000');
+  assertSameVal('ff0000', (string) $payload12['players'][P3]['color'], 'P3 color in TEAM_1_2 should be ff0000');
+
+  // Verify TEAM_RANDOM assigns two players to team 0 ("000000", seats 1 & 3) and two to team 1 ("ff0000", seats 2 & 4)
+  $game->createNewGame([
+    'gameLength' => 1,
+    'playerTeams' => TEAM_RANDOM,
+    'turnBased' => 0,
+  ]);
+  $randomRows = \APP_DbObject::getObjectListFromDB("SELECT player_id, player_no, player_team, player_color FROM player ORDER BY player_no ASC");
+  assertSameVal(4, count($randomRows), 'TEAM_RANDOM should insert 4 players');
+  assertSameVal('1', (string) $randomRows[0]['player_no'], 'Seat 1 player_no should be 1');
+  assertSameVal('0', (string) $randomRows[0]['player_team'], 'Seat 1 player_team should be 0');
+  assertSameVal('000000', (string) $randomRows[0]['player_color'], 'Seat 1 player_color should be 000000');
+  assertSameVal('2', (string) $randomRows[1]['player_no'], 'Seat 2 player_no should be 2');
+  assertSameVal('1', (string) $randomRows[1]['player_team'], 'Seat 2 player_team should be 1');
+  assertSameVal('ff0000', (string) $randomRows[1]['player_color'], 'Seat 2 player_color should be ff0000');
+  assertSameVal('3', (string) $randomRows[2]['player_no'], 'Seat 3 player_no should be 3');
+  assertSameVal('0', (string) $randomRows[2]['player_team'], 'Seat 3 player_team should be 0');
+  assertSameVal('000000', (string) $randomRows[2]['player_color'], 'Seat 3 player_color should be 000000');
+  assertSameVal('4', (string) $randomRows[3]['player_no'], 'Seat 4 player_no should be 4');
+  assertSameVal('1', (string) $randomRows[3]['player_team'], 'Seat 4 player_team should be 1');
+  assertSameVal('ff0000', (string) $randomRows[3]['player_color'], 'Seat 4 player_color should be ff0000');
 
   // Verify scenario "grand_tichu" deals the 8 expected powerhouse cards to P0
   $gtPayload = \LocalTichuScenarios::setupScenario($game, 'grand_tichu', P0);
@@ -226,6 +265,24 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   );
   callAction($game, P3, 'confirmTichu', ['bet' => '100']);
   assertSameVal('100', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'P3 call_tichu should be 100 after confirmTichu');
+
+  // Calling tichuBet a second time after already calling Tichu (call_tichu == 100) must throw UserException
+  assertThrowsUserException(
+    static fn() => callAction($game, P3, 'tichuBet', ['bet' => '100']),
+    'cannot call Tichu',
+    'Calling tichuBet a second time after already calling Tichu must throw UserException'
+  );
+
+  // Calling tichuBet after playing a card (countCardInLocation("hand") < 14) must throw UserException
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  assertSameVal(13, $deck->countCardInLocation('hand', P0), 'P0 should have 13 cards after playing Mahjong');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'tichuBet', ['bet' => '100']),
+    'after playing a card',
+    'Calling tichuBet after playing a card must throw UserException'
+  );
 }
 
 // ============================================================================
@@ -706,6 +763,16 @@ function test_autopass_once_trick_and_cancel_plus_turn_based_smart_skip(): void
   assertSameVal('0', (string) \PlayerManager::getPlayer(P2)['pass'], 'AUTOPASS_ONCE (P2) must reset to 0 after firing once');
   assertSameVal('2', (string) \PlayerManager::getPlayer(P3)['pass'], 'AUTOPASS_TRICK (P3) stays 2 until trick ends');
 
+  // In confirmTrick, non-active player P2 calling pass(true) succeeds and sets AUTOPASS_ONCE (1),
+  // whereas active player P0 calling pass(true) in confirmTrick throws UserException
+  callAction($game, P2, 'pass', ['onlyOnce' => true]);
+  assertSameVal('1', (string) \PlayerManager::getPlayer(P2)['pass'], 'Non-active P2 can set AUTOPASS_ONCE during confirmTrick');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'pass', ['onlyOnce' => true]),
+    'pass',
+    'Active player P0 cannot call pass during confirmTrick'
+  );
+
   // Collecting the trick starts a new trick and resets all autopass flags to 0
   $beforeTricksWinP0 = (float) $game->getStat('tricks_win', P0);
   callAction($game, P0, 'collect');
@@ -736,6 +803,29 @@ function test_autopass_once_trick_and_cancel_plus_turn_based_smart_skip(): void
     'In isAllInfoExposed mode, playing an unbeatable Dragon with no bombs remaining must smart-skip P1, P2, P3 to confirmTrick'
   );
   assertSameVal((string) P0, $game->getActivePlayerId());
+
+  // Part C: AUTOPASS_ONCE reset when blocked by Mahjong wish
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongCardId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongCardId]);
+  // Set P1's autopass to AUTOPASS_ONCE (1) before P0 wishes for 9 (which P1 holds)
+  \PlayerManager::setAutopass(AUTOPASS_ONCE, P1);
+  assertSameVal('1', (string) \PlayerManager::getPlayer(P1)['pass'], 'P1 pass should initially be 1 (AUTOPASS_ONCE)');
+  $beforeWishPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'P1 must become active because P1 holds the wished 9');
+  assertSameVal('0', (string) \PlayerManager::getPlayer(P1)['pass'], 'P1 AUTOPASS_ONCE must reset to 0 when blocked by Mahjong wish');
+  $p1WishNotifs = $game->getNotificationsSince($beforeWishPacketId, P1, false);
+  $autopassResetNotif = null;
+  foreach ($p1WishNotifs as $pkt) {
+    if (($pkt['data'][0]['type'] ?? '') === 'autopass') {
+      $autopassResetNotif = $pkt['data'][0]['args'];
+      break;
+    }
+  }
+  assertTrueVal($autopassResetNotif !== null, 'P1 should receive an autopass notification when AUTOPASS_ONCE is reset');
+  assertSameVal(0, (int) ($autopassResetNotif['autopass'] ?? -1), 'autopass notification should have autopass=0');
 }
 
 // ============================================================================

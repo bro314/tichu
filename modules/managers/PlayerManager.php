@@ -34,15 +34,21 @@ class PlayerManager
       $position[$val] = $key + 1;
     }
 
-    foreach ($players as $player_id => $player) {
+    $playerIds = array_keys($players);
+    if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_RANDOM) {
+      shuffle($playerIds);
+    }
+
+    foreach ($playerIds as $player_id) {
+      $player = $players[$player_id];
       $color = "ffffff"; // Default to white (should never be left to white unless the following doesn't work)
       $player_no = 9; // Default to 9 (should never be left to 9 unless the following doesn't work)
       $counter++;
 
       if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_RANDOM) {
-        $color = array_shift($default_colors); // Random since the $players order is random
+        $color = array_shift($default_colors);
         $player_no = $counter;
-        $player_team = $counter % 2;
+        $player_team = ($counter - 1) % 2;
       } elseif (isset($player["player_table_order"])) {
         $table_order = $position[$player["player_table_order"]]; // By default TEAM_1_3
 
@@ -55,9 +61,9 @@ class PlayerManager
         }
 
         if (isset($default_colors[$table_order - 1])) {
-          $color = $default_colors[$table_order - 1];
           $player_no = $table_order - 1;
           $player_team = $player_no % 2;
+          $color = $default_colors[$player_team];
         }
       }
 

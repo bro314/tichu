@@ -48,7 +48,7 @@ class action_tichu extends APP_GameAction
   public function tichuBet()
   {
     $this->setAjaxMode();
-    $bet = $this->getArg("bet", AT_enum, true, false, ["0", "100"]);
+    $bet = $this->getArg("bet", AT_enum, true, false, ["100"]);
     $this->game->tichuBet();
     $this->ajaxResponse();
   }
