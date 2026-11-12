@@ -650,6 +650,7 @@ class Tichu extends Table
     if ($action["dragon"]) {
       $this->gamestate->nextState("chooseDragonGift");
     } else {
+      $this->incStat(1, "tricks_win", $pId);
       $deck = CardManager::getDeck();
       $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
       $deck->moveAllCardsInLocation("combos", "captured", null, $pId);
@@ -858,7 +859,9 @@ class Tichu extends Table
         // If he is the first, record it
         $this->setGameStateValue("firstOutPlayer", $player_id);
         $firstOutPlayer = $player_id;
-      } elseif ($this->getGameStateValue("secondOutPlayer") == 0) {
+      }
+      NotificationManager::playerGoOut($player_id, $this->getActivePlayerName(), $firstOutPlayer);
+      if ($firstOutPlayer != $player_id && $this->getGameStateValue("secondOutPlayer") == 0) {
         // If he is the second, record it
         $this->setGameStateValue("secondOutPlayer", $player_id);
         $secondOutPlayerTeam = $players[$player_id]["team"];
@@ -868,16 +871,36 @@ class Tichu extends Table
           return;
         }
       }
-      NotificationManager::playerGoOut($player_id, $this->getActivePlayerName(), $firstOutPlayer);
     }
 
     // get number of players still in round
     $player_still_in_round = CardManager::numPlayersStillInRound();
+    if ($player_still_in_round == 1) {
+      if ($lastCombo->type == DOG_COMBO) {
+        $deck->moveAllCardsInLocation("combos", "captured", null, $lastComboPlayer);
+        $this->gamestate->nextState("endRound");
+      } elseif ($lastCombo->hasDragon()) {
+        $this->gamestate->changeActivePlayer($lastComboPlayer);
+        $this->giveExtraTime($lastComboPlayer);
+        $this->gamestate->nextState("chooseDragonGift");
+      } else {
+        $this->incStat(1, "tricks_win", $lastComboPlayer);
+        $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
+        $deck->moveAllCardsInLocation("combos", "captured", null, $lastComboPlayer);
+        NotificationManager::captureCards(
+          $lastComboPlayer,
+          $players[$lastComboPlayer]["name"],
+          $trickValue
+        );
+        $this->gamestate->nextState("endRound");
+      }
+      return;
+    }
 
     $next_players = PlayerManager::getNextPlayers($player_id); //next players (including those without cards)
     $handCounts = $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
     $next = null;
-    if ($lastCombo->type == DOG_COMBO && $player_still_in_round > 1) {
+    if ($lastCombo->type == DOG_COMBO) {
       // Dog transfers right to deal to partner so next player is skipped
       $next_players[] = array_shift($next_players);
       foreach ($next_players as $player) {
@@ -940,34 +963,16 @@ class Tichu extends Table
       $next = $pId;
       break;
     }
-    if ($player_still_in_round == 1 || $lastComboPlayer == $next) {
-      // trick is complete(either because the 3rd player finished or all players passed)
+    if ($lastComboPlayer == $next) {
+      // trick is complete because all other players passed
       $dragon = $lastCombo->hasDragon();
-      if ($player_still_in_round == 1) {
-        $this->incStat(1, "tricks_win", $lastComboPlayer);
-        if ($dragon) {
-          $this->gamestate->changeActivePlayer($lastComboPlayer);
-          $this->giveExtraTime($lastComboPlayer);
-          $this->gamestate->nextState("chooseDragonGift");
-        } else {
-          $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
-          $deck->moveAllCardsInLocation("combos", "captured", null, $lastComboPlayer);
-          NotificationManager::captureCards(
-            $lastComboPlayer,
-            $players[$lastComboPlayer]["name"],
-            $trickValue
-          );
-          $this->gamestate->nextState("endRound");
-        }
-      } else {
-        $this->gamestate->changeActivePlayer($lastComboPlayer);
-        $this->giveExtraTime($lastComboPlayer);
-        LogManager::insert($lastComboPlayer, "confirm", [
-          "nextPlayer" => $next,
-          "dragon" => $dragon,
-        ]);
-        $this->gamestate->nextState("confirmTrick");
-      }
+      $this->gamestate->changeActivePlayer($lastComboPlayer);
+      $this->giveExtraTime($lastComboPlayer);
+      LogManager::insert($lastComboPlayer, "confirm", [
+        "nextPlayer" => $next,
+        "dragon" => $dragon,
+      ]);
+      $this->gamestate->nextState("confirmTrick");
     } else {
       // Continue the current trick play
       // => go to next player with cards in hand

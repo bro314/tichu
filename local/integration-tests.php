@@ -707,9 +707,11 @@ function test_autopass_once_trick_and_cancel_plus_turn_based_smart_skip(): void
   assertSameVal('2', (string) \PlayerManager::getPlayer(P3)['pass'], 'AUTOPASS_TRICK (P3) stays 2 until trick ends');
 
   // Collecting the trick starts a new trick and resets all autopass flags to 0
+  $beforeTricksWinP0 = (float) $game->getStat('tricks_win', P0);
   callAction($game, P0, 'collect');
   assertSameVal('playComboOpen', $game->gamestate->state()['name']);
   assertSameVal('0', (string) \PlayerManager::getPlayer(P3)['pass'], 'stNewTrick must reset all autopass flags to 0');
+  assertSameVal($beforeTricksWinP0 + 1.0, (float) $game->getStat('tricks_win', P0), 'Collecting a normal trick via collect() must increment tricks_win by 1');
 
   // Part B: Turn-based smart skip (isAllInfoExposed = 1)
   // In isAllInfoExposed mode, stNextPlayer checks if the combined remaining cards across ALL hands
@@ -753,8 +755,20 @@ function test_double_victory_and_normal_round_scoring(): void
   \PlayerManager::tichuBet(P0, 100);
   \PlayerManager::grandTichuBet(P1, 200);
 
+  $beforeDvPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
   $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
   callAction($game, P2, 'playCombo', ['cards' => $lastCardId]);
+
+  $dvNotifs = $game->getNotificationsSince($beforeDvPacketId, P0, false);
+  $p2GoOutNotif = null;
+  foreach ($dvNotifs as $pkt) {
+    if (($pkt['data'][0]['type'] ?? '') === 'playerGoOut' && (int) ($pkt['data'][0]['args']['player_id'] ?? 0) === P2) {
+      $p2GoOutNotif = $pkt['data'][0]['args'];
+      break;
+    }
+  }
+  assertTrueVal($p2GoOutNotif !== null, 'Double Victory must still emit playerGoOut notification for the 2nd player out (partner P2)');
+  assertSameVal(P0, (int) ($p2GoOutNotif['firstout_id'] ?? 0), 'playerGoOut on Double Victory should reference firstOutPlayer P0');
 
   // Should score Double Victory (200) + Tichu (100) = 300 for Team 0, and -200 for Team 1, then start Round 2!
   $scores = \PlayerManager::getScores();
@@ -821,6 +835,76 @@ function test_double_victory_and_normal_round_scoring(): void
   assertSameVal(115, (int) $normalScores[P2], 'Team 0 partner should score 115 points');
   assertSameVal(-15, (int) $normalScores[P1], 'Team 1 should score -15 points (100 - 115)');
   assertSameVal(-15, (int) $normalScores[P3], 'Team 1 partner should score -15 points');
+
+  // Part C: 3rd player goes out with a Dragon combo ($player_still_in_round == 1) -> tricks_win increases by 1 (not 2)
+  \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);
+  \APP_DbObject::DbQuery("UPDATE card SET card_location = 'captured', card_location_arg = " . P0);
+  $dragonId = (string) \LocalTichuScenarios::getCardId(1, 1);
+  $p3RemainingId = (string) \LocalTichuScenarios::getCardId(1, 2);
+  \CardManager::getDeck()->moveCard($dragonId, 'hand', P2);
+  \CardManager::getDeck()->moveCard($p3RemainingId, 'hand', P3);
+  $game->setGameStateValue('firstOutPlayer', P0);
+  $game->setGameStateValue('secondOutPlayer', P1);
+  $game->setGameStateValue('doubleVictory', -1);
+  $game->gamestate->changeActivePlayer(P2);
+
+  $beforeP2TricksWin = (float) $game->getStat('tricks_win', P2);
+  callAction($game, P2, 'playCombo', ['cards' => $dragonId]);
+  assertSameVal('chooseDragonGift', $game->gamestate->state()['name'], '3rd player going out with Dragon should enter chooseDragonGift');
+  callAction($game, P2, 'chooseDragonGift', ['player' => 0]);
+  assertSameVal(
+    $beforeP2TricksWin + 1.0,
+    (float) $game->getStat('tricks_win', P2),
+    '3rd player going out with Dragon and gifting must increment tricks_win by 1, not 2'
+  );
+
+  // Part D: 3rd player goes out with a pair while 4th player has only 1 card (and autopass enabled) -> no spurious pass notification for 4th player
+  \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);
+  \APP_DbObject::DbQuery("UPDATE card SET card_location = 'captured', card_location_arg = " . P0);
+  $pairIds = \LocalTichuScenarios::getCardIds([[1, 6], [2, 6]]);
+  \CardManager::getDeck()->moveCards($pairIds, 'hand', P2);
+  \CardManager::getDeck()->moveCard($p3RemainingId, 'hand', P3);
+  \PlayerManager::setAutopass(2, P3);
+  $game->setGameStateValue('firstOutPlayer', P0);
+  $game->setGameStateValue('secondOutPlayer', P1);
+  $game->setGameStateValue('doubleVictory', -1);
+  $game->gamestate->changeActivePlayer(P2);
+
+  $beforePairPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  callAction($game, P2, 'playCombo', ['cards' => implode(';', $pairIds)]);
+  $pairNotifs = $game->getNotificationsSince($beforePairPacketId, P0, false);
+  $spuriousP3Pass = false;
+  foreach ($pairNotifs as $pkt) {
+    $notifType = $pkt['data'][0]['type'] ?? '';
+    if (($notifType === 'pass' || $notifType === 'passes') && (int) ($pkt['data'][0]['args']['player_id'] ?? 0) === P3) {
+      $spuriousP3Pass = true;
+    }
+  }
+  assertTrueVal(!$spuriousP3Pass, '4th player P3 must not emit a spurious pass notification when 3rd player P2 goes out');
+
+  // Part E: 3rd player goes out by playing the Dog as their last card ($player_still_in_round == 1) -> round ends immediately
+  \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);
+  \APP_DbObject::DbQuery("UPDATE card SET card_location = 'captured', card_location_arg = " . P0);
+  $dogCardId = (string) \LocalTichuScenarios::getCardId(3, 1);
+  \CardManager::getDeck()->moveCard($dogCardId, 'hand', P2);
+  \CardManager::getDeck()->moveCard($p3RemainingId, 'hand', P3);
+  $game->setGameStateValue('firstOutPlayer', P0);
+  $game->setGameStateValue('secondOutPlayer', P1);
+  $game->setGameStateValue('doubleVictory', -1);
+  $game->gamestate->changeActivePlayer(P2);
+
+  $beforeDogTricksWin = (float) $game->getStat('tricks_win', P2);
+  callAction($game, P2, 'playCombo', ['cards' => $dogCardId]);
+  assertSameVal(
+    'grandTichuBets',
+    $game->gamestate->state()['name'],
+    'When 3rd player plays Dog as their last card, the round must end immediately (transitioning to next round grandTichuBets)'
+  );
+  assertSameVal(
+    $beforeDogTricksWin,
+    (float) $game->getStat('tricks_win', P2),
+    'Playing Dog as last card must not increment tricks_win'
+  );
 }
 
 // ============================================================================
