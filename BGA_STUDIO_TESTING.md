@@ -17,6 +17,8 @@ All 10 test accounts on `https://studio.boardgamearena.com` share the password s
 | `dashwood4`..`dashwood9` | — | Additional test accounts |
 
 > **Important**: You only ever need to log in as **`dashwood0`**. BGA Studio allows `dashwood0` to view and act as any test player on the table via `&as=<player_id>`. You do **not** need multiple cookie jars or separate logins.
+>
+> **Note on Express Start Clock Timeout**: Express Start creates a **real-time** table with a short clock. If a test table is left idle with no active client connected, BGA will eventually auto-abandon it (*"All players (with a positive clock) choosed to abandon this game"*, ending in a `0–0` Tie). That is a Studio clock timeout, not a game bug — just Express Start a fresh table. For server-side SQL/request logs and PHP stack traces on a table, check `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>`.
 
 ---
 

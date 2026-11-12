@@ -19,7 +19,15 @@ When working on BGA game logic, client APIs, or platform conventions, consult th
 - **Statistics (`stats.inc.php`)**: https://en.doc.boardgamearena.com/Game_statistics:_stats.inc.php
 - **Post-Release & DB Migrations (`upgradeTableDb`)**: https://en.doc.boardgamearena.com/Post-release_phase
 - **Pre-Release Checklist**: https://en.doc.boardgamearena.com/Pre-release_checklist
+- **Tutorials Checklist**: https://en.doc.boardgamearena.com/Tutorials_checklist
 - **Tichu Bug Tracker on BGA**: https://boardgamearena.com/bugs?game=1237 (individual bug reports are at `https://boardgamearena.com/bug?id=<BUG_ID>`)
+
+### Authoritative API Stubs & External BGA Skill Reference
+- **Generated Stubs Beat the Wiki**: BGA ships generated [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS) on every Studio server and updates them ahead of the hand-written BGA Wiki. When the Wiki and the local stubs disagree, **trust the stubs** (and re-download `/tichu/_ide_helper.php` via SFTP if checking for newer platform APIs).
+- **Community BGA Agent Reference (`rbellec/claude-code-bga`)**:
+  - Repo: https://github.com/rbellec/claude-code-bga (fetch via `https://www.github.com/rbellec/claude-code-bga.git` if cloning locally).
+  - Contains concise reference guides under `skills/board-game-arena/references/` (`deck.md`, `stock.md`, `counter.md`, `notifications.md`, `translations.md`, `guidelines.md`, `debug-helpers.md`, `tutorial-ready.md`, `legacy-migration.md`) and platform root-cause explanations in `TECHNICAL_NOTES.md`.
+  - **Architecture Note**: That repo's `SKILL.md` defaults to the 2025+ BGA scaffold (`modules/php/States/*.php`, `modules/js/Game.js` ES6, `ItemManager`, `BgaCards`). **Tichu uses the classic BGA architecture** (`tichu.game.php`, `states.inc.php`, `tichu.action.php`, `Deck`, `ebg/stock`, Dojo `bgagame.tichu`), so only apply its classic-component references, platform pitfalls, or incremental migration patterns (`references/legacy-migration.md`) when relevant.
 
 ### How the BGA Architecture Works
 BGA games use an event-driven client-server architecture built on a finite state machine:
@@ -156,6 +164,22 @@ Instead of relying solely on global variables for complex trick history, `LogMan
    - Conversely, the Lit custom elements (`<tichu-status>` and `<tichu-replay>` in `src/elements/elements.ts`) must remain native ES6+ classes (`class extends LitElement`) for browser `customElements.define(...)` compatibility.
    - Therefore, `npm run bundle` first bundles `./dist/tichu.js` with `--target=es5` into `tichu.js`, and then bundles `./src/elements/elements.ts` directly via `esbuild` (preserving ES6 classes) and appends it to `tichu.js`.
 
+### BGA Platform Pitfalls & Best Practices (PHP, MySQL & Client)
+1. **PHP & Database (`dbmodel.sql`, `Table` DB Helpers, PHP 8.4)**:
+   - **Never put `--` comments in `dbmodel.sql`**: BGA Studio strips all newlines from `dbmodel.sql` before passing it as a single string to MySQL, so any `--` comment silently swallows the rest of the schema!
+   - **`getCollectionFromDb` vs. `getObjectListFromDB`**: `getCollectionFromDb($sql)` keys the returned associative array by the **first selected column**, silently overwriting duplicate keys. Always select a unique column first, or use `getObjectListFromDB($sql)` (`getObjectListFromDB($sql, true)` for a flat 1D array of values).
+   - **Never use `TRUNCATE` or `DROP` in runtime game logic**: They trigger an implicit MySQL commit and break BGA's automatic transaction rollback on exceptions.
+   - **PHP 8.4 Warnings Corrupt AJAX JSON**: Action endpoints return raw JSON; any PHP warning or deprecation notice prints ahead of the JSON and triggers `JSON_ERROR_SYNTAX` on the client. Always use `{$var}` (never `${var}`) in strings and `$this->` (never `self::`/`static::`) for non-static framework instance methods.
+   - **`getCurrentPlayerId()` Context Restrictions**: `getCurrentPlayerId()` reads the HTTP session and throws `"Not logged"` if called inside `setupNewGame()`, `zombieTurn()`, or `arg*()` state methods. Only call it inside player actions and `getAllDatas()`.
+   - **`Deck` Return Values**: `Deck::getCardsInLocation(...)` returns an associative map keyed by `card_id` (unless `$order_by` is set) with string-typed numeric fields; wrap in `array_values(...)` when sending to JS if array ordering matters, and cast numeric fields (`(int)`).
+2. **Client (`ebg/stock`), Dark Mode & Translations**:
+   - **`ebg/stock` Movement & Batch Updates**: When moving a card between two `Stock` instances, add to the destination stock **first** (`dest.addToStockWithId(type, id, src.getItemDivId(id))`) and remove from the source stock **second** (`src.removeFromStockById(id)`). For loop removals, pass `noupdate = true` and call `updateDisplay()` once afterward.
+   - **BGA Dark Mode (`html[data-theme="dark"]`)**: BGA toggles dark mode via the `html[data-theme="dark"]` attribute (not `@media (prefers-color-scheme: dark)`). Any custom UI container with a fixed light background must specify an explicit dark text `color`.
+   - **Translations (`clienttranslate` & `&dummyTranslations`)**:
+     - `clienttranslate()` is statically extracted — pass literal strings only (no variables or string concatenation inside `clienttranslate()`), and wrap all player-facing `UserException` messages in `clienttranslate()`.
+     - When a notification argument is used both for client logic/CSS and for log display, pass two separate keys (raw value + `clienttranslate()` label listed in `'i18n' => [...]`).
+     - Append `&dummyTranslations` to a Studio table URL to wrap all translated client `_()` strings in `«»` (any bare English text indicates a missing `_()` wrapper).
+
 ---
 
 ## 4. Building, Testing, and Deployment Workflow
@@ -240,6 +264,10 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      - **Express Start**: Always click **`Express start`** directly from `https://studio.boardgamearena.com/gamepanel?game=tichu` (never create a lobby table first and click Express Start inside the lobby table, as that causes `Duplicate entry '1' for key 'player.PRIMARY'`).
      - **Fast Player Switching**: Switch players by navigating directly to `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>` (or keeping 4 tabs open to those URLs) rather than hunting for the tiny `➔` arrow in the DOM.
      - **Avoid Overlapping Card Clicks**: Use `window.gameui.playerHand.unselectAll()` and `window.gameui.playerHand.selectItem(String(cardId))` (and `window.gameui.onGiveCard(slotIdx)` for passing 3 cards) via `page.evaluate(...)` instead of coordinate-clicking overlapping `.stockitem` divs.
+   - **Studio Debugging Helpers & Gotchas**:
+     - **Server SQL & Request Logs**: Navigate to `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>` to inspect full server-side request/SQL logs and PHP stack traces.
+     - **`debug_<name>()` Methods**: Any `public function debug_<name>()` defined on `Tichu` in `tichu.game.php` automatically gets a clickable button in the Studio debug panel (`#toggleDebugFunctionsPanel`, DOM ID `debug_<name>`) for setting up test states or dumping data. Guard with `if ($this->getBgaEnvironment() !== 'studio') return;` or remove before release.
+     - **Express Start Real-Time Clock Auto-Abandon**: Express Start creates a real-time table with a short clock. If all test players navigate away or stay disconnected long enough, BGA auto-abandons the table (*"All players (with a positive clock) choosed to abandon this game"*, resulting in a `0–0` Tie). This is a Studio clock timeout, not a scoring bug — simply start a new table.
    - **When to restart vs. refresh**:
      - Modifying `tichu.js`, `tichu.css`, `tichu.view.php`, or `tichu_tichu.tpl`: Refresh browser (`F5`).
      - Modifying `tichu.game.php`, `tichu.action.php`, or `modules/*.php`: Takes effect on the next AJAX action or page refresh (`F5`).
