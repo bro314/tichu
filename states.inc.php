@@ -179,6 +179,7 @@ $machinestates = [
       "playCombo" => ST_PLAY_COMBO,
       "cancel" => ST_PLAY_COMBO_OPEN,
       "mahjongPlayed" => ST_MAHJONG_PLAY,
+      "zombiePass" => ST_NEXT_PLAYER,
     ],
   ],
 

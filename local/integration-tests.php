@@ -992,6 +992,211 @@ function test_full_multi_round_game_to_completion(): void
 }
 
 // ============================================================================
+// Test 12: test_zombie_turns_across_all_states
+// ============================================================================
+function test_zombie_turns_across_all_states(): void
+{
+  $game = new \Tichu();
+
+  // 1. grandTichuBets (multipleactiveplayer)
+  $game->createNewGame([
+    'gameLength' => 1,
+    'playerTeams' => TEAM_1_3,
+    'turnBased' => 0,
+  ]);
+  callAction($game, P0, 'grandTichuBet', ['bet' => '0']);
+  callAction($game, P1, 'grandTichuBet', ['bet' => '0']);
+  callAction($game, P2, 'grandTichuBet', ['bet' => '0']);
+  assertSameVal('grandTichuBets', $game->gamestate->state()['name']);
+
+  // Set currentPlayerId to P0 (different from zombie P3)
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P3);
+
+  assertSameVal('0', (string) \PlayerManager::getPlayer(P3)['call_grand_tichu'], 'Zombie P3 should bet 0 in grandTichuBets');
+  assertSameVal('giveCards', $game->gamestate->state()['name'], 'After zombie P3 bets in grandTichuBets, game should transition to giveCards');
+  $deck = \CardManager::getDeck();
+  foreach ([P0, P1, P2, P3] as $pId) {
+    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in giveCards");
+  }
+
+  // 2. giveCards (multipleactiveplayer)
+  foreach ([P0, P1, P2] as $pId) {
+    $handCards = array_values($deck->getCardsInLocation('hand', $pId));
+    $passIds = [$handCards[0]['id'], $handCards[1]['id'], $handCards[2]['id']];
+    callAction($game, $pId, 'giveTheCards', ['cards' => implode(';', $passIds) . ';']);
+  }
+  assertSameVal('giveCards', $game->gamestate->state()['name']);
+
+  // Set currentPlayerId to P0 (different from zombie P3)
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P3);
+
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'After zombie P3 gives cards, game should transition to playComboOpen');
+  assertSameVal(0, $deck->countCardInLocation('temporary'), 'No cards should remain in temporary after giveCards');
+  foreach ([P0, P1, P2, P3] as $pId) {
+    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in playComboOpen");
+  }
+
+  // 3a. playComboOpen (activeplayer - normal open lead)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name']);
+  assertSameVal((string) P0, $game->getActivePlayerId());
+
+  $beforeOpenPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P0 playing in playComboOpen should transition to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'Turn should advance to P1');
+  assertSameVal(13, $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 13 cards left after open lead');
+  assertSameVal(1, $deck->countCardInLocation('combos'), '1 card should be in combos');
+
+  $openNotifs = $game->getNotificationsSince($beforeOpenPacketId, P0, false);
+  $playNotifArgs = null;
+  foreach ($openNotifs as $pkt) {
+    if (($pkt['data'][0]['type'] ?? '') === 'playCombo') {
+      $playNotifArgs = $pkt['data'][0]['args'];
+      break;
+    }
+  }
+  assertTrueVal($playNotifArgs !== null, 'Zombie playComboOpen should emit playCombo notification');
+  assertSameVal('dashwood0', $playNotifArgs['player_name'] ?? '', 'playCombo notification must use zombie player name, not currentPlayerId name');
+
+  // 3b. playComboOpen (activeplayer - when Mahjong wish is active and zombie holds the wished rank)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [2, 9], [3, 12]],
+    P1 => [[2, 3], [2, 4]],
+    P2 => [[3, 3], [3, 4]],
+    P3 => [[4, 3], [4, 4]],
+  ], 'captured_p0');
+  $game->setGameStateValue('mahjongWish', 9);
+  $game->gamestate->changeActivePlayer(P0);
+
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Zombie P0 in playComboOpen holding wished 9 must play it and grant the wish');
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId());
+
+  // 3c. playComboOpen (activeplayer - when zombie holds ONLY Phoenix)
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 1]], // Phoenix only
+    P1 => [[1, 5], [1, 6]],
+    P2 => [[2, 5], [2, 6]],
+    P3 => [[3, 5], [3, 6]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  $lastPlayedCombo = \LogManager::getLastCombo();
+  assertSameVal(SINGLE_COMBO, $lastPlayedCombo->type, 'Zombie holding only Phoenix should lead Single combo');
+  assertSameVal(1.5, (float) $lastPlayedCombo->phoenixValue, 'Phoenix lead should have phoenixValue 1.5');
+  assertSameVal(0, $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 0 cards in hand after leading only card');
+  assertSameVal((int) P0, (int) $game->getGameStateValue('firstOutPlayer'), 'P0 shedding all cards should be firstOutPlayer');
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Game should transition to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'Turn should advance to P1');
+
+  // 4. playCombo (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId());
+
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P1);
+
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P1 passing in playCombo should advance to P2 in playCombo');
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'Active player should now be P2');
+
+  // 5. mahjongPlay (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  assertSameVal('mahjongPlay', $game->gamestate->state()['name']);
+  assertSameVal((string) P0, $game->getActivePlayerId());
+
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Zombie P0 in mahjongPlay should make no wish (0)');
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P0 in mahjongPlay should transition to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'Active player after mahjongPlay zombieTurn should be P1');
+
+  // 6. phoenixPlay (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  $runIds = \LocalTichuScenarios::getCardIds([
+    [2, 1], // Phoenix
+    [1, 5],
+    [2, 6],
+    [3, 7],
+    [4, 8],
+  ]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $runIds)]);
+  assertSameVal('phoenixPlay', $game->gamestate->state()['name']);
+  assertSameVal((string) P0, $game->getActivePlayerId());
+
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P0 in phoenixPlay should resolve Phoenix and transition to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'Active player after phoenixPlay zombieTurn should be P1');
+  assertSameVal(9, (int) \LogManager::getLastCombo()->phoenixValue, 'Zombie P0 should choose first Phoenix option (9)');
+
+  // 7. playBomb (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'bomb_interrupt', P0);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId());
+  callAction($game, P2, 'playBomb', ['cards' => '']);
+  assertSameVal('playBomb', $game->gamestate->state()['name']);
+  assertSameVal((string) P2, $game->getActivePlayerId());
+
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P2);
+
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P2 in playBomb should cancel bomb interrupt and return to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'Original active player P1 should be restored after playBomb zombieTurn');
+
+  // 8. confirmTrick (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'bomb_interrupt', P0);
+  callAction($game, P1, 'pass', ['onlyOnce' => true]);
+  callAction($game, P2, 'pass', ['onlyOnce' => true]);
+  callAction($game, P3, 'pass', ['onlyOnce' => true]);
+  assertSameVal('confirmTrick', $game->gamestate->state()['name']);
+  assertSameVal((string) P0, $game->getActivePlayerId());
+
+  $beforeConfirmTricksWin = (float) $game->getStat('tricks_win', P0);
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Zombie P0 in confirmTrick should collect trick and start new trick');
+  assertSameVal((string) P0, $game->getActivePlayerId(), 'P0 should lead the new trick');
+  assertSameVal($beforeConfirmTricksWin + 1.0, (float) $game->getStat('tricks_win', P0), 'P0 tricks_win should increment by 1');
+
+  // 9. chooseDragonGift (activeplayer)
+  \LocalTichuScenarios::setupScenario($game, 'dragon_gift', P0);
+  callAction($game, P3, 'pass', ['onlyOnce' => true]);
+  assertSameVal('confirmTrick', $game->gamestate->state()['name']);
+  callAction($game, P0, 'collect');
+  assertSameVal('chooseDragonGift', $game->gamestate->state()['name']);
+  assertSameVal((string) P0, $game->getActivePlayerId());
+
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+
+  $afterDragonPayload = $game->getFullClientPayload(P0);
+  assertSameVal('playComboOpen', $afterDragonPayload['gamestate']['name'], 'Zombie P0 in chooseDragonGift should gift Dragon and start new trick');
+  assertSameVal((string) P0, $afterDragonPayload['gamestate']['active_player'], 'P0 should lead the next trick');
+  assertSameVal(35, (int) $afterDragonPayload['capturedpoints'][P1], 'Enemy 0 (P1) should receive the 35-point Dragon trick from zombie P0');
+}
+
+// ============================================================================
 // Runner Execution
 // ============================================================================
 $tests = [
@@ -1006,6 +1211,7 @@ $tests = [
   'test_autopass_once_trick_and_cancel_plus_turn_based_smart_skip',
   'test_double_victory_and_normal_round_scoring',
   'test_full_multi_round_game_to_completion',
+  'test_zombie_turns_across_all_states',
 ];
 
 echo "====================================================================\n";

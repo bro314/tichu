@@ -227,12 +227,12 @@ class Tichu extends Table
 
     if (count($cardsInHand) == 14 && $player["call_tichu"] == -1) {
       PlayerManager::tichuBet($playerId, 0);
-      NotificationManager::tichuBet($playerId, $this->getCurrentPlayerName(), 0);
+      NotificationManager::tichuBet($playerId, $player["name"], 0);
     }
 
     NotificationManager::playCombo(
       $playerId,
-      $this->getCurrentPlayerName(),
+      $player["name"],
       $combo,
       $notification_description
     );
@@ -249,9 +249,11 @@ class Tichu extends Table
     }
   }
 
-  function chooseDragonGift($playertogive)
+  function chooseDragonGift($playertogive, $checkAction = true)
   {
-    $this->checkAction("chooseDragonGift");
+    if ($checkAction) {
+      $this->checkAction("chooseDragonGift");
+    }
     $players = PlayerManager::getPlayers();
     $trickWinner = LogManager::getLastComboPlayer();
     $nextPlayers = PlayerManager::getNextPlayers($trickWinner);
@@ -297,11 +299,12 @@ class Tichu extends Table
     }
   }
 
-  function giveTheCards($card_ids)
+  function giveTheCards($card_ids, $player_id = null)
   {
-    $this->checkAction("giveCards");
-
-    $player_id = $this->getCurrentPlayerId();
+    if ($player_id === null) {
+      $this->checkAction("giveCards");
+      $player_id = $this->getCurrentPlayerId();
+    }
 
     if (count($card_ids) != 3) {
       throw new UserException(clienttranslate("You must give exactly 3 cards"));
@@ -314,7 +317,7 @@ class Tichu extends Table
     $this->checkCardsInHand($cards, $player_id);
 
     $player_to_give_cards = null;
-    $nextPlayers = PlayerManager::getNextPlayers(null, true);
+    $nextPlayers = PlayerManager::getNextPlayers($player_id, true);
     CardManager::setPassedCards($card_ids, $player_id);
     foreach ($card_ids as $idx => $cardId) {
       CardManager::getDeck()->moveCard($cardId, "temporary", $nextPlayers[$idx]["id"]);
@@ -354,9 +357,11 @@ class Tichu extends Table
     $this->gamestate->nextState("changePlayer");
   }
 
-  function choosePhoenix($phoenixValue)
+  function choosePhoenix($phoenixValue, $checkAction = true)
   {
-    $this->checkAction("phoenixPlay");
+    if ($checkAction) {
+      $this->checkAction("phoenixPlay");
+    }
     $pId = $this->getActivePlayerId();
     $combo = LogManager::getLastCombo(0, "phoenix");
     if (!in_array($phoenixValue, $combo->phoenixValue)) {
@@ -446,10 +451,12 @@ class Tichu extends Table
     $this->gamestate->nextState("changePlayer");
   }
 
-  function grandTichuBet($bet, $confirmed = false)
+  function grandTichuBet($bet, $confirmed = false, $player_id = null)
   {
-    $this->checkAction("grandTichuBet");
-    $player_id = $this->getCurrentPlayerId();
+    if ($player_id === null) {
+      $this->checkAction("grandTichuBet");
+      $player_id = $this->getCurrentPlayerId();
+    }
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_tichu"] != -1) {
       return;
@@ -598,9 +605,9 @@ class Tichu extends Table
   /**
    * This is called by a player action in the legacy "showPassedCards" state.
    */
-  function acceptCards()
+  function acceptCards($player_id = null)
   {
-    $player_id = $this->getCurrentPlayerId();
+    $player_id = $player_id ?? $this->getCurrentPlayerId();
     $this->acceptCardsForPlayer($player_id);
     $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
   }
@@ -619,9 +626,11 @@ class Tichu extends Table
     $deck->moveAllCardsInLocation("temporary", "hand", $player_id, $player_id);
   }
 
-  function makeAWish($wish)
+  function makeAWish($wish, $checkAction = true)
   {
-    $this->checkAction("makeAWish");
+    if ($checkAction) {
+      $this->checkAction("makeAWish");
+    }
 
     if ($wish == 15) {
       $msg = clienttranslate('${player_name} owns the Mahjong and has no wish');
@@ -641,20 +650,31 @@ class Tichu extends Table
     $this->gamestate->nextState("nextPlayer");
   }
 
-  function collect()
+  function collect($checkAction = true)
   {
-    $this->checkAction("collect");
+    if ($checkAction) {
+      $this->checkAction("collect");
+    }
     $action = LogManager::getLastAction("confirm");
+    if ($action === null) {
+      $this->gamestate->nextState("newTrick");
+      return;
+    }
     $pId = $action["player"];
     $action = $action["arg"];
-    if ($action["dragon"]) {
+    if (!empty($action["dragon"])) {
       $this->gamestate->nextState("chooseDragonGift");
     } else {
       $this->incStat(1, "tricks_win", $pId);
       $deck = CardManager::getDeck();
       $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
       $deck->moveAllCardsInLocation("combos", "captured", null, $pId);
-      NotificationManager::captureCards($pId, $this->getCurrentPlayerName(), $trickValue);
+      $player = PlayerManager::getPlayer($pId);
+      NotificationManager::captureCards(
+        $pId,
+        $player["name"] ?? $this->getActivePlayerName(),
+        $trickValue
+      );
       $this->gamestate->nextState("newTrick");
     }
   }
@@ -1178,21 +1198,81 @@ class Tichu extends Table
   function zombieTurn($state, $active_player)
   {
     $statename = $state["name"];
-    NotificationManager::log('${playerName} makes a zombie turn', [
-      "player_name" => $active_player["name"],
+    $player = PlayerManager::getPlayer($active_player);
+    $player_name = $player["name"] ?? $this->getActivePlayerName();
+    NotificationManager::log('${player_name} makes a zombie turn', [
+      "player_name" => $player_name,
     ]);
     if ($state["type"] === "activeplayer") {
       switch ($statename) {
         case "playComboOpen":
+          $cards = array_values(
+            CardManager::getDeck()->getCardsInLocation("hand", $active_player)
+          );
+          if (empty($cards)) {
+            $this->gamestate->nextState("zombiePass");
+            return;
+          }
+          $wish = (int) $this->getGameStateValue("mahjongWish");
+          $chosenCard = null;
+          if ($wish > 0) {
+            foreach ($cards as $card) {
+              if ((int) $card["type_arg"] === $wish) {
+                $chosenCard = $card;
+                break;
+              }
+            }
+          }
+          if ($chosenCard === null) {
+            foreach ($cards as $card) {
+              $isDog = (int) $card["type"] === TYPE_DOG && (int) $card["type_arg"] === 1;
+              $isMahjong = (int) $card["type"] === TYPE_MAHJONG && (int) $card["type_arg"] === 1;
+              if (!$isDog && !$isMahjong) {
+                $chosenCard = $card;
+                break;
+              }
+            }
+          }
+          if ($chosenCard === null) {
+            $chosenCard = $cards[0];
+          }
+          $combo = new Combo([$chosenCard]);
+          LogManager::playCombo($active_player, $combo);
+          $this->completePlayCombo($active_player, $combo);
+          return;
         case "playCombo":
-          $this->pass(false);
-          break;
-        case "mahjongWish":
-          $this->makeAWish(13);
-          break;
-        case "choiceDragonGift":
-          $this->chooseDragonGift(0);
-          break;
+          LogManager::insert($active_player, "pass");
+          NotificationManager::pass($active_player, $player_name);
+          $this->gamestate->nextState("zombiePass");
+          return;
+        case "mahjongPlay":
+          $this->makeAWish(15, false);
+          return;
+        case "phoenixPlay":
+          $combo = LogManager::getLastCombo(0, "phoenix");
+          if ($combo && is_array($combo->phoenixValue) && !empty($combo->phoenixValue)) {
+            $this->choosePhoenix($combo->phoenixValue[0], false);
+          } else {
+            $this->gamestate->nextState("zombiePass");
+          }
+          return;
+        case "playBomb":
+          $action = LogManager::getLastAction("changePlayer");
+          if ($action && isset($action["arg"]["active"], $action["arg"]["last"])) {
+            LogManager::insert($action["arg"]["active"], "changePlayer", [
+              "transition" => $action["arg"]["last"],
+            ]);
+            $this->gamestate->nextState("zombiePass");
+          } else {
+            $this->gamestate->nextState("zombiePass");
+          }
+          return;
+        case "confirmTrick":
+          $this->collect(false);
+          return;
+        case "chooseDragonGift":
+          $this->chooseDragonGift(0, false);
+          return;
       }
       $this->gamestate->nextState("zombiePass");
       return;
@@ -1203,16 +1283,20 @@ class Tichu extends Table
       // Make sure player is in a non blocking status for role turn
       switch ($statename) {
         case "grandTichuBets":
-          $this->grandTichuBet(0);
-          break;
+          if ($player["call_tichu"] == -1 && $player["call_grand_tichu"] < 0) {
+            $this->grandTichuBet(0, true, $active_player);
+          } else {
+            $this->gamestate->setPlayerNonMultiactive($active_player, "dealLastCards");
+          }
+          return;
 
         case "giveCards":
-          $this->zombiGiveCards();
-          break;
+          $this->zombiGiveCards($active_player);
+          return;
 
         case "showPassedCards":
-          $this->acceptCards();
-          break;
+          $this->acceptCards($active_player);
+          return;
 
         default:
           $this->DbQuery(
@@ -1229,14 +1313,18 @@ class Tichu extends Table
     throw new VisibleSystemException("Zombie mode not supported at this game state: " . $statename);
   }
 
-  function zombiGiveCards()
+  function zombiGiveCards($player_id = null)
   {
     //3 random cards are given
-    $player_idm = $this->getCurrentPlayerId();
-    $cards = CardManager::getDeck()->getCardsInLocation("hand", $player_idm);
-    shuffle($cards);
-    $card_ids = array_column(array_splice($cards, 0, 3), "id");
-    $this->giveTheCards($card_ids);
+    $player_idm = $player_id ?? $this->getCurrentPlayerId();
+    $cards = array_values(CardManager::getDeck()->getCardsInLocation("hand", $player_idm));
+    if (count($cards) >= 3) {
+      shuffle($cards);
+      $card_ids = array_column(array_splice($cards, 0, 3), "id");
+      $this->giveTheCards($card_ids, $player_idm);
+    } else {
+      $this->gamestate->setPlayerNonMultiactive($player_idm, "acceptPassedCards");
+    }
   }
 
   ///////////////////////////////////////////////////////////////////////////////////:
