@@ -70,6 +70,9 @@ export interface Card {
   // 1-14
   // 1 are special cards, 14 is ace, 11-13 are J,Q,K
   type_arg: string;
+  location?: string;
+  location_arg?: string;
+  passed_from?: string;
 }
 
 export enum Bet {

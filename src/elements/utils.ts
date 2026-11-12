@@ -39,10 +39,9 @@ export function playerIdFromChannel(channel: string): number {
 
 export function hasBomb(cards: Card[]) {
   // straight bombs
-  let highest = null;
   for (let color = 1; color <= 4; color++) {
     let values = cards
-      .filter((c) => Number(c.type) === color)
+      .filter((c) => Number(c.type) === color && Number(c.type_arg) > 1)
       .map((c) => Number(c.type_arg))
       .sort((a, b) => a - b);
     for (let idx = 0; idx < values.length - 4; idx++) {
@@ -58,7 +57,7 @@ export function hasBomb(cards: Card[]) {
   }
 
   // four bombs
-  for (let value = 2; value <= 13; value++) {
+  for (let value = 2; value <= 14; value++) {
     let cardsWithValue = cards.filter((c) => Number(c.type_arg) === value);
     if (cardsWithValue.length === 4) {
       return true;

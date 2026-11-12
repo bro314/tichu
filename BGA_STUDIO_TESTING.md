@@ -61,10 +61,23 @@ if ((await cancelBtn.count()) > 0 && (await cancelBtn.first().isVisible())) {
   await cancelBtn.first().click();
   await page.waitForTimeout(1000);
 }
-// Or if a running table shows "Express stop" on gamepanel, click it:
-const stopBtn0 = page.getByText("Express stop");
-if ((await stopBtn0.count()) > 0 && (await stopBtn0.first().isVisible())) {
-  await stopBtn0.first().click();
+// If a running table redirected gamepanel to ?game=tichu&table=<ID>, navigate to /table?table=<ID> and Express stop it:
+const existingTableId = new URL(page.url()).searchParams.get("table");
+if (existingTableId) {
+  await page.goto(`https://studio.boardgamearena.com/table?table=${existingTableId}`, {
+    waitUntil: "domcontentloaded",
+  });
+  const stopExisting = page.getByText("Express stop").first();
+  if ((await stopExisting.count()) > 0) {
+    await stopExisting.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
+    if (await stopExisting.isVisible()) {
+      await stopExisting.click();
+      await page.waitForTimeout(1500);
+    }
+  }
+  await page.goto("https://studio.boardgamearena.com/gamepanel?game=tichu", {
+    waitUntil: "domcontentloaded",
+  });
   await page.waitForTimeout(1000);
 }
 
@@ -73,13 +86,22 @@ const expressStartBtn = page.getByText("Express start").first();
 await expressStartBtn.waitFor({ state: "visible", timeout: 10000 });
 await expressStartBtn.click();
 
-// Wait for redirect to /tableview?table=<ID>
+// Wait for redirect to /tableview?table=<ID> and allow the game iframe origin to commit
 await page.waitForURL(/tableview\?table=/, { timeout: 20000 });
 const tableId = new URL(page.url()).searchParams.get("table");
+await page.waitForTimeout(2000);
 
 // 3. Run the fast smoke test inside the game iframe (~1.8s)
 const frame = page.frameLocator("iframe");
-await frame.locator("#tt_btn_smoke").waitFor({ state: "visible", timeout: 15000 });
+for (let i = 0; i < 5; i++) {
+  try {
+    await frame.locator("#tt_btn_smoke").waitFor({ state: "visible", timeout: 15000 });
+    break;
+  } catch (e) {
+    if (i === 4) throw e;
+    await page.waitForTimeout(1000);
+  }
+}
 await frame.locator("#tt_btn_smoke").click();
 await frame
   .locator('#tt_test_output[data-done="1"][data-status="pass"]')

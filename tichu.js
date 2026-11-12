@@ -1,12 +1,4 @@
 (function() {
-  // dist/util.js
-  function dojostyle(selector, attribute, value) {
-    dojo.query(selector).style(attribute, value);
-  }
-  function dojohtml(selector, html) {
-    dojo.query(selector).innerHTML(html);
-  }
-
   // dist/studio-test.js
   var __assign = function() {
     __assign = Object.assign || function(t) {
@@ -556,6 +548,99 @@
       } catch (_e) {
       }
     }
+    function querySingleDeepAll(selector, root) {
+      if (root === void 0) {
+        root = document;
+      }
+      var results = [];
+      if (root.querySelectorAll) {
+        results.push.apply(results, Array.from(root.querySelectorAll(selector)));
+      }
+      if (root.shadowRoot) {
+        results.push.apply(results, querySingleDeepAll(selector, root.shadowRoot));
+      }
+      var allElements = root.querySelectorAll ? root.querySelectorAll("*") : [];
+      for (var i = 0; i < allElements.length; i++) {
+        var node = allElements[i];
+        if (node && node.shadowRoot) {
+          results.push.apply(results, querySingleDeepAll(selector, node.shadowRoot));
+        }
+      }
+      return results;
+    }
+    function queryDeepAll(selector, root) {
+      if (root === void 0) {
+        root = document;
+      }
+      if (!selector)
+        return [];
+      var results = [];
+      var seen = /* @__PURE__ */ new Set();
+      var addUnique = function(items) {
+        for (var i = 0; i < items.length; i++) {
+          var el = items[i];
+          if (!seen.has(el)) {
+            seen.add(el);
+            results.push(el);
+          }
+        }
+      };
+      var parts = selector.split(",").map(function(s2) {
+        return s2.trim();
+      }).filter(Boolean);
+      for (var p = 0; p < parts.length; p++) {
+        var part = parts[p];
+        var direct = querySingleDeepAll(part, root);
+        if (direct.length > 0) {
+          addUnique(direct);
+          continue;
+        }
+        var segments = part.replace(/(\\[0-9a-fA-F]{1,6})\s/g, "$1\0").split(/\s+/).map(function(s2) {
+          return s2.replace(/\x00/g, " ");
+        }).filter(Boolean);
+        if (segments.length > 1) {
+          var currentRoots = [root];
+          for (var s = 0; s < segments.length; s++) {
+            var seg = segments[s];
+            var nextRoots = [];
+            var nextSeen = /* @__PURE__ */ new Set();
+            for (var r = 0; r < currentRoots.length; r++) {
+              var matches = querySingleDeepAll(seg, currentRoots[r]);
+              for (var m = 0; m < matches.length; m++) {
+                var matchEl = matches[m];
+                if (!nextSeen.has(matchEl)) {
+                  nextSeen.add(matchEl);
+                  nextRoots.push(matchEl);
+                }
+              }
+            }
+            currentRoots = nextRoots;
+            if (currentRoots.length === 0)
+              break;
+          }
+          addUnique(currentRoots);
+        }
+      }
+      return results;
+    }
+    function queryDeep(selector, root) {
+      if (root === void 0) {
+        root = document;
+      }
+      var all = queryDeepAll(selector, root);
+      return all[0] || null;
+    }
+    function getElementByIdDeep(id, root) {
+      if (root === void 0) {
+        root = document;
+      }
+      if (root.getElementById) {
+        var el = root.getElementById(id);
+        if (el)
+          return el;
+      }
+      return queryDeep("#".concat(CSS.escape(id)), root);
+    }
     var tt = {
       help: function() {
         var rows = [
@@ -684,9 +769,9 @@
         var players = sortedPlayers.map(function(p, idx) {
           var _a, _b, _c, _d;
           var pId = Number(p.id);
-          var hcEl = document.querySelector(".handcount.".concat(CSS.escape(String(pId))));
-          var ptEl = document.getElementById("pointcount_".concat(pId));
-          var scoreEl = document.getElementById("player_score_".concat(pId));
+          var hcEl = queryDeep(".handcount.".concat(CSS.escape(String(pId))));
+          var ptEl = getElementByIdDeep("pointcount_".concat(pId));
+          var scoreEl = getElementByIdDeep("player_score_".concat(pId));
           var activeIds = ui.bga && ui.bga.players && typeof ui.bga.players.getActivePlayerIds === "function" ? ui.bga.players.getActivePlayerIds().map(Number) : typeof ui.isPlayerActive === "function" && ui.isPlayerActive(pId) ? [pId] : [];
           return {
             seat: idx,
@@ -713,7 +798,7 @@
           };
         });
         var buttons = [];
-        var btnNodes = document.querySelectorAll("#generalactions .bgabutton, #buttons .bgabutton, #buttons .action-button");
+        var btnNodes = queryDeepAll("#generalactions .bgabutton, #buttons .bgabutton, #buttons .action-button");
         for (var i = 0; i < btnNodes.length; i++) {
           var node = btnNodes[i];
           if (!node || node.classList.contains("hide") || node.style.display === "none")
@@ -787,7 +872,7 @@
         if (!overall) {
           throw new Error("[ASSERT_UI FAILED] #overall-content element missing from DOM");
         }
-        var myHandItems = document.querySelectorAll("#myhand .stockitem:not(.to_be_destroyed)");
+        var myHandItems = queryDeepAll("#myhand .stockitem:not(.to_be_destroyed)");
         if (!ui.isSpectator && stateName !== "endRound" && stateName !== "newRound") {
           var stagedPassCount = Array.isArray(ui.cardsToPass) ? ui.cardsToPass.filter(Boolean).length : 0;
           var expectedHandDom = Math.max(0, (gd.hand || []).length - stagedPassCount);
@@ -795,13 +880,13 @@
             throw new Error("[ASSERT_UI FAILED] #myhand .stockitem count (".concat(myHandItems.length, ") !== expected hand size (").concat(expectedHandDom, ", gamedatas.hand=").concat((gd.hand || []).length, ", staged=").concat(stagedPassCount, ")"));
           }
         }
-        var statusEl = document.querySelector("#game_play_area_wrap tichu-status");
+        var statusEl = queryDeep("#game_play_area_wrap tichu-status") || queryDeep("tichu-status");
         if (!statusEl) {
           throw new Error("[ASSERT_UI FAILED] <tichu-status> element missing from DOM");
         }
-        var attrRound = Number(statusEl.getAttribute("roundCount"));
-        var attrTrick = Number(statusEl.getAttribute("trickCount"));
-        var attrPts = Number(statusEl.getAttribute("trickPoints"));
+        var attrRound = Number(statusEl.getAttribute("roundCount") || statusEl.roundCount);
+        var attrTrick = Number(statusEl.getAttribute("trickCount") || statusEl.trickCount);
+        var attrPts = Number(statusEl.getAttribute("trickPoints") || statusEl.trickPoints);
         if (attrRound !== Number(gd.round)) {
           throw new Error("[ASSERT_UI FAILED] <tichu-status> roundCount (".concat(attrRound, ") !== gamedatas.round (").concat(gd.round, ")"));
         }
@@ -814,7 +899,7 @@
         var players = getSortedPlayers();
         for (var i = 0; i < players.length; i++) {
           var pId = Number(players[i].id);
-          var hcNodes = document.querySelectorAll(".handcount.".concat(CSS.escape(String(pId))));
+          var hcNodes = queryDeepAll(".handcount.".concat(CSS.escape(String(pId))));
           if (hcNodes.length === 0) {
             throw new Error("[ASSERT_UI FAILED] Missing .handcount.".concat(pId, " elements in DOM"));
           }
@@ -1635,6 +1720,15 @@
   }
 
   // dist/tichu.js
+  var __spreadArray = function(to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+      if (ar || !(i in from)) {
+        if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+        ar[i] = from[i];
+      }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+  };
   var Bet;
   (function(Bet2) {
     Bet2["NO_BET_YET"] = "-1";
@@ -1642,382 +1736,382 @@
     Bet2["TICHU"] = "100";
     Bet2["GRAND_TICHU"] = "200";
   })(Bet || (Bet = {}));
-  var Pass;
-  (function(Pass2) {
-    Pass2["NO_BET"] = "0";
-  })(Pass || (Pass = {}));
-  var isDebug = window.location.host === "studio.boardgamearena.com";
-  var debug = isDebug ? console.log.bind(window.console) : function() {
-  };
-  function cardToStockType(card) {
-    return stockType(Number(card.type), Number(card.type_arg));
-  }
-  function stockType(color, value) {
-    return (Number(color) - 1) * 14 + (Number(value) - 1);
-  }
-  function addCardToStock(stock, card) {
-    stock === null || stock === void 0 ? void 0 : stock.addToStockWithId(cardToStockType(card), card.id);
-  }
-  function addItemToStock(stock, item) {
-    stock.addToStockWithId(item.type, String(item.id));
-  }
   var Tichu = (function() {
     function Tichu2() {
-      this.cardwidth = 100;
-      this.cardheight = 150;
-      this.cardChoiceWidth = 70;
-      this.cardChoiceHeight = 105;
-      this.cardsToPass = [];
-      this.tableCombos = {};
-      this.allLastCombos = {};
-      this.clockwise = false;
+      var _this = this;
       this.experimentalArchiveModeEnabled = false;
-      this.allowedValues = [];
+      this.allLastCombos = {};
+      this.stateName = "";
+      this.playerHand = {
+        getAllItems: function() {
+          var _a;
+          var hand = window.gameModel ? window.gameModel.getState().hand : ((_a = _this.gamedatas) === null || _a === void 0 ? void 0 : _a.hand) || [];
+          return hand.map(function(c) {
+            return {
+              id: Number(c.id),
+              type: (Number(c.type) - 1) * 14 + (Number(c.type_arg) - 1)
+            };
+          });
+        },
+        getSelectedItems: function() {
+          if (!window.gameModel)
+            return [];
+          var st = window.gameModel.getState();
+          var selectedSet = new Set(st.selectedCardIds.map(String));
+          return st.hand.filter(function(c) {
+            return selectedSet.has(String(c.id));
+          }).map(function(c) {
+            return {
+              id: Number(c.id),
+              type: (Number(c.type) - 1) * 14 + (Number(c.type_arg) - 1)
+            };
+          });
+        },
+        selectItem: function(id) {
+          if (!window.gameModel)
+            return;
+          var idStr = String(id);
+          var st = window.gameModel.getState();
+          if (st.stateName === "giveCards") {
+            window.gameModel.setSelectedCardIds([idStr]);
+          } else if (!st.selectedCardIds.includes(idStr)) {
+            window.gameModel.setSelectedCardIds(__spreadArray(__spreadArray([], st.selectedCardIds, true), [idStr], false));
+          }
+        },
+        unselectAll: function() {
+          var _a;
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.clearSelection();
+        },
+        removeAll: function() {
+          var _a;
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.clearSelection();
+        },
+        addToStockWithId: function(_type, _id) {
+        },
+        removeFromStockById: function(_id) {
+        },
+        count: function() {
+          var _a;
+          return window.gameModel ? window.gameModel.getState().hand.length : (((_a = _this.gamedatas) === null || _a === void 0 ? void 0 : _a.hand) || []).length;
+        }
+      };
+      this.mahjongValues = {
+        get items() {
+          return [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(function(v) {
+            return {
+              id: v,
+              type: v - 2
+            };
+          });
+        },
+        getSelectedItems: function() {
+          var _a, _b;
+          var val = (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().selectedMahjongWish) !== null && _b !== void 0 ? _b : null;
+          return val !== null ? [{ id: val, type: val - 2 }] : [];
+        },
+        selectItem: function(id) {
+          var _a;
+          var num = Number(id);
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedMahjongWish(Number.isNaN(num) ? null : num);
+        },
+        unselectAll: function() {
+          var _a;
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedMahjongWish(null);
+        }
+      };
+      this.phoenixValues = {
+        get items() {
+          var _a, _b;
+          var allowed = (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().phoenixAllowedValues) !== null && _b !== void 0 ? _b : [];
+          return allowed.map(function(v) {
+            return { id: v, type: v - 2 };
+          });
+        },
+        getSelectedItems: function() {
+          var _a, _b;
+          var val = (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().selectedPhoenixValue) !== null && _b !== void 0 ? _b : null;
+          return val !== null ? [{ id: val, type: val - 2 }] : [];
+        },
+        selectItem: function(id) {
+          var _a;
+          var num = Number(id);
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedPhoenixValue(Number.isNaN(num) ? null : num);
+        },
+        unselectAll: function() {
+          var _a;
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedPhoenixValue(null);
+        }
+      };
     }
-    Tichu2.prototype.rescale = function() {
-      var areaElement = document.getElementById("game_play_area");
-      var replayElement = document.getElementById("game_play_replay");
-      var gameElement = this.experimentalArchiveModeEnabled ? replayElement : areaElement;
-      var areaWrapElement = document.getElementById("game_play_area_wrap");
-      var widthAvailable = areaWrapElement.clientWidth;
-      var heightAvailable = document.documentElement.clientHeight - 120;
-      var widthMax = 1200;
-      var widthMin = this.experimentalArchiveModeEnabled ? 1e3 : 900;
-      var heightMin = this.experimentalArchiveModeEnabled ? 600 : 800;
-      var widthFactor = Math.max(widthAvailable / widthMin, 0.4);
-      var heightFactor = Math.max(heightAvailable / heightMin, 0.7);
-      var factor = Math.min(widthFactor, heightFactor, 1);
-      areaWrapElement.style.transform = "scale(".concat(factor, ")");
-      areaWrapElement.style.transformOrigin = factor === 1 ? "top center" : "top left";
-      gameElement.style.width = "".concat(Math.max(Math.min(widthAvailable / factor, widthMax), widthMin), "px");
+    Object.defineProperty(Tichu2.prototype, "allowedValues", {
+      get: function() {
+        var _a, _b;
+        return (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().phoenixAllowedValues) !== null && _b !== void 0 ? _b : [];
+      },
+      set: function(vals) {
+        var _a;
+        (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setPhoenixAllowedValues(Array.isArray(vals) ? vals.map(Number) : []);
+      },
+      enumerable: false,
+      configurable: true
+    });
+    Object.defineProperty(Tichu2.prototype, "clockwise", {
+      get: function() {
+        return window.gameModel ? window.gameModel.getState().clockwise : true;
+      },
+      set: function(val) {
+        var _a;
+        (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setClockwise(Boolean(val));
+      },
+      enumerable: false,
+      configurable: true
+    });
+    Object.defineProperty(Tichu2.prototype, "cardsToPass", {
+      get: function() {
+        var _a;
+        if (!window.gameModel)
+          return [];
+        var slots = window.gameModel.getState().passSlots;
+        var handIds = new Set((((_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.hand) || []).map(function(c) {
+          return Number(c.id);
+        }));
+        return slots.map(function(s) {
+          if (!s.givenCard)
+            return null;
+          var idNum = Number(s.givenCard.id);
+          return handIds.has(idNum) ? idNum : null;
+        });
+      },
+      set: function(_val) {
+      },
+      enumerable: false,
+      configurable: true
+    });
+    Tichu2.prototype.readPrefs = function() {
+      var theme = Number(this.getGameUserPreference(104));
+      if (Number.isNaN(theme)) {
+        var stored = localStorage.getItem("tichu_theme");
+        theme = stored !== null ? Number(stored) || 0 : 0;
+      }
+      return {
+        100: Number(this.getGameUserPreference(100)),
+        101: Number(this.getGameUserPreference(101)),
+        102: Number(this.getGameUserPreference(102)),
+        103: Number(this.getGameUserPreference(103)),
+        104: theme,
+        squareTable: this.getGameUserPreference(100) == 2,
+        clockwise: this.getGameUserPreference(101) != 1,
+        isTiki: this.getGameUserPreference(103) == 1,
+        theme: theme
+      };
+    };
+    Tichu2.prototype.initPreferencesObserver = function() {
+      var _this = this;
+      document.querySelectorAll(".preference_control").forEach(function(el) {
+        el.addEventListener("change", function(e) {
+          var _a;
+          var target = e.target;
+          var match = (_a = target === null || target === void 0 ? void 0 : target.id) === null || _a === void 0 ? void 0 : _a.match(/^preference_[cf]ontrol_(\d+)$/);
+          if (!target || !match)
+            return;
+          var pref = Number(match[1]);
+          var newValue = Number(target.value);
+          if (_this.prefs && _this.prefs[pref]) {
+            _this.prefs[pref].value = String(newValue);
+          }
+          _this.onPreferenceChange(pref, newValue);
+        });
+      });
+    };
+    Tichu2.prototype.onPreferenceChange = function(prefId, prefValue) {
+      var _a;
+      switch (Number(prefId)) {
+        case 100:
+          this.onLayoutChange(prefValue == 2);
+          break;
+        case 101:
+          this.onDirectionChange(prefValue != 1);
+          break;
+        case 103:
+          (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setTiki(prefValue == 1);
+          break;
+        case 104:
+          this.onThemeChange(Number(prefValue));
+          break;
+      }
+    };
+    Tichu2.prototype.rehydrateModel = function() {
+      var _a, _b, _c, _d, _e, _f;
+      var gamedatas = this.gamedatas;
+      if (!gamedatas)
+        return;
+      this.allLastCombos = gamedatas.allLastCombos || {};
+      this.stateName = ((_a = gamedatas.gamestate) === null || _a === void 0 ? void 0 : _a.name) || "";
+      this.active_player = (_b = gamedatas.gamestate) === null || _b === void 0 ? void 0 : _b.active_player;
+      var overall = document.getElementById("overall-content");
+      if (overall) {
+        overall.classList.toggle("spectatorMode", Boolean(this.isSpectator));
+        overall.classList.toggle("archiveMode", Boolean(window.g_archive_mode));
+      }
+      var playArea = document.getElementById("game_play_area");
+      if (playArea) {
+        playArea.classList.toggle("isAllInfoExposed", Number(gamedatas.isAllInfoExposed) === 1);
+        if (!playArea.querySelector("tichu-game")) {
+          var gameEl = document.createElement("tichu-game");
+          playArea.appendChild(gameEl);
+        }
+      }
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.hydrateFromGamedatas(gamedatas, this.player_id, this.isSpectator, this.bRealtime, this.readPrefs());
+      this.enableAllPlayerPanels();
+      var stName = ((_d = gamedatas.gamestate) === null || _d === void 0 ? void 0 : _d.name) || "";
+      for (var _i = 0, _g = Object.values(gamedatas.players || {}); _i < _g.length; _i++) {
+        var player = _g[_i];
+        var pId = Number(player.id);
+        var board = document.getElementById("player_board_".concat(pId));
+        if (board) {
+          board.querySelectorAll(".ha_board, tichu-player-panel").forEach(function(el) {
+            var _a2;
+            return (_a2 = el.parentNode) === null || _a2 === void 0 ? void 0 : _a2.removeChild(el);
+          });
+          var panel = document.createElement("tichu-player-panel");
+          panel.playerId = String(pId);
+          panel.setAttribute("player-id", String(pId));
+          board.appendChild(panel);
+        }
+        if (Number((_f = (_e = gamedatas.handcount) === null || _e === void 0 ? void 0 : _e[pId]) !== null && _f !== void 0 ? _f : 0) === 0 && stName !== "newRound" && stName !== "endRound") {
+          this.disablePlayerPanel(pId);
+        }
+      }
     };
     Tichu2.prototype.setup = function(gamedatas) {
       var _this = this;
-      var _a, _b, _c, _d, _e, _f, _g;
-      debug("SETUP", gamedatas);
-      new ResizeObserver(function() {
-        return requestAnimationFrame(function() {
-          return _this.rescale();
+      this.gamedatas = gamedatas;
+      this.rehydrateModel();
+      if (typeof ResizeObserver !== "undefined") {
+        var ro = new ResizeObserver(function() {
+          _this.rescale();
         });
-      }).observe(document.getElementById("game_play_area_wrap"));
-      window.addEventListener("resize", function() {
-        return requestAnimationFrame(function() {
-          return _this.rescale();
-        });
-      });
-      (_a = $("game_play_area")) === null || _a === void 0 ? void 0 : _a.classList.toggle("isAllInfoExposed", this.isAllInfoExposed());
-      var player_ids = new Array();
-      for (var player_id in gamedatas.players) {
-        player_ids.push(parseInt(player_id));
-        if (gamedatas.handcount[player_id] === void 0)
-          gamedatas.handcount[player_id] = 0;
+        var wrap = document.getElementById("game_play_area_wrap") || document.getElementById("game_play_area");
+        if (wrap)
+          ro.observe(wrap);
       }
-      this.setupGameBoards(gamedatas);
-      var playArea = document.getElementById("game_play_area_wrap");
-      this.statusEl = playArea.querySelector("tichu-status");
-      (_b = this.statusEl) === null || _b === void 0 ? void 0 : _b.addEventListener("show-current-trick", function() {
-        return _this.showCurrentTrick();
+      document.addEventListener("visibilitychange", function() {
+        var _a, _b, _c;
+        if (document.visibilityState === "visible" && ((_b = (_a = _this.gamedatas) === null || _a === void 0 ? void 0 : _a.gamestate) === null || _b === void 0 ? void 0 : _b.name) === "showPassedCards" && _this.isCurrentPlayerActive()) {
+          (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.setAcceptingCardsCountdown(true);
+          clearTimeout(_this.autoAcceptTimeout);
+          _this.autoAcceptTimeout = window.setTimeout(function() {
+            return _this.onAcceptCards();
+          }, 2e3);
+        }
       });
-      this.updateStatus();
-      this.addTooltipToClass("hand", _("Cards in hand"), "");
-      this.addTooltipToClass("star", _("Points captured"), "");
-      this.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
-      this.addTooltipToClass("tichublack", _("Tichu bet yet to be made"), "");
-      this.addTooltipToClass("grandtichucolor", _("Grand Tichu bet"), "");
-      this.addTooltipToClass("tichucolor", _("Tichu bet"), "");
-      this.addTooltipToClass("firstoutcolor", _("First player out"), "");
-      this.addTooltipToClass("cardback", _("has passed"), "");
-      (_c = document.getElementById("overall-content")) === null || _c === void 0 ? void 0 : _c.classList.toggle("tiki", this.getGameUserPreference(103) == 1);
-      (_d = document.getElementById("overall-content")) === null || _d === void 0 ? void 0 : _d.classList.toggle("archiveMode", !!g_archive_mode);
-      this.updateMahjongWish(gamedatas.mahjongWish);
-      if (gamedatas.firstoutplayer != 0) {
-        var firstout = $("firstoutcolor_" + gamedatas.firstoutplayer);
-        if (firstout)
-          dojo.style(firstout, "display", "inline-block");
-      }
-      this.setupPlayerHand();
-      this.mahjongValues = this.setupValueChoice("mahjong", 14);
-      this.phoenixValues = this.setupValueChoice("phoenixChoice", 13);
-      this.allLastCombos = gamedatas["allLastCombos"];
-      this.displayLastCombos(player_ids, gamedatas["passes"]);
-      Array.from((_f = (_e = $("playertables")) === null || _e === void 0 ? void 0 : _e.children) !== null && _f !== void 0 ? _f : []).forEach(function(el, i) {
-        dojo.connect(el.children[0], "onclick", dojo.hitch(_this, function() {
-          return _this.onGiveCard(i);
-        }));
-      });
+      this.initPreferencesObserver();
       this.setupNotifications();
-      if (this.getGameUserPreference(100) == 2) {
-        this.onReorderTable(true);
-      }
-      this.changeOrder(this.getGameUserPreference(101) != 1);
-      this.setTheme((_g = this.getGameUserPreference(104)) !== null && _g !== void 0 ? _g : 0);
-      this.updateCardsPlayed();
       initStudioTestHelper(this);
-      debug("Ending game setup");
-    };
-    Tichu2.prototype.isAllInfoExposed = function() {
-      return this.gamedatas.isAllInfoExposed == 1;
-    };
-    Tichu2.prototype.updateStatus = function() {
-      var _a, _b, _c, _d;
-      (_a = this.statusEl) === null || _a === void 0 ? void 0 : _a.setAttribute("roundCount", "".concat(this.gamedatas.round));
-      (_b = this.statusEl) === null || _b === void 0 ? void 0 : _b.setAttribute("trickCount", "".concat(this.gamedatas.trick));
-      (_c = this.statusEl) === null || _c === void 0 ? void 0 : _c.setAttribute("trickPoints", "".concat(this.gamedatas.currentTrickValue));
-      (_d = this.statusEl) === null || _d === void 0 ? void 0 : _d.setAttribute("trickSize", "".concat(this.gamedatas.currentTrick.length));
-    };
-    Tichu2.prototype.setupGameBoards = function(gamedatas) {
-      var _a, _b;
-      for (var _i = 0, _c = Object.values(gamedatas.players); _i < _c.length; _i++) {
-        var player = _c[_i];
-        var player_id = player.id;
-        var isCurrent = player_id === this.player_id;
-        dojo.place(this.format_block("jstpl_player_board", player), "player_board_" + player_id);
-        if (player.call_grand_tichu === Bet.GRAND_TICHU) {
-          dojostyle(".grandtichucolor." + player_id, "display", "inline-block");
-          dojostyle(".tichublack." + player_id, "display", "none");
-        }
-        if (player.call_grand_tichu === Bet.NO_BET_YET) {
-          dojostyle(".grandtichublack." + player_id, "display", "inline-block");
-        }
-        if (player.call_tichu === Bet.TICHU) {
-          dojostyle(".tichucolor." + player_id, "display", "inline-block");
-        }
-        if (player.call_tichu === Bet.NO_BET_YET) {
-          dojostyle(".tichublack." + player_id, "display", "inline-block");
-        }
-        dojo.query(".handcount." + player_id).innerHTML(gamedatas.handcount[player_id]);
-        if (gamedatas.handcount[player_id] === 0) {
-          this.disablePlayerPanel(player_id);
-          (_a = $("playertable_" + player_id)) === null || _a === void 0 ? void 0 : _a.classList.add("disabled");
-        }
-        if (player_id === Number(gamedatas.lastComboPlayer)) {
-          (_b = $("playertable_" + player_id)) === null || _b === void 0 ? void 0 : _b.classList.add("lastComboPlayer");
-        }
-        dojo.query(".pointcount." + player_id).innerHTML(gamedatas.capturedpoints[player_id]);
-      }
-      dojo.query(".playertabletext").forEach(function(e) {
-        var span = document.createElement("SPAN");
-        span.innerText = _("Select a card and click here");
-        e.appendChild(span);
-      });
-    };
-    Tichu2.prototype.setupPlayerHand = function() {
-      var _this = this;
-      this.playerHand = this.createStock($("myhand"), this.cardwidth, this.cardheight);
-      for (var _i = 0, _a = this.gamedatas.hand; _i < _a.length; _i++) {
-        var card = _a[_i];
-        addCardToStock(this.playerHand, card);
-      }
-      this.updateStockOverlap(this.playerHand);
-      var _loop_1 = function(themeNo2) {
-        dojo.connect($("theme".concat(themeNo2)), "onclick", dojo.hitch(this_1, function(e) {
-          return _this.setTheme(themeNo2);
-        }));
-      };
-      var this_1 = this;
-      for (var _b = 0, _c = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; _b < _c.length; _b++) {
-        var themeNo = _c[_b];
-        _loop_1(themeNo);
-      }
-      dojo.connect($("order_by_rank"), "onclick", dojo.hitch(this, function(e) {
-        return _this.onReorderByRank(e);
-      }));
-      dojo.connect($("order_by_color"), "onclick", dojo.hitch(this, function(e) {
-        return _this.onReorderByColor(e);
-      }));
-      dojo.connect($("list_table"), "onclick", dojo.hitch(this, function() {
-        return _this.onReorderTable(false);
-      }));
-      dojo.connect($("square_table"), "onclick", dojo.hitch(this, function() {
-        return _this.onReorderTable(true);
-      }));
-      dojo.connect($("clockwise"), "onclick", dojo.hitch(this, function() {
-        return _this.changeOrder(true);
-      }));
-      dojo.connect($("counterClockwise"), "onclick", dojo.hitch(this, function() {
-        return _this.changeOrder(false);
-      }));
-      if ($("expReplay")) {
-        dojo.connect($("expReplay"), "onclick", dojo.hitch(this, function() {
-          return _this.toggleExperimentalReplay(true);
-        }));
-      }
-      this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
-      this.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
-      this.addTooltipHtml("clockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
-      this.addTooltipHtml("counterClockwise", _("This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings"));
-    };
-    Tichu2.prototype.setTheme = function(themeNo) {
-      for (var _i = 0, _a = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; _i < _a.length; _i++) {
-        var n = _a[_i];
-        document.body.classList.remove("theme".concat(n));
-      }
-      document.body.classList.add("theme".concat(themeNo));
-    };
-    Tichu2.prototype.removeMyActionButtons = function() {
-      var _a, _b, _c, _d, _e;
-      (_a = document.getElementById("bomb_button")) === null || _a === void 0 ? void 0 : _a.replaceChildren();
-      (_b = document.getElementById("play_button")) === null || _b === void 0 ? void 0 : _b.replaceChildren();
-      (_c = document.getElementById("pass_button")) === null || _c === void 0 ? void 0 : _c.replaceChildren();
-      (_d = document.getElementById("pass_trick_button")) === null || _d === void 0 ? void 0 : _d.replaceChildren();
-      (_e = document.getElementById("tichu_button")) === null || _e === void 0 ? void 0 : _e.replaceChildren();
-      dojo.place(this.format_block("jstpl_my_hand", {}), "play_button", "only");
-    };
-    Tichu2.prototype.addMyActionButton = function(id, label, method, color, dest) {
-      var args = {
-        id: id,
-        label: label,
-        addclass: "bgabutton bgabutton_".concat(color)
-      };
-      dojo.place(this.format_block("jstpl_my_action_button", args), dest, "only");
-      dojo.connect($(id), "onclick", dojo.hitch(this, method));
-    };
-    Tichu2.prototype.createStock = function(element, cardWidth, cardHeight) {
-      var _this = this;
-      var stock = new ebg.stock();
-      stock.create(this, element, cardWidth, cardHeight);
-      stock.setSelectionAppearance("class");
-      stock.setOverlap(30, 0);
-      new ResizeObserver(function() {
-        return requestAnimationFrame(function() {
-          return _this.updateStockOverlap(stock);
-        });
-      }).observe(element);
-      stock.image_items_per_row = 14;
-      var cardImgFile = this.getGameUserPreference(103) == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
-      for (var color = 1; color <= 4; color++) {
-        for (var value = 1; value <= 14; value++) {
-          var type = stockType(color, value);
-          var weight = 2 * (4 * (value - 1) + (color - 1));
-          stock.addItemType(type, weight, g_gamethemeurl + cardImgFile, type);
-          stock.onItemCreate = dojo.hitch(this, "setupNewCard");
-        }
-      }
-      return stock;
-    };
-    Tichu2.prototype.updateStockOverlap = function(stock) {
-      if (!stock)
-        return;
-      var availableWidthForOverlapPerItem = (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) / (stock.items.length - 1);
-      var overlap = Math.floor((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width * 100);
-      if (overlap > 60)
-        overlap = 60;
-      if (overlap < 12)
-        overlap = 12;
-      stock.setOverlap(overlap, 0);
-    };
-    Tichu2.prototype.setupValueChoice = function(idName, count) {
-      var valueChoice = new ebg.stock();
-      valueChoice.create(this, $(idName), this.cardChoiceWidth, this.cardChoiceHeight);
-      valueChoice.setSelectionAppearance("class");
-      valueChoice.setSelectionMode(1);
-      valueChoice.image_items_per_row = 7;
-      for (var value = 0; value < count; value++) {
-        valueChoice.addItemType(value, value, g_gamethemeurl + "img/tichu-icons-table.png", value);
-        valueChoice.addToStockWithId(value, String(value + 2));
-      }
-      return valueChoice;
-    };
-    Tichu2.prototype.displayLastCombos = function(playerIds, passes) {
-      var _this = this;
-      if (this.allLastCombos === void 0)
-        return;
-      playerIds.forEach(function(playerId) {
-        var _a;
-        _this.resetComboStock(playerId);
-        var combo = _this.allLastCombos[playerId];
-        if (combo && ((_a = combo.cards) === null || _a === void 0 ? void 0 : _a.length) > 0) {
-          _this.addCardsToStock(_this.tableCombos[playerId], combo.cards);
-          _this.setDescription(playerId, combo.description);
-        } else if (passes.indexOf(playerId) >= 0) {
-          _this.setPass(playerId);
-        }
-      });
-    };
-    Tichu2.prototype.resetComboStock = function(playerId) {
-      if (playerId in this.tableCombos) {
-        this.tableCombos[playerId].removeAll();
-      } else {
-        this.tableCombos[playerId] = this.createStock($("lastcombo_" + playerId), this.cardwidth * 0.75, this.cardheight * 0.75);
-        this.tableCombos[playerId].extraClasses = "smallCards";
-        this.tableCombos[playerId].setSelectionMode(0);
-      }
-    };
-    Tichu2.prototype.setDescription = function(playerId, desc) {
-      var translatedDesc = _(desc);
-      this.addTooltipHtml("playertable_" + playerId, translatedDesc);
-    };
-    Tichu2.prototype.addCardsToStock = function(stock, cards, playerId) {
-      if (playerId === void 0) {
-        playerId = null;
-      }
-      var weights = {};
-      var i = 0;
-      var _loop_2 = function(card2) {
-        if (Number(playerId) === Number(this_2.player_id)) {
-          this_2.playerHand.removeFromStockById(String(card2.id));
-          this_2.gamedatas.hand = this_2.gamedatas.hand.filter(function(c) {
-            return String(c.id) !== String(card2.id);
-          });
-        }
-        addCardToStock(stock, card2);
-        weights[cardToStockType(card2)] = i++;
-      };
-      var this_2 = this;
-      for (var _i = 0, cards_1 = cards; _i < cards_1.length; _i++) {
-        var card = cards_1[_i];
-        _loop_2(card);
-      }
-      stock.changeItemsWeight(weights);
-      this.updateStockOverlap(this.playerHand);
-      this.updateStockOverlap(stock);
-    };
-    Tichu2.prototype.animateIcon = function(clazz, player_id) {
-      var block = this.format_block("jstpl_temp", {
-        clazz: clazz,
-        id: String(player_id)
-      });
-      var e = dojo.place(block, "game_play_area");
-      this.fadeOutAndDestroy(e, 1e3, 1e3);
     };
     Tichu2.prototype.onEnteringState = function(stateName, stateObject) {
-      debug("Entering state: " + stateName, stateObject);
-      this.active_player = stateObject.active_player;
+      var _a, _b;
       this.stateName = stateName;
+      this.active_player = stateObject === null || stateObject === void 0 ? void 0 : stateObject.active_player;
+      if (this.gamedatas && stateObject) {
+        this.gamedatas.gamestate = stateObject;
+      }
+      var overall = document.getElementById("overall-content");
+      if (overall && stateName) {
+        overall.classList.add("gamestate_".concat(stateName));
+      }
       if (stateName !== "confirmTrick") {
         clearTimeout(this.autoCollectTimeout);
       }
       if (stateName !== "showPassedCards") {
         clearTimeout(this.autoAcceptTimeout);
       }
-      var methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
-      var thisMethods = this;
-      if (thisMethods[methodName] !== void 0)
-        thisMethods[methodName](stateObject.args);
-    };
-    Tichu2.prototype.onEnteringStateNewRound = function(args) {
-      var _a;
-      dojohtml(".pointcount", "0");
-      dojostyle(".cardback", "display", "none");
-      this.resetLastCombos();
-      this.gamedatas.capturedCards = [];
-      this.gamedatas.hand = [];
-      (_a = this.playerHand) === null || _a === void 0 ? void 0 : _a.removeAll();
-      this.gamedatas.currentTrick = [];
-      this.gamedatas.currentTrickValue = 0;
-      this.gamedatas.firstoutplayer = 0;
-      this.gamedatas.round++;
-      this.gamedatas.trick = 0;
-      for (var id in this.gamedatas.players) {
-        this.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
-        this.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setGameState(stateName, {
+        activePlayerId: (_b = stateObject === null || stateObject === void 0 ? void 0 : stateObject.active_player) !== null && _b !== void 0 ? _b : this.getActivePlayerId(),
+        activePlayerIds: Array.isArray(stateObject === null || stateObject === void 0 ? void 0 : stateObject.multiactive) ? stateObject.multiactive : void 0,
+        isCurrentPlayerActive: this.isCurrentPlayerActive()
+      });
+      var args = stateObject === null || stateObject === void 0 ? void 0 : stateObject.args;
+      switch (stateName) {
+        case "newRound":
+          this.onEnteringStateNewRound(args);
+          break;
+        case "grandTichuBets":
+          this.onEnteringStateGrandTichuBets(args);
+          break;
+        case "giveCards":
+          this.onEnteringStateGiveCards(args);
+          break;
+        case "showPassedCards":
+          this.onEnteringStateShowPassedCards(args);
+          break;
+        case "acceptPassedCards":
+          this.onEnteringStateAcceptPassedCards(args);
+          break;
+        case "newTrick":
+          this.onEnteringStateNewTrick(args);
+          break;
+        case "playComboOpen":
+          this.onEnteringStatePlayComboOpen(args);
+          break;
+        case "playCombo":
+          this.onEnteringStatePlayCombo(args);
+          break;
+        case "mahjongPlay":
+          this.onEnteringStateMahjongPlay(args);
+          break;
+        case "phoenixPlay":
+          this.onEnteringStatePhoenixPlay(args);
+          break;
+        case "playBomb":
+          this.onEnteringStatePlayBomb(args);
+          break;
+        case "chooseDragonGift":
+          this.onEnteringStateChooseDragonGift(args);
+          break;
+        case "confirmTrick":
+          this.onEnteringStateConfirmTrick(args);
+          break;
+        case "endRound":
+          this.onEnteringStateEndRound(args);
+          break;
       }
-      dojo.query(".last-played-container").removeClass("disabled");
-      this.updateStatus();
-      this.updateMahjongWish(0);
     };
-    Tichu2.prototype.onEnteringStateGrandTichuBets = function(args) {
-      this.resetLastCombos();
+    Tichu2.prototype.onEnteringStateNewRound = function(_args) {
+      var _a;
+      this.enableAllPlayerPanels();
+      if (this.gamedatas) {
+        this.gamedatas.capturedCards = [];
+        this.gamedatas.hand = [];
+        this.gamedatas.currentTrick = [];
+        this.gamedatas.currentTrickValue = 0;
+        this.gamedatas.firstoutplayer = 0;
+        this.gamedatas.round++;
+        this.gamedatas.trick = 0;
+        this.gamedatas.mahjongWish = 0;
+        this.gamedatas.allLastCombos = {};
+        this.gamedatas.passes = [];
+        this.gamedatas.lastComboPlayer = "0";
+        this.gamedatas.lastComboDescription = "";
+        for (var id in this.gamedatas.players) {
+          this.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
+          this.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
+          this.gamedatas.players[id].pass = "0";
+          if (this.gamedatas.capturedpoints) {
+            this.gamedatas.capturedpoints[Number(id)] = 0;
+          }
+        }
+      }
+      this.allLastCombos = {};
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.enterNewRound();
+    };
+    Tichu2.prototype.onEnteringStateGrandTichuBets = function(_args) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.enterGrandTichuBets();
+    };
+    Tichu2.prototype.onEnteringStateGiveCards = function(_args) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.clearSelection();
     };
     Tichu2.prototype.onEnteringStateShowPassedCards = function(args) {
       this.showPassedCards(args);
@@ -2026,137 +2120,116 @@
       this.showPassedCards(args);
     };
     Tichu2.prototype.showPassedCards = function(args) {
-      var _this = this;
-      dojohtml(".handcount", "14");
-      if (args._private === void 0)
-        return;
-      args._private.forEach(function(card, i) {
-        var x = _this.cardwidth * (Number(card.type_arg) - 1);
-        var y = _this.cardheight * (Number(card.type) - 1);
-        dojo.place(_this.format_block("jstpl_cardontable", {
-          x: String(x),
-          y: String(y),
-          player_id: card.location_arg,
-          card_id: card.id
-        }), "receiveplayertable_" + card.passed_from);
-      });
-    };
-    Tichu2.prototype.onEnteringStateNewTrick = function(args) {
-      var _a;
-      this.resetLastCombos();
-      (_a = this.gamedatas.capturedCards).push.apply(_a, this.gamedatas.currentTrick);
-      this.gamedatas.currentTrick = [];
-      this.gamedatas.currentTrickValue = 0;
-      this.gamedatas.trick++;
-      this.updateStatus();
-    };
-    Tichu2.prototype.onEnteringStatePlayComboOpen = function(args) {
-      var _a;
-      dojo.query(".active").forEach(function(el) {
-        return el.classList.remove("active");
-      });
-      (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
-    };
-    Tichu2.prototype.onEnteringStateMahjongPlay = function(args) {
-      if (this.isCurrentPlayerActive()) {
-        dojostyle("#mahjongpanel", "display", "block");
-        this.mahjongValues.updateDisplay("");
+      var _a, _b, _c, _d, _e, _f;
+      if ((_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.handcount) {
+        for (var _i = 0, _g = Object.keys(this.gamedatas.players || {}); _i < _g.length; _i++) {
+          var pId = _g[_i];
+          this.gamedatas.handcount[Number(pId)] = 14;
+        }
       }
-      this.playerHand.unselectAll();
+      var rawReceived = (_b = args === null || args === void 0 ? void 0 : args._private) !== null && _b !== void 0 ? _b : (_e = (_d = (_c = this.gamedatas) === null || _c === void 0 ? void 0 : _c.gamestate) === null || _d === void 0 ? void 0 : _d.args) === null || _e === void 0 ? void 0 : _e._private;
+      var received = Array.isArray(rawReceived) ? rawReceived : void 0;
+      (_f = window.gameModel) === null || _f === void 0 ? void 0 : _f.enterShowPassedCards(received);
+    };
+    Tichu2.prototype.onEnteringStateNewTrick = function(_args) {
+      var _a;
+      if (this.gamedatas) {
+        this.gamedatas.capturedCards = __spreadArray(__spreadArray([], this.gamedatas.capturedCards || [], true), this.gamedatas.currentTrick || [], true);
+        this.gamedatas.currentTrick = [];
+        this.gamedatas.currentTrickValue = 0;
+        this.gamedatas.trick++;
+        this.gamedatas.allLastCombos = {};
+        this.gamedatas.passes = [];
+        this.gamedatas.lastComboPlayer = "0";
+        this.gamedatas.lastComboDescription = "";
+        for (var _i = 0, _b = Object.values(this.gamedatas.players || {}); _i < _b.length; _i++) {
+          var p = _b[_i];
+          p.pass = "0";
+        }
+      }
+      this.allLastCombos = {};
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.enterNewTrick();
+    };
+    Tichu2.prototype.onEnteringStatePlayComboOpen = function(_args) {
+    };
+    Tichu2.prototype.onEnteringStatePlayCombo = function(_args) {
+    };
+    Tichu2.prototype.onEnteringStateMahjongPlay = function(_args) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.enterMahjongPlay();
     };
     Tichu2.prototype.onEnteringStatePhoenixPlay = function(args) {
-      var _this = this;
-      if (this.isCurrentPlayerActive()) {
-        dojostyle("#phoenixpanel", "display", "block");
-        this.allowedValues = args._private.values;
-        this.phoenixValues.removeAll();
-        args._private.values.forEach(function(value) {
-          _this.phoenixValues.addToStock(value - 2);
-        });
-        this.phoenixValues.updateDisplay("");
-      }
-      this.playerHand.unselectAll();
-    };
-    Tichu2.prototype.onEnteringStatePlayCombo = function(args) {
-      var _a;
-      dojo.query(".active").forEach(function(el) {
-        return el.classList.remove("active");
-      });
-      (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+      var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+      var rawValues = (_m = (_h = (_c = (_b = (_a = args === null || args === void 0 ? void 0 : args._private) === null || _a === void 0 ? void 0 : _a.values) !== null && _b !== void 0 ? _b : args === null || args === void 0 ? void 0 : args.values) !== null && _c !== void 0 ? _c : (_g = (_f = (_e = (_d = this.gamedatas) === null || _d === void 0 ? void 0 : _d.gamestate) === null || _e === void 0 ? void 0 : _e.args) === null || _f === void 0 ? void 0 : _f._private) === null || _g === void 0 ? void 0 : _g.values) !== null && _h !== void 0 ? _h : (_l = (_k = (_j = this.gamedatas) === null || _j === void 0 ? void 0 : _j.gamestate) === null || _k === void 0 ? void 0 : _k.args) === null || _l === void 0 ? void 0 : _l.values) !== null && _m !== void 0 ? _m : [];
+      var values = Array.isArray(rawValues) ? rawValues.map(Number) : [];
+      (_o = window.gameModel) === null || _o === void 0 ? void 0 : _o.enterPhoenixPlay(values);
     };
     Tichu2.prototype.onEnteringStatePlayBomb = function(args) {
-      var _a;
-      (_a = document.getElementById("playertable_" + args.active)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
+      var _a, _b, _c;
+      var bombPlayerId = (_b = (_a = args === null || args === void 0 ? void 0 : args.active) !== null && _a !== void 0 ? _a : this.active_player) !== null && _b !== void 0 ? _b : this.getActivePlayerId();
+      if (bombPlayerId) {
+        (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.enterPlayBomb(bombPlayerId);
+      }
     };
     Tichu2.prototype.onEnteringStateChooseDragonGift = function(args) {
       var _this = this;
-      if (!this.isCurrentPlayerActive())
+      var _a, _b, _c, _d;
+      var enemies = (_a = args === null || args === void 0 ? void 0 : args.enemies) !== null && _a !== void 0 ? _a : (_d = (_c = (_b = this.gamedatas) === null || _b === void 0 ? void 0 : _b.gamestate) === null || _c === void 0 ? void 0 : _c.args) === null || _d === void 0 ? void 0 : _d.enemies;
+      if (!this.isCurrentPlayerActive() || !enemies)
         return;
       var left = this.clockwise ? 0 : 1;
       var right = this.clockwise ? 1 : 0;
-      this.addActionButton("giveDragonBefore_button", _("Give cards to " + args.enemies[left]), function() {
+      var leftLabel = typeof enemies[left] === "object" ? enemies[left].name : enemies[left];
+      var rightLabel = typeof enemies[right] === "object" ? enemies[right].name : enemies[right];
+      this.addActionButton("giveDragonBefore_button", _("Give cards to " + leftLabel), function() {
         return _this.onGiveDragon(left);
       });
-      this.addActionButton("giveDragonAfter_button", _("Give cards to " + args.enemies[right]), function() {
+      this.addActionButton("giveDragonAfter_button", _("Give cards to " + rightLabel), function() {
         return _this.onGiveDragon(right);
       });
     };
-    Tichu2.prototype.onEnteringStateEndRound = function(args) {
-      this.playerHand.removeAll();
-      this.enableAllPlayerPanels();
-      this.cleanPlayersPanel();
+    Tichu2.prototype.onEnteringStateConfirmTrick = function(_args) {
     };
-    Tichu2.prototype.onEnteringStateConfirmTrick = function(args) {
+    Tichu2.prototype.onEnteringStateEndRound = function(_args) {
       var _a;
-      dojo.query(".active").forEach(function(el) {
-        return el.classList.remove("active");
-      });
-      (_a = document.getElementById("playertable_" + this.active_player)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
-    };
-    Tichu2.prototype.onLeavingState = function(stateName) {
-      debug("Leaving state: " + stateName);
-      clearTimeout(this.autoCollectTimeout);
-      clearTimeout(this.autoAcceptTimeout);
-    };
-    Tichu2.prototype.updateCardsPlayed = function() {
-      var _a, _b, _c, _d, _e, _f;
-      if (!this.isAllInfoExposed())
-        return;
-      for (var color = 1; color <= 4; color++) {
-        for (var value = 1; value <= 14; value++) {
-          var id = "playedCard_".concat(color, "_").concat(value);
-          (_a = document.getElementById(id)) === null || _a === void 0 ? void 0 : _a.classList.remove("captured");
-          (_b = document.getElementById(id)) === null || _b === void 0 ? void 0 : _b.classList.remove("trick");
-          (_c = document.getElementById(id)) === null || _c === void 0 ? void 0 : _c.classList.remove("hand");
+      this.enableAllPlayerPanels();
+      if (this.gamedatas) {
+        this.gamedatas.hand = [];
+        this.gamedatas.allLastCombos = {};
+        for (var _i = 0, _b = Object.keys(this.gamedatas.players || {}); _i < _b.length; _i++) {
+          var pId = _b[_i];
+          var idNum = Number(pId);
+          if (this.gamedatas.handcount)
+            this.gamedatas.handcount[idNum] = 0;
+          if (this.gamedatas.capturedpoints)
+            this.gamedatas.capturedpoints[idNum] = 0;
         }
       }
-      var captured = this.gamedatas.capturedCards;
-      for (var _i = 0, captured_1 = captured; _i < captured_1.length; _i++) {
-        var card = captured_1[_i];
-        var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-        (_d = document.getElementById(id)) === null || _d === void 0 ? void 0 : _d.classList.add("captured");
-      }
-      var trick = this.gamedatas.currentTrick;
-      for (var _g = 0, trick_1 = trick; _g < trick_1.length; _g++) {
-        var card = trick_1[_g];
-        var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-        (_e = document.getElementById(id)) === null || _e === void 0 ? void 0 : _e.classList.add("trick");
-      }
-      var hand = this.gamedatas.hand;
-      for (var _h = 0, hand_1 = hand; _h < hand_1.length; _h++) {
-        var card = hand_1[_h];
-        var id = "playedCard_".concat(card.type, "_").concat(card.type_arg);
-        (_f = document.getElementById(id)) === null || _f === void 0 ? void 0 : _f.classList.add("hand");
+      this.allLastCombos = {};
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.enterEndRound();
+    };
+    Tichu2.prototype.onLeavingState = function(stateName) {
+      var _a, _b;
+      clearTimeout(this.autoAcceptTimeout);
+      clearTimeout(this.autoCollectTimeout);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setAcceptingCardsCountdown(false);
+      (_b = window.gameModel) === null || _b === void 0 ? void 0 : _b.setCollectingTrickCountdown(false);
+      var overall = document.getElementById("overall-content");
+      if (overall && stateName) {
+        overall.classList.remove("gamestate_".concat(stateName));
       }
     };
     Tichu2.prototype.onUpdateActionButtons = function(stateName, args) {
       var _this = this;
-      debug("onUpdateActionButtons: " + stateName);
-      document.getElementById("game_play_area").classList.toggle("isCurrentPlayerActive", this.isCurrentPlayerActive());
-      var player = this.gamedatas.players[this.player_id];
+      var _a, _b, _c, _d, _e, _f, _g;
+      this.stateName = stateName;
+      (_a = document.getElementById("game_play_area")) === null || _a === void 0 ? void 0 : _a.classList.toggle("isCurrentPlayerActive", this.isCurrentPlayerActive());
       this.removeActionButtons();
-      this.removeMyActionButtons();
-      this.updateCardsPlayed();
+      (_b = window.gameModel) === null || _b === void 0 ? void 0 : _b.setGameState(stateName, {
+        activePlayerId: this.getActivePlayerId(),
+        activePlayerIds: Array.isArray((_d = (_c = this.gamedatas) === null || _c === void 0 ? void 0 : _c.gamestate) === null || _d === void 0 ? void 0 : _d.multiactive) ? this.gamedatas.gamestate.multiactive : void 0,
+        isCurrentPlayerActive: this.isCurrentPlayerActive()
+      });
       if (this.isCurrentPlayerActive()) {
         switch (stateName) {
           case "giveCards":
@@ -2166,9 +2239,8 @@
           case "showPassedCards":
             clearTimeout(this.autoAcceptTimeout);
             if (document.visibilityState === "visible") {
-              dojo.place(this.format_block("jstpl_auto_accept", {}), "play_button", "only");
-              clearTimeout(this.autoAcceptTimeout);
-              this.autoAcceptTimeout = setTimeout(function() {
+              (_e = window.gameModel) === null || _e === void 0 ? void 0 : _e.setAcceptingCardsCountdown(true);
+              this.autoAcceptTimeout = window.setTimeout(function() {
                 return _this.onAcceptCards();
               }, 2e3);
             }
@@ -2181,72 +2253,23 @@
             this.addActionButton("choosePhoenix", _("Choose a value for the Phoenix"), "onChoosePhoenix");
             this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
             break;
-          case "playComboOpen":
-            this.addMyActionButton("myPlayCombo", _("Play selected cards"), function() {
-              return _this.playCombo("playCombo");
-            }, "blue", "play_button");
-            break;
-          case "playCombo":
-            this.addMyActionButton("myPlayCombo", _("Play selected cards"), function() {
-              return _this.playCombo("playCombo");
-            }, "blue", "play_button");
-            this.addMyActionButton("myPass", _("Pass"), function() {
-              return _this.onPass(true);
-            }, "red", "pass_button");
-            this.addMyActionButton("myPassTrick", _("Auto-Pass this Trick"), function() {
-              return _this.onPass(false);
-            }, "gray", "pass_trick_button");
-            this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
-            break;
-          case "playBomb":
-            this.addMyActionButton("myPlayCombo", _("Play selected cards"), function() {
-              return _this.playCombo("playCombo");
-            }, "blue", "play_button");
-            this.addMyActionButton("myCancel", _("Cancel"), function() {
-              return _this.takeAction("cancel");
-            }, "red", "pass_button");
+          case "chooseDragonGift":
+            this.onEnteringStateChooseDragonGift(args);
             break;
           case "confirmTrick":
+            clearTimeout(this.autoCollectTimeout);
             if (this.bRealtime) {
-              dojo.place(this.format_block("jstpl_auto_collect", {}), "play_button", "only");
-              clearTimeout(this.autoCollectTimeout);
-              this.autoCollectTimeout = setTimeout(function() {
+              (_f = window.gameModel) === null || _f === void 0 ? void 0 : _f.setCollectingTrickCountdown(true);
+              this.autoCollectTimeout = window.setTimeout(function() {
                 return _this.collect();
               }, 2e3);
-            } else {
-              this.addMyActionButton("myConfirmTrick", _("Collect"), function() {
-                return _this.collect();
-              }, "blue", "play_button");
             }
-            this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function() {
-              return _this.playCombo("playBomb");
-            }, "gray", "bomb_button");
+            break;
         }
-      } else if (!this.isSpectator && (stateName === "playCombo" || stateName === "confirmTrick") && this.playerHand.getAllItems().length > 0) {
-        if (Number(player.pass) < 2) {
-          this.addMyActionButton("myPassTrick", _("Auto-Pass this Trick"), function() {
-            return _this.onPass(false);
-          }, "gray", "pass_trick_button");
-          this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
-        }
-        if (Number(player.pass) === 0) {
-          this.addMyActionButton("myPassOnce", _("Auto-Pass once"), function() {
-            return _this.onPass(true);
-          }, "red", "pass_button");
-          this.addTooltip("myPassOnce", _("Automatically pass next time(unless a new trick starts)"), "");
-        }
-        if (Number(player.pass) > 0) {
-          this.addMyActionButton("myCancelAutopass", _("Cancel Auto-Pass"), function() {
-            return _this.cancelAutopass();
-          }, "red", "pass_button");
-          this.addTooltip("myCancelAutopass", _("You have chosen to automatically pass during this trick. Click to cancel"), "");
-        }
-        this.addMyActionButton("myPlayBomb", _("Play a Bomb"), function() {
-          return _this.playCombo("playBomb");
-        }, "gray", "bomb_button");
       }
-      if (!this.isSpectator) {
-        if (player.call_grand_tichu === Bet.NO_BET_YET) {
+      if (!this.isSpectator && ((_g = this.gamedatas) === null || _g === void 0 ? void 0 : _g.players)) {
+        var player = this.gamedatas.players[this.player_id];
+        if (player && String(player.call_grand_tichu) === Bet.NO_BET_YET) {
           this.addActionButton("noBet", _("No bet"), function() {
             return _this.onGrandTichuBet(Bet.NO_BET);
           }, void 0, false, "gray");
@@ -2256,279 +2279,245 @@
           }, void 0, false, "red");
           this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
         }
-        if (player.call_tichu === Bet.NO_BET_YET && this.gamedatas.firstoutplayer == 0) {
-          this.addMyActionButton("myMakeTichuBet", _("Tichu"), function() {
-            return _this.onTichuBet();
-          }, "green", "tichu_button");
-          this.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
-        }
-      }
-      this.updateStatus();
-    };
-    Tichu2.prototype.resetLastCombos = function() {
-      for (var _i = 0, _a = Object.entries(this.tableCombos); _i < _a.length; _i++) {
-        var _b = _a[_i], key = _b[0], comboStock = _b[1];
-        comboStock.removeAll();
-        $("lastcombo_" + key).innerHTML = "";
-        this.addTooltip("playertable_" + key, "", "");
-      }
-      dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
-    };
-    Tichu2.prototype.cleanPlayersPanel = function() {
-      dojohtml(".handcount", "0");
-      dojohtml(".pointcount", "0");
-      dojostyle(".grandtichublack", "display", "inline-block");
-      dojostyle(".tichublack", "display", "inline-block");
-      dojostyle(".grandtichucolor", "display", "none");
-      dojostyle(".tichucolor", "display", "none");
-      dojostyle(".firstoutcolor", "display", "none");
-      dojostyle(".cardback", "display", "none");
-    };
-    Tichu2.prototype.getCardValueByTypeID = function(cardTypeID) {
-      return cardTypeID % 14 + 1;
-    };
-    Tichu2.prototype.getCardColorByTypeID = function(cardTypeID) {
-      return Math.floor(cardTypeID / 14) + 1;
-    };
-    Tichu2.prototype.setPass = function(playerId) {
-      var cardImgFile = this.getGameUserPreference(103) == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
-      var img = g_gamethemeurl + cardImgFile;
-      $("lastcombo_" + playerId).innerHTML = "<span class = 'pass'> <img src='" + img + "' width='75px' height='112.5px' alt='pass'> </span>";
-      $("cardback_" + playerId).style.display = "inline-block";
-      this.setDescription(playerId, "Pass");
-    };
-    Tichu2.prototype.setupNewCard = function(card_div, card_type_id, card_id) {
-      if (this.getCardValueByTypeID(card_type_id) === 10 || this.getCardValueByTypeID(card_type_id) === 13)
-        this.addTooltip(card_div.id, _("Scores 10 points"), "");
-      if (this.getCardValueByTypeID(card_type_id) === 5)
-        this.addTooltip(card_div.id, _("Scores 5 points"), "");
-      if (card_type_id === 0)
-        this.addTooltip(card_div.id, _("Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."), "");
-      if (card_type_id === 14)
-        this.addTooltip(card_div.id, _("Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5."), "");
-      if (card_type_id === 28)
-        this.addTooltip(card_div.id, _("The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead."), "");
-      if (card_type_id === 42)
-        this.addTooltip(card_div.id, _("The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible."), "");
-    };
-    Tichu2.prototype.cancelPhoenix = function() {
-      dojo.style($("phoenixpanel"), "display", "none");
-      this.takeAction("cancelPhoenix", {});
-    };
-    Tichu2.prototype.showCurrentTrick = function() {
-      var myDlg = new ebg.popindialog();
-      myDlg.create("myDialogCurrentTrick");
-      myDlg.setTitle(_("Cards in current Trick"));
-      myDlg.setContent('<div id="currentTrickCards"></div>');
-      myDlg.show();
-      var stock = this.createStock($("currentTrickCards"), this.cardwidth * 0.75, this.cardheight * 0.75);
-      stock.extraClasses = "smallCards";
-      stock.setSelectionMode(0);
-      for (var _i = 0, _a = this.gamedatas.currentTrick; _i < _a.length; _i++) {
-        var card = _a[_i];
-        addCardToStock(stock, card);
       }
     };
-    Tichu2.prototype.onGrandTichuBet = function(bet) {
-      debug("onGrandTichuBet");
-      if (!this.checkAction("grandTichuBet"))
-        return;
-      this.takeAction("grandTichuBet", { bet: bet });
-      this.removeActionButtons();
+    Tichu2.prototype.onThemeChange = function(themeNumber) {
+      var _a;
+      localStorage.setItem("tichu_theme", String(themeNumber));
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setTheme(Number(themeNumber));
     };
-    Tichu2.prototype.onTichuBet = function() {
-      debug("onTichuBet");
-      this.takeAction("tichuBet", { bet: Bet.TICHU });
-      this.removeActionButtons();
+    Tichu2.prototype.setTheme = function(themeNumber) {
+      this.onThemeChange(themeNumber);
     };
-    Tichu2.prototype.onGiveCard = function(i) {
-      debug("onGiveCard", i);
-      if (this.stateName !== "giveCards")
-        return;
-      if (!this.isCurrentPlayerActive())
-        return;
-      var items = this.playerHand.getSelectedItems();
-      var player_id = this.player_id;
-      var stockItem = this.cardsToPass[i];
-      if (!stockItem) {
-        if (items.length != 1)
-          return;
-        var card = items[0];
-        this.cardsToPass[i] = card;
-        var value = this.getCardValueByTypeID(card.type);
-        var color = this.getCardColorByTypeID(card.type);
-        var x = this.cardwidth * (value - 1);
-        var y = this.cardheight * (color - 1);
-        var direction = i + 1;
-        dojo.place(this.format_block("jstpl_cardontable", {
-          x: String(x),
-          y: String(y),
-          player_id: String(player_id),
-          card_id: String(card.id)
-        }), "giveplayertable_" + direction);
-        if ($("myhand_item_" + card.id)) {
-          this.playerHand.removeFromStockById(String(card.id));
-        } else {
-          debug("Failed to remove card from hand");
-        }
-      } else {
-        $("cardontable_" + player_id + "_" + stockItem.id).remove();
-        addItemToStock(this.playerHand, stockItem);
-        this.cardsToPass[i] = void 0;
-      }
-      this.updateStockOverlap(this.playerHand);
-    };
-    Tichu2.prototype.onPassCards = function() {
-      debug("onPassCards");
-      if (!this.checkAction("giveCards"))
-        return;
-      var items = this.cardsToPass;
-      for (var i = 0; i < 3; i++) {
-        if (!items[i]) {
-          this.showMessage(_("You must select exactly 3 cards"), "error");
-          return;
-        }
-      }
-      var to_give = "";
-      for (var i in items) {
-        dojo.destroy("cardontable_" + this.player_id + "_" + items[i].id);
-        to_give += items[i].id + ";";
-      }
-      this.cardsToPass = [];
-      this.takeAction("giveTheCards", { cards: to_give });
-    };
-    Tichu2.prototype.onAcceptCards = function() {
-      debug("onAcceptCards");
-      clearTimeout(this.autoAcceptTimeout);
-      if (this.stateName !== "showPassedCards")
-        return;
-      this.takeAction("acceptCards");
-    };
-    Tichu2.prototype.onMakeAWish = function(evt) {
-      debug("onMakeAWish");
-      if (!this.checkAction("makeAWish"))
-        return;
-      var items = this.mahjongValues.getSelectedItems();
-      if (items.length > 0) {
-        evt.preventDefault();
-        this.takeAction("makeAWish", { wish: items[0].id });
-      }
-    };
-    Tichu2.prototype.onChoosePhoenix = function(evt) {
-      debug("onChoosePhoenix");
-      if (!this.checkAction("phoenixPlay"))
-        return;
-      var items = this.phoenixValues.getSelectedItems();
-      if (items.length === 1) {
-        if (this.allowedValues.indexOf(items[0].type + 2) < 0)
-          return;
-        dojostyle("#phoenixpanel", "display", "none");
-        evt.preventDefault();
-        this.takeAction("choosePhoenix", { phoenixValue: items[0].type + 2 });
-      }
+    Tichu2.prototype.onOrderChange = function(order) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setHandSortOrder(order);
     };
     Tichu2.prototype.onReorderByRank = function(evt) {
-      debug("onReorderByRank");
-      evt.preventDefault();
-      var newWeights = {};
-      for (var color = 1; color <= 4; color++) {
-        for (var value = 1; value <= 14; value++) {
-          var type = stockType(color, value);
-          newWeights[type] = 2 * (4 * (value - 1) + color - 1);
-        }
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
       }
-      this.playerHand.changeItemsWeight(newWeights);
-      dojo.style("order_by_rank", "display", "none");
-      dojo.style("order_by_color", "display", "inline");
+      this.onOrderChange("rank");
+    };
+    Tichu2.prototype.onReorderByColor = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      this.onOrderChange("color");
+    };
+    Tichu2.prototype.onLayoutChange = function(square) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSquareTable(Boolean(square));
     };
     Tichu2.prototype.onReorderTable = function(square) {
-      debug("onReorderTable");
-      if (square) {
-        $("game_play_area").classList.add("squareTable");
-        dojo.style("square_table", "display", "none");
-        dojo.style("list_table", "display", "inline");
-      } else {
-        $("game_play_area").classList.remove("squareTable");
-        dojo.style("square_table", "display", "inline");
-        dojo.style("list_table", "display", "none");
-      }
+      this.onLayoutChange(square);
     };
-    Tichu2.prototype.toggleExperimentalReplay = function(enabled) {
-      var _this = this;
+    Tichu2.prototype.onDirectionChange = function(clockwise) {
       var _a;
-      this.experimentalArchiveModeEnabled = enabled;
-      (_a = document.getElementById("overall-content")) === null || _a === void 0 ? void 0 : _a.classList.toggle("experimentalArchiveMode", enabled);
-      var playArea = document.getElementById("game_play_area_wrap");
-      var replayEl = playArea === null || playArea === void 0 ? void 0 : playArea.querySelector("tichu-replay#game_play_replay");
-      if (!replayEl) {
-        replayEl = document.createElement("tichu-replay");
-        replayEl.id = "game_play_replay";
-        playArea.insertBefore(replayEl, playArea.firstChild);
-        replayEl.addEventListener("exit", function() {
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setClockwise(Boolean(clockwise));
+    };
+    Tichu2.prototype.changeOrder = function(clockwise) {
+      this.onDirectionChange(clockwise);
+    };
+    Tichu2.prototype.toggleExperimentalReplay = function(enable) {
+      var _this = this;
+      var _a, _b;
+      this.experimentalArchiveModeEnabled = enable !== null && enable !== void 0 ? enable : !this.experimentalArchiveModeEnabled;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setExperimentalReplayOpen(false);
+      var overall = document.getElementById("overall-content");
+      if (overall) {
+        overall.classList.toggle("experimentalArchiveMode", this.experimentalArchiveModeEnabled);
+      }
+      if (this.experimentalArchiveModeEnabled && !document.getElementById("game_play_replay")) {
+        var replay = document.createElement("tichu-replay");
+        replay.setAttribute("id", "game_play_replay");
+        replay.addEventListener("exit", function() {
           return _this.toggleExperimentalReplay(false);
         });
+        var wrap = document.getElementById("game_play_area_wrap") || ((_b = document.getElementById("game_play_area")) === null || _b === void 0 ? void 0 : _b.parentElement);
+        wrap === null || wrap === void 0 ? void 0 : wrap.appendChild(replay);
       }
       this.rescale();
     };
-    Tichu2.prototype.changeOrder = function(clockwise) {
-      debug("changeOrder ".concat(clockwise, " ").concat(this.getGameUserPreference(101)));
-      this.clockwise = clockwise;
-      $("game_play_area").classList.toggle("clockwise", clockwise);
+    Tichu2.prototype.rescale = function() {
+      var areaElement = document.getElementById("game_play_area");
+      var replayElement = document.getElementById("game_play_replay");
+      var gameElement = this.experimentalArchiveModeEnabled ? replayElement : areaElement;
+      var areaWrapElement = document.getElementById("game_play_area_wrap");
+      if (!areaWrapElement || !gameElement)
+        return;
+      var widthAvailable = areaWrapElement.clientWidth;
+      var heightAvailable = document.documentElement.clientHeight - 120;
+      var widthMax = 1200;
+      var widthMin = this.experimentalArchiveModeEnabled ? 1e3 : 900;
+      var heightMin = this.experimentalArchiveModeEnabled ? 600 : 800;
+      var widthFactor = Math.max(widthAvailable / widthMin, 0.4);
+      var heightFactor = Math.max(heightAvailable / heightMin, 0.7);
+      var factor = Math.min(widthFactor, heightFactor, 1);
+      areaWrapElement.style.transform = "scale(".concat(factor, ")");
+      areaWrapElement.style.transformOrigin = factor === 1 ? "top center" : "top left";
+      gameElement.style.width = "".concat(Math.max(Math.min(widthAvailable / factor, widthMax), widthMin), "px");
     };
-    Tichu2.prototype.onReorderByColor = function(evt) {
-      debug("onReorderByColor");
-      evt.preventDefault();
-      var newWeights = {};
-      for (var color = 1; color <= 4; color++) {
-        for (var value = 1; value <= 14; value++) {
-          var type = stockType(color, value);
-          newWeights[type] = value === 1 ? 2 * type : newWeights[type] = 100 + 2 * type;
-        }
-      }
-      this.playerHand.changeItemsWeight(newWeights);
-      dojo.style("order_by_rank", "display", "inline");
-      dojo.style("order_by_color", "display", "none");
+    Tichu2.prototype.onGiveCard = function(index) {
+      var _a, _b, _c;
+      if (((_b = (_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.gamestate) === null || _b === void 0 ? void 0 : _b.name) !== "giveCards" || !this.isCurrentPlayerActive())
+        return;
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.toggleGiveCardSlot(index);
     };
     Tichu2.prototype.onResetPassCards = function() {
-      debug("onResetPassCards");
-      var player_id = this.player_id;
-      for (var _i = 0, _a = this.cardsToPass; _i < _a.length; _i++) {
-        var item = _a[_i];
-        if (!item)
-          continue;
-        $("cardontable_" + player_id + "_" + item.id).remove();
-        addItemToStock(this.playerHand, item);
+      var _a;
+      if (!this.checkAction("giveCards", true))
+        return;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.resetPassCards();
+    };
+    Tichu2.prototype.onPassCards = function() {
+      var _a, _b;
+      if (!this.checkAction("giveCards", false))
+        return;
+      var givenIds = (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getCardsToGiveIds()) !== null && _b !== void 0 ? _b : null;
+      if (!givenIds || givenIds.length !== 3) {
+        this.showMessage(_("You must select exactly 3 cards"), "error");
+        return;
       }
-      this.cardsToPass = [];
+      var toGive = givenIds.join(";") + ";";
+      this.takeAction("giveTheCards", { cards: toGive });
+    };
+    Tichu2.prototype.onAcceptCards = function() {
+      var _a;
+      clearTimeout(this.autoAcceptTimeout);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setAcceptingCardsCountdown(false);
+      if (!this.checkAction("acceptCards"))
+        return;
+      this.takeAction("acceptCards", {});
+    };
+    Tichu2.prototype.onGrandTichuBet = function(bet) {
+      this.takeAction("grandTichuBet", { bet: bet });
+    };
+    Tichu2.prototype.onTichuBet = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      this.takeAction("tichuBet", { bet: Bet.TICHU });
+    };
+    Tichu2.prototype.onPlayBomb = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      this.playCombo("playBomb");
+    };
+    Tichu2.prototype.onCancelBomb = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      this.takeAction("cancel");
+    };
+    Tichu2.prototype.onPlayCombo = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      if (!this.checkAction("playCombo"))
+        return;
+      this.playCombo("playCombo");
+    };
+    Tichu2.prototype.playCombo = function(actionName) {
+      var items = this.playerHand.getSelectedItems();
+      this.playerHand.unselectAll();
+      var cardIds = items.map(function(item) {
+        return item.id;
+      }).join(";");
+      if (items.length === 0 && actionName === "playCombo") {
+        this.showMessage(_("You have to select some cards first"), "error");
+        return;
+      }
+      clearTimeout(this.autoCollectTimeout);
+      this.takeAction(actionName, { cards: cardIds });
+    };
+    Tichu2.prototype.onPass = function(onlyOnce) {
+      var selected = this.playerHand.getSelectedItems();
+      if (selected.length > 0 && this.getGameUserPreference(102) == 1) {
+        this.showMessage(_("You have to unselect your cards first. (You can disable this safeguard in the user settings)"), "error");
+        return;
+      }
+      this.playerHand.unselectAll();
+      this.takeAction("pass", { onlyOnce: onlyOnce });
+    };
+    Tichu2.prototype.cancelAutopass = function(evt) {
+      var _a, _b;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      this.takeAction("cancelAutopass");
+    };
+    Tichu2.prototype.onChoosePhoenix = function(evt) {
+      var _this = this;
+      var _a, _b, _c, _d, _e, _f;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      var val = (_d = (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.getState().selectedPhoenixValue) !== null && _d !== void 0 ? _d : null;
+      if (val === null) {
+        this.showMessage(_("You need to choose ONE value for the Phoenix"), "error");
+        return;
+      }
+      var phoenixValue = Number(val);
+      if (((_f = (_e = window.gameModel) === null || _e === void 0 ? void 0 : _e.getState().hand.length) !== null && _f !== void 0 ? _f : 0) === 1 && phoenixValue === 14) {
+        this.confirmationDialog(_("Do you really want to choose Ace for the Phoenix in this bomb? It looks like your only remaining card can not be played on this bomb."), function() {
+          return _this.choosePhoenix(phoenixValue);
+        });
+        return;
+      }
+      this.choosePhoenix(phoenixValue);
+    };
+    Tichu2.prototype.choosePhoenix = function(phoenixValue) {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedPhoenixValue(null);
+      this.takeAction("choosePhoenix", { phoenixValue: phoenixValue });
+    };
+    Tichu2.prototype.cancelPhoenix = function() {
+      var _a;
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setSelectedPhoenixValue(null);
+      this.takeAction("cancelPhoenix");
+    };
+    Tichu2.prototype.onMakeAWish = function(evt) {
+      var _a, _b, _c, _d, _e;
+      if (evt) {
+        (_a = evt.preventDefault) === null || _a === void 0 ? void 0 : _a.call(evt);
+        (_b = evt.stopPropagation) === null || _b === void 0 ? void 0 : _b.call(evt);
+      }
+      var wish = (_d = (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.getState().selectedMahjongWish) !== null && _d !== void 0 ? _d : null;
+      if (wish === null) {
+        this.showMessage(_("You need to choose ONE value to wish"), "error");
+        return;
+      }
+      (_e = window.gameModel) === null || _e === void 0 ? void 0 : _e.setSelectedMahjongWish(null);
+      this.takeAction("makeAWish", { wish: wish });
     };
     Tichu2.prototype.onGiveDragon = function(player) {
-      debug("onGiveDragon");
       if (!this.checkAction("chooseDragonGift"))
         return;
       this.takeAction("chooseDragonGift", { player: player });
     };
-    Tichu2.prototype.playCombo = function(action) {
-      debug("onPlayCombo");
-      var selected = this.playerHand.getSelectedItems().map(function(stockItem) {
-        return stockItem.id;
-      });
-      this.takeAction(action, { cards: selected.join(";") });
-    };
-    Tichu2.prototype.onPass = function(onlyOnce) {
-      debug("onPass", { onlyOnce: onlyOnce });
-      if (this.getGameUserPreference(102) == 1 && this.playerHand.getSelectedItems().length > 0) {
-        this.showMessage(_("You have to unselect your cards first. (You can disable this safeguard in the user settings)"), "error");
-        return;
-      }
-      this.takeAction("pass", { onlyOnce: onlyOnce });
-    };
-    Tichu2.prototype.cancelAutopass = function() {
-      debug("onCancelAutopass");
-      this.takeAction("cancelAutopass");
+    Tichu2.prototype.onChooseDragonGift = function(player) {
+      this.onGiveDragon(player);
     };
     Tichu2.prototype.collect = function() {
-      debug("onCollect");
+      var _a;
       clearTimeout(this.autoCollectTimeout);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setCollectingTrickCountdown(false);
       if (!this.checkAction("collect"))
         return;
       this.takeAction("collect");
@@ -2542,7 +2531,6 @@
       });
     };
     Tichu2.prototype.setupNotifications = function() {
-      debug("notifications subscriptions setup");
       var notifs = {
         dealCards: 500,
         grandTichuBet: void 0,
@@ -2567,34 +2555,148 @@
       }
     };
     Tichu2.prototype.notif_devConsole = function(notif) {
-      debug("notif_devConsole", notif);
       window.console.log("DEV NOTIF: ".concat(notif.args.msg));
     };
     Tichu2.prototype.notif_dealCards = function(notif) {
-      debug("notif_dealCards", notif);
-      if (notif.args.cards.length === 8) {
-        this.gamedatas.hand = [];
-        this.playerHand.removeAll();
+      var _a;
+      var cards = notif.args.cards || [];
+      var totalCards = cards.length === 8 ? 8 : 14;
+      if (this.gamedatas) {
+        if (totalCards === 8) {
+          this.gamedatas.hand = __spreadArray([], cards, true);
+        } else {
+          var existingIds = new Set((this.gamedatas.hand || []).map(function(c) {
+            return String(c.id);
+          }));
+          for (var _i = 0, cards_1 = cards; _i < cards_1.length; _i++) {
+            var card = cards_1[_i];
+            if (!existingIds.has(String(card.id))) {
+              this.gamedatas.hand.push(card);
+            }
+          }
+        }
+        if (!this.gamedatas.handcount)
+          this.gamedatas.handcount = {};
+        for (var _b = 0, _c = Object.keys(this.gamedatas.players || {}); _b < _c.length; _b++) {
+          var pId = _c[_b];
+          this.gamedatas.handcount[Number(pId)] = totalCards;
+        }
       }
-      for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
-        var card = _a[_i];
-        this.gamedatas.hand.push(card);
-        addCardToStock(this.playerHand, card);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.dealCards(cards);
+    };
+    Tichu2.prototype.notif_passCards = function(notif) {
+      var _a, _b, _c;
+      var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
+      if (!Array.isArray(ids))
+        return;
+      if ((_b = this.gamedatas) === null || _b === void 0 ? void 0 : _b.hand) {
+        var idSet_1 = new Set(ids.map(String));
+        this.gamedatas.hand = this.gamedatas.hand.filter(function(c) {
+          return !idSet_1.has(String(c.id));
+        });
       }
-      this.updateStockOverlap(this.playerHand);
-      var totalCards = notif.args.cards.length === 8 ? 8 : 14;
-      dojohtml(".handcount", "".concat(totalCards));
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.applyPassCardsNotif(ids);
+    };
+    Tichu2.prototype.notif_acceptCards = function(notif) {
+      var _this = this;
+      var _a;
+      clearTimeout(this.autoAcceptTimeout);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setAcceptingCardsCountdown(false);
+      var cards = notif.args.cards || [];
+      var acceptFn = function() {
+        var _a2;
+        if (_this.gamedatas) {
+          if (!_this.gamedatas.hand)
+            _this.gamedatas.hand = [];
+          var existingIds = new Set(_this.gamedatas.hand.map(function(c) {
+            return String(c.id);
+          }));
+          for (var _i = 0, cards_2 = cards; _i < cards_2.length; _i++) {
+            var card = cards_2[_i];
+            if (!existingIds.has(String(card.id))) {
+              _this.gamedatas.hand.push(card);
+            }
+          }
+        }
+        (_a2 = window.gameModel) === null || _a2 === void 0 ? void 0 : _a2.finishAcceptCards(cards);
+      };
+      if (this.instantaneousMode) {
+        acceptFn();
+      } else {
+        setTimeout(function() {
+          var _a2;
+          return (_a2 = window.gameModel) === null || _a2 === void 0 ? void 0 : _a2.startAcceptCardsAnimation();
+        }, 1500);
+        setTimeout(acceptFn, 2e3);
+      }
+    };
+    Tichu2.prototype.notif_playCombo = function(notif) {
+      var _a, _b;
+      var playerId = Number(notif.args.player_id);
+      var cards = notif.args.cards || [];
+      var comboName = notif.args.combo_name || "";
+      var points = Number(notif.args.points || 0);
+      if (this.gamedatas) {
+        this.gamedatas.currentTrick = __spreadArray(__spreadArray([], this.gamedatas.currentTrick || [], true), cards, true);
+        this.gamedatas.currentTrickValue = Number(this.gamedatas.currentTrickValue || 0) + points;
+        if (!this.gamedatas.handcount)
+          this.gamedatas.handcount = {};
+        var prevCount = Number((_a = this.gamedatas.handcount[playerId]) !== null && _a !== void 0 ? _a : 0);
+        var nextCount = Math.max(0, prevCount - cards.length);
+        this.gamedatas.handcount[playerId] = nextCount;
+        if (playerId === Number(this.player_id) && Array.isArray(this.gamedatas.hand)) {
+          var playedIds_1 = new Set(cards.map(function(c) {
+            return String(c.id);
+          }));
+          this.gamedatas.hand = this.gamedatas.hand.filter(function(c) {
+            return !playedIds_1.has(String(c.id));
+          });
+        }
+        this.allLastCombos[playerId] = {
+          cards: cards,
+          description: comboName,
+          type: 0,
+          phoenixValue: null
+        };
+        this.gamedatas.allLastCombos = this.allLastCombos;
+        this.gamedatas.lastComboPlayer = String(playerId);
+        this.gamedatas.lastComboDescription = comboName;
+      }
+      (_b = window.gameModel) === null || _b === void 0 ? void 0 : _b.applyPlayCombo(playerId, cards, comboName, points);
+    };
+    Tichu2.prototype.notif_pass = function(notif) {
+      var _a;
+      var playerId = Number(notif.args.player_id);
+      if (this.allLastCombos) {
+        delete this.allLastCombos[playerId];
+      }
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.applyPass(playerId);
+    };
+    Tichu2.prototype.notif_captureCards = function(notif) {
+      var _a, _b;
+      var playerId = Number(notif.args.player_id);
+      var trickValue = Number(notif.args.trick_value || 0);
+      if (this.gamedatas) {
+        if (!this.gamedatas.capturedpoints)
+          this.gamedatas.capturedpoints = {};
+        var prevPts = Number((_a = this.gamedatas.capturedpoints[playerId]) !== null && _a !== void 0 ? _a : 0);
+        this.gamedatas.capturedpoints[playerId] = prevPts + trickValue;
+      }
+      (_b = window.gameModel) === null || _b === void 0 ? void 0 : _b.applyCaptureCards(playerId, trickValue);
     };
     Tichu2.prototype.notif_grandTichuBet = function(notif) {
-      debug("notif_grandTichuBet", notif);
+      var _a, _b, _c, _d;
+      var playerId = Number(notif.args.player_id);
       var bet = String(notif.args.bet);
-      this.gamedatas.players[notif.args.player_id].call_grand_tichu = bet;
-      dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+      if ((_b = (_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.players) === null || _b === void 0 ? void 0 : _b[playerId]) {
+        this.gamedatas.players[playerId].call_grand_tichu = bet;
+        if (bet === Bet.GRAND_TICHU) {
+          this.gamedatas.players[playerId].call_tichu = Bet.NO_BET;
+        }
+      }
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.applyGrandTichuBet(playerId, bet);
       if (bet === Bet.GRAND_TICHU) {
-        this.gamedatas.players[notif.args.player_id].call_tichu = Bet.NO_BET;
-        dojostyle(".grandtichucolor." + notif.args.player_id, "display", "inline-block");
-        dojostyle(".tichublack." + notif.args.player_id, "display", "none");
-        this.animateIcon("grandtichucolor", notif.args.player_id);
+        (_d = window.gameModel) === null || _d === void 0 ? void 0 : _d.triggerBetAnimation(playerId, 200);
         playSound("tichu_laser");
         this.notifqueue.setSynchronousDuration(1e3);
       } else {
@@ -2603,15 +2705,16 @@
       this.onUpdateActionButtons(this.stateName, {});
     };
     Tichu2.prototype.notif_tichuBet = function(notif) {
-      debug("notif_tichuBet", notif);
+      var _a, _b, _c, _d;
+      var playerId = Number(notif.args.player_id);
       var bet = String(notif.args.bet);
-      this.gamedatas.players[notif.args.player_id].call_tichu = bet;
-      this.gamedatas.players[notif.args.player_id].call_grand_tichu = Bet.NO_BET;
-      dojostyle(".tichublack." + notif.args.player_id, "display", "none");
-      dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+      if ((_b = (_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.players) === null || _b === void 0 ? void 0 : _b[playerId]) {
+        this.gamedatas.players[playerId].call_tichu = bet;
+        this.gamedatas.players[playerId].call_grand_tichu = Bet.NO_BET;
+      }
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.applyTichuBet(playerId, bet);
       if (bet === Bet.TICHU) {
-        dojostyle(".tichucolor." + notif.args.player_id, "display", "inline-block");
-        this.animateIcon("tichucolor", notif.args.player_id);
+        (_d = window.gameModel) === null || _d === void 0 ? void 0 : _d.triggerBetAnimation(playerId, 100);
         playSound("tichu_laser");
         this.notifqueue.setSynchronousDuration(1e3);
       } else {
@@ -2621,7 +2724,6 @@
     };
     Tichu2.prototype.notif_confirmTichu = function(notif) {
       var _this = this;
-      debug("notif_confirmTichu", notif);
       var titleSave = this.gamedatas.gamestate.descriptionmyturn;
       var s = notif.args.grand ? "grand " : "";
       this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
@@ -2640,139 +2742,54 @@
         return _this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU });
       });
     };
-    Tichu2.prototype.notif_playCombo = function(notif) {
+    Tichu2.prototype.notif_mahjongWishGranted = function(_notif) {
       var _a;
-      debug("notif_playCombo", notif);
-      var playerId = Number(notif.args.player_id);
-      this.resetComboStock(playerId);
-      this.addCardsToStock(this.tableCombos[playerId], notif.args.cards, playerId);
-      dojohtml("pass", "");
-      $("cardback_" + playerId).style.display = "none";
-      this.setDescription(playerId, notif.args.combo_name);
-      dojo.query(".handcount." + playerId).forEach(function(node) {
-        var el = node;
-        el.innerHTML = String(parseInt(el.innerHTML) - notif.args.cards.length);
-      });
-      dojo.query(".lastComboPlayer").removeClass("lastComboPlayer");
-      $("playertable_" + playerId).classList.add("lastComboPlayer");
-      (_a = this.gamedatas.currentTrick).push.apply(_a, notif.args.cards);
-      this.gamedatas.currentTrickValue += notif.args.points;
-      this.updateStatus();
+      if (this.gamedatas) {
+        this.gamedatas.mahjongWish = 0;
+      }
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setMahjongWish(0);
     };
     Tichu2.prototype.notif_wishMade = function(notif) {
-      debug("notif_wishMade", notif);
-      dojostyle("#mahjongpanel", "display", "none");
-      this.updateMahjongWish(notif.args.wish);
-    };
-    Tichu2.prototype.updateMahjongWish = function(wish) {
-      this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? Number(wish) : 0;
-      var indicator = $("mahjongIndicator");
-      if (wish > 0 && wish < 15) {
-        var w = wish - 2;
-        var x = w % 7;
-        var y = (w - x) / 7;
-        dojo.place(this.format_block("jstpl_mahjong", {
-          value: String(wish),
-          x: String(x * 75),
-          y: String(y * 112.5)
-        }), "mahjongIndicator");
-        indicator.style.display = "block";
-      } else {
-        indicator.innerHTML = "";
-        indicator.style.display = "none";
+      var _a;
+      var wish = Number(notif.args.wish);
+      if (this.gamedatas) {
+        this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? wish : 0;
       }
-    };
-    Tichu2.prototype.notif_mahjongWishGranted = function(notif) {
-      debug("notif_mahjongWishGranted", notif);
-      this.updateMahjongWish(0);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setMahjongWish(wish);
     };
     Tichu2.prototype.notif_playerGoOut = function(notif) {
-      debug("notif_playerGoOut", notif);
-      if (notif.args.player_id === notif.args.firstout_id) {
-        this.gamedatas.firstoutplayer = notif.args.player_id;
-        dojo.style($("firstoutcolor_" + notif.args.player_id), "display", "inline-block");
-      }
-      this.disablePlayerPanel(notif.args.player_id);
-      $("playertable_" + notif.args.player_id).classList.add("disabled");
-    };
-    Tichu2.prototype.notif_pass = function(notif) {
       var _a;
-      debug("notif_pass", notif);
-      var playerId = notif.args.player_id;
-      this.tableCombos[playerId].removeAll();
-      this.setPass(playerId);
-      dojo.query(".active").forEach(function(node) {
-        var el = node;
-        el.classList.remove("active");
-      });
-      (_a = document.getElementById("playertable_" + notif.args.player_id)) === null || _a === void 0 ? void 0 : _a.classList.add("active");
-    };
-    Tichu2.prototype.notif_captureCards = function(notif) {
-      debug("notif_captureCards", notif);
-      var playerId = notif.args.player_id;
-      var trick_value = notif.args.trick_value;
-      var old_score = parseInt($("pointcount_" + playerId).innerHTML);
-      var new_score = old_score + trick_value;
-      dojohtml(".pointcount." + playerId, "".concat(new_score));
-      dojostyle(".cardback", "display", "none");
+      var playerId = Number(notif.args.player_id);
+      var firstOutId = Number(notif.args.firstout_id);
+      if (playerId === firstOutId && this.gamedatas) {
+        this.gamedatas.firstoutplayer = playerId;
+      }
+      this.disablePlayerPanel(playerId);
+      (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.applyPlayerGoOut(playerId, firstOutId);
     };
     Tichu2.prototype.notif_newScores = function(notif) {
-      debug("notif_newScores", notif);
-      var newScores = notif.args.newScores;
+      var _a, _b, _c, _d;
+      var newScores = notif.args.newScores || {};
       for (var player_id in newScores) {
         var pId = Number(player_id);
-        this.scoreCtrl[pId].toValue(newScores[pId]);
-        if (this.gamedatas.players[pId]) {
+        (_a = this.scoreCtrl[pId]) === null || _a === void 0 ? void 0 : _a.toValue(newScores[pId]);
+        if ((_c = (_b = this.gamedatas) === null || _b === void 0 ? void 0 : _b.players) === null || _c === void 0 ? void 0 : _c[pId]) {
           this.gamedatas.players[pId].score = String(newScores[pId]);
         }
       }
+      (_d = window.gameModel) === null || _d === void 0 ? void 0 : _d.applyNewScores(newScores);
     };
     Tichu2.prototype.notif_autopass = function(notif) {
-      debug("notif_autopass", notif);
-      if (!this.isSpectator)
+      var _a, _b, _c;
+      if (!this.isSpectator && ((_b = (_a = this.gamedatas) === null || _a === void 0 ? void 0 : _a.players) === null || _b === void 0 ? void 0 : _b[this.player_id])) {
         this.gamedatas.players[this.player_id].pass = notif.args.autopass;
+      }
+      (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.setAutopass(notif.args.autopass);
       this.onUpdateActionButtons(this.stateName, {});
-    };
-    Tichu2.prototype.notif_acceptCards = function(notif) {
-      var _this = this;
-      debug("notif_acceptCards", notif);
-      clearTimeout(this.autoAcceptTimeout);
-      var acceptFn = function() {
-        for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
-          var card = _a[_i];
-          var cardOnTable = "cardontable_" + _this.player_id + "_" + card.id;
-          _this.gamedatas.hand.push(card);
-          addCardToStock(_this.playerHand, card);
-          _this.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
-        }
-        _this.updateStockOverlap(_this.playerHand);
-      };
-      if (this.instantaneousMode) {
-        acceptFn();
-      } else {
-        setTimeout(acceptFn, 2e3);
-      }
-    };
-    Tichu2.prototype.notif_passCards = function(notif) {
-      var _a;
-      debug("notif_passCards", notif);
-      var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
-      var _loop_3 = function(id2) {
-        this_3.gamedatas.hand = this_3.gamedatas.hand.filter(function(c) {
-          return String(c.id) !== String(id2);
-        });
-        this_3.playerHand.removeFromStockById(String(id2));
-      };
-      var this_3 = this;
-      for (var _i = 0, ids_1 = ids; _i < ids_1.length; _i++) {
-        var id = ids_1[_i];
-        _loop_3(id);
-      }
-      this.updateStockOverlap(this.playerHand);
     };
     return Tichu2;
   })();
-  define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function(dojo2, declare) {
+  define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter"], function(dojo2, declare) {
     return declare("bgagame.tichu", ebg.core.gamegui, new Tichu());
   });
 })();
@@ -2788,590 +2805,6 @@
     if (kind && result) __defProp(target, key, result);
     return result;
   };
-
-  // node_modules/@lit/reactive-element/css-tag.js
-  var t = globalThis;
-  var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
-  var s = /* @__PURE__ */ Symbol();
-  var o = /* @__PURE__ */ new WeakMap();
-  var n = class {
-    constructor(t4, e7, o6) {
-      if (this._$cssResult$ = true, o6 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
-      this.cssText = t4, this.t = e7;
-    }
-    get styleSheet() {
-      let t4 = this.o;
-      const s4 = this.t;
-      if (e && void 0 === t4) {
-        const e7 = void 0 !== s4 && 1 === s4.length;
-        e7 && (t4 = o.get(s4)), void 0 === t4 && ((this.o = t4 = new CSSStyleSheet()).replaceSync(this.cssText), e7 && o.set(s4, t4));
-      }
-      return t4;
-    }
-    toString() {
-      return this.cssText;
-    }
-  };
-  var r = (t4) => new n("string" == typeof t4 ? t4 : t4 + "", void 0, s);
-  var i = (t4, ...e7) => {
-    const o6 = 1 === t4.length ? t4[0] : e7.reduce(((e8, s4, o7) => e8 + ((t5) => {
-      if (true === t5._$cssResult$) return t5.cssText;
-      if ("number" == typeof t5) return t5;
-      throw Error("Value passed to 'css' function must be a 'css' function result: " + t5 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
-    })(s4) + t4[o7 + 1]), t4[0]);
-    return new n(o6, t4, s);
-  };
-  var S = (s4, o6) => {
-    if (e) s4.adoptedStyleSheets = o6.map(((t4) => t4 instanceof CSSStyleSheet ? t4 : t4.styleSheet));
-    else for (const e7 of o6) {
-      const o7 = document.createElement("style"), n5 = t.litNonce;
-      void 0 !== n5 && o7.setAttribute("nonce", n5), o7.textContent = e7.cssText, s4.appendChild(o7);
-    }
-  };
-  var c = e ? (t4) => t4 : (t4) => t4 instanceof CSSStyleSheet ? ((t5) => {
-    let e7 = "";
-    for (const s4 of t5.cssRules) e7 += s4.cssText;
-    return r(e7);
-  })(t4) : t4;
-
-  // node_modules/@lit/reactive-element/reactive-element.js
-  var { is: i2, defineProperty: e2, getOwnPropertyDescriptor: h, getOwnPropertyNames: r2, getOwnPropertySymbols: o2, getPrototypeOf: n2 } = Object;
-  var a = globalThis;
-  var c2 = a.trustedTypes;
-  var l = c2 ? c2.emptyScript : "";
-  var p = a.reactiveElementPolyfillSupport;
-  var d = (t4, s4) => t4;
-  var u = { toAttribute(t4, s4) {
-    switch (s4) {
-      case Boolean:
-        t4 = t4 ? l : null;
-        break;
-      case Object:
-      case Array:
-        t4 = null == t4 ? t4 : JSON.stringify(t4);
-    }
-    return t4;
-  }, fromAttribute(t4, s4) {
-    let i6 = t4;
-    switch (s4) {
-      case Boolean:
-        i6 = null !== t4;
-        break;
-      case Number:
-        i6 = null === t4 ? null : Number(t4);
-        break;
-      case Object:
-      case Array:
-        try {
-          i6 = JSON.parse(t4);
-        } catch (t5) {
-          i6 = null;
-        }
-    }
-    return i6;
-  } };
-  var f = (t4, s4) => !i2(t4, s4);
-  var b = { attribute: true, type: String, converter: u, reflect: false, useDefault: false, hasChanged: f };
-  Symbol.metadata ??= /* @__PURE__ */ Symbol("metadata"), a.litPropertyMetadata ??= /* @__PURE__ */ new WeakMap();
-  var y = class extends HTMLElement {
-    static addInitializer(t4) {
-      this._$Ei(), (this.l ??= []).push(t4);
-    }
-    static get observedAttributes() {
-      return this.finalize(), this._$Eh && [...this._$Eh.keys()];
-    }
-    static createProperty(t4, s4 = b) {
-      if (s4.state && (s4.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t4) && ((s4 = Object.create(s4)).wrapped = true), this.elementProperties.set(t4, s4), !s4.noAccessor) {
-        const i6 = /* @__PURE__ */ Symbol(), h3 = this.getPropertyDescriptor(t4, i6, s4);
-        void 0 !== h3 && e2(this.prototype, t4, h3);
-      }
-    }
-    static getPropertyDescriptor(t4, s4, i6) {
-      const { get: e7, set: r6 } = h(this.prototype, t4) ?? { get() {
-        return this[s4];
-      }, set(t5) {
-        this[s4] = t5;
-      } };
-      return { get: e7, set(s5) {
-        const h3 = e7?.call(this);
-        r6?.call(this, s5), this.requestUpdate(t4, h3, i6);
-      }, configurable: true, enumerable: true };
-    }
-    static getPropertyOptions(t4) {
-      return this.elementProperties.get(t4) ?? b;
-    }
-    static _$Ei() {
-      if (this.hasOwnProperty(d("elementProperties"))) return;
-      const t4 = n2(this);
-      t4.finalize(), void 0 !== t4.l && (this.l = [...t4.l]), this.elementProperties = new Map(t4.elementProperties);
-    }
-    static finalize() {
-      if (this.hasOwnProperty(d("finalized"))) return;
-      if (this.finalized = true, this._$Ei(), this.hasOwnProperty(d("properties"))) {
-        const t5 = this.properties, s4 = [...r2(t5), ...o2(t5)];
-        for (const i6 of s4) this.createProperty(i6, t5[i6]);
-      }
-      const t4 = this[Symbol.metadata];
-      if (null !== t4) {
-        const s4 = litPropertyMetadata.get(t4);
-        if (void 0 !== s4) for (const [t5, i6] of s4) this.elementProperties.set(t5, i6);
-      }
-      this._$Eh = /* @__PURE__ */ new Map();
-      for (const [t5, s4] of this.elementProperties) {
-        const i6 = this._$Eu(t5, s4);
-        void 0 !== i6 && this._$Eh.set(i6, t5);
-      }
-      this.elementStyles = this.finalizeStyles(this.styles);
-    }
-    static finalizeStyles(s4) {
-      const i6 = [];
-      if (Array.isArray(s4)) {
-        const e7 = new Set(s4.flat(1 / 0).reverse());
-        for (const s5 of e7) i6.unshift(c(s5));
-      } else void 0 !== s4 && i6.push(c(s4));
-      return i6;
-    }
-    static _$Eu(t4, s4) {
-      const i6 = s4.attribute;
-      return false === i6 ? void 0 : "string" == typeof i6 ? i6 : "string" == typeof t4 ? t4.toLowerCase() : void 0;
-    }
-    constructor() {
-      super(), this._$Ep = void 0, this.isUpdatePending = false, this.hasUpdated = false, this._$Em = null, this._$Ev();
-    }
-    _$Ev() {
-      this._$ES = new Promise(((t4) => this.enableUpdating = t4)), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach(((t4) => t4(this)));
-    }
-    addController(t4) {
-      (this._$EO ??= /* @__PURE__ */ new Set()).add(t4), void 0 !== this.renderRoot && this.isConnected && t4.hostConnected?.();
-    }
-    removeController(t4) {
-      this._$EO?.delete(t4);
-    }
-    _$E_() {
-      const t4 = /* @__PURE__ */ new Map(), s4 = this.constructor.elementProperties;
-      for (const i6 of s4.keys()) this.hasOwnProperty(i6) && (t4.set(i6, this[i6]), delete this[i6]);
-      t4.size > 0 && (this._$Ep = t4);
-    }
-    createRenderRoot() {
-      const t4 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
-      return S(t4, this.constructor.elementStyles), t4;
-    }
-    connectedCallback() {
-      this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach(((t4) => t4.hostConnected?.()));
-    }
-    enableUpdating(t4) {
-    }
-    disconnectedCallback() {
-      this._$EO?.forEach(((t4) => t4.hostDisconnected?.()));
-    }
-    attributeChangedCallback(t4, s4, i6) {
-      this._$AK(t4, i6);
-    }
-    _$ET(t4, s4) {
-      const i6 = this.constructor.elementProperties.get(t4), e7 = this.constructor._$Eu(t4, i6);
-      if (void 0 !== e7 && true === i6.reflect) {
-        const h3 = (void 0 !== i6.converter?.toAttribute ? i6.converter : u).toAttribute(s4, i6.type);
-        this._$Em = t4, null == h3 ? this.removeAttribute(e7) : this.setAttribute(e7, h3), this._$Em = null;
-      }
-    }
-    _$AK(t4, s4) {
-      const i6 = this.constructor, e7 = i6._$Eh.get(t4);
-      if (void 0 !== e7 && this._$Em !== e7) {
-        const t5 = i6.getPropertyOptions(e7), h3 = "function" == typeof t5.converter ? { fromAttribute: t5.converter } : void 0 !== t5.converter?.fromAttribute ? t5.converter : u;
-        this._$Em = e7;
-        const r6 = h3.fromAttribute(s4, t5.type);
-        this[e7] = r6 ?? this._$Ej?.get(e7) ?? r6, this._$Em = null;
-      }
-    }
-    requestUpdate(t4, s4, i6) {
-      if (void 0 !== t4) {
-        const e7 = this.constructor, h3 = this[t4];
-        if (i6 ??= e7.getPropertyOptions(t4), !((i6.hasChanged ?? f)(h3, s4) || i6.useDefault && i6.reflect && h3 === this._$Ej?.get(t4) && !this.hasAttribute(e7._$Eu(t4, i6)))) return;
-        this.C(t4, s4, i6);
-      }
-      false === this.isUpdatePending && (this._$ES = this._$EP());
-    }
-    C(t4, s4, { useDefault: i6, reflect: e7, wrapped: h3 }, r6) {
-      i6 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t4) && (this._$Ej.set(t4, r6 ?? s4 ?? this[t4]), true !== h3 || void 0 !== r6) || (this._$AL.has(t4) || (this.hasUpdated || i6 || (s4 = void 0), this._$AL.set(t4, s4)), true === e7 && this._$Em !== t4 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t4));
-    }
-    async _$EP() {
-      this.isUpdatePending = true;
-      try {
-        await this._$ES;
-      } catch (t5) {
-        Promise.reject(t5);
-      }
-      const t4 = this.scheduleUpdate();
-      return null != t4 && await t4, !this.isUpdatePending;
-    }
-    scheduleUpdate() {
-      return this.performUpdate();
-    }
-    performUpdate() {
-      if (!this.isUpdatePending) return;
-      if (!this.hasUpdated) {
-        if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
-          for (const [t6, s5] of this._$Ep) this[t6] = s5;
-          this._$Ep = void 0;
-        }
-        const t5 = this.constructor.elementProperties;
-        if (t5.size > 0) for (const [s5, i6] of t5) {
-          const { wrapped: t6 } = i6, e7 = this[s5];
-          true !== t6 || this._$AL.has(s5) || void 0 === e7 || this.C(s5, void 0, i6, e7);
-        }
-      }
-      let t4 = false;
-      const s4 = this._$AL;
-      try {
-        t4 = this.shouldUpdate(s4), t4 ? (this.willUpdate(s4), this._$EO?.forEach(((t5) => t5.hostUpdate?.())), this.update(s4)) : this._$EM();
-      } catch (s5) {
-        throw t4 = false, this._$EM(), s5;
-      }
-      t4 && this._$AE(s4);
-    }
-    willUpdate(t4) {
-    }
-    _$AE(t4) {
-      this._$EO?.forEach(((t5) => t5.hostUpdated?.())), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t4)), this.updated(t4);
-    }
-    _$EM() {
-      this._$AL = /* @__PURE__ */ new Map(), this.isUpdatePending = false;
-    }
-    get updateComplete() {
-      return this.getUpdateComplete();
-    }
-    getUpdateComplete() {
-      return this._$ES;
-    }
-    shouldUpdate(t4) {
-      return true;
-    }
-    update(t4) {
-      this._$Eq &&= this._$Eq.forEach(((t5) => this._$ET(t5, this[t5]))), this._$EM();
-    }
-    updated(t4) {
-    }
-    firstUpdated(t4) {
-    }
-  };
-  y.elementStyles = [], y.shadowRootOptions = { mode: "open" }, y[d("elementProperties")] = /* @__PURE__ */ new Map(), y[d("finalized")] = /* @__PURE__ */ new Map(), p?.({ ReactiveElement: y }), (a.reactiveElementVersions ??= []).push("2.1.1");
-
-  // node_modules/lit-html/lit-html.js
-  var t2 = globalThis;
-  var i3 = t2.trustedTypes;
-  var s2 = i3 ? i3.createPolicy("lit-html", { createHTML: (t4) => t4 }) : void 0;
-  var e3 = "$lit$";
-  var h2 = `lit$${Math.random().toFixed(9).slice(2)}$`;
-  var o3 = "?" + h2;
-  var n3 = `<${o3}>`;
-  var r3 = document;
-  var l2 = () => r3.createComment("");
-  var c3 = (t4) => null === t4 || "object" != typeof t4 && "function" != typeof t4;
-  var a2 = Array.isArray;
-  var u2 = (t4) => a2(t4) || "function" == typeof t4?.[Symbol.iterator];
-  var d2 = "[ 	\n\f\r]";
-  var f2 = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
-  var v = /-->/g;
-  var _ = />/g;
-  var m = RegExp(`>|${d2}(?:([^\\s"'>=/]+)(${d2}*=${d2}*(?:[^ 	
-\f\r"'\`<>=]|("|')|))|$)`, "g");
-  var p2 = /'/g;
-  var g = /"/g;
-  var $ = /^(?:script|style|textarea|title)$/i;
-  var y2 = (t4) => (i6, ...s4) => ({ _$litType$: t4, strings: i6, values: s4 });
-  var x = y2(1);
-  var b2 = y2(2);
-  var w = y2(3);
-  var T = /* @__PURE__ */ Symbol.for("lit-noChange");
-  var E = /* @__PURE__ */ Symbol.for("lit-nothing");
-  var A = /* @__PURE__ */ new WeakMap();
-  var C = r3.createTreeWalker(r3, 129);
-  function P(t4, i6) {
-    if (!a2(t4) || !t4.hasOwnProperty("raw")) throw Error("invalid template strings array");
-    return void 0 !== s2 ? s2.createHTML(i6) : i6;
-  }
-  var V = (t4, i6) => {
-    const s4 = t4.length - 1, o6 = [];
-    let r6, l3 = 2 === i6 ? "<svg>" : 3 === i6 ? "<math>" : "", c4 = f2;
-    for (let i7 = 0; i7 < s4; i7++) {
-      const s5 = t4[i7];
-      let a3, u3, d3 = -1, y3 = 0;
-      for (; y3 < s5.length && (c4.lastIndex = y3, u3 = c4.exec(s5), null !== u3); ) y3 = c4.lastIndex, c4 === f2 ? "!--" === u3[1] ? c4 = v : void 0 !== u3[1] ? c4 = _ : void 0 !== u3[2] ? ($.test(u3[2]) && (r6 = RegExp("</" + u3[2], "g")), c4 = m) : void 0 !== u3[3] && (c4 = m) : c4 === m ? ">" === u3[0] ? (c4 = r6 ?? f2, d3 = -1) : void 0 === u3[1] ? d3 = -2 : (d3 = c4.lastIndex - u3[2].length, a3 = u3[1], c4 = void 0 === u3[3] ? m : '"' === u3[3] ? g : p2) : c4 === g || c4 === p2 ? c4 = m : c4 === v || c4 === _ ? c4 = f2 : (c4 = m, r6 = void 0);
-      const x2 = c4 === m && t4[i7 + 1].startsWith("/>") ? " " : "";
-      l3 += c4 === f2 ? s5 + n3 : d3 >= 0 ? (o6.push(a3), s5.slice(0, d3) + e3 + s5.slice(d3) + h2 + x2) : s5 + h2 + (-2 === d3 ? i7 : x2);
-    }
-    return [P(t4, l3 + (t4[s4] || "<?>") + (2 === i6 ? "</svg>" : 3 === i6 ? "</math>" : "")), o6];
-  };
-  var N = class _N {
-    constructor({ strings: t4, _$litType$: s4 }, n5) {
-      let r6;
-      this.parts = [];
-      let c4 = 0, a3 = 0;
-      const u3 = t4.length - 1, d3 = this.parts, [f3, v2] = V(t4, s4);
-      if (this.el = _N.createElement(f3, n5), C.currentNode = this.el.content, 2 === s4 || 3 === s4) {
-        const t5 = this.el.content.firstChild;
-        t5.replaceWith(...t5.childNodes);
-      }
-      for (; null !== (r6 = C.nextNode()) && d3.length < u3; ) {
-        if (1 === r6.nodeType) {
-          if (r6.hasAttributes()) for (const t5 of r6.getAttributeNames()) if (t5.endsWith(e3)) {
-            const i6 = v2[a3++], s5 = r6.getAttribute(t5).split(h2), e7 = /([.?@])?(.*)/.exec(i6);
-            d3.push({ type: 1, index: c4, name: e7[2], strings: s5, ctor: "." === e7[1] ? H : "?" === e7[1] ? I : "@" === e7[1] ? L : k }), r6.removeAttribute(t5);
-          } else t5.startsWith(h2) && (d3.push({ type: 6, index: c4 }), r6.removeAttribute(t5));
-          if ($.test(r6.tagName)) {
-            const t5 = r6.textContent.split(h2), s5 = t5.length - 1;
-            if (s5 > 0) {
-              r6.textContent = i3 ? i3.emptyScript : "";
-              for (let i6 = 0; i6 < s5; i6++) r6.append(t5[i6], l2()), C.nextNode(), d3.push({ type: 2, index: ++c4 });
-              r6.append(t5[s5], l2());
-            }
-          }
-        } else if (8 === r6.nodeType) if (r6.data === o3) d3.push({ type: 2, index: c4 });
-        else {
-          let t5 = -1;
-          for (; -1 !== (t5 = r6.data.indexOf(h2, t5 + 1)); ) d3.push({ type: 7, index: c4 }), t5 += h2.length - 1;
-        }
-        c4++;
-      }
-    }
-    static createElement(t4, i6) {
-      const s4 = r3.createElement("template");
-      return s4.innerHTML = t4, s4;
-    }
-  };
-  function S2(t4, i6, s4 = t4, e7) {
-    if (i6 === T) return i6;
-    let h3 = void 0 !== e7 ? s4._$Co?.[e7] : s4._$Cl;
-    const o6 = c3(i6) ? void 0 : i6._$litDirective$;
-    return h3?.constructor !== o6 && (h3?._$AO?.(false), void 0 === o6 ? h3 = void 0 : (h3 = new o6(t4), h3._$AT(t4, s4, e7)), void 0 !== e7 ? (s4._$Co ??= [])[e7] = h3 : s4._$Cl = h3), void 0 !== h3 && (i6 = S2(t4, h3._$AS(t4, i6.values), h3, e7)), i6;
-  }
-  var M = class {
-    constructor(t4, i6) {
-      this._$AV = [], this._$AN = void 0, this._$AD = t4, this._$AM = i6;
-    }
-    get parentNode() {
-      return this._$AM.parentNode;
-    }
-    get _$AU() {
-      return this._$AM._$AU;
-    }
-    u(t4) {
-      const { el: { content: i6 }, parts: s4 } = this._$AD, e7 = (t4?.creationScope ?? r3).importNode(i6, true);
-      C.currentNode = e7;
-      let h3 = C.nextNode(), o6 = 0, n5 = 0, l3 = s4[0];
-      for (; void 0 !== l3; ) {
-        if (o6 === l3.index) {
-          let i7;
-          2 === l3.type ? i7 = new R(h3, h3.nextSibling, this, t4) : 1 === l3.type ? i7 = new l3.ctor(h3, l3.name, l3.strings, this, t4) : 6 === l3.type && (i7 = new z(h3, this, t4)), this._$AV.push(i7), l3 = s4[++n5];
-        }
-        o6 !== l3?.index && (h3 = C.nextNode(), o6++);
-      }
-      return C.currentNode = r3, e7;
-    }
-    p(t4) {
-      let i6 = 0;
-      for (const s4 of this._$AV) void 0 !== s4 && (void 0 !== s4.strings ? (s4._$AI(t4, s4, i6), i6 += s4.strings.length - 2) : s4._$AI(t4[i6])), i6++;
-    }
-  };
-  var R = class _R {
-    get _$AU() {
-      return this._$AM?._$AU ?? this._$Cv;
-    }
-    constructor(t4, i6, s4, e7) {
-      this.type = 2, this._$AH = E, this._$AN = void 0, this._$AA = t4, this._$AB = i6, this._$AM = s4, this.options = e7, this._$Cv = e7?.isConnected ?? true;
-    }
-    get parentNode() {
-      let t4 = this._$AA.parentNode;
-      const i6 = this._$AM;
-      return void 0 !== i6 && 11 === t4?.nodeType && (t4 = i6.parentNode), t4;
-    }
-    get startNode() {
-      return this._$AA;
-    }
-    get endNode() {
-      return this._$AB;
-    }
-    _$AI(t4, i6 = this) {
-      t4 = S2(this, t4, i6), c3(t4) ? t4 === E || null == t4 || "" === t4 ? (this._$AH !== E && this._$AR(), this._$AH = E) : t4 !== this._$AH && t4 !== T && this._(t4) : void 0 !== t4._$litType$ ? this.$(t4) : void 0 !== t4.nodeType ? this.T(t4) : u2(t4) ? this.k(t4) : this._(t4);
-    }
-    O(t4) {
-      return this._$AA.parentNode.insertBefore(t4, this._$AB);
-    }
-    T(t4) {
-      this._$AH !== t4 && (this._$AR(), this._$AH = this.O(t4));
-    }
-    _(t4) {
-      this._$AH !== E && c3(this._$AH) ? this._$AA.nextSibling.data = t4 : this.T(r3.createTextNode(t4)), this._$AH = t4;
-    }
-    $(t4) {
-      const { values: i6, _$litType$: s4 } = t4, e7 = "number" == typeof s4 ? this._$AC(t4) : (void 0 === s4.el && (s4.el = N.createElement(P(s4.h, s4.h[0]), this.options)), s4);
-      if (this._$AH?._$AD === e7) this._$AH.p(i6);
-      else {
-        const t5 = new M(e7, this), s5 = t5.u(this.options);
-        t5.p(i6), this.T(s5), this._$AH = t5;
-      }
-    }
-    _$AC(t4) {
-      let i6 = A.get(t4.strings);
-      return void 0 === i6 && A.set(t4.strings, i6 = new N(t4)), i6;
-    }
-    k(t4) {
-      a2(this._$AH) || (this._$AH = [], this._$AR());
-      const i6 = this._$AH;
-      let s4, e7 = 0;
-      for (const h3 of t4) e7 === i6.length ? i6.push(s4 = new _R(this.O(l2()), this.O(l2()), this, this.options)) : s4 = i6[e7], s4._$AI(h3), e7++;
-      e7 < i6.length && (this._$AR(s4 && s4._$AB.nextSibling, e7), i6.length = e7);
-    }
-    _$AR(t4 = this._$AA.nextSibling, i6) {
-      for (this._$AP?.(false, true, i6); t4 !== this._$AB; ) {
-        const i7 = t4.nextSibling;
-        t4.remove(), t4 = i7;
-      }
-    }
-    setConnected(t4) {
-      void 0 === this._$AM && (this._$Cv = t4, this._$AP?.(t4));
-    }
-  };
-  var k = class {
-    get tagName() {
-      return this.element.tagName;
-    }
-    get _$AU() {
-      return this._$AM._$AU;
-    }
-    constructor(t4, i6, s4, e7, h3) {
-      this.type = 1, this._$AH = E, this._$AN = void 0, this.element = t4, this.name = i6, this._$AM = e7, this.options = h3, s4.length > 2 || "" !== s4[0] || "" !== s4[1] ? (this._$AH = Array(s4.length - 1).fill(new String()), this.strings = s4) : this._$AH = E;
-    }
-    _$AI(t4, i6 = this, s4, e7) {
-      const h3 = this.strings;
-      let o6 = false;
-      if (void 0 === h3) t4 = S2(this, t4, i6, 0), o6 = !c3(t4) || t4 !== this._$AH && t4 !== T, o6 && (this._$AH = t4);
-      else {
-        const e8 = t4;
-        let n5, r6;
-        for (t4 = h3[0], n5 = 0; n5 < h3.length - 1; n5++) r6 = S2(this, e8[s4 + n5], i6, n5), r6 === T && (r6 = this._$AH[n5]), o6 ||= !c3(r6) || r6 !== this._$AH[n5], r6 === E ? t4 = E : t4 !== E && (t4 += (r6 ?? "") + h3[n5 + 1]), this._$AH[n5] = r6;
-      }
-      o6 && !e7 && this.j(t4);
-    }
-    j(t4) {
-      t4 === E ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t4 ?? "");
-    }
-  };
-  var H = class extends k {
-    constructor() {
-      super(...arguments), this.type = 3;
-    }
-    j(t4) {
-      this.element[this.name] = t4 === E ? void 0 : t4;
-    }
-  };
-  var I = class extends k {
-    constructor() {
-      super(...arguments), this.type = 4;
-    }
-    j(t4) {
-      this.element.toggleAttribute(this.name, !!t4 && t4 !== E);
-    }
-  };
-  var L = class extends k {
-    constructor(t4, i6, s4, e7, h3) {
-      super(t4, i6, s4, e7, h3), this.type = 5;
-    }
-    _$AI(t4, i6 = this) {
-      if ((t4 = S2(this, t4, i6, 0) ?? E) === T) return;
-      const s4 = this._$AH, e7 = t4 === E && s4 !== E || t4.capture !== s4.capture || t4.once !== s4.once || t4.passive !== s4.passive, h3 = t4 !== E && (s4 === E || e7);
-      e7 && this.element.removeEventListener(this.name, this, s4), h3 && this.element.addEventListener(this.name, this, t4), this._$AH = t4;
-    }
-    handleEvent(t4) {
-      "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t4) : this._$AH.handleEvent(t4);
-    }
-  };
-  var z = class {
-    constructor(t4, i6, s4) {
-      this.element = t4, this.type = 6, this._$AN = void 0, this._$AM = i6, this.options = s4;
-    }
-    get _$AU() {
-      return this._$AM._$AU;
-    }
-    _$AI(t4) {
-      S2(this, t4);
-    }
-  };
-  var j = t2.litHtmlPolyfillSupport;
-  j?.(N, R), (t2.litHtmlVersions ??= []).push("3.3.1");
-  var B = (t4, i6, s4) => {
-    const e7 = s4?.renderBefore ?? i6;
-    let h3 = e7._$litPart$;
-    if (void 0 === h3) {
-      const t5 = s4?.renderBefore ?? null;
-      e7._$litPart$ = h3 = new R(i6.insertBefore(l2(), t5), t5, void 0, s4 ?? {});
-    }
-    return h3._$AI(t4), h3;
-  };
-
-  // node_modules/lit-element/lit-element.js
-  var s3 = globalThis;
-  var i4 = class extends y {
-    constructor() {
-      super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
-    }
-    createRenderRoot() {
-      const t4 = super.createRenderRoot();
-      return this.renderOptions.renderBefore ??= t4.firstChild, t4;
-    }
-    update(t4) {
-      const r6 = this.render();
-      this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t4), this._$Do = B(r6, this.renderRoot, this.renderOptions);
-    }
-    connectedCallback() {
-      super.connectedCallback(), this._$Do?.setConnected(true);
-    }
-    disconnectedCallback() {
-      super.disconnectedCallback(), this._$Do?.setConnected(false);
-    }
-    render() {
-      return T;
-    }
-  };
-  i4._$litElement$ = true, i4["finalized"] = true, s3.litElementHydrateSupport?.({ LitElement: i4 });
-  var o4 = s3.litElementPolyfillSupport;
-  o4?.({ LitElement: i4 });
-  (s3.litElementVersions ??= []).push("4.2.1");
-
-  // node_modules/@lit/reactive-element/decorators/property.js
-  var o5 = { attribute: true, type: String, converter: u, reflect: false, hasChanged: f };
-  var r4 = (t4 = o5, e7, r6) => {
-    const { kind: n5, metadata: i6 } = r6;
-    let s4 = globalThis.litPropertyMetadata.get(i6);
-    if (void 0 === s4 && globalThis.litPropertyMetadata.set(i6, s4 = /* @__PURE__ */ new Map()), "setter" === n5 && ((t4 = Object.create(t4)).wrapped = true), s4.set(r6.name, t4), "accessor" === n5) {
-      const { name: o6 } = r6;
-      return { set(r7) {
-        const n6 = e7.get.call(this);
-        e7.set.call(this, r7), this.requestUpdate(o6, n6, t4);
-      }, init(e8) {
-        return void 0 !== e8 && this.C(o6, void 0, t4, e8), e8;
-      } };
-    }
-    if ("setter" === n5) {
-      const { name: o6 } = r6;
-      return function(r7) {
-        const n6 = this[o6];
-        e7.call(this, r7), this.requestUpdate(o6, n6, t4);
-      };
-    }
-    throw Error("Unsupported decorator location: " + n5);
-  };
-  function n4(t4) {
-    return (e7, o6) => "object" == typeof o6 ? r4(t4, e7, o6) : ((t5, e8, o7) => {
-      const r6 = e8.hasOwnProperty(o7);
-      return e8.constructor.createProperty(o7, t5), r6 ? Object.getOwnPropertyDescriptor(e8, o7) : void 0;
-    })(t4, e7, o6);
-  }
-
-  // node_modules/@lit/reactive-element/decorators/state.js
-  function r5(r6) {
-    return n4({ ...r6, state: true, attribute: false });
-  }
 
   // node_modules/tslib/tslib.es6.mjs
   var extendStatics = function(d3, b3) {
@@ -3419,10 +2852,10 @@
     });
   }
   function __generator(thisArg, body) {
-    var _2 = { label: 0, sent: function() {
-      if (t4[0] & 1) throw t4[1];
-      return t4[1];
-    }, trys: [], ops: [] }, f3, y3, t4, g2;
+    var _3 = { label: 0, sent: function() {
+      if (t12[0] & 1) throw t12[1];
+      return t12[1];
+    }, trys: [], ops: [] }, f3, y3, t12, g2;
     return g2 = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g2[Symbol.iterator] = function() {
       return this;
     }), g2;
@@ -3433,55 +2866,55 @@
     }
     function step(op) {
       if (f3) throw new TypeError("Generator is already executing.");
-      while (g2 && (g2 = 0, op[0] && (_2 = 0)), _2) try {
-        if (f3 = 1, y3 && (t4 = op[0] & 2 ? y3["return"] : op[0] ? y3["throw"] || ((t4 = y3["return"]) && t4.call(y3), 0) : y3.next) && !(t4 = t4.call(y3, op[1])).done) return t4;
-        if (y3 = 0, t4) op = [op[0] & 2, t4.value];
+      while (g2 && (g2 = 0, op[0] && (_3 = 0)), _3) try {
+        if (f3 = 1, y3 && (t12 = op[0] & 2 ? y3["return"] : op[0] ? y3["throw"] || ((t12 = y3["return"]) && t12.call(y3), 0) : y3.next) && !(t12 = t12.call(y3, op[1])).done) return t12;
+        if (y3 = 0, t12) op = [op[0] & 2, t12.value];
         switch (op[0]) {
           case 0:
           case 1:
-            t4 = op;
+            t12 = op;
             break;
           case 4:
-            _2.label++;
+            _3.label++;
             return { value: op[1], done: false };
           case 5:
-            _2.label++;
+            _3.label++;
             y3 = op[1];
             op = [0];
             continue;
           case 7:
-            op = _2.ops.pop();
-            _2.trys.pop();
+            op = _3.ops.pop();
+            _3.trys.pop();
             continue;
           default:
-            if (!(t4 = _2.trys, t4 = t4.length > 0 && t4[t4.length - 1]) && (op[0] === 6 || op[0] === 2)) {
-              _2 = 0;
+            if (!(t12 = _3.trys, t12 = t12.length > 0 && t12[t12.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _3 = 0;
               continue;
             }
-            if (op[0] === 3 && (!t4 || op[1] > t4[0] && op[1] < t4[3])) {
-              _2.label = op[1];
+            if (op[0] === 3 && (!t12 || op[1] > t12[0] && op[1] < t12[3])) {
+              _3.label = op[1];
               break;
             }
-            if (op[0] === 6 && _2.label < t4[1]) {
-              _2.label = t4[1];
-              t4 = op;
+            if (op[0] === 6 && _3.label < t12[1]) {
+              _3.label = t12[1];
+              t12 = op;
               break;
             }
-            if (t4 && _2.label < t4[2]) {
-              _2.label = t4[2];
-              _2.ops.push(op);
+            if (t12 && _3.label < t12[2]) {
+              _3.label = t12[2];
+              _3.ops.push(op);
               break;
             }
-            if (t4[2]) _2.ops.pop();
-            _2.trys.pop();
+            if (t12[2]) _3.ops.pop();
+            _3.trys.pop();
             continue;
         }
-        op = body.call(thisArg, _2);
+        op = body.call(thisArg, _3);
       } catch (e7) {
         op = [6, e7];
         y3 = 0;
       } finally {
-        f3 = t4 = 0;
+        f3 = t12 = 0;
       }
       if (op[0] & 5) throw op[1];
       return { value: op[0] ? op[1] : void 0, done: true };
@@ -4032,18 +3465,18 @@
 
   // node_modules/rxjs/dist/esm5/internal/Observable.js
   var Observable = (function() {
-    function Observable2(subscribe2) {
+    function Observable3(subscribe2) {
       if (subscribe2) {
         this._subscribe = subscribe2;
       }
     }
-    Observable2.prototype.lift = function(operator) {
-      var observable2 = new Observable2();
+    Observable3.prototype.lift = function(operator) {
+      var observable2 = new Observable3();
       observable2.source = this;
       observable2.operator = operator;
       return observable2;
     };
-    Observable2.prototype.subscribe = function(observerOrNext, error, complete) {
+    Observable3.prototype.subscribe = function(observerOrNext, error, complete) {
       var _this = this;
       var subscriber = isSubscriber(observerOrNext) ? observerOrNext : new SafeSubscriber(observerOrNext, error, complete);
       errorContext(function() {
@@ -4052,14 +3485,14 @@
       });
       return subscriber;
     };
-    Observable2.prototype._trySubscribe = function(sink) {
+    Observable3.prototype._trySubscribe = function(sink) {
       try {
         return this._subscribe(sink);
       } catch (err) {
         sink.error(err);
       }
     };
-    Observable2.prototype.forEach = function(next, promiseCtor) {
+    Observable3.prototype.forEach = function(next, promiseCtor) {
       var _this = this;
       promiseCtor = getPromiseCtor(promiseCtor);
       return new promiseCtor(function(resolve, reject) {
@@ -4078,21 +3511,21 @@
         _this.subscribe(subscriber);
       });
     };
-    Observable2.prototype._subscribe = function(subscriber) {
+    Observable3.prototype._subscribe = function(subscriber) {
       var _a;
       return (_a = this.source) === null || _a === void 0 ? void 0 : _a.subscribe(subscriber);
     };
-    Observable2.prototype[observable] = function() {
+    Observable3.prototype[observable] = function() {
       return this;
     };
-    Observable2.prototype.pipe = function() {
+    Observable3.prototype.pipe = function() {
       var operations = [];
       for (var _i = 0; _i < arguments.length; _i++) {
         operations[_i] = arguments[_i];
       }
       return pipeFromArray(operations)(this);
     };
-    Observable2.prototype.toPromise = function(promiseCtor) {
+    Observable3.prototype.toPromise = function(promiseCtor) {
       var _this = this;
       promiseCtor = getPromiseCtor(promiseCtor);
       return new promiseCtor(function(resolve, reject) {
@@ -4106,10 +3539,10 @@
         });
       });
     };
-    Observable2.create = function(subscribe2) {
-      return new Observable2(subscribe2);
+    Observable3.create = function(subscribe2) {
+      return new Observable3(subscribe2);
     };
-    return Observable2;
+    return Observable3;
   })();
   function getPromiseCtor(promiseCtor) {
     var _a;
@@ -4848,9 +4281,8 @@
     return Number(playerIdString);
   }
   function hasBomb(cards) {
-    let highest = null;
     for (let color = 1; color <= 4; color++) {
-      let values = cards.filter((c4) => Number(c4.type) === color).map((c4) => Number(c4.type_arg)).sort((a3, b3) => a3 - b3);
+      let values = cards.filter((c4) => Number(c4.type) === color && Number(c4.type_arg) > 1).map((c4) => Number(c4.type_arg)).sort((a3, b3) => a3 - b3);
       for (let idx = 0; idx < values.length - 4; idx++) {
         const numBegin = values[idx];
         for (let idy = idx + 4; idy < values.length; idy++) {
@@ -4862,7 +4294,7 @@
         }
       }
     }
-    for (let value = 2; value <= 13; value++) {
+    for (let value = 2; value <= 14; value++) {
       let cardsWithValue = cards.filter((c4) => Number(c4.type_arg) === value);
       if (cardsWithValue.length === 4) {
         return true;
@@ -5071,90 +4503,1599 @@
     }
   };
 
-  // node_modules/lit-html/directive.js
-  var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
-  var e5 = (t4) => (...e7) => ({ _$litDirective$: t4, values: e7 });
-  var i5 = class {
-    constructor(t4) {
+  // src/elements/game-model.ts
+  var initialLiveGameState = {
+    currentPlayerId: "",
+    isSpectator: false,
+    isRealtime: false,
+    isAllInfoExposed: false,
+    players: {},
+    playerOrderBottomToLeft: [],
+    passSlots: [],
+    acceptingCardsCountdown: false,
+    collectingTrickCountdown: false,
+    hand: [],
+    selectedCardIds: [],
+    handSortOrder: "rank",
+    stateName: "",
+    activePlayerId: "",
+    activePlayerIds: [],
+    isCurrentPlayerActive: false,
+    bombActivePlayerId: null,
+    round: 0,
+    trick: 0,
+    currentTrick: [],
+    currentTrickValue: 0,
+    capturedCards: [],
+    firstOutPlayerId: "",
+    lastComboPlayerId: "",
+    lastCombos: {},
+    mahjongWish: 0,
+    selectedMahjongWish: null,
+    phoenixAllowedValues: [],
+    selectedPhoenixValue: null,
+    clockwise: true,
+    squareTable: false,
+    theme: 0,
+    isTiki: false,
+    experimentalReplayOpen: false,
+    trickModalOpen: false,
+    betAnimations: []
+  };
+  function normalizeCard(raw) {
+    const card = {
+      id: String(raw?.id ?? ""),
+      type: String(raw?.type ?? ""),
+      type_arg: String(raw?.type_arg ?? "")
+    };
+    if (raw?.location !== void 0) card.location = String(raw.location);
+    if (raw?.location_arg !== void 0) card.location_arg = String(raw.location_arg);
+    const passedFrom = raw?.passed_from ?? raw?.card_passed_from;
+    if (passedFrom !== void 0) card.passed_from = String(passedFrom);
+    return card;
+  }
+  function normalizeCards(rawCards) {
+    if (!Array.isArray(rawCards)) return [];
+    return rawCards.map(normalizeCard);
+  }
+  function normalizeGrandTichuBet(val) {
+    if (val === null || val === void 0 || val === "") return -1;
+    const n5 = Number(val);
+    if (n5 === 0 || n5 === 100 || n5 === 200) return n5;
+    return -1;
+  }
+  function normalizeTichuBet(val) {
+    if (val === null || val === void 0 || val === "") return -1;
+    const n5 = Number(val);
+    if (n5 === 0 || n5 === 100) return n5;
+    return -1;
+  }
+  function getNextPlayersDesc(playersMap, currentPlayerId) {
+    const players = Object.values(playersMap).sort((a3, b3) => b3.no - a3.no);
+    if (players.length < 4) return players;
+    const lastId = players[3].id;
+    while (players[3].id !== currentPlayerId && players[0].id !== lastId) {
+      players.push(players.shift());
+    }
+    return players;
+  }
+  var GameModel = class {
+    constructor() {
+      this.subject$ = new BehaviorSubject(initialLiveGameState);
+      this.nextBetAnimId = 1;
+      this.state$ = this.subject$.asObservable();
+      // Selectors for every slice of state
+      this.currentPlayerId$ = select(this.state$, (s4) => s4.currentPlayerId);
+      this.isSpectator$ = select(this.state$, (s4) => s4.isSpectator);
+      this.isRealtime$ = select(this.state$, (s4) => s4.isRealtime);
+      this.isAllInfoExposed$ = select(this.state$, (s4) => s4.isAllInfoExposed);
+      this.players$ = select(this.state$, (s4) => s4.players);
+      this.currentPlayer$ = select(this.state$, (s4) => s4.players[s4.currentPlayerId] ?? null);
+      this.player$ = (playerId) => select(this.state$, (s4) => s4.players[String(playerId)]);
+      this.playerOrderBottomToLeft$ = select(this.state$, (s4) => s4.playerOrderBottomToLeft);
+      this.passSlots$ = select(this.state$, (s4) => s4.passSlots);
+      this.acceptingCardsCountdown$ = select(this.state$, (s4) => s4.acceptingCardsCountdown);
+      this.collectingTrickCountdown$ = select(
+        this.state$,
+        (s4) => s4.collectingTrickCountdown
+      );
+      this.hand$ = select(this.state$, (s4) => s4.hand);
+      this.selectedCardIds$ = select(this.state$, (s4) => s4.selectedCardIds);
+      this.handSortOrder$ = select(this.state$, (s4) => s4.handSortOrder);
+      this.stateName$ = select(this.state$, (s4) => s4.stateName);
+      this.activePlayerId$ = select(this.state$, (s4) => s4.activePlayerId);
+      this.activePlayerIds$ = select(this.state$, (s4) => s4.activePlayerIds);
+      this.isCurrentPlayerActive$ = select(this.state$, (s4) => s4.isCurrentPlayerActive);
+      this.bombActivePlayerId$ = select(this.state$, (s4) => s4.bombActivePlayerId);
+      this.round$ = select(this.state$, (s4) => s4.round);
+      this.trick$ = select(this.state$, (s4) => s4.trick);
+      this.currentTrick$ = select(this.state$, (s4) => s4.currentTrick);
+      this.currentTrickValue$ = select(this.state$, (s4) => s4.currentTrickValue);
+      this.capturedCards$ = select(this.state$, (s4) => s4.capturedCards);
+      this.firstOutPlayerId$ = select(this.state$, (s4) => s4.firstOutPlayerId);
+      this.lastComboPlayerId$ = select(this.state$, (s4) => s4.lastComboPlayerId);
+      this.lastCombos$ = select(this.state$, (s4) => s4.lastCombos);
+      this.lastCombo$ = (playerId) => select(
+        this.state$,
+        (s4) => s4.lastCombos[String(playerId)] ?? {
+          cards: [],
+          description: "",
+          passed: false
+        }
+      );
+      this.mahjongWish$ = select(this.state$, (s4) => s4.mahjongWish);
+      this.selectedMahjongWish$ = select(this.state$, (s4) => s4.selectedMahjongWish);
+      this.phoenixAllowedValues$ = select(this.state$, (s4) => s4.phoenixAllowedValues);
+      this.selectedPhoenixValue$ = select(this.state$, (s4) => s4.selectedPhoenixValue);
+      this.clockwise$ = select(this.state$, (s4) => s4.clockwise);
+      this.squareTable$ = select(this.state$, (s4) => s4.squareTable);
+      this.theme$ = select(this.state$, (s4) => s4.theme);
+      this.isTiki$ = select(this.state$, (s4) => s4.isTiki);
+      this.experimentalReplayOpen$ = select(this.state$, (s4) => s4.experimentalReplayOpen);
+      this.trickModalOpen$ = select(this.state$, (s4) => s4.trickModalOpen);
+      this.betAnimations$ = select(this.state$, (s4) => s4.betAnimations);
+    }
+    getState() {
+      return this.subject$.getValue();
+    }
+    setState(state) {
+      this.subject$.next(state);
+    }
+    update(partialOrUpdater) {
+      const prev = this.getState();
+      const patch = typeof partialOrUpdater === "function" ? partialOrUpdater(prev) : partialOrUpdater;
+      this.subject$.next({ ...prev, ...patch });
+    }
+    updateState(partial) {
+      this.update(partial);
+    }
+    updatePlayer(playerId, partialOrUpdater) {
+      const id = String(playerId);
+      const prev = this.getState();
+      const existing = prev.players[id];
+      if (!existing) return;
+      const patch = typeof partialOrUpdater === "function" ? partialOrUpdater(existing) : partialOrUpdater;
+      this.update({
+        players: {
+          ...prev.players,
+          [id]: { ...existing, ...patch }
+        }
+      });
+    }
+    hydrateFromGamedatas(gamedatas, currentPlayerId, isSpectator, isRealtime, prefs) {
+      const currentId = String(currentPlayerId ?? "");
+      const rawPlayers = gamedatas?.players ?? {};
+      const handCounts = gamedatas?.handcount ?? gamedatas?.handCount ?? {};
+      const capturedPointsMap = gamedatas?.capturedpoints ?? gamedatas?.capturedPoints ?? {};
+      let allLastCombos = gamedatas?.allLastCombos ?? gamedatas?.combos ?? {};
+      if (Array.isArray(allLastCombos)) {
+        const combosMap = {};
+        for (const item of allLastCombos) {
+          const p3 = String(item?.player ?? item?.playerId ?? item?.player_id ?? "");
+          if (p3) combosMap[p3] = item;
+        }
+        allLastCombos = combosMap;
+      }
+      const rawPasses = Array.isArray(gamedatas?.passes) ? gamedatas.passes : [];
+      const passedSet = new Set(rawPasses.map((p3) => String(p3)));
+      const players = {};
+      const lastCombos = {};
+      for (const key of Object.keys(rawPlayers)) {
+        const p3 = rawPlayers[key];
+        const pid = String(p3?.id ?? key);
+        const combo = allLastCombos[pid] ?? allLastCombos[Number(pid)];
+        const comboCards = combo?.cards ? normalizeCards(combo.cards) : [];
+        const comboType = Number(combo?.type);
+        const isNoCombo = comboType === 99;
+        const isPassCombo = comboType === 0;
+        const hasComboCards = !isNoCombo && !isPassCombo && comboCards.length > 0;
+        const hasPassed = !hasComboCards && (isPassCombo || passedSet.has(pid));
+        const rawPass = Number(p3?.pass ?? 0);
+        const safePass = Number.isNaN(rawPass) ? 0 : rawPass;
+        players[pid] = {
+          id: pid,
+          name: String(p3?.name ?? p3?.player_name ?? ""),
+          color: String(p3?.color ?? p3?.player_color ?? "000000"),
+          no: Number(p3?.no ?? p3?.player_no ?? 0),
+          score: Number(p3?.score ?? p3?.player_score ?? 0),
+          callGrandTichu: normalizeGrandTichuBet(p3?.call_grand_tichu),
+          callTichu: normalizeTichuBet(p3?.call_tichu),
+          autopass: safePass > 0,
+          pass: safePass,
+          handcount: Number(handCounts[pid] ?? handCounts[Number(pid)] ?? 0),
+          capturedPoints: Number(capturedPointsMap[pid] ?? capturedPointsMap[Number(pid)] ?? 0),
+          passedCardReady: hasPassed
+        };
+        if (hasComboCards) {
+          lastCombos[pid] = {
+            cards: comboCards,
+            description: String(combo?.description ?? ""),
+            passed: false
+          };
+        } else if (hasPassed) {
+          lastCombos[pid] = {
+            cards: [],
+            description: "Pass",
+            passed: true
+          };
+        } else {
+          lastCombos[pid] = {
+            cards: [],
+            description: "",
+            passed: false
+          };
+        }
+      }
+      const gamestate = gamedatas?.gamestate;
+      const rawPassed = gamedatas?.passedCards ?? gamestate?.args?._private;
+      const receivedCards = Array.isArray(rawPassed) ? normalizeCards(rawPassed) : [];
+      const playersDesc = getNextPlayersDesc(players, currentId);
+      const passSlots = playersDesc.slice(0, 3).map((p3, idx) => {
+        const received = receivedCards.find((c4) => String(c4.passed_from) === p3.id) ?? (receivedCards[idx] && String(receivedCards[idx]?.passed_from) === p3.id ? receivedCards[idx] : null);
+        return {
+          dir: idx + 1,
+          playerId: p3.id,
+          givenCard: null,
+          receivedCard: received ?? null,
+          animatingAccept: false
+        };
+      });
+      const playerOrderBottomToLeft = [...playersDesc].reverse().map((p3) => p3.id);
+      const rawFirstOut = gamedatas?.firstoutplayer ?? gamedatas?.first_out_player ?? gamedatas?.first_out;
+      const firstOutPlayerId = rawFirstOut && String(rawFirstOut) !== "0" ? String(rawFirstOut) : "";
+      const rawLastComboPlayer = gamedatas?.lastComboPlayer ?? gamedatas?.last_combo_player;
+      const lastComboPlayerId = rawLastComboPlayer && String(rawLastComboPlayer) !== "0" ? String(rawLastComboPlayer) : "";
+      const rawWish = Number(gamedatas?.mahjongWish ?? gamedatas?.mahjong_wish ?? 0);
+      const mahjongWish = rawWish > 0 && rawWish < 15 ? rawWish : 0;
+      const squareTable = prefs?.squareTable !== void 0 ? Boolean(prefs.squareTable) : Number(prefs?.[100]) === 2;
+      const clockwise = prefs?.clockwise !== void 0 ? Boolean(prefs.clockwise) : Number(prefs?.[101]) !== 1;
+      const isTiki = prefs?.isTiki !== void 0 ? Boolean(prefs.isTiki) : Number(prefs?.[103]) === 1;
+      const rawTheme = prefs?.theme !== void 0 ? Number(prefs.theme) : prefs?.[104] !== void 0 ? Number(prefs[104]) : 0;
+      const theme = !Number.isNaN(rawTheme) && rawTheme >= 0 && rawTheme <= 10 ? rawTheme : 0;
+      const handSortOrder = prefs?.handSortOrder ?? "rank";
+      const stateName = String(gamestate?.name ?? "");
+      const activePlayerId = gamestate?.active_player ? String(gamestate.active_player) : "";
+      const activePlayerIds = Array.isArray(gamestate?.multiactive) ? gamestate.multiactive.map((id) => String(id)) : activePlayerId ? [activePlayerId] : [];
+      const isCurrentPlayerActive = !isSpectator && (activePlayerId === currentId || activePlayerIds.includes(currentId));
+      this.setState({
+        currentPlayerId: currentId,
+        isSpectator: Boolean(isSpectator),
+        isRealtime: Boolean(isRealtime),
+        isAllInfoExposed: Number(gamedatas?.isAllInfoExposed ?? gamedatas?.is_all_info_exposed) === 1,
+        players,
+        playerOrderBottomToLeft,
+        passSlots,
+        acceptingCardsCountdown: false,
+        collectingTrickCountdown: false,
+        hand: normalizeCards(gamedatas?.hand),
+        selectedCardIds: [],
+        handSortOrder,
+        stateName,
+        activePlayerId,
+        activePlayerIds,
+        isCurrentPlayerActive,
+        bombActivePlayerId: null,
+        round: Number(gamedatas?.round ?? 0),
+        trick: Number(gamedatas?.trick ?? 0),
+        currentTrick: normalizeCards(gamedatas?.currentTrick),
+        currentTrickValue: Number(
+          gamedatas?.currentTrickValue ?? gamedatas?.current_trick_value ?? 0
+        ),
+        capturedCards: normalizeCards(gamedatas?.capturedCards),
+        firstOutPlayerId,
+        lastComboPlayerId,
+        lastCombos,
+        mahjongWish,
+        selectedMahjongWish: null,
+        phoenixAllowedValues: [],
+        selectedPhoenixValue: null,
+        clockwise,
+        squareTable,
+        theme,
+        isTiki,
+        experimentalReplayOpen: false,
+        trickModalOpen: false,
+        betAnimations: []
+      });
+    }
+    // State machine transition helpers
+    setGameState(stateName, opts) {
+      const prev = this.getState();
+      const activePlayerId = opts?.activePlayerId !== void 0 ? opts.activePlayerId ? String(opts.activePlayerId) : "" : prev.activePlayerId;
+      const activePlayerIds = opts?.activePlayerIds !== void 0 ? opts.activePlayerIds.map((id) => String(id)) : prev.activePlayerIds;
+      const isCurrentPlayerActive = opts?.isCurrentPlayerActive !== void 0 ? opts.isCurrentPlayerActive : prev.isCurrentPlayerActive;
+      const bombActivePlayerId = opts?.bombActivePlayerId !== void 0 ? opts.bombActivePlayerId ? String(opts.bombActivePlayerId) : null : stateName === "playBomb" ? prev.bombActivePlayerId : null;
+      this.update({
+        stateName,
+        activePlayerId,
+        activePlayerIds,
+        isCurrentPlayerActive,
+        bombActivePlayerId,
+        acceptingCardsCountdown: stateName === "showPassedCards" ? prev.acceptingCardsCountdown : false,
+        collectingTrickCountdown: stateName === "confirmTrick" ? prev.collectingTrickCountdown : false
+      });
+    }
+    resetLastCombos() {
+      const prev = this.getState();
+      const lastCombos = {};
+      for (const pid of Object.keys(prev.players)) {
+        lastCombos[pid] = { cards: [], description: "", passed: false };
+      }
+      this.update({
+        lastCombos,
+        lastComboPlayerId: ""
+      });
+    }
+    enterNewRound() {
+      const prev = this.getState();
+      const players = {};
+      const lastCombos = {};
+      for (const [pid, player] of Object.entries(prev.players)) {
+        players[pid] = {
+          ...player,
+          capturedPoints: 0,
+          passedCardReady: false,
+          callTichu: -1,
+          callGrandTichu: -1
+        };
+        lastCombos[pid] = { cards: [], description: "", passed: false };
+      }
+      const passSlots = prev.passSlots.map((slot) => ({
+        ...slot,
+        givenCard: null,
+        receivedCard: null,
+        animatingAccept: false
+      }));
+      this.update({
+        players,
+        lastCombos,
+        passSlots,
+        lastComboPlayerId: "",
+        capturedCards: [],
+        hand: [],
+        selectedCardIds: [],
+        currentTrick: [],
+        currentTrickValue: 0,
+        firstOutPlayerId: "",
+        round: prev.round + 1,
+        trick: 0,
+        mahjongWish: 0,
+        selectedMahjongWish: null,
+        phoenixAllowedValues: [],
+        selectedPhoenixValue: null
+      });
+    }
+    enterGrandTichuBets() {
+      this.resetLastCombos();
+    }
+    enterShowPassedCards(receivedCards) {
+      const prev = this.getState();
+      const players = {};
+      for (const [pid, player] of Object.entries(prev.players)) {
+        players[pid] = {
+          ...player,
+          handcount: 14
+        };
+      }
+      const normalized = receivedCards ? normalizeCards(receivedCards) : [];
+      const passSlots = prev.passSlots.map((slot) => {
+        const received = normalized.find((c4) => String(c4.passed_from) === slot.playerId) ?? slot.receivedCard;
+        return {
+          ...slot,
+          givenCard: null,
+          receivedCard: received ?? null,
+          animatingAccept: false
+        };
+      });
+      this.update({
+        players,
+        passSlots
+      });
+    }
+    enterNewTrick() {
+      const prev = this.getState();
+      const lastCombos = {};
+      for (const pid of Object.keys(prev.players)) {
+        lastCombos[pid] = { cards: [], description: "", passed: false };
+      }
+      this.update({
+        lastCombos,
+        lastComboPlayerId: "",
+        capturedCards: [...prev.capturedCards, ...prev.currentTrick],
+        currentTrick: [],
+        currentTrickValue: 0,
+        trick: prev.trick + 1
+      });
+    }
+    enterMahjongPlay() {
+      this.update({
+        selectedCardIds: [],
+        selectedMahjongWish: null
+      });
+    }
+    enterPhoenixPlay(allowedValues) {
+      this.update({
+        selectedCardIds: [],
+        phoenixAllowedValues: [...allowedValues],
+        selectedPhoenixValue: null
+      });
+    }
+    enterPlayBomb(bombActivePlayerId) {
+      this.update({
+        bombActivePlayerId: String(bombActivePlayerId)
+      });
+    }
+    enterEndRound() {
+      const prev = this.getState();
+      const players = {};
+      for (const [pid, player] of Object.entries(prev.players)) {
+        players[pid] = {
+          ...player,
+          handcount: 0,
+          capturedPoints: 0,
+          callGrandTichu: -1,
+          callTichu: -1,
+          passedCardReady: false,
+          autopass: false,
+          pass: 0
+        };
+      }
+      this.update({
+        hand: [],
+        selectedCardIds: [],
+        players,
+        firstOutPlayerId: ""
+      });
+    }
+    cleanPlayersPanel() {
+      this.enterEndRound();
+    }
+    // Hand & Selection mutations
+    setHand(cards) {
+      const normalized = normalizeCards(cards);
+      const validIds = new Set(normalized.map((c4) => c4.id));
+      const prev = this.getState();
+      this.update({
+        hand: normalized,
+        selectedCardIds: prev.selectedCardIds.filter((id) => validIds.has(id))
+      });
+    }
+    dealCards(cards) {
+      const normalized = normalizeCards(cards);
+      const prev = this.getState();
+      const isInitialDeal = normalized.length === 8;
+      const nextHand = isInitialDeal ? normalized : [...prev.hand, ...normalized];
+      const totalCards = isInitialDeal ? 8 : 14;
+      const players = {};
+      for (const [pid, player] of Object.entries(prev.players)) {
+        players[pid] = {
+          ...player,
+          handcount: totalCards
+        };
+      }
+      this.update({
+        hand: nextHand,
+        selectedCardIds: isInitialDeal ? [] : prev.selectedCardIds,
+        players
+      });
+    }
+    setSelectedCardIds(selectedCardIds) {
+      this.update({ selectedCardIds: [...selectedCardIds] });
+    }
+    toggleCardSelection(cardId, mode = 2) {
+      if (mode === 0) return;
+      const id = String(cardId);
+      const prev = this.getState();
+      const isSelected = prev.selectedCardIds.includes(id);
+      if (mode === 1) {
+        this.update({ selectedCardIds: isSelected ? [] : [id] });
+      } else {
+        this.update({
+          selectedCardIds: isSelected ? prev.selectedCardIds.filter((x2) => x2 !== id) : [...prev.selectedCardIds, id]
+        });
+      }
+    }
+    clearSelection() {
+      this.update({ selectedCardIds: [] });
+    }
+    setHandSortOrder(handSortOrder) {
+      this.update({ handSortOrder });
+    }
+    // Passing cards mutations
+    toggleGiveCardSlot(slotIndex) {
+      const prev = this.getState();
+      if (prev.stateName !== "giveCards" || !prev.isCurrentPlayerActive) return;
+      const slot = prev.passSlots[slotIndex];
+      if (!slot) return;
+      if (!slot.givenCard) {
+        if (prev.selectedCardIds.length !== 1) return;
+        const selectedId = prev.selectedCardIds[0];
+        const card = prev.hand.find((c4) => c4.id === selectedId);
+        if (!card) return;
+        const passSlots = prev.passSlots.map(
+          (s4, idx) => idx === slotIndex ? { ...s4, givenCard: card } : s4
+        );
+        this.update({
+          passSlots,
+          hand: prev.hand.filter((c4) => c4.id !== selectedId),
+          selectedCardIds: []
+        });
+      } else {
+        const returnedCard = slot.givenCard;
+        const passSlots = prev.passSlots.map(
+          (s4, idx) => idx === slotIndex ? { ...s4, givenCard: null } : s4
+        );
+        this.update({
+          passSlots,
+          hand: [...prev.hand, returnedCard]
+        });
+      }
+    }
+    resetPassCards() {
+      const prev = this.getState();
+      const returnedCards = [];
+      const passSlots = prev.passSlots.map((slot) => {
+        if (slot.givenCard) {
+          returnedCards.push(slot.givenCard);
+          return { ...slot, givenCard: null };
+        }
+        return slot;
+      });
+      if (returnedCards.length === 0) return;
+      this.update({
+        passSlots,
+        hand: [...prev.hand, ...returnedCards]
+      });
+    }
+    getCardsToGiveIds() {
+      const prev = this.getState();
+      if (prev.passSlots.length < 3) return null;
+      const ids = [];
+      for (let i6 = 0; i6 < 3; i6++) {
+        const card = prev.passSlots[i6]?.givenCard;
+        if (!card) return null;
+        ids.push(card.id);
+      }
+      return ids;
+    }
+    clearGivenCards() {
+      const prev = this.getState();
+      this.update({
+        passSlots: prev.passSlots.map((s4) => ({ ...s4, givenCard: null }))
+      });
+    }
+    applyPassCardsNotif(cardIds) {
+      const idSet = new Set(cardIds.map((id) => String(id)));
+      const prev = this.getState();
+      this.update({
+        hand: prev.hand.filter((c4) => !idSet.has(c4.id)),
+        selectedCardIds: prev.selectedCardIds.filter((id) => !idSet.has(id)),
+        passSlots: prev.passSlots.map(
+          (s4) => s4.givenCard && idSet.has(s4.givenCard.id) ? { ...s4, givenCard: null } : s4
+        )
+      });
+    }
+    startAcceptCardsAnimation() {
+      const prev = this.getState();
+      this.update({
+        acceptingCardsCountdown: false,
+        passSlots: prev.passSlots.map((s4) => ({
+          ...s4,
+          animatingAccept: s4.receivedCard !== null
+        }))
+      });
+    }
+    finishAcceptCards(cards) {
+      const normalized = normalizeCards(cards);
+      const prev = this.getState();
+      const existingIds = new Set(prev.hand.map((c4) => c4.id));
+      const newCards = normalized.filter((c4) => !existingIds.has(c4.id));
+      this.update({
+        acceptingCardsCountdown: false,
+        hand: [...prev.hand, ...newCards],
+        passSlots: prev.passSlots.map((s4) => ({
+          ...s4,
+          receivedCard: null,
+          animatingAccept: false
+        }))
+      });
+    }
+    // Trick / Combo / Pass / Bet / Score / Wish / Phoenix mutations
+    applyPlayCombo(playerId, cards, comboName, points) {
+      const pid = String(playerId);
+      const normalized = normalizeCards(cards);
+      const playedIds = new Set(normalized.map((c4) => c4.id));
+      const prev = this.getState();
+      const isCurrent = pid === prev.currentPlayerId;
+      const nextHand = isCurrent ? prev.hand.filter((c4) => !playedIds.has(c4.id)) : prev.hand;
+      const nextSelectedIds = isCurrent ? prev.selectedCardIds.filter((id) => !playedIds.has(id)) : prev.selectedCardIds;
+      const existingPlayer = prev.players[pid];
+      const players = existingPlayer ? {
+        ...prev.players,
+        [pid]: {
+          ...existingPlayer,
+          handcount: Math.max(0, existingPlayer.handcount - normalized.length),
+          passedCardReady: false
+        }
+      } : prev.players;
+      const lastCombos = {
+        ...prev.lastCombos,
+        [pid]: {
+          cards: normalized,
+          description: comboName,
+          passed: false
+        }
+      };
+      this.update({
+        hand: nextHand,
+        selectedCardIds: nextSelectedIds,
+        players,
+        lastCombos,
+        lastComboPlayerId: pid,
+        currentTrick: [...prev.currentTrick, ...normalized],
+        currentTrickValue: prev.currentTrickValue + Number(points ?? 0)
+      });
+    }
+    applyPass(playerId) {
+      const pid = String(playerId);
+      const prev = this.getState();
+      const existingPlayer = prev.players[pid];
+      const players = existingPlayer ? {
+        ...prev.players,
+        [pid]: {
+          ...existingPlayer,
+          passedCardReady: true
+        }
+      } : prev.players;
+      const lastCombos = {
+        ...prev.lastCombos,
+        [pid]: {
+          cards: [],
+          description: "Pass",
+          passed: true
+        }
+      };
+      this.update({
+        players,
+        lastCombos
+      });
+    }
+    applyGrandTichuBet(playerId, bet) {
+      const pid = String(playerId);
+      const normalizedBet = normalizeGrandTichuBet(bet);
+      const prev = this.getState();
+      const existingPlayer = prev.players[pid];
+      if (!existingPlayer) return;
+      this.updatePlayer(pid, {
+        callGrandTichu: normalizedBet,
+        callTichu: normalizedBet === 200 ? 0 : existingPlayer.callTichu
+      });
+    }
+    applyTichuBet(playerId, bet) {
+      const pid = String(playerId);
+      const normalizedBet = normalizeTichuBet(bet);
+      const prev = this.getState();
+      const existingPlayer = prev.players[pid];
+      if (!existingPlayer) return;
+      this.updatePlayer(pid, {
+        callTichu: normalizedBet,
+        callGrandTichu: existingPlayer.callGrandTichu === 200 ? 200 : 0
+      });
+    }
+    addBetAnimation(playerId, bet) {
+      const id = this.nextBetAnimId++;
+      const prev = this.getState();
+      this.update({
+        betAnimations: [
+          ...prev.betAnimations,
+          {
+            id,
+            playerId: String(playerId),
+            bet: Number(bet),
+            fadingOut: false
+          }
+        ]
+      });
+      return id;
+    }
+    fadeOutBetAnimation(id) {
+      const prev = this.getState();
+      this.update({
+        betAnimations: prev.betAnimations.map((a3) => a3.id === id ? { ...a3, fadingOut: true } : a3)
+      });
+    }
+    removeBetAnimation(id) {
+      const prev = this.getState();
+      this.update({
+        betAnimations: prev.betAnimations.filter((a3) => a3.id !== id)
+      });
+    }
+    triggerBetAnimation(playerId, bet, fadeDelayMs = 1e3, fadeDurationMs = 1e3) {
+      const id = this.addBetAnimation(playerId, bet);
+      setTimeout(() => {
+        this.fadeOutBetAnimation(id);
+      }, fadeDelayMs);
+      setTimeout(() => {
+        this.removeBetAnimation(id);
+      }, fadeDelayMs + fadeDurationMs);
+    }
+    setMahjongWish(wish) {
+      const n5 = Number(wish);
+      this.update({
+        mahjongWish: n5 > 0 && n5 < 15 ? n5 : 0,
+        selectedMahjongWish: null
+      });
+    }
+    setSelectedMahjongWish(selectedMahjongWish) {
+      this.update({ selectedMahjongWish });
+    }
+    setPhoenixAllowedValues(phoenixAllowedValues) {
+      this.update({ phoenixAllowedValues: [...phoenixAllowedValues] });
+    }
+    setSelectedPhoenixValue(selectedPhoenixValue) {
+      this.update({ selectedPhoenixValue });
+    }
+    applyPlayerGoOut(playerId, firstOutId) {
+      const pid = String(playerId);
+      const fid = String(firstOutId);
+      const prev = this.getState();
+      const existingPlayer = prev.players[pid];
+      const players = existingPlayer ? {
+        ...prev.players,
+        [pid]: {
+          ...existingPlayer,
+          handcount: 0
+        }
+      } : prev.players;
+      this.update({
+        players,
+        firstOutPlayerId: pid === fid ? pid : prev.firstOutPlayerId
+      });
+    }
+    applyCaptureCards(playerId, trickValue) {
+      const pid = String(playerId);
+      const prev = this.getState();
+      const players = {};
+      for (const [id, player] of Object.entries(prev.players)) {
+        players[id] = {
+          ...player,
+          capturedPoints: id === pid ? player.capturedPoints + Number(trickValue) : player.capturedPoints,
+          passedCardReady: false
+        };
+      }
+      this.update({ players });
+    }
+    applyNewScores(newScores) {
+      const prev = this.getState();
+      const players = { ...prev.players };
+      for (const [id, score] of Object.entries(newScores)) {
+        const pid = String(id);
+        const existing = players[pid];
+        if (existing) {
+          players[pid] = {
+            ...existing,
+            score: Number(score)
+          };
+        }
+      }
+      this.update({ players });
+    }
+    setAutopass(autopassValue) {
+      const prev = this.getState();
+      if (prev.isSpectator || !prev.currentPlayerId) return;
+      const passNum = typeof autopassValue === "boolean" ? autopassValue ? 1 : 0 : Number(autopassValue) || 0;
+      this.updatePlayer(prev.currentPlayerId, {
+        autopass: passNum > 0,
+        pass: passNum
+      });
+    }
+    // UI & Preferences setters
+    setClockwise(clockwise) {
+      this.update({ clockwise });
+    }
+    setSquareTable(squareTable) {
+      this.update({ squareTable });
+    }
+    setTheme(theme) {
+      this.update({ theme });
+    }
+    setTiki(isTiki) {
+      this.update({ isTiki });
+    }
+    setExperimentalReplayOpen(experimentalReplayOpen) {
+      this.update({ experimentalReplayOpen });
+    }
+    setTrickModalOpen(trickModalOpen) {
+      this.update({ trickModalOpen });
+    }
+    setAcceptingCardsCountdown(acceptingCardsCountdown) {
+      this.update({ acceptingCardsCountdown });
+    }
+    setCollectingTrickCountdown(collectingTrickCountdown) {
+      this.update({ collectingTrickCountdown });
+    }
+  };
+  if (typeof window !== "undefined") {
+    if (!window.gameModel) {
+      window.gameModel = new GameModel();
+    }
+  }
+  if (typeof document !== "undefined" && document.documentElement) {
+    const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+    document.documentElement.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+    document.documentElement.style.setProperty(
+      "--table-icons-url",
+      `url(${themeUrl}img/tichu-icons-table.png)`
+    );
+    document.documentElement.style.setProperty(
+      "--mahjong-bg-url",
+      `url(${themeUrl}img/tichu-mahjong.png)`
+    );
+    document.documentElement.style.setProperty(
+      "--tiki-mahjong-bg-url",
+      `url(${themeUrl}img/tiki-tichu-mahjong.png)`
+    );
+  }
+
+  // node_modules/@lit/reactive-element/css-tag.js
+  var t = globalThis;
+  var e = t.ShadowRoot && (void 0 === t.ShadyCSS || t.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
+  var s = /* @__PURE__ */ Symbol();
+  var o = /* @__PURE__ */ new WeakMap();
+  var n = class {
+    constructor(t12, e7, o6) {
+      if (this._$cssResult$ = true, o6 !== s) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
+      this.cssText = t12, this.t = e7;
+    }
+    get styleSheet() {
+      let t12 = this.o;
+      const s4 = this.t;
+      if (e && void 0 === t12) {
+        const e7 = void 0 !== s4 && 1 === s4.length;
+        e7 && (t12 = o.get(s4)), void 0 === t12 && ((this.o = t12 = new CSSStyleSheet()).replaceSync(this.cssText), e7 && o.set(s4, t12));
+      }
+      return t12;
+    }
+    toString() {
+      return this.cssText;
+    }
+  };
+  var r = (t12) => new n("string" == typeof t12 ? t12 : t12 + "", void 0, s);
+  var i = (t12, ...e7) => {
+    const o6 = 1 === t12.length ? t12[0] : e7.reduce(((e8, s4, o7) => e8 + ((t13) => {
+      if (true === t13._$cssResult$) return t13.cssText;
+      if ("number" == typeof t13) return t13;
+      throw Error("Value passed to 'css' function must be a 'css' function result: " + t13 + ". Use 'unsafeCSS' to pass non-literal values, but take care to ensure page security.");
+    })(s4) + t12[o7 + 1]), t12[0]);
+    return new n(o6, t12, s);
+  };
+  var S = (s4, o6) => {
+    if (e) s4.adoptedStyleSheets = o6.map(((t12) => t12 instanceof CSSStyleSheet ? t12 : t12.styleSheet));
+    else for (const e7 of o6) {
+      const o7 = document.createElement("style"), n5 = t.litNonce;
+      void 0 !== n5 && o7.setAttribute("nonce", n5), o7.textContent = e7.cssText, s4.appendChild(o7);
+    }
+  };
+  var c = e ? (t12) => t12 : (t12) => t12 instanceof CSSStyleSheet ? ((t13) => {
+    let e7 = "";
+    for (const s4 of t13.cssRules) e7 += s4.cssText;
+    return r(e7);
+  })(t12) : t12;
+
+  // node_modules/@lit/reactive-element/reactive-element.js
+  var { is: i2, defineProperty: e2, getOwnPropertyDescriptor: h, getOwnPropertyNames: r2, getOwnPropertySymbols: o2, getPrototypeOf: n2 } = Object;
+  var a = globalThis;
+  var c2 = a.trustedTypes;
+  var l = c2 ? c2.emptyScript : "";
+  var p = a.reactiveElementPolyfillSupport;
+  var d = (t12, s4) => t12;
+  var u = { toAttribute(t12, s4) {
+    switch (s4) {
+      case Boolean:
+        t12 = t12 ? l : null;
+        break;
+      case Object:
+      case Array:
+        t12 = null == t12 ? t12 : JSON.stringify(t12);
+    }
+    return t12;
+  }, fromAttribute(t12, s4) {
+    let i6 = t12;
+    switch (s4) {
+      case Boolean:
+        i6 = null !== t12;
+        break;
+      case Number:
+        i6 = null === t12 ? null : Number(t12);
+        break;
+      case Object:
+      case Array:
+        try {
+          i6 = JSON.parse(t12);
+        } catch (t13) {
+          i6 = null;
+        }
+    }
+    return i6;
+  } };
+  var f = (t12, s4) => !i2(t12, s4);
+  var b = { attribute: true, type: String, converter: u, reflect: false, useDefault: false, hasChanged: f };
+  Symbol.metadata ??= /* @__PURE__ */ Symbol("metadata"), a.litPropertyMetadata ??= /* @__PURE__ */ new WeakMap();
+  var y = class extends HTMLElement {
+    static addInitializer(t12) {
+      this._$Ei(), (this.l ??= []).push(t12);
+    }
+    static get observedAttributes() {
+      return this.finalize(), this._$Eh && [...this._$Eh.keys()];
+    }
+    static createProperty(t12, s4 = b) {
+      if (s4.state && (s4.attribute = false), this._$Ei(), this.prototype.hasOwnProperty(t12) && ((s4 = Object.create(s4)).wrapped = true), this.elementProperties.set(t12, s4), !s4.noAccessor) {
+        const i6 = /* @__PURE__ */ Symbol(), h3 = this.getPropertyDescriptor(t12, i6, s4);
+        void 0 !== h3 && e2(this.prototype, t12, h3);
+      }
+    }
+    static getPropertyDescriptor(t12, s4, i6) {
+      const { get: e7, set: r6 } = h(this.prototype, t12) ?? { get() {
+        return this[s4];
+      }, set(t13) {
+        this[s4] = t13;
+      } };
+      return { get: e7, set(s5) {
+        const h3 = e7?.call(this);
+        r6?.call(this, s5), this.requestUpdate(t12, h3, i6);
+      }, configurable: true, enumerable: true };
+    }
+    static getPropertyOptions(t12) {
+      return this.elementProperties.get(t12) ?? b;
+    }
+    static _$Ei() {
+      if (this.hasOwnProperty(d("elementProperties"))) return;
+      const t12 = n2(this);
+      t12.finalize(), void 0 !== t12.l && (this.l = [...t12.l]), this.elementProperties = new Map(t12.elementProperties);
+    }
+    static finalize() {
+      if (this.hasOwnProperty(d("finalized"))) return;
+      if (this.finalized = true, this._$Ei(), this.hasOwnProperty(d("properties"))) {
+        const t13 = this.properties, s4 = [...r2(t13), ...o2(t13)];
+        for (const i6 of s4) this.createProperty(i6, t13[i6]);
+      }
+      const t12 = this[Symbol.metadata];
+      if (null !== t12) {
+        const s4 = litPropertyMetadata.get(t12);
+        if (void 0 !== s4) for (const [t13, i6] of s4) this.elementProperties.set(t13, i6);
+      }
+      this._$Eh = /* @__PURE__ */ new Map();
+      for (const [t13, s4] of this.elementProperties) {
+        const i6 = this._$Eu(t13, s4);
+        void 0 !== i6 && this._$Eh.set(i6, t13);
+      }
+      this.elementStyles = this.finalizeStyles(this.styles);
+    }
+    static finalizeStyles(s4) {
+      const i6 = [];
+      if (Array.isArray(s4)) {
+        const e7 = new Set(s4.flat(1 / 0).reverse());
+        for (const s5 of e7) i6.unshift(c(s5));
+      } else void 0 !== s4 && i6.push(c(s4));
+      return i6;
+    }
+    static _$Eu(t12, s4) {
+      const i6 = s4.attribute;
+      return false === i6 ? void 0 : "string" == typeof i6 ? i6 : "string" == typeof t12 ? t12.toLowerCase() : void 0;
+    }
+    constructor() {
+      super(), this._$Ep = void 0, this.isUpdatePending = false, this.hasUpdated = false, this._$Em = null, this._$Ev();
+    }
+    _$Ev() {
+      this._$ES = new Promise(((t12) => this.enableUpdating = t12)), this._$AL = /* @__PURE__ */ new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach(((t12) => t12(this)));
+    }
+    addController(t12) {
+      (this._$EO ??= /* @__PURE__ */ new Set()).add(t12), void 0 !== this.renderRoot && this.isConnected && t12.hostConnected?.();
+    }
+    removeController(t12) {
+      this._$EO?.delete(t12);
+    }
+    _$E_() {
+      const t12 = /* @__PURE__ */ new Map(), s4 = this.constructor.elementProperties;
+      for (const i6 of s4.keys()) this.hasOwnProperty(i6) && (t12.set(i6, this[i6]), delete this[i6]);
+      t12.size > 0 && (this._$Ep = t12);
+    }
+    createRenderRoot() {
+      const t12 = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
+      return S(t12, this.constructor.elementStyles), t12;
+    }
+    connectedCallback() {
+      this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(true), this._$EO?.forEach(((t12) => t12.hostConnected?.()));
+    }
+    enableUpdating(t12) {
+    }
+    disconnectedCallback() {
+      this._$EO?.forEach(((t12) => t12.hostDisconnected?.()));
+    }
+    attributeChangedCallback(t12, s4, i6) {
+      this._$AK(t12, i6);
+    }
+    _$ET(t12, s4) {
+      const i6 = this.constructor.elementProperties.get(t12), e7 = this.constructor._$Eu(t12, i6);
+      if (void 0 !== e7 && true === i6.reflect) {
+        const h3 = (void 0 !== i6.converter?.toAttribute ? i6.converter : u).toAttribute(s4, i6.type);
+        this._$Em = t12, null == h3 ? this.removeAttribute(e7) : this.setAttribute(e7, h3), this._$Em = null;
+      }
+    }
+    _$AK(t12, s4) {
+      const i6 = this.constructor, e7 = i6._$Eh.get(t12);
+      if (void 0 !== e7 && this._$Em !== e7) {
+        const t13 = i6.getPropertyOptions(e7), h3 = "function" == typeof t13.converter ? { fromAttribute: t13.converter } : void 0 !== t13.converter?.fromAttribute ? t13.converter : u;
+        this._$Em = e7;
+        const r6 = h3.fromAttribute(s4, t13.type);
+        this[e7] = r6 ?? this._$Ej?.get(e7) ?? r6, this._$Em = null;
+      }
+    }
+    requestUpdate(t12, s4, i6) {
+      if (void 0 !== t12) {
+        const e7 = this.constructor, h3 = this[t12];
+        if (i6 ??= e7.getPropertyOptions(t12), !((i6.hasChanged ?? f)(h3, s4) || i6.useDefault && i6.reflect && h3 === this._$Ej?.get(t12) && !this.hasAttribute(e7._$Eu(t12, i6)))) return;
+        this.C(t12, s4, i6);
+      }
+      false === this.isUpdatePending && (this._$ES = this._$EP());
+    }
+    C(t12, s4, { useDefault: i6, reflect: e7, wrapped: h3 }, r6) {
+      i6 && !(this._$Ej ??= /* @__PURE__ */ new Map()).has(t12) && (this._$Ej.set(t12, r6 ?? s4 ?? this[t12]), true !== h3 || void 0 !== r6) || (this._$AL.has(t12) || (this.hasUpdated || i6 || (s4 = void 0), this._$AL.set(t12, s4)), true === e7 && this._$Em !== t12 && (this._$Eq ??= /* @__PURE__ */ new Set()).add(t12));
+    }
+    async _$EP() {
+      this.isUpdatePending = true;
+      try {
+        await this._$ES;
+      } catch (t13) {
+        Promise.reject(t13);
+      }
+      const t12 = this.scheduleUpdate();
+      return null != t12 && await t12, !this.isUpdatePending;
+    }
+    scheduleUpdate() {
+      return this.performUpdate();
+    }
+    performUpdate() {
+      if (!this.isUpdatePending) return;
+      if (!this.hasUpdated) {
+        if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
+          for (const [t14, s5] of this._$Ep) this[t14] = s5;
+          this._$Ep = void 0;
+        }
+        const t13 = this.constructor.elementProperties;
+        if (t13.size > 0) for (const [s5, i6] of t13) {
+          const { wrapped: t14 } = i6, e7 = this[s5];
+          true !== t14 || this._$AL.has(s5) || void 0 === e7 || this.C(s5, void 0, i6, e7);
+        }
+      }
+      let t12 = false;
+      const s4 = this._$AL;
+      try {
+        t12 = this.shouldUpdate(s4), t12 ? (this.willUpdate(s4), this._$EO?.forEach(((t13) => t13.hostUpdate?.())), this.update(s4)) : this._$EM();
+      } catch (s5) {
+        throw t12 = false, this._$EM(), s5;
+      }
+      t12 && this._$AE(s4);
+    }
+    willUpdate(t12) {
+    }
+    _$AE(t12) {
+      this._$EO?.forEach(((t13) => t13.hostUpdated?.())), this.hasUpdated || (this.hasUpdated = true, this.firstUpdated(t12)), this.updated(t12);
+    }
+    _$EM() {
+      this._$AL = /* @__PURE__ */ new Map(), this.isUpdatePending = false;
+    }
+    get updateComplete() {
+      return this.getUpdateComplete();
+    }
+    getUpdateComplete() {
+      return this._$ES;
+    }
+    shouldUpdate(t12) {
+      return true;
+    }
+    update(t12) {
+      this._$Eq &&= this._$Eq.forEach(((t13) => this._$ET(t13, this[t13]))), this._$EM();
+    }
+    updated(t12) {
+    }
+    firstUpdated(t12) {
+    }
+  };
+  y.elementStyles = [], y.shadowRootOptions = { mode: "open" }, y[d("elementProperties")] = /* @__PURE__ */ new Map(), y[d("finalized")] = /* @__PURE__ */ new Map(), p?.({ ReactiveElement: y }), (a.reactiveElementVersions ??= []).push("2.1.1");
+
+  // node_modules/lit-html/lit-html.js
+  var t2 = globalThis;
+  var i3 = t2.trustedTypes;
+  var s2 = i3 ? i3.createPolicy("lit-html", { createHTML: (t12) => t12 }) : void 0;
+  var e3 = "$lit$";
+  var h2 = `lit$${Math.random().toFixed(9).slice(2)}$`;
+  var o3 = "?" + h2;
+  var n3 = `<${o3}>`;
+  var r3 = document;
+  var l2 = () => r3.createComment("");
+  var c3 = (t12) => null === t12 || "object" != typeof t12 && "function" != typeof t12;
+  var a2 = Array.isArray;
+  var u2 = (t12) => a2(t12) || "function" == typeof t12?.[Symbol.iterator];
+  var d2 = "[ 	\n\f\r]";
+  var f2 = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
+  var v = /-->/g;
+  var _2 = />/g;
+  var m = RegExp(`>|${d2}(?:([^\\s"'>=/]+)(${d2}*=${d2}*(?:[^ 	
+\f\r"'\`<>=]|("|')|))|$)`, "g");
+  var p2 = /'/g;
+  var g = /"/g;
+  var $ = /^(?:script|style|textarea|title)$/i;
+  var y2 = (t12) => (i6, ...s4) => ({ _$litType$: t12, strings: i6, values: s4 });
+  var x = y2(1);
+  var b2 = y2(2);
+  var w = y2(3);
+  var T = /* @__PURE__ */ Symbol.for("lit-noChange");
+  var E = /* @__PURE__ */ Symbol.for("lit-nothing");
+  var A = /* @__PURE__ */ new WeakMap();
+  var C = r3.createTreeWalker(r3, 129);
+  function P(t12, i6) {
+    if (!a2(t12) || !t12.hasOwnProperty("raw")) throw Error("invalid template strings array");
+    return void 0 !== s2 ? s2.createHTML(i6) : i6;
+  }
+  var V = (t12, i6) => {
+    const s4 = t12.length - 1, o6 = [];
+    let r6, l3 = 2 === i6 ? "<svg>" : 3 === i6 ? "<math>" : "", c4 = f2;
+    for (let i7 = 0; i7 < s4; i7++) {
+      const s5 = t12[i7];
+      let a3, u3, d3 = -1, y3 = 0;
+      for (; y3 < s5.length && (c4.lastIndex = y3, u3 = c4.exec(s5), null !== u3); ) y3 = c4.lastIndex, c4 === f2 ? "!--" === u3[1] ? c4 = v : void 0 !== u3[1] ? c4 = _2 : void 0 !== u3[2] ? ($.test(u3[2]) && (r6 = RegExp("</" + u3[2], "g")), c4 = m) : void 0 !== u3[3] && (c4 = m) : c4 === m ? ">" === u3[0] ? (c4 = r6 ?? f2, d3 = -1) : void 0 === u3[1] ? d3 = -2 : (d3 = c4.lastIndex - u3[2].length, a3 = u3[1], c4 = void 0 === u3[3] ? m : '"' === u3[3] ? g : p2) : c4 === g || c4 === p2 ? c4 = m : c4 === v || c4 === _2 ? c4 = f2 : (c4 = m, r6 = void 0);
+      const x2 = c4 === m && t12[i7 + 1].startsWith("/>") ? " " : "";
+      l3 += c4 === f2 ? s5 + n3 : d3 >= 0 ? (o6.push(a3), s5.slice(0, d3) + e3 + s5.slice(d3) + h2 + x2) : s5 + h2 + (-2 === d3 ? i7 : x2);
+    }
+    return [P(t12, l3 + (t12[s4] || "<?>") + (2 === i6 ? "</svg>" : 3 === i6 ? "</math>" : "")), o6];
+  };
+  var N = class _N {
+    constructor({ strings: t12, _$litType$: s4 }, n5) {
+      let r6;
+      this.parts = [];
+      let c4 = 0, a3 = 0;
+      const u3 = t12.length - 1, d3 = this.parts, [f3, v2] = V(t12, s4);
+      if (this.el = _N.createElement(f3, n5), C.currentNode = this.el.content, 2 === s4 || 3 === s4) {
+        const t13 = this.el.content.firstChild;
+        t13.replaceWith(...t13.childNodes);
+      }
+      for (; null !== (r6 = C.nextNode()) && d3.length < u3; ) {
+        if (1 === r6.nodeType) {
+          if (r6.hasAttributes()) for (const t13 of r6.getAttributeNames()) if (t13.endsWith(e3)) {
+            const i6 = v2[a3++], s5 = r6.getAttribute(t13).split(h2), e7 = /([.?@])?(.*)/.exec(i6);
+            d3.push({ type: 1, index: c4, name: e7[2], strings: s5, ctor: "." === e7[1] ? H : "?" === e7[1] ? I : "@" === e7[1] ? L : k }), r6.removeAttribute(t13);
+          } else t13.startsWith(h2) && (d3.push({ type: 6, index: c4 }), r6.removeAttribute(t13));
+          if ($.test(r6.tagName)) {
+            const t13 = r6.textContent.split(h2), s5 = t13.length - 1;
+            if (s5 > 0) {
+              r6.textContent = i3 ? i3.emptyScript : "";
+              for (let i6 = 0; i6 < s5; i6++) r6.append(t13[i6], l2()), C.nextNode(), d3.push({ type: 2, index: ++c4 });
+              r6.append(t13[s5], l2());
+            }
+          }
+        } else if (8 === r6.nodeType) if (r6.data === o3) d3.push({ type: 2, index: c4 });
+        else {
+          let t13 = -1;
+          for (; -1 !== (t13 = r6.data.indexOf(h2, t13 + 1)); ) d3.push({ type: 7, index: c4 }), t13 += h2.length - 1;
+        }
+        c4++;
+      }
+    }
+    static createElement(t12, i6) {
+      const s4 = r3.createElement("template");
+      return s4.innerHTML = t12, s4;
+    }
+  };
+  function S2(t12, i6, s4 = t12, e7) {
+    if (i6 === T) return i6;
+    let h3 = void 0 !== e7 ? s4._$Co?.[e7] : s4._$Cl;
+    const o6 = c3(i6) ? void 0 : i6._$litDirective$;
+    return h3?.constructor !== o6 && (h3?._$AO?.(false), void 0 === o6 ? h3 = void 0 : (h3 = new o6(t12), h3._$AT(t12, s4, e7)), void 0 !== e7 ? (s4._$Co ??= [])[e7] = h3 : s4._$Cl = h3), void 0 !== h3 && (i6 = S2(t12, h3._$AS(t12, i6.values), h3, e7)), i6;
+  }
+  var M = class {
+    constructor(t12, i6) {
+      this._$AV = [], this._$AN = void 0, this._$AD = t12, this._$AM = i6;
+    }
+    get parentNode() {
+      return this._$AM.parentNode;
     }
     get _$AU() {
       return this._$AM._$AU;
     }
-    _$AT(t4, e7, i6) {
-      this._$Ct = t4, this._$AM = e7, this._$Ci = i6;
+    u(t12) {
+      const { el: { content: i6 }, parts: s4 } = this._$AD, e7 = (t12?.creationScope ?? r3).importNode(i6, true);
+      C.currentNode = e7;
+      let h3 = C.nextNode(), o6 = 0, n5 = 0, l3 = s4[0];
+      for (; void 0 !== l3; ) {
+        if (o6 === l3.index) {
+          let i7;
+          2 === l3.type ? i7 = new R(h3, h3.nextSibling, this, t12) : 1 === l3.type ? i7 = new l3.ctor(h3, l3.name, l3.strings, this, t12) : 6 === l3.type && (i7 = new z(h3, this, t12)), this._$AV.push(i7), l3 = s4[++n5];
+        }
+        o6 !== l3?.index && (h3 = C.nextNode(), o6++);
+      }
+      return C.currentNode = r3, e7;
     }
-    _$AS(t4, e7) {
-      return this.update(t4, e7);
+    p(t12) {
+      let i6 = 0;
+      for (const s4 of this._$AV) void 0 !== s4 && (void 0 !== s4.strings ? (s4._$AI(t12, s4, i6), i6 += s4.strings.length - 2) : s4._$AI(t12[i6])), i6++;
     }
-    update(t4, e7) {
+  };
+  var R = class _R {
+    get _$AU() {
+      return this._$AM?._$AU ?? this._$Cv;
+    }
+    constructor(t12, i6, s4, e7) {
+      this.type = 2, this._$AH = E, this._$AN = void 0, this._$AA = t12, this._$AB = i6, this._$AM = s4, this.options = e7, this._$Cv = e7?.isConnected ?? true;
+    }
+    get parentNode() {
+      let t12 = this._$AA.parentNode;
+      const i6 = this._$AM;
+      return void 0 !== i6 && 11 === t12?.nodeType && (t12 = i6.parentNode), t12;
+    }
+    get startNode() {
+      return this._$AA;
+    }
+    get endNode() {
+      return this._$AB;
+    }
+    _$AI(t12, i6 = this) {
+      t12 = S2(this, t12, i6), c3(t12) ? t12 === E || null == t12 || "" === t12 ? (this._$AH !== E && this._$AR(), this._$AH = E) : t12 !== this._$AH && t12 !== T && this._(t12) : void 0 !== t12._$litType$ ? this.$(t12) : void 0 !== t12.nodeType ? this.T(t12) : u2(t12) ? this.k(t12) : this._(t12);
+    }
+    O(t12) {
+      return this._$AA.parentNode.insertBefore(t12, this._$AB);
+    }
+    T(t12) {
+      this._$AH !== t12 && (this._$AR(), this._$AH = this.O(t12));
+    }
+    _(t12) {
+      this._$AH !== E && c3(this._$AH) ? this._$AA.nextSibling.data = t12 : this.T(r3.createTextNode(t12)), this._$AH = t12;
+    }
+    $(t12) {
+      const { values: i6, _$litType$: s4 } = t12, e7 = "number" == typeof s4 ? this._$AC(t12) : (void 0 === s4.el && (s4.el = N.createElement(P(s4.h, s4.h[0]), this.options)), s4);
+      if (this._$AH?._$AD === e7) this._$AH.p(i6);
+      else {
+        const t13 = new M(e7, this), s5 = t13.u(this.options);
+        t13.p(i6), this.T(s5), this._$AH = t13;
+      }
+    }
+    _$AC(t12) {
+      let i6 = A.get(t12.strings);
+      return void 0 === i6 && A.set(t12.strings, i6 = new N(t12)), i6;
+    }
+    k(t12) {
+      a2(this._$AH) || (this._$AH = [], this._$AR());
+      const i6 = this._$AH;
+      let s4, e7 = 0;
+      for (const h3 of t12) e7 === i6.length ? i6.push(s4 = new _R(this.O(l2()), this.O(l2()), this, this.options)) : s4 = i6[e7], s4._$AI(h3), e7++;
+      e7 < i6.length && (this._$AR(s4 && s4._$AB.nextSibling, e7), i6.length = e7);
+    }
+    _$AR(t12 = this._$AA.nextSibling, i6) {
+      for (this._$AP?.(false, true, i6); t12 !== this._$AB; ) {
+        const i7 = t12.nextSibling;
+        t12.remove(), t12 = i7;
+      }
+    }
+    setConnected(t12) {
+      void 0 === this._$AM && (this._$Cv = t12, this._$AP?.(t12));
+    }
+  };
+  var k = class {
+    get tagName() {
+      return this.element.tagName;
+    }
+    get _$AU() {
+      return this._$AM._$AU;
+    }
+    constructor(t12, i6, s4, e7, h3) {
+      this.type = 1, this._$AH = E, this._$AN = void 0, this.element = t12, this.name = i6, this._$AM = e7, this.options = h3, s4.length > 2 || "" !== s4[0] || "" !== s4[1] ? (this._$AH = Array(s4.length - 1).fill(new String()), this.strings = s4) : this._$AH = E;
+    }
+    _$AI(t12, i6 = this, s4, e7) {
+      const h3 = this.strings;
+      let o6 = false;
+      if (void 0 === h3) t12 = S2(this, t12, i6, 0), o6 = !c3(t12) || t12 !== this._$AH && t12 !== T, o6 && (this._$AH = t12);
+      else {
+        const e8 = t12;
+        let n5, r6;
+        for (t12 = h3[0], n5 = 0; n5 < h3.length - 1; n5++) r6 = S2(this, e8[s4 + n5], i6, n5), r6 === T && (r6 = this._$AH[n5]), o6 ||= !c3(r6) || r6 !== this._$AH[n5], r6 === E ? t12 = E : t12 !== E && (t12 += (r6 ?? "") + h3[n5 + 1]), this._$AH[n5] = r6;
+      }
+      o6 && !e7 && this.j(t12);
+    }
+    j(t12) {
+      t12 === E ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t12 ?? "");
+    }
+  };
+  var H = class extends k {
+    constructor() {
+      super(...arguments), this.type = 3;
+    }
+    j(t12) {
+      this.element[this.name] = t12 === E ? void 0 : t12;
+    }
+  };
+  var I = class extends k {
+    constructor() {
+      super(...arguments), this.type = 4;
+    }
+    j(t12) {
+      this.element.toggleAttribute(this.name, !!t12 && t12 !== E);
+    }
+  };
+  var L = class extends k {
+    constructor(t12, i6, s4, e7, h3) {
+      super(t12, i6, s4, e7, h3), this.type = 5;
+    }
+    _$AI(t12, i6 = this) {
+      if ((t12 = S2(this, t12, i6, 0) ?? E) === T) return;
+      const s4 = this._$AH, e7 = t12 === E && s4 !== E || t12.capture !== s4.capture || t12.once !== s4.once || t12.passive !== s4.passive, h3 = t12 !== E && (s4 === E || e7);
+      e7 && this.element.removeEventListener(this.name, this, s4), h3 && this.element.addEventListener(this.name, this, t12), this._$AH = t12;
+    }
+    handleEvent(t12) {
+      "function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t12) : this._$AH.handleEvent(t12);
+    }
+  };
+  var z = class {
+    constructor(t12, i6, s4) {
+      this.element = t12, this.type = 6, this._$AN = void 0, this._$AM = i6, this.options = s4;
+    }
+    get _$AU() {
+      return this._$AM._$AU;
+    }
+    _$AI(t12) {
+      S2(this, t12);
+    }
+  };
+  var j = t2.litHtmlPolyfillSupport;
+  j?.(N, R), (t2.litHtmlVersions ??= []).push("3.3.1");
+  var B = (t12, i6, s4) => {
+    const e7 = s4?.renderBefore ?? i6;
+    let h3 = e7._$litPart$;
+    if (void 0 === h3) {
+      const t13 = s4?.renderBefore ?? null;
+      e7._$litPart$ = h3 = new R(i6.insertBefore(l2(), t13), t13, void 0, s4 ?? {});
+    }
+    return h3._$AI(t12), h3;
+  };
+
+  // node_modules/lit-element/lit-element.js
+  var s3 = globalThis;
+  var i4 = class extends y {
+    constructor() {
+      super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
+    }
+    createRenderRoot() {
+      const t12 = super.createRenderRoot();
+      return this.renderOptions.renderBefore ??= t12.firstChild, t12;
+    }
+    update(t12) {
+      const r6 = this.render();
+      this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t12), this._$Do = B(r6, this.renderRoot, this.renderOptions);
+    }
+    connectedCallback() {
+      super.connectedCallback(), this._$Do?.setConnected(true);
+    }
+    disconnectedCallback() {
+      super.disconnectedCallback(), this._$Do?.setConnected(false);
+    }
+    render() {
+      return T;
+    }
+  };
+  i4._$litElement$ = true, i4["finalized"] = true, s3.litElementHydrateSupport?.({ LitElement: i4 });
+  var o4 = s3.litElementPolyfillSupport;
+  o4?.({ LitElement: i4 });
+  (s3.litElementVersions ??= []).push("4.2.1");
+
+  // node_modules/@lit/reactive-element/decorators/property.js
+  var o5 = { attribute: true, type: String, converter: u, reflect: false, hasChanged: f };
+  var r4 = (t12 = o5, e7, r6) => {
+    const { kind: n5, metadata: i6 } = r6;
+    let s4 = globalThis.litPropertyMetadata.get(i6);
+    if (void 0 === s4 && globalThis.litPropertyMetadata.set(i6, s4 = /* @__PURE__ */ new Map()), "setter" === n5 && ((t12 = Object.create(t12)).wrapped = true), s4.set(r6.name, t12), "accessor" === n5) {
+      const { name: o6 } = r6;
+      return { set(r7) {
+        const n6 = e7.get.call(this);
+        e7.set.call(this, r7), this.requestUpdate(o6, n6, t12);
+      }, init(e8) {
+        return void 0 !== e8 && this.C(o6, void 0, t12, e8), e8;
+      } };
+    }
+    if ("setter" === n5) {
+      const { name: o6 } = r6;
+      return function(r7) {
+        const n6 = this[o6];
+        e7.call(this, r7), this.requestUpdate(o6, n6, t12);
+      };
+    }
+    throw Error("Unsupported decorator location: " + n5);
+  };
+  function n4(t12) {
+    return (e7, o6) => "object" == typeof o6 ? r4(t12, e7, o6) : ((t13, e8, o7) => {
+      const r6 = e8.hasOwnProperty(o7);
+      return e8.constructor.createProperty(o7, t13), r6 ? Object.getOwnPropertyDescriptor(e8, o7) : void 0;
+    })(t12, e7, o6);
+  }
+
+  // node_modules/@lit/reactive-element/decorators/state.js
+  function r5(r6) {
+    return n4({ ...r6, state: true, attribute: false });
+  }
+
+  // node_modules/lit-html/directive.js
+  var t3 = { ATTRIBUTE: 1, CHILD: 2, PROPERTY: 3, BOOLEAN_ATTRIBUTE: 4, EVENT: 5, ELEMENT: 6 };
+  var e5 = (t12) => (...e7) => ({ _$litDirective$: t12, values: e7 });
+  var i5 = class {
+    constructor(t12) {
+    }
+    get _$AU() {
+      return this._$AM._$AU;
+    }
+    _$AT(t12, e7, i6) {
+      this._$Ct = t12, this._$AM = e7, this._$Ci = i6;
+    }
+    _$AS(t12, e7) {
+      return this.update(t12, e7);
+    }
+    update(t12, e7) {
       return this.render(...e7);
     }
   };
 
   // node_modules/lit-html/directives/class-map.js
   var e6 = e5(class extends i5 {
-    constructor(t4) {
-      if (super(t4), t4.type !== t3.ATTRIBUTE || "class" !== t4.name || t4.strings?.length > 2) throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.");
+    constructor(t12) {
+      if (super(t12), t12.type !== t3.ATTRIBUTE || "class" !== t12.name || t12.strings?.length > 2) throw Error("`classMap()` can only be used in the `class` attribute and must be the only part in the attribute.");
     }
-    render(t4) {
-      return " " + Object.keys(t4).filter(((s4) => t4[s4])).join(" ") + " ";
+    render(t12) {
+      return " " + Object.keys(t12).filter(((s4) => t12[s4])).join(" ") + " ";
     }
     update(s4, [i6]) {
       if (void 0 === this.st) {
-        this.st = /* @__PURE__ */ new Set(), void 0 !== s4.strings && (this.nt = new Set(s4.strings.join(" ").split(/\s/).filter(((t4) => "" !== t4))));
-        for (const t4 in i6) i6[t4] && !this.nt?.has(t4) && this.st.add(t4);
+        this.st = /* @__PURE__ */ new Set(), void 0 !== s4.strings && (this.nt = new Set(s4.strings.join(" ").split(/\s/).filter(((t12) => "" !== t12))));
+        for (const t12 in i6) i6[t12] && !this.nt?.has(t12) && this.st.add(t12);
         return this.render(i6);
       }
       const r6 = s4.element.classList;
-      for (const t4 of this.st) t4 in i6 || (r6.remove(t4), this.st.delete(t4));
-      for (const t4 in i6) {
-        const s5 = !!i6[t4];
-        s5 === this.st.has(t4) || this.nt?.has(t4) || (s5 ? (r6.add(t4), this.st.add(t4)) : (r6.remove(t4), this.st.delete(t4)));
+      for (const t12 of this.st) t12 in i6 || (r6.remove(t12), this.st.delete(t12));
+      for (const t12 in i6) {
+        const s5 = !!i6[t12];
+        s5 === this.st.has(t12) || this.nt?.has(t12) || (s5 ? (r6.add(t12), this.st.add(t12)) : (r6.remove(t12), this.st.delete(t12)));
       }
       return T;
     }
   });
 
   // src/elements/tichu-card.ts
+  function translate(text) {
+    return typeof _ === "function" ? _(text) : text;
+  }
+  function getDefaultCardTooltip(card) {
+    if (!card) return "";
+    const color = Number(card.type);
+    const rank = Number(card.type_arg);
+    if (rank === 10 || rank === 13) return translate("Scores 10 points");
+    if (rank === 5) return translate("Scores 5 points");
+    if (rank === 1) {
+      if (color === 1)
+        return translate(
+          "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."
+        );
+      if (color === 2)
+        return translate(
+          "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5."
+        );
+      if (color === 3)
+        return translate(
+          "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead."
+        );
+      if (color === 4)
+        return translate("Scores 0 points. Owner of this card plays first. Player can make a wish.");
+    }
+    return "";
+  }
   var TichuCard = class extends i4 {
+    constructor() {
+      super(...arguments);
+      this.pass = false;
+      this.half = false;
+      this.scale = 1;
+      this.selected = false;
+      this.selectable = false;
+      this.tiki = false;
+      this.tooltip = "";
+    }
     static get styles() {
-      const url = "";
       return [
         i`
+        :host {
+          display: inline-block;
+          position: relative;
+        }
         div#card {
+          position: relative;
+          top: 0;
           width: var(--width);
           height: var(--height);
           background-image: var(--card-url);
+          background-size: var(--bg-width) var(--bg-height);
           background-position-x: var(--x-pos);
           background-position-y: var(--y-pos);
           border-radius: calc(var(--width) / 25);
           box-shadow: 2px 2px 5px 2px #666;
+          box-sizing: border-box;
+        }
+        div#card.selectable {
+          cursor: pointer;
+        }
+        div#card.stockitem_selected {
+          translate: 0 -20px;
+          border: 1px solid #dda !important;
+          box-shadow: 0px 0px 4px 1px #ff8;
         }
         div#card.pass {
           background-size: cover;
+          background-position: center;
         }
       `
       ];
     }
+    getComputedTooltip() {
+      if (this.tooltip) return this.tooltip;
+      if (this.pass) return translate("Pass");
+      return getDefaultCardTooltip(this.card);
+    }
     render() {
-      const width = 100;
-      const height = 150;
-      const factor = this.half ? 0.5 : 1;
-      this.style.setProperty("--width", `${factor * width}px`);
-      this.style.setProperty("--height", `${factor * height}px`);
-      if (this.pass) return this.renderPass();
+      const baseWidth = 100;
+      const baseHeight = 150;
+      const factor = this.half ? 0.5 : this.scale;
+      const width = factor * baseWidth;
+      const height = factor * baseHeight;
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--width", `${width}px`);
+      this.style.setProperty("--height", `${height}px`);
+      this.style.setProperty("--bg-width", `${14 * width}px`);
+      this.style.setProperty("--bg-height", `${4 * height}px`);
+      if (this.pass) return this.renderPass(themeUrl);
       if (this.card === void 0) return;
-      const color = Number(this.card?.type);
-      const rank = Number(this.card?.type_arg);
+      const cardSprite = this.tiki ? "img/tiki-cards.png" : "img/tichu-cards.png";
+      this.style.setProperty("--card-url", `url(${themeUrl}${cardSprite})`);
+      const color = Number(this.card.type);
+      const rank = Number(this.card.type_arg);
       this.style.setProperty("--x-pos", `${-1 * width * (rank - 1)}px`);
       this.style.setProperty("--y-pos", `${-1 * height * (color - 1)}px`);
-      return x`<div id="card" @click=${this.onClick}></div>`;
+      const tooltipText = this.getComputedTooltip();
+      return x`<div
+      id="card"
+      class=${e6({
+        card: true,
+        stockitem: true,
+        stockitem_selected: this.selected,
+        selectable: this.selectable
+      })}
+      data-card-id=${this.card.id ?? ""}
+      title=${tooltipText}
+      @click=${this.onClick}
+    ></div>`;
     }
-    renderPass() {
-      this.style.setProperty("--card-url", `url(${g_gamethemeurl}img/tichu-icons-pass.png)`);
-      return x`<div id="card" class="pass"></div>`;
+    renderPass(themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "") {
+      const passSprite = this.tiki ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+      this.style.setProperty("--card-url", `url(${themeUrl}${passSprite})`);
+      return x`<div
+      id="card"
+      class="card stockitem pass"
+      data-card-id=""
+      title=${this.getComputedTooltip()}
+    ></div>`;
     }
-    onClick() {
+    onClick(e7) {
+      if (!this.selectable || !this.card) return;
+      this.dispatchEvent(
+        new CustomEvent("card-click", {
+          detail: { card: this.card },
+          bubbles: true,
+          composed: true
+        })
+      );
     }
   };
   __decorateClass([
@@ -5166,21 +6107,47 @@
   __decorateClass([
     n4({ type: Boolean })
   ], TichuCard.prototype, "half", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuCard.prototype, "scale", 2);
+  __decorateClass([
+    n4({ type: Boolean })
+  ], TichuCard.prototype, "selected", 2);
+  __decorateClass([
+    n4({ type: Boolean })
+  ], TichuCard.prototype, "selectable", 2);
+  __decorateClass([
+    n4({ type: Boolean })
+  ], TichuCard.prototype, "tiki", 2);
+  __decorateClass([
+    n4({ type: String })
+  ], TichuCard.prototype, "tooltip", 2);
   customElements.define("tichu-card", TichuCard);
 
   // src/elements/tichu-stock.ts
-  function sortFn(c4, d3) {
-    const cRank = Number(c4.type_arg);
-    const dRank = Number(d3.type_arg);
-    if (cRank != dRank) return cRank - dRank;
-    const cColor = Number(c4.type);
-    const dColor = Number(d3.type);
-    return cColor - dColor;
+  function getWeightByRank(card) {
+    const color = Number(card.type);
+    const value = Number(card.type_arg);
+    return 2 * (4 * (value - 1) + (color - 1));
+  }
+  function getWeightByColor(card) {
+    const color = Number(card.type);
+    const value = Number(card.type_arg);
+    const type = (color - 1) * 14 + (value - 1);
+    return value === 1 ? 2 * type : 100 + 2 * type;
   }
   var TichuStock = class extends i4 {
     constructor() {
       super(...arguments);
       this.cards = [];
+      this.pass = false;
+      this.scale = 1;
+      this.tiki = false;
+      this.sortMode = "rank";
+      this.selectionMode = 0;
+      this.selectedIds = [];
+      this.dynamicOverlap = false;
+      this.containerWidth = 0;
     }
     static get styles() {
       return [
@@ -5190,13 +6157,13 @@
         }
         div#stock {
           display: flex;
-          height: 150px;
+          height: var(--stock-height, 150px);
         }
         div#stock.bomb {
           /* border-left: 15px solid red; */
         }
         tichu-card:not(:last-child) {
-          margin-right: -75px;
+          margin-right: var(--card-margin-right, -75px);
         }
         tichu-card {
           zoom: 1;
@@ -5204,8 +6171,74 @@
       `
       ];
     }
+    connectedCallback() {
+      super.connectedCallback();
+      this.updateResizeObserver();
+    }
+    disconnectedCallback() {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = void 0;
+      super.disconnectedCallback();
+    }
+    updated(changedProperties) {
+      super.updated(changedProperties);
+      if (changedProperties.has("dynamicOverlap")) {
+        this.updateResizeObserver();
+      }
+    }
+    updateResizeObserver() {
+      if (this.dynamicOverlap && typeof ResizeObserver !== "undefined") {
+        if (!this.resizeObserver) {
+          this.resizeObserver = new ResizeObserver(() => {
+            const w2 = this.clientWidth;
+            if (w2 !== this.containerWidth) {
+              this.containerWidth = w2;
+            }
+          });
+          this.resizeObserver.observe(this);
+        }
+      } else {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = void 0;
+      }
+    }
+    getSortedCards() {
+      if (this.sortMode === "preserve") {
+        return [...this.cards];
+      }
+      if (this.sortMode === "color") {
+        return [...this.cards].sort((a3, b3) => getWeightByColor(a3) - getWeightByColor(b3));
+      }
+      return [...this.cards].sort((a3, b3) => getWeightByRank(a3) - getWeightByRank(b3));
+    }
+    computeMarginRightPx() {
+      const itemWidth = 100 * this.scale;
+      const itemMargin = 5;
+      if (!this.dynamicOverlap) {
+        return -75 * this.scale;
+      }
+      if (this.cards.length <= 1) {
+        return 0;
+      }
+      const width = this.containerWidth || this.clientWidth || 600;
+      const availableWidthForOverlapPerItem = (width - (itemWidth + itemMargin)) / (this.cards.length - 1);
+      let overlap = Math.floor(
+        (availableWidthForOverlapPerItem - itemMargin - 1) / itemWidth * 100
+      );
+      if (overlap > 60) overlap = 60;
+      if (overlap < 12) overlap = 12;
+      const step = Math.round(itemWidth * overlap / 100) + itemMargin;
+      return step - itemWidth;
+    }
     render() {
+      const itemHeight = 150 * this.scale;
+      const marginRight = this.computeMarginRightPx();
+      this.style.setProperty("--stock-height", `${itemHeight}px`);
+      this.style.setProperty("--card-margin-right", `${marginRight}px`);
       if (this.pass) return this.renderPass();
+      const sortedCards = this.getSortedCards();
+      const isSelectable = this.selectionMode > 0;
+      const selectedSet = new Set(this.selectedIds.map((id) => String(id)));
       return x`
       <div
         id="stock"
@@ -5213,12 +6246,71 @@
         bomb: hasBomb(this.cards)
       })}
       >
-        ${this.cards.sort(sortFn).map((card) => x`<tichu-card .card=${card}></tichu-card>`)}
+        ${sortedCards.map(
+        (card) => x`
+            <tichu-card
+              .card=${card}
+              .scale=${this.scale}
+              .tiki=${this.tiki}
+              .selectable=${isSelectable}
+              .selected=${isSelectable && selectedSet.has(String(card.id))}
+              @card-click=${(e7) => this.onCardClick(e7, card)}
+            ></tichu-card>
+          `
+      )}
       </div>
     `;
     }
     renderPass() {
-      return x`<div id="stock"><tichu-card pass></tichu-card></div>`;
+      return x`<div id="stock">
+      <tichu-card pass .scale=${this.scale} .tiki=${this.tiki}></tichu-card>
+    </div>`;
+    }
+    onCardClick(e7, card) {
+      e7.stopPropagation();
+      if (this.selectionMode === 0) return;
+      const cardId = String(card.id);
+      const currentlySelected = this.selectedIds.map((id) => String(id));
+      const isAlreadySelected = currentlySelected.includes(cardId);
+      let nextSelectedIds;
+      if (this.selectionMode === 1) {
+        nextSelectedIds = isAlreadySelected ? [] : [cardId];
+      } else {
+        nextSelectedIds = isAlreadySelected ? currentlySelected.filter((id) => id !== cardId) : [...currentlySelected, cardId];
+      }
+      this.selectedIds = nextSelectedIds;
+      this.dispatchEvent(
+        new CustomEvent("selection-change", {
+          detail: {
+            selectedIds: nextSelectedIds,
+            clickedCard: card
+          },
+          bubbles: true,
+          composed: true
+        })
+      );
+    }
+    unselectAll() {
+      this.selectedIds = [];
+    }
+    selectItem(id) {
+      const strId = String(id);
+      if (this.selectionMode === 1) {
+        this.selectedIds = [strId];
+      } else if (!this.selectedIds.includes(strId)) {
+        this.selectedIds = [...this.selectedIds, strId];
+      }
+    }
+    unselectItem(id) {
+      const strId = String(id);
+      this.selectedIds = this.selectedIds.filter((x2) => String(x2) !== strId);
+    }
+    getSelectedIds() {
+      return [...this.selectedIds];
+    }
+    getSelectedCards() {
+      const selectedSet = new Set(this.selectedIds.map((id) => String(id)));
+      return this.cards.filter((c4) => selectedSet.has(String(c4.id)));
     }
   };
   __decorateClass([
@@ -5227,11 +6319,31 @@
   __decorateClass([
     n4({ type: Boolean })
   ], TichuStock.prototype, "pass", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStock.prototype, "scale", 2);
+  __decorateClass([
+    n4({ type: Boolean })
+  ], TichuStock.prototype, "tiki", 2);
+  __decorateClass([
+    n4({ type: String })
+  ], TichuStock.prototype, "sortMode", 2);
+  __decorateClass([
+    n4({ type: Number })
+  ], TichuStock.prototype, "selectionMode", 2);
+  __decorateClass([
+    n4({ type: Array })
+  ], TichuStock.prototype, "selectedIds", 2);
+  __decorateClass([
+    n4({ type: Boolean })
+  ], TichuStock.prototype, "dynamicOverlap", 2);
+  __decorateClass([
+    r5()
+  ], TichuStock.prototype, "containerWidth", 2);
   customElements.define("tichu-stock", TichuStock);
 
   // src/elements/subscription-controller.ts
   function subscribe(host, provider, callback) {
-    if (host.isConnected) throw new Error("component is already connected");
     host.addController(new SubscriptionController(provider, callback));
   }
   var SubscriptionController = class {
@@ -5240,6 +6352,7 @@
       this.callback = callback;
     }
     hostConnected() {
+      this.sub?.unsubscribe();
       this.sub = this.provider().subscribe((v2) => this.update(v2));
     }
     update(value) {
@@ -6236,6 +7349,287 @@
     white-space: nowrap;
   }
 `;
+  var styles = i`
+  :host {
+    --border-radius: 6px;
+    --elevation: 0px 1px 2px 0px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);
+    color: #1f2328;
+    font-family: Roboto, Arial, sans-serif;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  h3 {
+    margin: 0;
+    padding: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1f2328;
+  }
+
+  a {
+    color: #2b579a;
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+
+  .theme0 {
+    --bg-color-html: rgba(0, 0, 0, 0.3);
+    --bg-color-play-area: rgba(255, 255, 255, 0.3);
+    --bg-color-lighter: rgba(246, 231, 212, 0.8);
+  }
+  .theme1 {
+    --bg-color-html: hsl(225 35% 15% / 1);
+    --bg-color-play-area: hsl(225 20% 65% / 1);
+    --bg-color-lighter: hsl(225 30% 90% / 1);
+  }
+  .theme2 {
+    --bg-color-html: hsl(203 37% 20% / 1);
+    --bg-color-play-area: hsl(50 15% 60% / 1);
+    --bg-color-lighter: hsl(50 10% 80% / 1);
+  }
+  .theme3 {
+    --bg-color-html: hsl(352 71% 25% / 1);
+    --bg-color-play-area: hsl(342 56% 76% / 1);
+    --bg-color-lighter: hsl(32 66% 90% / 1);
+  }
+  .theme4 {
+    --bg-color-html: transparent;
+    --bg-color-play-area: rgba(255, 255, 255, 0.3);
+    --bg-color-lighter: rgba(255, 255, 255, 0.7);
+  }
+  .theme5 {
+    --bg-color-html: hsl(0 0% 25% / 1);
+    --bg-color-play-area: hsl(355 45% 50% / 1);
+    --bg-color-lighter: hsl(40 100% 86% / 1);
+    --bg-color-active: rgba(255, 155, 0, 0.8);
+  }
+  .theme6 {
+    --bg-color-html: hsl(0 0% 20% / 1);
+    --bg-color-play-area: hsl(0 0% 70% / 1);
+    --bg-color-lighter: hsl(0 0% 90% / 1);
+  }
+  .theme7 {
+    --bg-color-html: hsl(216, 69%, 20%);
+    --bg-color-play-area: hsl(32, 43%, 75%);
+    --bg-color-lighter: hsl(35, 58%, 94%);
+  }
+  .theme8 {
+    --bg-color-html: hsl(222, 38%, 9%);
+    --bg-color-play-area: hsl(212, 8%, 64%);
+    --bg-color-lighter: hsl(41, 70%, 85%);
+  }
+  .theme9 {
+    --bg-color-html: hsl(33 53% 25% / 1);
+    --bg-color-play-area: hsl(33 40% 64% / 1);
+    --bg-color-lighter: hsl(33 68% 85% / 1);
+  }
+  .theme10 {
+    --bg-color-html: hsl(91, 23%, 26%);
+    --bg-color-play-area: hsl(87, 24%, 61%);
+    --bg-color-lighter: hsl(35, 69%, 94%);
+  }
+
+  .bgabutton {
+    display: inline-block;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    text-decoration: none !important;
+    user-select: none;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    box-shadow: 0 1px 0 #000;
+    text-shadow: rgba(0, 0, 0, 0.4) 0 1px 0;
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition:
+      filter 0.12s ease,
+      transform 0.06s ease;
+  }
+  .bgabutton:hover {
+    filter: brightness(1.07);
+    text-decoration: none !important;
+  }
+  .bgabutton:active {
+    transform: translateY(1px);
+  }
+  .bgabutton_blue,
+  .bgabutton_primary {
+    color: #ffffff !important;
+    background: linear-gradient(180deg, #4871b6 0%, #3b5f9c 100%);
+    border-color: #2f4d80;
+  }
+  .bgabutton_red,
+  .bgabutton_alert {
+    color: #ffffff !important;
+    background: linear-gradient(180deg, #c92727 0%, #b01e1e 100%);
+    border-color: #8f1616;
+  }
+  .bgabutton_green {
+    color: #ffffff !important;
+    background: linear-gradient(180deg, #89a538 0%, #748d2d 100%);
+    border-color: #5d7223;
+  }
+  .bgabutton_gray,
+  .bgabutton_secondary {
+    color: #1f2328 !important;
+    background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
+    border-color: #9ca3af;
+  }
+
+  .stockitem {
+    border-radius: var(--border-radius, 6px);
+    box-shadow: 2px 2px 5px 3px #666;
+  }
+  .stockitem.stockitem_selected {
+    border: 1px solid #dda !important;
+    box-shadow: 0px 0px 4px 1px #ff8;
+    translate: 0 -20px;
+  }
+
+  .disabler {
+    display: none;
+    position: absolute;
+    background: rgba(100, 100, 100, 0.6);
+    border-radius: var(--border-radius, 6px);
+    left: -4px;
+    right: -4px;
+    top: -4px;
+    bottom: -4px;
+    z-index: 10;
+  }
+
+  .icon {
+    display: none;
+    background-image: var(--icon-url);
+    background-repeat: no-repeat;
+  }
+  .icon.star {
+    background-size: 128px 64px;
+    background-position: -112px -16px;
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+  }
+  .icon.hand {
+    background-size: 128px 64px;
+    background-position: -112px 0px;
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+  }
+  .icon.firstoutcolor {
+    background-size: 128px 64px;
+    background-position: -64px -32px;
+    width: 16px;
+    height: 32px;
+  }
+  .icon.grandtichublack {
+    background-size: 128px 64px;
+    background-position: 0px 0px;
+    width: 32px;
+    height: 32px;
+  }
+  .icon.grandtichucolor {
+    background-size: 128px 64px;
+    background-position: 0px -32px;
+    width: 32px;
+    height: 32px;
+  }
+  .icon.tichublack {
+    background-size: 128px 64px;
+    background-position: -32px 0px;
+    width: 32px;
+    height: 32px;
+  }
+  .icon.tichucolor {
+    background-size: 128px 64px;
+    background-position: -32px -32px;
+    width: 26px;
+    height: 26px;
+  }
+  .icon.big.grandtichublack {
+    background-size: 256px 128px;
+    background-position: 0px 0px;
+    width: 64px;
+    height: 64px;
+  }
+  .icon.big.grandtichucolor {
+    background-size: 256px 128px;
+    background-position: 0px -64px;
+    width: 64px;
+    height: 64px;
+  }
+  .icon.big.tichublack {
+    background-size: 256px 128px;
+    background-position: -64px 0px;
+    width: 64px;
+    height: 64px;
+  }
+  .icon.big.tichucolor {
+    background-size: 256px 128px;
+    background-position: -64px -64px;
+    width: 62.4px;
+    height: 62.4px;
+  }
+  .icon.temp {
+    position: absolute;
+    display: block;
+    left: calc(50% - 128px);
+    top: calc(50% - 128px);
+    z-index: 100;
+    pointer-events: none;
+    transition: opacity 1s ease;
+  }
+  .icon.temp.fading-out {
+    opacity: 0;
+  }
+  .icon.temp.grandtichublack,
+  .icon.temp.grand-tichu-black {
+    background-size: 1024px 512px;
+    background-position: 0px 0px;
+    width: 256px;
+    height: 256px;
+  }
+  .icon.temp.grandtichucolor,
+  .icon.temp.grand-tichu-color {
+    background-size: 1024px 512px;
+    background-position: 0px -256px;
+    width: 256px;
+    height: 256px;
+  }
+  .icon.temp.tichublack,
+  .icon.temp.tichu-black {
+    background-size: 1024px 512px;
+    background-position: -256px 0px;
+    width: 256px;
+    height: 256px;
+  }
+  .icon.temp.tichucolor,
+  .icon.temp.tichu-color {
+    background-size: 1024px 512px;
+    background-position: -256px -256px;
+    width: 208px;
+    height: 208px;
+  }
+  .icon.cardback {
+    background-size: 128px 64px;
+    background-position: -90px 0px;
+    width: 22px;
+    height: 32px;
+  }
+`;
 
   // src/elements/tichu-status.ts
   var TichuStatus = class extends i4 {
@@ -6280,6 +7674,2354 @@
     n4({ type: Number })
   ], TichuStatus.prototype, "trickSize", 2);
   customElements.define("tichu-status", TichuStatus);
+
+  // src/elements/tichu-player-panel.ts
+  var t4 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var TichuPlayerPanel = class extends i4 {
+    constructor() {
+      super();
+      this.playerId = "";
+      this.players = {};
+      this.firstOutPlayerId = "";
+      subscribe(
+        this,
+        () => window.gameModel.players$,
+        (players) => {
+          this.players = players;
+          this.player = players[String(this.playerId)];
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.firstOutPlayerId$,
+        (firstOutPlayerId) => {
+          this.firstOutPlayerId = firstOutPlayerId;
+        }
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+          clear: both;
+        }
+        .ha_board {
+          clear: both;
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 4px;
+          padding-top: 4px;
+          font-weight: 600;
+          color: #1f2328;
+        }
+        .ha_board .count {
+          margin-right: 8px;
+        }
+      `
+      ];
+    }
+    willUpdate(changedProperties) {
+      if (changedProperties.has("playerId")) {
+        this.player = this.players[String(this.playerId)];
+      }
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+      const id = String(this.playerId);
+      const p3 = this.player ?? this.players[id];
+      const handcount = p3?.handcount ?? 0;
+      const capturedPoints = p3?.capturedPoints ?? 0;
+      const showGrandTichuColor = p3?.callGrandTichu === 200;
+      const showGrandTichuBlack = p3?.callGrandTichu === -1;
+      const showTichuColor = p3?.callTichu === 100;
+      const showTichuBlack = p3?.callTichu === -1 && !showGrandTichuColor;
+      const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
+      const isPassReady = Boolean(p3?.passedCardReady);
+      return x`
+      <div class="ha_board">
+        <div class="icon hand" title=${t4("Number of cards in hand")}></div>
+        &#x00D7;<span
+          id="handcount_${id}"
+          class="count handcount ${id}"
+          title=${t4("Number of cards in hand")}
+          >${handcount}</span
+        >
+        <div class="icon star" title=${t4("Points captured in this round")}></div>
+        &#x00D7;<span
+          id="pointcount_${id}"
+          class="count pointcount ${id}"
+          title=${t4("Points captured in this round")}
+          >${capturedPoints}</span
+        >
+        <div
+          id="grandtichublack_${id}"
+          class="icon grandtichublack ${id}"
+          style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
+          title=${t4("Grand Tichu bet")}
+        ></div>
+        <div
+          id="grandtichucolor_${id}"
+          class="icon grandtichucolor ${id}"
+          style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
+          title=${t4("Grand Tichu bet")}
+        ></div>
+        <div
+          id="tichublack_${id}"
+          class="icon tichublack ${id}"
+          style="display: ${showTichuBlack ? "inline-block" : "none"}"
+          title=${t4("Tichu bet")}
+        ></div>
+        <div
+          id="tichucolor_${id}"
+          class="icon tichucolor ${id}"
+          style="display: ${showTichuColor ? "inline-block" : "none"}"
+          title=${t4("Tichu bet")}
+        ></div>
+        <div
+          id="firstoutcolor_${id}"
+          class="icon firstoutcolor ${id}"
+          style="display: ${isFirstOut ? "inline-block" : "none"}"
+          title=${t4("First player to go out")}
+        ></div>
+        <div
+          id="cardback_${id}"
+          class="icon cardback ${id}"
+          style="display: ${isPassReady ? "inline-block" : "none"}"
+          title=${t4("has passed")}
+        ></div>
+      </div>
+    `;
+    }
+  };
+  __decorateClass([
+    n4({ type: String })
+  ], TichuPlayerPanel.prototype, "playerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayerPanel.prototype, "players", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayerPanel.prototype, "player", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayerPanel.prototype, "firstOutPlayerId", 2);
+  customElements.define("tichu-player-panel", TichuPlayerPanel);
+
+  // src/elements/tichu-value-choice.ts
+  var t5 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var MAHJONG_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+  var TichuValueChoice = class extends i4 {
+    constructor() {
+      super();
+      this.mode = "mahjong";
+      this.stateName = "";
+      this.isCurrentPlayerActive = false;
+      this.selectedMahjongWish = null;
+      this.phoenixAllowedValues = [];
+      this.selectedPhoenixValue = null;
+      subscribe(
+        this,
+        () => window.gameModel.stateName$,
+        (stateName) => this.stateName = stateName
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isCurrentPlayerActive$,
+        (active) => this.isCurrentPlayerActive = active
+      );
+      subscribe(
+        this,
+        () => window.gameModel.selectedMahjongWish$,
+        (wish) => this.selectedMahjongWish = wish
+      );
+      subscribe(
+        this,
+        () => window.gameModel.phoenixAllowedValues$,
+        (vals) => this.phoenixAllowedValues = vals
+      );
+      subscribe(
+        this,
+        () => window.gameModel.selectedPhoenixValue$,
+        (val) => this.selectedPhoenixValue = val
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #mahjongpanel,
+        #phoenixpanel {
+          margin: 0px 15px 15px 15px;
+          padding: 15px;
+          background: var(--bg-color-lighter);
+          border-radius: var(--border-radius);
+          box-shadow: var(--elevation);
+        }
+        #mahjongpanel h3,
+        #phoenixpanel h3 {
+          margin-bottom: 15px;
+          font-size: 20px;
+        }
+        #mahjong,
+        #mahjongvalues,
+        #phoenixChoice,
+        #phoenixvalues {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 5px;
+          min-height: 105px;
+        }
+        .stockitem {
+          width: 70px;
+          height: 105px;
+          background-image: var(--table-icons-url);
+          background-repeat: no-repeat;
+          border-radius: var(--border-radius);
+          box-shadow: 2px 2px 5px 3px #666;
+          cursor: pointer;
+          position: relative;
+          user-select: none;
+        }
+      `
+      ];
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--table-icons-url", `url(${themeUrl}img/tichu-icons-table.png)`);
+      if (this.mode === "phoenix") {
+        return this.renderPhoenix();
+      }
+      return this.renderMahjong();
+    }
+    renderMahjong() {
+      const isVisible = this.stateName === "mahjongPlay" && this.isCurrentPlayerActive;
+      return x`
+      <div id="mahjongpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
+        <h3>${t5("Mahjong Wish")}</h3>
+        <div id="mahjong" class="mahjongvalues">
+          ${MAHJONG_VALUES.map((val) => {
+        const idx = val - 2;
+        const col = idx % 7;
+        const row = Math.floor(idx / 7);
+        const isSelected = this.selectedMahjongWish === val;
+        return x`
+              <div
+                id="mahjong_item_${val}"
+                data-value="${val}"
+                class=${e6({
+          stockitem: true,
+          stockitem_selected: isSelected
+        })}
+                style="background-position: -${col * 70}px -${row * 105}px"
+                @click=${() => this.onMahjongClick(val)}
+              ></div>
+            `;
+      })}
+        </div>
+      </div>
+    `;
+    }
+    renderPhoenix() {
+      const isVisible = this.stateName === "phoenixPlay" && this.isCurrentPlayerActive;
+      return x`
+      <div id="phoenixpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
+        <h3>${t5("Phoenix Choice")}</h3>
+        <div id="phoenixChoice" class="phoenixvalues">
+          ${this.phoenixAllowedValues.map((val) => {
+        const idx = val - 2;
+        const col = idx % 7;
+        const row = Math.floor(idx / 7);
+        const isSelected = this.selectedPhoenixValue === val;
+        return x`
+              <div
+                id="phoenixChoice_item_${val}"
+                data-value="${val}"
+                class=${e6({
+          stockitem: true,
+          stockitem_selected: isSelected
+        })}
+                style="background-position: -${col * 70}px -${row * 105}px"
+                @click=${() => this.onPhoenixClick(val)}
+              ></div>
+            `;
+      })}
+        </div>
+      </div>
+    `;
+    }
+    onMahjongClick(val) {
+      const next = this.selectedMahjongWish === val ? null : val;
+      window.gameModel.setSelectedMahjongWish(next);
+    }
+    onPhoenixClick(val) {
+      const next = this.selectedPhoenixValue === val ? null : val;
+      window.gameModel.setSelectedPhoenixValue(next);
+    }
+  };
+  __decorateClass([
+    n4({ type: String })
+  ], TichuValueChoice.prototype, "mode", 2);
+  __decorateClass([
+    r5()
+  ], TichuValueChoice.prototype, "stateName", 2);
+  __decorateClass([
+    r5()
+  ], TichuValueChoice.prototype, "isCurrentPlayerActive", 2);
+  __decorateClass([
+    r5()
+  ], TichuValueChoice.prototype, "selectedMahjongWish", 2);
+  __decorateClass([
+    r5()
+  ], TichuValueChoice.prototype, "phoenixAllowedValues", 2);
+  __decorateClass([
+    r5()
+  ], TichuValueChoice.prototype, "selectedPhoenixValue", 2);
+  customElements.define("tichu-value-choice", TichuValueChoice);
+
+  // src/elements/tichu-last-played.ts
+  var t6 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var POSITIONS = ["bottom", "right", "top", "left"];
+  var TichuLastPlayed = class extends i4 {
+    constructor() {
+      super();
+      this.playerOrderBottomToLeft = [];
+      this.players = {};
+      this.lastCombos = {};
+      this.lastComboPlayerId = "";
+      this.activePlayerId = "";
+      this.bombActivePlayerId = null;
+      this.stateName = "";
+      this.mahjongWish = 0;
+      this.isTiki = false;
+      this.clockwise = true;
+      this.squareTable = false;
+      this.firstOutPlayerId = "";
+      this.round = 0;
+      this.trick = 0;
+      this.currentTrickValue = 0;
+      this.currentTrick = [];
+      subscribe(
+        this,
+        () => window.gameModel.playerOrderBottomToLeft$,
+        (order) => this.playerOrderBottomToLeft = order
+      );
+      subscribe(
+        this,
+        () => window.gameModel.players$,
+        (players) => this.players = players
+      );
+      subscribe(
+        this,
+        () => window.gameModel.lastCombos$,
+        (combos) => this.lastCombos = combos
+      );
+      subscribe(
+        this,
+        () => window.gameModel.lastComboPlayerId$,
+        (id) => this.lastComboPlayerId = id
+      );
+      subscribe(
+        this,
+        () => window.gameModel.activePlayerId$,
+        (id) => this.activePlayerId = id
+      );
+      subscribe(
+        this,
+        () => window.gameModel.bombActivePlayerId$,
+        (id) => this.bombActivePlayerId = id
+      );
+      subscribe(
+        this,
+        () => window.gameModel.stateName$,
+        (name) => this.stateName = name
+      );
+      subscribe(
+        this,
+        () => window.gameModel.mahjongWish$,
+        (wish) => this.mahjongWish = wish
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => this.isTiki = isTiki
+      );
+      subscribe(
+        this,
+        () => window.gameModel.clockwise$,
+        (clockwise) => this.clockwise = clockwise
+      );
+      subscribe(
+        this,
+        () => window.gameModel.squareTable$,
+        (squareTable) => this.squareTable = squareTable
+      );
+      subscribe(
+        this,
+        () => window.gameModel.firstOutPlayerId$,
+        (id) => this.firstOutPlayerId = id
+      );
+      subscribe(
+        this,
+        () => window.gameModel.round$,
+        (round) => this.round = round
+      );
+      subscribe(
+        this,
+        () => window.gameModel.trick$,
+        (trick) => this.trick = trick
+      );
+      subscribe(
+        this,
+        () => window.gameModel.currentTrickValue$,
+        (val) => this.currentTrickValue = val
+      );
+      subscribe(
+        this,
+        () => window.gameModel.currentTrick$,
+        (cards) => this.currentTrick = cards
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #card-last-played-area {
+          display: grid;
+          padding: 0px 15px 15px 15px;
+          grid-gap: 10px;
+          grid-template-columns: 2fr 1fr;
+          grid-template-rows: 1fr 1fr 1fr 1fr;
+        }
+        #card-last-played-area .top {
+          grid-column: 1 / span 1;
+          grid-row: 3 / span 1;
+        }
+        #card-last-played-area .left {
+          grid-column: 1 / span 1;
+          grid-row: 4 / span 1;
+        }
+        #card-last-played-area .right {
+          grid-column: 1 / span 1;
+          grid-row: 2 / span 1;
+        }
+        #card-last-played-area .bottom {
+          grid-column: 1 / span 1;
+          grid-row: 1 / span 1;
+        }
+        #card-last-played-area #mahjongIndicator {
+          grid-column: 2 / span 1;
+          grid-row: 2 / span 1;
+          place-self: center;
+        }
+        #card-last-played-area tichu-status {
+          grid-column: 2 / span 1;
+          grid-row: 1 / span 1;
+          place-self: start end;
+          text-align: right;
+          font-size: 20px;
+        }
+
+        #card-last-played-area.squareTable {
+          grid-template-columns:
+            minmax(200px, 2.5fr)
+            minmax(200px, 2fr)
+            minmax(20px, 1fr)
+            minmax(200px, 2fr)
+            minmax(200px, 2.5fr);
+          grid-template-rows: 1fr 1fr 1fr;
+        }
+        #card-last-played-area.squareTable .top {
+          grid-column: 2 / span 3;
+          grid-row: 1 / span 1;
+        }
+        #card-last-played-area.squareTable .left {
+          grid-column: 1 / span 2;
+          grid-row: 2 / span 1;
+        }
+        #card-last-played-area.clockwise.squareTable .left {
+          grid-column: 4 / span 2;
+        }
+        #card-last-played-area.squareTable .right {
+          grid-column: 4 / span 2;
+          grid-row: 2 / span 1;
+        }
+        #card-last-played-area.clockwise.squareTable .right {
+          grid-column: 1 / span 2;
+        }
+        #card-last-played-area.squareTable .bottom {
+          grid-column: 2 / span 3;
+          grid-row: 3 / span 1;
+        }
+        #card-last-played-area.squareTable #mahjongIndicator {
+          grid-column: 1 / span 1;
+          grid-row: 1 / span 1;
+        }
+        #card-last-played-area.squareTable tichu-status {
+          grid-column: 5 / span 1;
+          grid-row: 1 / span 1;
+        }
+
+        .player-table {
+          position: relative;
+          border-radius: var(--border-radius);
+          box-shadow: var(--elevation);
+        }
+        .player-table.disabled:not(.lastComboPlayer) .disabler {
+          display: block;
+        }
+
+        .player-table > .whiteblock {
+          display: flex;
+          line-height: 24px;
+          font-size: 20px;
+          font-weight: bold;
+          border: 4px solid transparent;
+          padding: 6px;
+          background: var(--bg-color-lighter);
+          border-radius: var(--border-radius);
+          min-height: 128px;
+        }
+        .player-table > .whiteblock.active,
+        .player-table > .whiteblock.bomb {
+          border: 4px solid var(--bg-color-active);
+        }
+
+        .last-played-player {
+          width: 140px;
+          padding-right: 10px;
+          flex-shrink: 0;
+        }
+        .last-played-player h3.playertablename {
+          font-size: 20px;
+          font-weight: bold;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          margin: 0;
+        }
+        .combo-description {
+          display: block;
+          font-size: 12px;
+          font-weight: normal;
+          color: #444;
+          line-height: 16px;
+        }
+        .combo-description:empty {
+          display: none;
+        }
+        .last-played-player .last-played-icons {
+          top: 2px;
+        }
+        .last-played-player .last-played-icons .count {
+          display: inline-block;
+          width: 40px;
+        }
+        .lastcombo {
+          width: 300px;
+          flex-grow: 1;
+        }
+
+        #mahjongIndicator {
+          display: none;
+          width: 75px;
+          height: 112.5px;
+          background-image: var(--mahjong-bg-url);
+          background-size: 75px 112.5px;
+          border-radius: var(--border-radius);
+        }
+        #mahjongIndicator.visible {
+          display: block;
+        }
+        .tiki #mahjongIndicator {
+          background-image: var(--tiki-mahjong-bg-url);
+        }
+        .mahjong {
+          width: 75px;
+          height: 112.5px;
+          background-image: var(--table-icons-url);
+          background-size: 600px 225px;
+          background-color: rgba(255, 255, 255, 0.5);
+          border-radius: var(--border-radius);
+        }
+      `
+      ];
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+      this.style.setProperty("--table-icons-url", `url(${themeUrl}img/tichu-icons-table.png)`);
+      this.style.setProperty("--mahjong-bg-url", `url(${themeUrl}img/tichu-mahjong.png)`);
+      this.style.setProperty("--tiki-mahjong-bg-url", `url(${themeUrl}img/tiki-tichu-mahjong.png)`);
+      const isPassState = this.stateName === "giveCards" || this.stateName === "showPassedCards" || this.stateName === "acceptPassedCards";
+      const wishVisible = this.mahjongWish >= 2 && this.mahjongWish <= 14;
+      const wishIdx = wishVisible ? this.mahjongWish - 2 : 0;
+      const wishCol = wishIdx % 7;
+      const wishRow = Math.floor(wishIdx / 7);
+      return x`
+      <div
+        id="card-last-played-area"
+        class=${e6({
+        squareTable: this.squareTable,
+        clockwise: this.clockwise,
+        tiki: this.isTiki
+      })}
+        style="display: ${isPassState ? "none" : "grid"}"
+      >
+        ${POSITIONS.map((pos, idx) => this.renderPlayerArea(pos, this.playerOrderBottomToLeft[idx]))}
+
+        <div
+          id="mahjongIndicator"
+          class=${e6({ visible: wishVisible })}
+          style="display: ${wishVisible ? "block" : "none"};"
+        >
+          ${wishVisible ? x`<div
+                  class="mahjong"
+                  id="mahjong_${this.mahjongWish}"
+                  style="background-position: -${wishCol * 75}px -${wishRow * 112.5}px"
+                ></div>` : ""}
+        </div>
+
+        <tichu-status
+          roundCount=${this.round}
+          trickCount=${this.trick}
+          trickPoints=${this.currentTrickValue}
+          trickSize=${this.currentTrick.length}
+          .roundCount=${this.round}
+          .trickCount=${this.trick}
+          .trickPoints=${this.currentTrickValue}
+          .trickSize=${this.currentTrick.length}
+          @show-current-trick=${this.onShowCurrentTrick}
+        ></tichu-status>
+      </div>
+    `;
+    }
+    renderPlayerArea(pos, playerId) {
+      if (!playerId) return "";
+      const id = String(playerId);
+      const player = this.players[id];
+      if (!player) return "";
+      const combo = this.lastCombos[id] ?? { cards: [], description: "", passed: false };
+      const isLastComboPlayer = Boolean(this.lastComboPlayerId) && this.lastComboPlayerId !== "0" && String(this.lastComboPlayerId) === id;
+      const isDisabled = player.handcount === 0 && this.stateName !== "newRound" && this.stateName !== "endRound";
+      const isDisablerVisible = isDisabled && !isLastComboPlayer;
+      const bombTargetId = this.bombActivePlayerId || this.activePlayerId;
+      const isBombActive = this.stateName === "playBomb" && Boolean(bombTargetId) && String(bombTargetId) === id;
+      const isActive = !isBombActive && (this.stateName === "playComboOpen" || this.stateName === "playCombo" || this.stateName === "confirmTrick") && Boolean(this.activePlayerId) && String(this.activePlayerId) === id;
+      const showGrandTichuColor = player.callGrandTichu === 200;
+      const showGrandTichuBlack = player.callGrandTichu === -1;
+      const showTichuColor = player.callTichu === 100;
+      const showTichuBlack = player.callTichu === -1 && !showGrandTichuColor;
+      const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
+      const translatedDesc = combo.description ? t6(combo.description) : "";
+      return x`
+      <div
+        class=${e6({
+        "player-table": true,
+        "last-played-container": true,
+        [pos]: true,
+        disabled: isDisabled,
+        lastComboPlayer: isLastComboPlayer,
+        active: isActive,
+        bomb: isBombActive
+      })}
+        id="playertable_${id}"
+        title=${translatedDesc}
+      >
+        <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
+        <div
+          class=${e6({
+        whiteblock: true,
+        active: isActive,
+        bomb: isBombActive
+      })}
+        >
+          <div class="last-played-player">
+            <h3 class="playertablename" style="color: #${player.color}">
+              <span class="player-name-text">${player.name}</span>
+              <span id="combo_${id}" class="combo-description">${translatedDesc}</span>
+            </h3>
+            <div class="last-played-icons">
+              <div
+                class="icon hand"
+                id="icon_hand_${id}"
+                title=${t6("Number of cards in hand")}
+              ></div>
+              <div class="count handcount ${id}">${player.handcount}</div>
+              <div
+                class="icon star"
+                id="icon_star_${id}"
+                title=${t6("Points captured in this round")}
+              ></div>
+              <div class="count pointcount ${id}">${player.capturedPoints}</div>
+            </div>
+            <div class="icons">
+              <div
+                id="grandtichublack_${id}"
+                class="icon grandtichublack ${id}"
+                style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
+                title=${t6("Grand Tichu bet")}
+              ></div>
+              <div
+                id="grandtichucolor_${id}"
+                class="icon big grandtichucolor ${id}"
+                style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
+                title=${t6("Grand Tichu bet")}
+              ></div>
+              <div
+                id="tichublack_${id}"
+                class="icon tichublack ${id}"
+                style="display: ${showTichuBlack ? "inline-block" : "none"}"
+                title=${t6("Tichu bet")}
+              ></div>
+              <div
+                id="tichucolor_${id}"
+                class="icon big tichucolor ${id}"
+                style="display: ${showTichuColor ? "inline-block" : "none"}"
+                title=${t6("Tichu bet")}
+              ></div>
+              <div
+                id="firstoutcolor_${id}"
+                class="icon firstoutcolor ${id}"
+                style="display: ${isFirstOut ? "inline-block" : "none"}"
+                title=${t6("First player to go out")}
+              ></div>
+            </div>
+          </div>
+          <div id="lastcombo_${id}" class="lastcombo last-played-combo">
+            ${combo.passed ? x`<span class="pass"
+                    ><tichu-stock
+                      .cards=${[]}
+                      .pass=${true}
+                      .scale=${0.75}
+                      .tiki=${this.isTiki}
+                    ></tichu-stock
+                  ></span>` : x`<tichu-stock
+                    .cards=${combo.cards}
+                    .scale=${0.75}
+                    sortMode="preserve"
+                    .tiki=${this.isTiki}
+                    .dynamicOverlap=${true}
+                  ></tichu-stock>`}
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    onShowCurrentTrick() {
+      window.gameModel.setTrickModalOpen(true);
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "playerOrderBottomToLeft", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "players", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "lastCombos", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "lastComboPlayerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "activePlayerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "bombActivePlayerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "stateName", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "mahjongWish", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "isTiki", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "clockwise", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "squareTable", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "firstOutPlayerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "round", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "trick", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "currentTrickValue", 2);
+  __decorateClass([
+    r5()
+  ], TichuLastPlayed.prototype, "currentTrick", 2);
+  customElements.define("tichu-last-played", TichuLastPlayed);
+
+  // src/elements/tichu-pass-area.ts
+  var t7 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var TichuPassArea = class extends i4 {
+    constructor() {
+      super();
+      this.stateName = "";
+      this.isSpectator = false;
+      this.isCurrentPlayerActive = false;
+      this.passSlots = [];
+      this.players = {};
+      this.isTiki = false;
+      this.clockwise = true;
+      subscribe(
+        this,
+        () => window.gameModel.stateName$,
+        (stateName) => this.stateName = stateName
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isSpectator$,
+        (isSpectator) => this.isSpectator = isSpectator
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isCurrentPlayerActive$,
+        (active) => this.isCurrentPlayerActive = active
+      );
+      subscribe(
+        this,
+        () => window.gameModel.passSlots$,
+        (slots) => this.passSlots = slots
+      );
+      subscribe(
+        this,
+        () => window.gameModel.players$,
+        (players) => this.players = players
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => this.isTiki = isTiki
+      );
+      subscribe(
+        this,
+        () => window.gameModel.clockwise$,
+        (clockwise) => this.clockwise = clockwise
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #playertables {
+          width: 560px;
+          margin: 0 auto;
+          display: none;
+          justify-content: space-evenly;
+          flex-direction: row;
+        }
+        #playertables.visible {
+          display: flex;
+        }
+        #playertables.clockwise {
+          flex-direction: row-reverse;
+        }
+        #playertables .playertable {
+          position: relative;
+          text-align: center;
+          width: 140px;
+          height: 210px;
+          border-radius: var(--border-radius);
+          background: var(--bg-color-lighter);
+          box-shadow: var(--elevation);
+          padding: 10px;
+          margin: 10px 0;
+        }
+        #playertables.giveCards.active .playertable {
+          cursor: pointer;
+        }
+        #playertables .playertable_1,
+        #playertables .playertable_3 {
+          margin: 50px 0px 25px 0px;
+        }
+        #playertables .playertablename {
+          font-weight: bold;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          margin-bottom: 10px;
+        }
+        .playertablecard {
+          position: relative;
+          width: 120px;
+          height: 155px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        .playertablebackground {
+          position: absolute;
+          inset: 0;
+          width: 120px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          pointer-events: none;
+        }
+        .playertablebackground .tichubets {
+          min-height: 20px;
+          margin-bottom: 10px;
+        }
+        .playertabletext {
+          display: none;
+          font-size: 13px;
+          color: #1f2328;
+        }
+        #playertables.giveCards.active .playertabletext {
+          display: block;
+        }
+        tichu-card.given-card,
+        tichu-card.received-card {
+          position: relative;
+          z-index: 1;
+          transition:
+            transform 0.5s ease-in-out,
+            opacity 0.5s ease-in-out;
+        }
+        tichu-card.slide-out {
+          transform: translateY(-60px);
+          opacity: 0;
+        }
+        tichu-card.slide-to-hand {
+          transform: translateY(160px);
+          opacity: 0;
+        }
+      `
+      ];
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+      const hasPendingPassCards = this.passSlots.some(
+        (s4) => s4.givenCard !== null || s4.receivedCard !== null || s4.animatingAccept
+      );
+      const isVisible = !this.isSpectator && (this.stateName === "giveCards" || this.stateName === "showPassedCards" || this.stateName === "acceptPassedCards" || hasPendingPassCards);
+      return x`
+      <div
+        id="playertables"
+        class=${e6({
+        visible: isVisible,
+        clockwise: this.clockwise,
+        giveCards: this.stateName === "giveCards",
+        active: this.isCurrentPlayerActive
+      })}
+        style="display: ${isVisible ? "flex" : "none"}"
+      >
+        ${this.passSlots.map((slot) => this.renderSlot(slot))}
+      </div>
+    `;
+    }
+    renderSlot(slot) {
+      const targetPlayer = this.players[slot.playerId];
+      const color = targetPlayer?.color ?? "000000";
+      const name = targetPlayer?.name ?? "";
+      const isGrandTichu = targetPlayer?.callGrandTichu === 200;
+      const isTichu = targetPlayer?.callTichu === 100;
+      return x`
+      <div
+        class="whiteblock playertable playertable_${slot.dir}"
+        id="playertable_${slot.dir}"
+        data-player-id="${slot.playerId}"
+      >
+        <div class="playertablename" style="color: #${color}">
+          <span class="icons">
+            <span
+              class="icon grandtichucolor ${slot.playerId}"
+              style="display: ${isGrandTichu ? "inline-block" : "none"}"
+              title=${t7("Grand Tichu bet")}
+            ></span>
+            <span
+              class="icon tichucolor ${slot.playerId}"
+              style="display: ${isTichu ? "inline-block" : "none"}"
+              title=${t7("Tichu bet")}
+            ></span>
+          </span>
+          ${name}
+        </div>
+        <div
+          class="playertablecard"
+          id="give_${slot.dir}"
+          @click=${() => this.onSlotClick(slot.dir - 1)}
+        >
+          <div class="givePassCard" id="giveplayertable_${slot.dir}"></div>
+          <div class="receivePassCard" id="receiveplayertable_${slot.playerId}"></div>
+          <div class="playertablebackground">
+            <div class="tichubets">
+              <div
+                class="icon big grandtichucolor ${slot.playerId}"
+                style="display: ${isGrandTichu ? "inline-block" : "none"}"
+              ></div>
+              <div
+                class="icon big tichucolor ${slot.playerId}"
+                style="display: ${isTichu ? "inline-block" : "none"}"
+              ></div>
+            </div>
+            <div class="CardBack selectable playertabletext">
+              <span>${t7("Select a card and click here")}</span>
+            </div>
+          </div>
+          ${slot.givenCard ? x`<tichu-card
+                  .card=${slot.givenCard}
+                  .scale=${1}
+                  .tiki=${this.isTiki}
+                  class=${e6({
+        "given-card": true,
+        cardontable: true,
+        "slide-out": slot.animatingAccept
+      })}
+                ></tichu-card>` : ""}
+          ${slot.receivedCard ? x`<tichu-card
+                  .card=${slot.receivedCard}
+                  .scale=${1}
+                  .tiki=${this.isTiki}
+                  class=${e6({
+        "received-card": true,
+        cardontable: true,
+        "slide-to-hand": slot.animatingAccept
+      })}
+                ></tichu-card>` : ""}
+        </div>
+      </div>
+    `;
+    }
+    onSlotClick(index) {
+      if (this.stateName !== "giveCards" || !this.isCurrentPlayerActive) return;
+      this.dispatchEvent(
+        new CustomEvent("pass-slot-click", {
+          detail: { index },
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui && typeof ui.onGiveCard === "function") {
+        ui.onGiveCard(index);
+      } else {
+        window.gameModel.toggleGiveCardSlot(index);
+      }
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "stateName", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "isSpectator", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "isCurrentPlayerActive", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "passSlots", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "players", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "isTiki", 2);
+  __decorateClass([
+    r5()
+  ], TichuPassArea.prototype, "clockwise", 2);
+  customElements.define("tichu-pass-area", TichuPassArea);
+
+  // src/elements/tichu-action-bar.ts
+  var t8 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var TichuActionBar = class extends i4 {
+    constructor() {
+      super();
+      this.stateName = "";
+      this.isCurrentPlayerActive = false;
+      this.isSpectator = false;
+      this.isRealtime = false;
+      this.currentPlayer = null;
+      this.hand = [];
+      this.firstOutPlayerId = "";
+      this.acceptingCardsCountdown = false;
+      this.collectingTrickCountdown = false;
+      subscribe(
+        this,
+        () => window.gameModel.stateName$,
+        (stateName) => this.stateName = stateName
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isCurrentPlayerActive$,
+        (active) => this.isCurrentPlayerActive = active
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isSpectator$,
+        (isSpectator) => this.isSpectator = isSpectator
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isRealtime$,
+        (isRealtime) => this.isRealtime = isRealtime
+      );
+      subscribe(
+        this,
+        () => window.gameModel.currentPlayer$,
+        (player) => this.currentPlayer = player
+      );
+      subscribe(
+        this,
+        () => window.gameModel.hand$,
+        (hand) => this.hand = hand
+      );
+      subscribe(
+        this,
+        () => window.gameModel.firstOutPlayerId$,
+        (id) => this.firstOutPlayerId = id
+      );
+      subscribe(
+        this,
+        () => window.gameModel.acceptingCardsCountdown$,
+        (val) => this.acceptingCardsCountdown = val
+      );
+      subscribe(
+        this,
+        () => window.gameModel.collectingTrickCountdown$,
+        (val) => this.collectingTrickCountdown = val
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #buttons {
+          padding: 10px 5px 10px 5px;
+          min-height: 30px;
+          display: flex;
+          align-items: center;
+          background-color: var(--bg-color-lighter);
+          box-shadow: var(--elevation);
+        }
+        #buttons h3 {
+          line-height: 20px;
+          font-size: 20px;
+          margin: 0;
+        }
+        #buttons .space1 {
+          flex-grow: 1;
+        }
+        #buttons .space2 {
+          flex-grow: 1.6;
+        }
+        #buttons .bgabutton {
+          text-align: center;
+          margin: 0;
+          width: 100%;
+          box-sizing: border-box;
+          box-shadow: none;
+          text-shadow: none;
+        }
+        #buttons #bomb_button {
+          min-width: 100px;
+          margin-left: 10px;
+        }
+        #buttons #play_button {
+          min-width: 150px;
+          margin-left: 10px;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        #buttons #pass_button {
+          min-width: 150px;
+          margin-left: 10px;
+        }
+        #buttons #pass_trick_button {
+          min-width: 150px;
+          margin-left: 10px;
+        }
+        #buttons #tichu_button {
+          min-width: 100px;
+          margin-left: 10px;
+          margin-right: 15px;
+        }
+      `
+      ];
+    }
+    render() {
+      const showBomb = !this.isSpectator && (this.stateName === "playCombo" || this.stateName === "confirmTrick" || this.stateName === "mahjongPlay" || this.stateName === "phoenixPlay") && this.hand.length > 0;
+      const showTichu = !this.isSpectator && this.currentPlayer !== null && this.currentPlayer.callTichu === -1 && this.currentPlayer.callGrandTichu !== 200 && !this.firstOutPlayerId && (this.hand.length === 14 || this.stateName === "grandTichuBets");
+      return x`
+      <div id="buttons">
+        <div id="play_button">${this.renderPlayButtonContent()}</div>
+        <div
+          id="pass_button"
+          style="display: ${this.hasPassButtonContent() ? "inline-block" : "none"}"
+        >
+          ${this.renderPassButtonContent()}
+        </div>
+        <div
+          id="pass_trick_button"
+          style="display: ${this.hasPassTrickButtonContent() ? "inline-block" : "none"}"
+        >
+          ${this.renderPassTrickButtonContent()}
+        </div>
+        <div class="space1"></div>
+        <div id="bomb_button" style="display: ${showBomb ? "inline-block" : "none"}">
+          ${showBomb ? x`<a
+                  href="#"
+                  id="myPlayBomb"
+                  class="action-button bgabutton bgabutton_gray"
+                  @click=${this.onPlayBomb}
+                  ><span>${t8("Play a Bomb")}</span></a
+                >` : ""}
+        </div>
+        <div id="tichu_button" style="display: ${showTichu ? "inline-block" : "none"}">
+          ${showTichu ? x`<a
+                  href="#"
+                  id="myMakeTichuBet"
+                  class="action-button bgabutton bgabutton_green"
+                  title=${t8("Bet 100 Points, tha you will finish first")}
+                  @click=${this.onTichuBet}
+                  ><span>${t8("Tichu")}</span></a
+                >` : ""}
+        </div>
+        <div class="space2"></div>
+      </div>
+    `;
+    }
+    renderPlayButtonContent() {
+      if (this.acceptingCardsCountdown) {
+        return x`<h3>${t8("Auto accepting in 2 seconds ...")}</h3>`;
+      }
+      if (this.collectingTrickCountdown) {
+        return x`<h3>${t8("Auto collecting in 2 seconds ...")}</h3>`;
+      }
+      const canPlayCombo = !this.isSpectator && this.isCurrentPlayerActive && (this.stateName === "playComboOpen" || this.stateName === "playCombo" || this.stateName === "playBomb");
+      const canCollect = !this.isSpectator && this.isCurrentPlayerActive && this.stateName === "confirmTrick" && !this.isRealtime && !this.collectingTrickCountdown;
+      return x`
+      <h3>${t8("My hand")}</h3>
+      ${canPlayCombo ? x`<a
+              href="#"
+              id="myPlayCombo"
+              class="action-button bgabutton bgabutton_blue"
+              @click=${this.onPlayCombo}
+              ><span>${t8("Play selected cards")}</span></a
+            >` : ""}
+      ${canCollect ? x`<a
+              href="#"
+              id="myConfirmTrick"
+              class="action-button bgabutton bgabutton_blue"
+              @click=${this.onCollect}
+              ><span>${t8("Collect")}</span></a
+            >` : ""}
+    `;
+    }
+    hasPassButtonContent() {
+      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
+      if (this.isSpectator) return false;
+      if (this.isCurrentPlayerActive) {
+        return this.stateName === "playCombo" || this.stateName === "playBomb";
+      }
+      return (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0;
+    }
+    renderPassButtonContent() {
+      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
+        return "";
+      }
+      if (this.isSpectator) return "";
+      if (this.isCurrentPlayerActive) {
+        if (this.stateName === "playCombo") {
+          return x`<a
+          href="#"
+          id="myPass"
+          class="action-button bgabutton bgabutton_red"
+          @click=${(e7) => this.onPass(e7, true)}
+          ><span>${t8("Pass")}</span></a
+        >`;
+        }
+        if (this.stateName === "playBomb") {
+          return x`<a
+          href="#"
+          id="myCancel"
+          class="action-button bgabutton bgabutton_red"
+          @click=${this.onCancelBomb}
+          ><span>${t8("Cancel")}</span></a
+        >`;
+        }
+        return "";
+      }
+      if ((this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0) {
+        const passMode = this.currentPlayer?.pass ?? 0;
+        if (passMode === 0) {
+          return x`<a
+          href="#"
+          id="myPassOnce"
+          class="action-button bgabutton bgabutton_red"
+          title=${t8("Automatically pass next time(unless a new trick starts)")}
+          @click=${(e7) => this.onPass(e7, true)}
+          ><span>${t8("Auto-Pass once")}</span></a
+        >`;
+        }
+        return x`<a
+        href="#"
+        id="myCancelAutopass"
+        class="action-button bgabutton bgabutton_red"
+        title=${t8("You have chosen to automatically pass during this trick. Click to cancel")}
+        @click=${this.onCancelAutopass}
+        ><span>${t8("Cancel Auto-Pass")}</span></a
+      >`;
+      }
+      return "";
+    }
+    hasPassTrickButtonContent() {
+      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
+      if (this.isSpectator) return false;
+      if (this.isCurrentPlayerActive) {
+        return this.stateName === "playCombo";
+      }
+      const passMode = this.currentPlayer?.pass ?? 0;
+      return (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0 && passMode < 2;
+    }
+    renderPassTrickButtonContent() {
+      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
+        return "";
+      }
+      if (this.isSpectator) return "";
+      const passMode = this.currentPlayer?.pass ?? 0;
+      const showTrickPass = this.isCurrentPlayerActive && this.stateName === "playCombo" || !this.isCurrentPlayerActive && (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0 && passMode < 2;
+      if (showTrickPass) {
+        return x`<a
+        href="#"
+        id="myPassTrick"
+        class="action-button bgabutton bgabutton_gray"
+        title=${t8("Automatically pass until the end of this trick.")}
+        @click=${(e7) => this.onPass(e7, false)}
+        ><span>${t8("Auto-Pass this Trick")}</span></a
+      >`;
+      }
+      return "";
+    }
+    onPlayCombo(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-play-combo", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui) {
+        if (typeof ui.onPlayCombo === "function") {
+          ui.onPlayCombo(e7);
+        } else if (typeof ui.playCombo === "function") {
+          ui.playCombo("playCombo");
+        }
+      }
+    }
+    onPass(e7, onlyOnce) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent(onlyOnce ? "action-pass" : "action-pass-trick", {
+          detail: { onlyOnce },
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui && typeof ui.onPass === "function") {
+        ui.onPass(onlyOnce);
+      }
+    }
+    onCancelAutopass(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-cancel-autopass", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui && typeof ui.cancelAutopass === "function") {
+        ui.cancelAutopass();
+      }
+    }
+    onCancelBomb(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-cancel-bomb", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui) {
+        if (typeof ui.onCancelBomb === "function") {
+          ui.onCancelBomb(e7);
+        } else if (typeof ui.takeAction === "function") {
+          ui.takeAction("cancel");
+        }
+      }
+    }
+    onCollect(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-collect", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui && typeof ui.collect === "function") {
+        ui.collect();
+      }
+    }
+    onPlayBomb(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-play-bomb", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui) {
+        if (typeof ui.onPlayBomb === "function") {
+          ui.onPlayBomb(e7);
+        } else if (typeof ui.playCombo === "function") {
+          ui.playCombo("playBomb");
+        }
+      }
+    }
+    onTichuBet(e7) {
+      e7.preventDefault();
+      this.dispatchEvent(
+        new CustomEvent("action-tichu-bet", {
+          bubbles: true,
+          composed: true
+        })
+      );
+      const ui = window.gameui;
+      if (ui && typeof ui.onTichuBet === "function") {
+        ui.onTichuBet(e7);
+      }
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "stateName", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "isCurrentPlayerActive", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "isSpectator", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "isRealtime", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "currentPlayer", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "hand", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "firstOutPlayerId", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "acceptingCardsCountdown", 2);
+  __decorateClass([
+    r5()
+  ], TichuActionBar.prototype, "collectingTrickCountdown", 2);
+  customElements.define("tichu-action-bar", TichuActionBar);
+
+  // src/elements/tichu-hand.ts
+  var t9 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var TichuHand = class extends i4 {
+    constructor() {
+      super();
+      this.isSpectator = false;
+      this.hand = [];
+      this.selectedCardIds = [];
+      this.handSortOrder = "rank";
+      this.stateName = "";
+      this.isTiki = false;
+      this.clockwise = true;
+      this.squareTable = false;
+      this.theme = 0;
+      subscribe(
+        this,
+        () => window.gameModel.isSpectator$,
+        (isSpectator) => this.isSpectator = isSpectator
+      );
+      subscribe(
+        this,
+        () => window.gameModel.hand$,
+        (hand) => this.hand = hand
+      );
+      subscribe(
+        this,
+        () => window.gameModel.selectedCardIds$,
+        (ids) => this.selectedCardIds = ids
+      );
+      subscribe(
+        this,
+        () => window.gameModel.handSortOrder$,
+        (order) => this.handSortOrder = order
+      );
+      subscribe(
+        this,
+        () => window.gameModel.stateName$,
+        (stateName) => this.stateName = stateName
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => this.isTiki = isTiki
+      );
+      subscribe(
+        this,
+        () => window.gameModel.clockwise$,
+        (clockwise) => this.clockwise = clockwise
+      );
+      subscribe(
+        this,
+        () => window.gameModel.squareTable$,
+        (squareTable) => this.squareTable = squareTable
+      );
+      subscribe(
+        this,
+        () => window.gameModel.theme$,
+        (theme) => this.theme = theme
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #myhandwrap {
+          padding-top: 10px;
+          font-size: 14px;
+        }
+        #myhand {
+          margin: 15px 250px 25px 15px;
+          min-height: 150px;
+        }
+        #prefs {
+          padding: 10px;
+          border-top: 1px solid var(--bg-color-lighter);
+          color: #1f2328;
+        }
+        #prefs a {
+          color: var(--bg-color-lighter);
+        }
+        .reordercards {
+          margin-left: 10px;
+          cursor: pointer;
+        }
+        #themes {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          padding: 10px 0px 0px 0px;
+          line-height: 16px;
+        }
+        #themes > * {
+          margin-right: 15px;
+        }
+        a.themelink {
+          display: flex;
+          border: 1px solid rgba(255, 255, 255, 0.3);
+          cursor: pointer;
+        }
+        a.themelink .bg {
+          width: 14px;
+          height: 14px;
+        }
+        a.themelink .bg1 {
+          background-color: var(--bg-color-html);
+        }
+        a.themelink .bg2 {
+          background-color: var(--bg-color-play-area);
+        }
+        a.themelink .bg3 {
+          background-color: var(--bg-color-lighter);
+        }
+      `
+      ];
+    }
+    getSelectionMode() {
+      if (this.stateName === "giveCards") return 1;
+      if (this.stateName === "grandTichuBets") return 0;
+      return 2;
+    }
+    render() {
+      const selectionMode = this.getSelectionMode();
+      const isArchiveMode = Boolean(window.g_archive_mode);
+      return x`
+      <div
+        id="myhandwrap"
+        class="whiteblock"
+        style="display: ${this.isSpectator ? "none" : "block"}"
+      >
+        <tichu-action-bar></tichu-action-bar>
+        <div id="myhand">
+          <tichu-stock
+            .cards=${this.hand}
+            .scale=${1}
+            .tiki=${this.isTiki}
+            .sortMode=${this.handSortOrder}
+            .selectionMode=${selectionMode}
+            .selectedIds=${this.selectedCardIds}
+            .dynamicOverlap=${true}
+            @selection-change=${this.onSelectionChange}
+          ></tichu-stock>
+        </div>
+        <div id="prefs">
+          <span>${t9("User Preferences:")}</span>
+          <a
+            href="#"
+            class="reordercards"
+            id="order_by_rank"
+            style="display: ${this.handSortOrder === "color" ? "inline" : "none"}"
+            @click=${this.onOrderByRank}
+            >[${t9("Reorder cards by rank")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="order_by_color"
+            style="display: ${this.handSortOrder === "rank" ? "inline" : "none"}"
+            @click=${this.onOrderByColor}
+            >[${t9("Reorder cards by color")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="list_table"
+            style="display: ${this.squareTable ? "inline" : "none"}"
+            title=${t9("You can change this permanently in the user settings")}
+            @click=${(e7) => this.onTableLayout(e7, false)}
+            >[${t9("List table")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="square_table"
+            style="display: ${this.squareTable ? "none" : "inline"}"
+            title=${t9("You can change this permanently in the user settings")}
+            @click=${(e7) => this.onTableLayout(e7, true)}
+            >[${t9("Square table")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="clockwise"
+            style="display: ${this.clockwise ? "none" : "inline"}"
+            title=${t9(
+        "This will affect the arrangement of the square table and the order of players when passing the cards. You can change this permanently in the user settings"
+      )}
+            @click=${(e7) => this.onClockwiseChange(e7, true)}
+            >[${t9("Play clockwise")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="counterClockwise"
+            style="display: ${this.clockwise ? "inline" : "none"}"
+            title=${t9(
+        "This will affect the arrangement of the square table and the order of players when passing the cards. You can change this permanently in the user settings"
+      )}
+            @click=${(e7) => this.onClockwiseChange(e7, false)}
+            >[${t9("Play counterclockwise")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="expReplay"
+            style="display: ${isArchiveMode ? "inline" : "none"}"
+            @click=${this.onExpReplay}
+            >[${t9("Experimental Replay")}]</a
+          >
+          <div id="themes">
+            <span>${t9("Color Themes:")}</span>
+            ${THEME_NUMBERS.map(
+        (themeNo) => x`
+                <a
+                  href="#"
+                  class="themelink theme${themeNo}"
+                  id="theme${themeNo}"
+                  @click=${(e7) => this.onThemeClick(e7, themeNo)}
+                >
+                  <div class="bg bg1"></div>
+                  <div class="bg bg2"></div>
+                  <div class="bg bg3"></div>
+                </a>
+              `
+      )}
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    onSelectionChange(e7) {
+      window.gameModel.setSelectedCardIds(e7.detail.selectedIds);
+    }
+    onOrderByRank(e7) {
+      e7.preventDefault();
+      window.gameModel.setHandSortOrder("rank");
+      const ui = window.gameui;
+      if (ui && typeof ui.onReorderByRank === "function") {
+        ui.onReorderByRank(e7);
+      }
+    }
+    onOrderByColor(e7) {
+      e7.preventDefault();
+      window.gameModel.setHandSortOrder("color");
+      const ui = window.gameui;
+      if (ui && typeof ui.onReorderByColor === "function") {
+        ui.onReorderByColor(e7);
+      }
+    }
+    onTableLayout(e7, squareTable) {
+      e7.preventDefault();
+      window.gameModel.setSquareTable(squareTable);
+      const ui = window.gameui;
+      if (ui && typeof ui.onReorderTable === "function") {
+        ui.onReorderTable(squareTable);
+      }
+    }
+    onClockwiseChange(e7, clockwise) {
+      e7.preventDefault();
+      window.gameModel.setClockwise(clockwise);
+      const ui = window.gameui;
+      if (ui && typeof ui.changeOrder === "function") {
+        ui.changeOrder(clockwise);
+      }
+    }
+    onExpReplay(e7) {
+      e7.preventDefault();
+      window.gameModel.setExperimentalReplayOpen(true);
+      const ui = window.gameui;
+      if (ui && typeof ui.toggleExperimentalReplay === "function") {
+        ui.toggleExperimentalReplay(true);
+      }
+    }
+    onThemeClick(e7, themeNo) {
+      e7.preventDefault();
+      window.gameModel.setTheme(themeNo);
+      const ui = window.gameui;
+      if (ui) {
+        if (typeof ui.onThemeChange === "function") {
+          ui.onThemeChange(themeNo);
+        } else if (typeof ui.setTheme === "function") {
+          ui.setTheme(themeNo);
+        }
+      }
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "isSpectator", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "hand", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "selectedCardIds", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "handSortOrder", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "stateName", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "isTiki", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "clockwise", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "squareTable", 2);
+  __decorateClass([
+    r5()
+  ], TichuHand.prototype, "theme", 2);
+  customElements.define("tichu-hand", TichuHand);
+
+  // src/elements/tichu-played-cards.ts
+  var t10 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var COLORS = [1, 2, 3, 4];
+  var VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+  var SPECIAL_LABELS = {
+    1: "D",
+    2: "P",
+    3: "H",
+    4: "1"
+  };
+  var RANK_LABELS = {
+    2: "2",
+    3: "3",
+    4: "4",
+    5: "5",
+    6: "6",
+    7: "7",
+    8: "8",
+    9: "9",
+    10: "10",
+    11: "J",
+    12: "Q",
+    13: "K",
+    14: "A"
+  };
+  var TichuPlayedCards = class extends i4 {
+    constructor() {
+      super();
+      this.isAllInfoExposed = false;
+      this.hand = [];
+      this.currentTrick = [];
+      this.capturedCards = [];
+      this.isTiki = false;
+      subscribe(
+        this,
+        () => window.gameModel.isAllInfoExposed$,
+        (val) => this.isAllInfoExposed = val
+      );
+      subscribe(
+        this,
+        () => window.gameModel.hand$,
+        (hand) => this.hand = hand
+      );
+      subscribe(
+        this,
+        () => window.gameModel.currentTrick$,
+        (trick) => this.currentTrick = trick
+      );
+      subscribe(
+        this,
+        () => window.gameModel.capturedCards$,
+        (captured) => this.capturedCards = captured
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => this.isTiki = isTiki
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        #playedCards {
+          --w: 40px;
+          --h: 60px;
+        }
+        #playedCards h3 {
+          padding: 10px 15px;
+          background-color: var(--bg-color-lighter);
+        }
+        #playedCards #playedCardsFlexRow {
+          display: flex;
+          flex-direction: row;
+          justify-content: center;
+        }
+        #playedCards #playedCardsFlexRow .space {
+          flex-grow: 1;
+        }
+        #playedCards #playedCardsFlexCol {
+          flex-grow: 0;
+          display: flex;
+          flex-direction: column;
+          margin: 10px;
+          padding: 5px;
+          background-color: rgba(255, 255, 255, 0.2);
+          border-radius: var(--border-radius);
+        }
+        #playedCards .type {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        #playedCards .arg {
+          width: var(--w);
+          height: var(--h);
+          margin: 3px;
+          border-radius: 3px;
+          background-image: var(--card-sprite-url);
+          background-position: calc(var(--x) * -1 * var(--w)) calc(var(--y) * -1 * var(--h));
+          background-repeat: no-repeat;
+          background-size: calc(var(--w) * 14) calc(var(--h) * 4);
+          position: relative;
+        }
+        #playedCards .arg-label {
+          font-size: 0;
+          color: transparent;
+          user-select: none;
+        }
+        #playedCards .arg.hand {
+          opacity: 0.3;
+        }
+        #playedCards .arg.trick {
+          visibility: hidden;
+        }
+        #playedCards .arg.captured {
+          visibility: hidden;
+        }
+      `
+      ];
+    }
+    getCardSet(cards) {
+      const s4 = /* @__PURE__ */ new Set();
+      for (const c4 of cards) {
+        s4.add(`${Number(c4.type)}_${Number(c4.type_arg)}`);
+      }
+      return s4;
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      const sprite = this.isTiki ? "img/tiki-cards.png" : "img/tichu-cards.png";
+      this.style.setProperty("--card-sprite-url", `url(${themeUrl}${sprite})`);
+      const capturedSet = this.getCardSet(this.capturedCards);
+      const trickSet = this.getCardSet(this.currentTrick);
+      const handSet = this.getCardSet(this.hand);
+      return x`
+      <div
+        id="playedCards"
+        class="whiteblock"
+        style="display: ${this.isAllInfoExposed ? "block" : "none"}"
+      >
+        <h3>${t10("Played Cards")}</h3>
+        <div id="playedCardsFlexRow">
+          <div class="space"></div>
+          <div id="playedCardsFlexCol">
+            ${COLORS.map(
+        (color) => x`
+                <div id="playedType_${color}" class="type color${color}" style="--y: ${color - 1};">
+                  ${VALUES.map((val) => {
+          const key = `${color}_${val}`;
+          const isCaptured = capturedSet.has(key);
+          const isTrick = trickSet.has(key);
+          const isHand = handSet.has(key);
+          const label = val === 1 ? SPECIAL_LABELS[color] ?? "" : RANK_LABELS[val] ?? String(val);
+          const classes = {
+            arg: true,
+            captured: isCaptured,
+            trick: isTrick,
+            hand: isHand
+          };
+          return x`
+                      <div
+                        id="card_${color}_${val}"
+                        class=${e6(classes)}
+                        style="--x: ${val - 1};"
+                      >
+                        <span
+                          id="playedCard_${color}_${val}"
+                          class=${e6({
+            "arg-label": true,
+            captured: isCaptured,
+            trick: isTrick,
+            hand: isHand
+          })}
+                          >${label}</span
+                        >
+                      </div>
+                    `;
+        })}
+                </div>
+              `
+      )}
+          </div>
+          <div class="space"></div>
+        </div>
+      </div>
+    `;
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuPlayedCards.prototype, "isAllInfoExposed", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayedCards.prototype, "hand", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayedCards.prototype, "currentTrick", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayedCards.prototype, "capturedCards", 2);
+  __decorateClass([
+    r5()
+  ], TichuPlayedCards.prototype, "isTiki", 2);
+  customElements.define("tichu-played-cards", TichuPlayedCards);
+
+  // src/elements/tichu-trick-modal.ts
+  var t11 = (s4) => typeof _ === "function" ? _(s4) : s4;
+  var TichuTrickModal = class extends i4 {
+    constructor() {
+      super();
+      this.trickModalOpen = false;
+      this.currentTrick = [];
+      this.isTiki = false;
+      subscribe(
+        this,
+        () => window.gameModel.trickModalOpen$,
+        (open) => this.trickModalOpen = open
+      );
+      subscribe(
+        this,
+        () => window.gameModel.currentTrick$,
+        (cards) => this.currentTrick = cards
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => this.isTiki = isTiki
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+        }
+        .custom_popin_underlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.55);
+          z-index: 9500;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .custom_popin {
+          background: #f6f0e6;
+          color: #1f2328;
+          border-radius: 8px;
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+          min-width: 540px;
+          max-width: 90vw;
+          max-height: 85vh;
+          overflow: auto;
+          border: 1px solid rgba(0, 0, 0, 0.2);
+        }
+        .custom_popin_titlebar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 16px;
+          background: #e7dccb;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+          font-size: 17px;
+          font-weight: 700;
+        }
+        #popin_showCurrentTrickDialog_close {
+          background: transparent;
+          border: none;
+          font-size: 20px;
+          font-weight: 700;
+          line-height: 1;
+          color: #57606a;
+          cursor: pointer;
+          padding: 2px 6px;
+          border-radius: 4px;
+          text-decoration: none;
+        }
+        #popin_showCurrentTrickDialog_close:hover {
+          background: rgba(0, 0, 0, 0.1);
+          color: #1f2328;
+        }
+        .custom_popin_content {
+          padding: 16px;
+          min-width: 500px;
+        }
+        #currentTrickCards {
+          width: 500px;
+        }
+      `
+      ];
+    }
+    render() {
+      if (!this.trickModalOpen) return "";
+      return x`
+      <div
+        id="popin_showCurrentTrickDialog_underlay"
+        class="custom_popin_underlay bga-popin-underlay"
+        @click=${this.onUnderlayClick}
+      >
+        <div id="popin_showCurrentTrickDialog" class="custom_popin bga-popin-dialog">
+          <div class="custom_popin_titlebar bga-popin-titlebar">
+            <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
+              ${t11("Cards in current Trick")}
+            </span>
+            <a
+              href="#"
+              id="popin_showCurrentTrickDialog_close"
+              class="bga-popin-close"
+              title="Close"
+              @click=${this.onClose}
+              >X</a
+            >
+          </div>
+          <div
+            id="popin_showCurrentTrickDialog_contents"
+            class="custom_popin_content bga-popin-content"
+          >
+            <div id="currentTrickCards">
+              <tichu-stock
+                .cards=${this.currentTrick}
+                .scale=${0.75}
+                sortMode="preserve"
+                .tiki=${this.isTiki}
+                .dynamicOverlap=${true}
+              ></tichu-stock>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    onUnderlayClick(e7) {
+      if (e7.target === e7.currentTarget) {
+        window.gameModel.setTrickModalOpen(false);
+      }
+    }
+    onClose(e7) {
+      e7.preventDefault();
+      window.gameModel.setTrickModalOpen(false);
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuTrickModal.prototype, "trickModalOpen", 2);
+  __decorateClass([
+    r5()
+  ], TichuTrickModal.prototype, "currentTrick", 2);
+  __decorateClass([
+    r5()
+  ], TichuTrickModal.prototype, "isTiki", 2);
+  customElements.define("tichu-trick-modal", TichuTrickModal);
+
+  // src/elements/tichu-game.ts
+  var THEME_NUMBERS2 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  var TichuGame = class extends i4 {
+    constructor() {
+      super();
+      this.experimentalReplayOpen = false;
+      this.clockwise = true;
+      this.squareTable = false;
+      this.theme = 0;
+      this.isTiki = false;
+      this.betAnimations = [];
+      subscribe(
+        this,
+        () => window.gameModel.experimentalReplayOpen$,
+        (open) => {
+          this.experimentalReplayOpen = open;
+          this.syncExternalClasses();
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.clockwise$,
+        (clockwise) => {
+          this.clockwise = clockwise;
+          this.syncExternalClasses();
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.squareTable$,
+        (squareTable) => {
+          this.squareTable = squareTable;
+          this.syncExternalClasses();
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.theme$,
+        (theme) => {
+          this.theme = theme;
+          this.syncExternalClasses();
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.isTiki$,
+        (isTiki) => {
+          this.isTiki = isTiki;
+          this.syncExternalClasses();
+        }
+      );
+      subscribe(
+        this,
+        () => window.gameModel.betAnimations$,
+        (anims) => this.betAnimations = anims
+      );
+    }
+    static get styles() {
+      return [
+        styles,
+        i`
+        :host {
+          display: block;
+          position: relative;
+          --bg-color-light: #eee;
+          --bg-color-html: rgba(0, 0, 0, 0.3);
+          --bg-color-play-area: rgba(255, 255, 255, 0.3);
+          --bg-color-lighter: rgba(246, 231, 212, 0.8);
+          --bg-color-active: rgba(200, 0, 0, 0.9);
+        }
+        #tichu-game-root {
+          position: relative;
+        }
+      `
+      ];
+    }
+    connectedCallback() {
+      super.connectedCallback();
+      this.syncExternalClasses();
+    }
+    syncExternalClasses() {
+      if (typeof document === "undefined") return;
+      const targets = [
+        document.getElementById("overall-content"),
+        document.getElementById("game_play_area"),
+        document.body
+      ];
+      for (const el of targets) {
+        if (!el) continue;
+        for (const n5 of THEME_NUMBERS2) {
+          el.classList.toggle(`theme${n5}`, this.theme === n5);
+        }
+        el.classList.toggle("tiki", this.isTiki);
+        el.classList.toggle("clockwise", this.clockwise);
+        el.classList.toggle("squareTable", this.squareTable);
+        el.classList.toggle("listTable", !this.squareTable);
+      }
+    }
+    render() {
+      const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+      this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+      const rootClasses = {
+        tiki: this.isTiki,
+        clockwise: this.clockwise,
+        squareTable: this.squareTable,
+        listTable: !this.squareTable
+      };
+      for (const n5 of THEME_NUMBERS2) {
+        rootClasses[`theme${n5}`] = this.theme === n5;
+      }
+      if (this.experimentalReplayOpen) {
+        return x`
+        <div id="tichu-game-root" class=${e6(rootClasses)}>
+          <tichu-replay
+            @exit=${() => window.gameModel.setExperimentalReplayOpen(false)}
+          ></tichu-replay>
+        </div>
+      `;
+      }
+      return x`
+      <div id="tichu-game-root" class=${e6(rootClasses)}>
+        ${this.betAnimations.map(
+        (anim) => x`
+            <div
+              id="temp_${anim.playerId}"
+              class=${e6({
+          icon: true,
+          temp: true,
+          "grand-tichu-color": anim.bet === 200,
+          grandtichucolor: anim.bet === 200,
+          "tichu-color": anim.bet !== 200,
+          tichucolor: anim.bet !== 200,
+          "fading-out": anim.fadingOut
+        })}
+              style="opacity: ${anim.fadingOut ? "0" : "1"}"
+            ></div>
+          `
+      )}
+        <tichu-value-choice mode="mahjong"></tichu-value-choice>
+        <tichu-value-choice mode="phoenix"></tichu-value-choice>
+        <tichu-last-played></tichu-last-played>
+        <tichu-pass-area></tichu-pass-area>
+        <tichu-hand></tichu-hand>
+        <tichu-played-cards></tichu-played-cards>
+        <tichu-trick-modal></tichu-trick-modal>
+      </div>
+    `;
+    }
+  };
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "experimentalReplayOpen", 2);
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "clockwise", 2);
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "squareTable", 2);
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "theme", 2);
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "isTiki", 2);
+  __decorateClass([
+    r5()
+  ], TichuGame.prototype, "betAnimations", 2);
+  customElements.define("tichu-game", TichuGame);
+
+  // src/elements/elements.ts
+  if (typeof document !== "undefined" && document.documentElement) {
+    const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
+    document.documentElement.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+    document.documentElement.style.setProperty(
+      "--table-icons-url",
+      `url(${themeUrl}img/tichu-icons-table.png)`
+    );
+    document.documentElement.style.setProperty(
+      "--mahjong-bg-url",
+      `url(${themeUrl}img/tichu-mahjong.png)`
+    );
+    document.documentElement.style.setProperty(
+      "--tiki-mahjong-bg-url",
+      `url(${themeUrl}img/tiki-tichu-mahjong.png)`
+    );
+  }
+  if (typeof window !== "undefined" && !window.gameModel) {
+    window.gameModel = new GameModel();
+  }
 })();
 /*! Bundled license information:
 

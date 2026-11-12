@@ -8,7 +8,6 @@ export function subscribe<T>(
   provider: Provider<Observable<T>>,
   callback: (t: T) => void,
 ) {
-  if (host.isConnected) throw new Error("component is already connected");
   host.addController(new SubscriptionController(provider, callback));
 }
 
@@ -21,6 +20,7 @@ export class SubscriptionController<T> implements ReactiveController {
   ) {}
 
   hostConnected() {
+    this.sub?.unsubscribe();
     this.sub = this.provider().subscribe((v) => this.update(v));
   }
 

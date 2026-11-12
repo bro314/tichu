@@ -7,25 +7,8 @@
  * See http://en.boardgamearena.com/#!doc/Studio for more information.
  * -----
  */
-import { dojohtml, dojostyle } from "./util";
+import type { GameModel, LiveGamePrefs } from "./elements/game-model";
 import { initStudioTestHelper } from "./studio-test";
-
-interface StockItem {
-  id: number;
-  type: number;
-}
-
-interface StockItemType {
-  /** The sort priority when arranging items to be displayed within a stock. Lower values are displayed first. If two items have the same weight, the are sorted by the order by which they were added to the stock. */
-  weight: number;
-  /** The sprite sheet URL for this `StockItemType`. This image should contain a grid of images matching the `itemWidth` and `itemHeight` used for the `Stock.create(..)` method. If this sprite sheet is not a single row of images, the `Stock.image_items_per_row` property is used to specify the number of sprites per row in this image. */
-  image: string;
-  /** The sprite sheet position for this `StockItemType`. This is a zero indexed number defined by the following formula: `row * Stock.image_items_per_row + col`. This number should never exceed the number of sprites in the sprite sheet. */
-  image_position: number;
-}
-
-// itemType -> weight
-type Weights = Record<number, number>;
 
 enum Bet {
   // Player can still make a bet.
@@ -36,39 +19,9 @@ enum Bet {
   GRAND_TICHU = "200",
 }
 
-enum Pass {
-  NO_BET = "0",
-}
-
-interface State {
-  // number (player id) as string
-  active_player: string;
-  args: any;
-  description: string;
-  descriptionmyturn: string;
-  // number as string
-  id: string;
-  // numbers (player ids) as strings
-  multiactive: string[];
-  name: string;
-  possibleactions: string[];
-  reflexion: { total: { [playerId: number]: number } };
-  transitions: any;
-  type: string;
-  updateGameProgression: number;
-}
-
 interface Card {
-  // random number 1-56, different in each game
   id: string;
-  // 1-4
-  // 1: black (or dragon)
-  // 2: red (or phoenix)
-  // 3: blue (or dog)
-  // 4: green (or mahjong)
   type: string;
-  // 1-14
-  // 1 are special cards, 14 is ace, 11-13 are J,Q,K
   type_arg: string;
   location: string;
   location_arg: string;
@@ -83,6 +36,10 @@ interface Combo {
 }
 
 declare global {
+  interface Window {
+    gameModel: GameModel;
+  }
+
   // prettier-ignore
   interface NotifTypes {
     "dealCards": { cards: Card[] };
@@ -111,14 +68,13 @@ declare global {
     phoenixPlay: {};
     chooseDragonGift: {};
     collect: {};
+    acceptCards: {};
+    playCombo: {};
   }
 
   interface Player {
-    // number as string
     call_tichu: Bet;
-    // number as string
     call_grand_tichu: Bet;
-    // number as string
     pass: string;
     no: number;
   }
@@ -126,20 +82,16 @@ declare global {
   interface Gamedatas {
     allLastCombos: Record<number, Combo>;
     capturedpoints: Record<number, number>;
-    // deck location "captured"
     capturedCards: Card[];
-    // deck location "combo"
     currentTrick: Card[];
     currentTrickValue: number;
     firstoutplayer: number;
-    // deck location "hand" (current user only)
     hand: Card[];
     handcount: Record<number, number>;
     lastComboDescription: string;
     lastComboPlayer: string;
     mahjongOwner: number;
     mahjongWish: number;
-    // Should the played card be shown and players smartly skipped? 0=FALSE, 1=TRUE
     isAllInfoExposed: number;
     passes: number[];
     round: number;
@@ -147,61 +99,653 @@ declare global {
   }
 }
 
-type TichuStock = Stock & {
-  image_items_per_row: number;
-  item_width: number;
-  item_margin: number;
-  extraClasses: string;
-  items: StockItem[];
-  changeItemsWeight: (weights: Weights) => void;
-  getAllItems(): StockItem[];
-};
-
-const isDebug = window.location.host === "studio.boardgamearena.com";
-const debug = isDebug ? console.log.bind(window.console) : function () {};
-
-function cardToStockType(card: Card): number {
-  return stockType(Number(card.type), Number(card.type_arg));
-}
-
-function stockType(color: number, value: number): number {
-  return (Number(color) - 1) * 14 + (Number(value) - 1);
-}
-
-function addCardToStock(stock: TichuStock | undefined, card: Card) {
-  stock?.addToStockWithId(cardToStockType(card), card.id);
-}
-
-function addItemToStock(stock: TichuStock, item: StockItem) {
-  stock.addToStockWithId(item.type, String(item.id));
-}
-
 export class Tichu {
-  private readonly cardwidth = 100;
-  private readonly cardheight = 150;
-  private readonly cardChoiceWidth = 70;
-  private readonly cardChoiceHeight = 105;
-  private cardsToPass: (StockItem | undefined)[] = [];
-  private tableCombos: Record<number, TichuStock> = {};
-  private mahjongValues!: TichuStock;
-  private phoenixValues!: TichuStock;
-  private allLastCombos: Record<number, Combo | undefined> = {};
-  private clockwise: boolean = false;
-  private experimentalArchiveModeEnabled: boolean = false;
-  private playerHand!: TichuStock;
-  private active_player?: string;
-  private stateName!: string;
-  private allowedValues: number[] = [];
-  private autoCollectTimeout?: number;
-  private autoAcceptTimeout?: number;
+  autoCollectTimeout?: number;
+  autoAcceptTimeout?: number;
+  experimentalArchiveModeEnabled = false;
+  allLastCombos: Record<number, Combo | undefined> = {};
+  stateName = "";
+  active_player?: string;
 
-  private statusEl!: HTMLElement;
+  playerHand = {
+    getAllItems: () => {
+      const hand = window.gameModel ? window.gameModel.getState().hand : this.gamedatas?.hand || [];
+      return hand.map((c: any) => ({
+        id: Number(c.id),
+        type: (Number(c.type) - 1) * 14 + (Number(c.type_arg) - 1),
+      }));
+    },
+    getSelectedItems: () => {
+      if (!window.gameModel) return [];
+      const st = window.gameModel.getState();
+      const selectedSet = new Set(st.selectedCardIds.map(String));
+      return st.hand
+        .filter((c) => selectedSet.has(String(c.id)))
+        .map((c) => ({
+          id: Number(c.id),
+          type: (Number(c.type) - 1) * 14 + (Number(c.type_arg) - 1),
+        }));
+    },
+    selectItem: (id: string | number) => {
+      if (!window.gameModel) return;
+      const idStr = String(id);
+      const st = window.gameModel.getState();
+      if (st.stateName === "giveCards") {
+        window.gameModel.setSelectedCardIds([idStr]);
+      } else if (!st.selectedCardIds.includes(idStr)) {
+        window.gameModel.setSelectedCardIds([...st.selectedCardIds, idStr]);
+      }
+    },
+    unselectAll: () => {
+      window.gameModel?.clearSelection();
+    },
+    removeAll: () => {
+      window.gameModel?.clearSelection();
+    },
+    addToStockWithId: (_type: number, _id: string | number) => {},
+    removeFromStockById: (_id: string | number) => {},
+    count: () => {
+      return window.gameModel
+        ? window.gameModel.getState().hand.length
+        : (this.gamedatas?.hand || []).length;
+    },
+  };
+
+  mahjongValues = {
+    get items() {
+      return [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((v) => ({
+        id: v,
+        type: v - 2,
+      }));
+    },
+    getSelectedItems: () => {
+      const val = window.gameModel?.getState().selectedMahjongWish ?? null;
+      return val !== null ? [{ id: val, type: val - 2 }] : [];
+    },
+    selectItem: (id: string | number) => {
+      const num = Number(id);
+      window.gameModel?.setSelectedMahjongWish(Number.isNaN(num) ? null : num);
+    },
+    unselectAll: () => {
+      window.gameModel?.setSelectedMahjongWish(null);
+    },
+  };
+
+  phoenixValues = {
+    get items() {
+      const allowed = window.gameModel?.getState().phoenixAllowedValues ?? [];
+      return allowed.map((v) => ({ id: v, type: v - 2 }));
+    },
+    getSelectedItems: () => {
+      const val = window.gameModel?.getState().selectedPhoenixValue ?? null;
+      return val !== null ? [{ id: val, type: val - 2 }] : [];
+    },
+    selectItem: (id: string | number) => {
+      const num = Number(id);
+      window.gameModel?.setSelectedPhoenixValue(Number.isNaN(num) ? null : num);
+    },
+    unselectAll: () => {
+      window.gameModel?.setSelectedPhoenixValue(null);
+    },
+  };
+
+  get allowedValues(): number[] {
+    return window.gameModel?.getState().phoenixAllowedValues ?? [];
+  }
+
+  set allowedValues(vals: number[]) {
+    window.gameModel?.setPhoenixAllowedValues(Array.isArray(vals) ? vals.map(Number) : []);
+  }
+
+  get clockwise(): boolean {
+    return window.gameModel ? window.gameModel.getState().clockwise : true;
+  }
+
+  set clockwise(val: boolean) {
+    window.gameModel?.setClockwise(Boolean(val));
+  }
+
+  get cardsToPass(): (number | null)[] {
+    if (!window.gameModel) return [];
+    const slots = window.gameModel.getState().passSlots;
+    const handIds = new Set((this.gamedatas?.hand || []).map((c: any) => Number(c.id)));
+    return slots.map((s) => {
+      if (!s.givenCard) return null;
+      const idNum = Number(s.givenCard.id);
+      return handIds.has(idNum) ? idNum : null;
+    });
+  }
+
+  set cardsToPass(_val: (number | null)[]) {
+    // Compatibility setter for test harnesses
+  }
+
+  readPrefs(): LiveGamePrefs {
+    let theme = Number(this.getGameUserPreference(104));
+    if (Number.isNaN(theme)) {
+      const stored = localStorage.getItem("tichu_theme");
+      theme = stored !== null ? Number(stored) || 0 : 0;
+    }
+    return {
+      100: Number(this.getGameUserPreference(100)),
+      101: Number(this.getGameUserPreference(101)),
+      102: Number(this.getGameUserPreference(102)),
+      103: Number(this.getGameUserPreference(103)),
+      104: theme,
+      squareTable: this.getGameUserPreference(100) == 2,
+      clockwise: this.getGameUserPreference(101) != 1,
+      isTiki: this.getGameUserPreference(103) == 1,
+      theme,
+    };
+  }
+
+  initPreferencesObserver() {
+    document.querySelectorAll(".preference_control").forEach((el) => {
+      el.addEventListener("change", (e: Event) => {
+        const target = e.target as HTMLSelectElement | HTMLInputElement | null;
+        const match = target?.id?.match(/^preference_[cf]ontrol_(\d+)$/);
+        if (!target || !match) return;
+        const pref = Number(match[1]);
+        const newValue = Number(target.value);
+        if (this.prefs && this.prefs[pref]) {
+          this.prefs[pref].value = String(newValue);
+        }
+        this.onPreferenceChange(pref, newValue);
+      });
+    });
+  }
+
+  onPreferenceChange(prefId: number, prefValue: number) {
+    switch (Number(prefId)) {
+      case 100:
+        this.onLayoutChange(prefValue == 2);
+        break;
+      case 101:
+        this.onDirectionChange(prefValue != 1);
+        break;
+      case 103:
+        window.gameModel?.setTiki(prefValue == 1);
+        break;
+      case 104:
+        this.onThemeChange(Number(prefValue));
+        break;
+    }
+  }
+
+  rehydrateModel() {
+    const gamedatas = this.gamedatas;
+    if (!gamedatas) return;
+    this.allLastCombos = gamedatas.allLastCombos || {};
+    this.stateName = gamedatas.gamestate?.name || "";
+    this.active_player = gamedatas.gamestate?.active_player;
+
+    const overall = document.getElementById("overall-content");
+    if (overall) {
+      overall.classList.toggle("spectatorMode", Boolean(this.isSpectator));
+      overall.classList.toggle("archiveMode", Boolean((window as any).g_archive_mode));
+    }
+
+    const playArea = document.getElementById("game_play_area");
+    if (playArea) {
+      playArea.classList.toggle("isAllInfoExposed", Number(gamedatas.isAllInfoExposed) === 1);
+      if (!playArea.querySelector("tichu-game")) {
+        const gameEl = document.createElement("tichu-game");
+        playArea.appendChild(gameEl);
+      }
+    }
+
+    window.gameModel?.hydrateFromGamedatas(
+      gamedatas,
+      this.player_id,
+      this.isSpectator,
+      this.bRealtime,
+      this.readPrefs(),
+    );
+
+    this.enableAllPlayerPanels();
+    const stName = gamedatas.gamestate?.name || "";
+    for (const player of Object.values(gamedatas.players || {})) {
+      const pId = Number(player.id);
+      const board = document.getElementById(`player_board_${pId}`);
+      if (board) {
+        board
+          .querySelectorAll(".ha_board, tichu-player-panel")
+          .forEach((el) => el.parentNode?.removeChild(el));
+        const panel = document.createElement("tichu-player-panel") as any;
+        panel.playerId = String(pId);
+        panel.setAttribute("player-id", String(pId));
+        board.appendChild(panel);
+      }
+      if (
+        Number(gamedatas.handcount?.[pId] ?? 0) === 0 &&
+        stName !== "newRound" &&
+        stName !== "endRound"
+      ) {
+        this.disablePlayerPanel(pId);
+      }
+    }
+  }
+
+  setup(gamedatas: Gamedatas) {
+    this.gamedatas = gamedatas;
+    this.rehydrateModel();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => {
+        this.rescale();
+      });
+      const wrap =
+        document.getElementById("game_play_area_wrap") || document.getElementById("game_play_area");
+      if (wrap) ro.observe(wrap);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (
+        document.visibilityState === "visible" &&
+        this.gamedatas?.gamestate?.name === "showPassedCards" &&
+        this.isCurrentPlayerActive()
+      ) {
+        window.gameModel?.setAcceptingCardsCountdown(true);
+        clearTimeout(this.autoAcceptTimeout);
+        this.autoAcceptTimeout = window.setTimeout(() => this.onAcceptCards(), 2000);
+      }
+    });
+
+    this.initPreferencesObserver();
+    this.setupNotifications();
+    initStudioTestHelper(this);
+  }
+
+  onEnteringState(stateName: string, stateObject: any) {
+    this.stateName = stateName;
+    this.active_player = stateObject?.active_player;
+    if (this.gamedatas && stateObject) {
+      this.gamedatas.gamestate = stateObject;
+    }
+    const overall = document.getElementById("overall-content");
+    if (overall && stateName) {
+      overall.classList.add(`gamestate_${stateName}`);
+    }
+
+    if (stateName !== "confirmTrick") {
+      clearTimeout(this.autoCollectTimeout);
+    }
+    if (stateName !== "showPassedCards") {
+      clearTimeout(this.autoAcceptTimeout);
+    }
+
+    window.gameModel?.setGameState(stateName, {
+      activePlayerId: stateObject?.active_player ?? this.getActivePlayerId(),
+      activePlayerIds: Array.isArray(stateObject?.multiactive)
+        ? stateObject.multiactive
+        : undefined,
+      isCurrentPlayerActive: this.isCurrentPlayerActive(),
+    });
+
+    const args = stateObject?.args;
+    switch (stateName) {
+      case "newRound":
+        this.onEnteringStateNewRound(args);
+        break;
+      case "grandTichuBets":
+        this.onEnteringStateGrandTichuBets(args);
+        break;
+      case "giveCards":
+        this.onEnteringStateGiveCards(args);
+        break;
+      case "showPassedCards":
+        this.onEnteringStateShowPassedCards(args);
+        break;
+      case "acceptPassedCards":
+        this.onEnteringStateAcceptPassedCards(args);
+        break;
+      case "newTrick":
+        this.onEnteringStateNewTrick(args);
+        break;
+      case "playComboOpen":
+        this.onEnteringStatePlayComboOpen(args);
+        break;
+      case "playCombo":
+        this.onEnteringStatePlayCombo(args);
+        break;
+      case "mahjongPlay":
+        this.onEnteringStateMahjongPlay(args);
+        break;
+      case "phoenixPlay":
+        this.onEnteringStatePhoenixPlay(args);
+        break;
+      case "playBomb":
+        this.onEnteringStatePlayBomb(args);
+        break;
+      case "chooseDragonGift":
+        this.onEnteringStateChooseDragonGift(args);
+        break;
+      case "confirmTrick":
+        this.onEnteringStateConfirmTrick(args);
+        break;
+      case "endRound":
+        this.onEnteringStateEndRound(args);
+        break;
+    }
+  }
+
+  onEnteringStateNewRound(_args?: any) {
+    this.enableAllPlayerPanels();
+    if (this.gamedatas) {
+      this.gamedatas.capturedCards = [];
+      this.gamedatas.hand = [];
+      this.gamedatas.currentTrick = [];
+      this.gamedatas.currentTrickValue = 0;
+      this.gamedatas.firstoutplayer = 0;
+      this.gamedatas.round++;
+      this.gamedatas.trick = 0;
+      this.gamedatas.mahjongWish = 0;
+      this.gamedatas.allLastCombos = {};
+      this.gamedatas.passes = [];
+      this.gamedatas.lastComboPlayer = "0";
+      this.gamedatas.lastComboDescription = "";
+      for (const id in this.gamedatas.players) {
+        this.gamedatas.players[id]!.call_tichu = Bet.NO_BET_YET;
+        this.gamedatas.players[id]!.call_grand_tichu = Bet.NO_BET_YET;
+        this.gamedatas.players[id]!.pass = "0";
+        if (this.gamedatas.capturedpoints) {
+          this.gamedatas.capturedpoints[Number(id)] = 0;
+        }
+      }
+    }
+    this.allLastCombos = {};
+    window.gameModel?.enterNewRound();
+  }
+
+  onEnteringStateGrandTichuBets(_args?: any) {
+    window.gameModel?.enterGrandTichuBets();
+  }
+
+  onEnteringStateGiveCards(_args?: any) {
+    window.gameModel?.clearSelection();
+  }
+
+  onEnteringStateShowPassedCards(args?: any) {
+    this.showPassedCards(args);
+  }
+
+  onEnteringStateAcceptPassedCards(args?: any) {
+    this.showPassedCards(args);
+  }
+
+  showPassedCards(args?: any) {
+    if (this.gamedatas?.handcount) {
+      for (const pId of Object.keys(this.gamedatas.players || {})) {
+        this.gamedatas.handcount[Number(pId)] = 14;
+      }
+    }
+    const rawReceived = args?._private ?? (this.gamedatas?.gamestate as any)?.args?._private;
+    const received = Array.isArray(rawReceived) ? rawReceived : undefined;
+    window.gameModel?.enterShowPassedCards(received);
+  }
+
+  onEnteringStateNewTrick(_args?: any) {
+    if (this.gamedatas) {
+      this.gamedatas.capturedCards = [
+        ...(this.gamedatas.capturedCards || []),
+        ...(this.gamedatas.currentTrick || []),
+      ];
+      this.gamedatas.currentTrick = [];
+      this.gamedatas.currentTrickValue = 0;
+      this.gamedatas.trick++;
+      this.gamedatas.allLastCombos = {};
+      this.gamedatas.passes = [];
+      this.gamedatas.lastComboPlayer = "0";
+      this.gamedatas.lastComboDescription = "";
+      for (const p of Object.values(this.gamedatas.players || {})) {
+        p.pass = "0";
+      }
+    }
+    this.allLastCombos = {};
+    window.gameModel?.enterNewTrick();
+  }
+
+  onEnteringStatePlayComboOpen(_args?: any) {
+    // Handled reactively by <tichu-last-played>
+  }
+
+  onEnteringStatePlayCombo(_args?: any) {
+    // Handled reactively by <tichu-last-played>
+  }
+
+  onEnteringStateMahjongPlay(_args?: any) {
+    window.gameModel?.enterMahjongPlay();
+  }
+
+  onEnteringStatePhoenixPlay(args?: any) {
+    const rawValues =
+      args?._private?.values ??
+      args?.values ??
+      (this.gamedatas?.gamestate as any)?.args?._private?.values ??
+      (this.gamedatas?.gamestate as any)?.args?.values ??
+      [];
+    const values = Array.isArray(rawValues) ? rawValues.map(Number) : [];
+    window.gameModel?.enterPhoenixPlay(values);
+  }
+
+  onEnteringStatePlayBomb(args?: any) {
+    const bombPlayerId = args?.active ?? this.active_player ?? this.getActivePlayerId();
+    if (bombPlayerId) {
+      window.gameModel?.enterPlayBomb(bombPlayerId);
+    }
+  }
+
+  onEnteringStateChooseDragonGift(args?: any) {
+    const enemies = args?.enemies ?? (this.gamedatas?.gamestate as any)?.args?.enemies;
+    if (!this.isCurrentPlayerActive() || !enemies) return;
+    const left = this.clockwise ? 0 : 1;
+    const right = this.clockwise ? 1 : 0;
+    const leftLabel = typeof enemies[left] === "object" ? enemies[left].name : enemies[left];
+    const rightLabel = typeof enemies[right] === "object" ? enemies[right].name : enemies[right];
+    this.addActionButton("giveDragonBefore_button", _("Give cards to " + leftLabel), () =>
+      this.onGiveDragon(left),
+    );
+    this.addActionButton("giveDragonAfter_button", _("Give cards to " + rightLabel), () =>
+      this.onGiveDragon(right),
+    );
+  }
+
+  onEnteringStateConfirmTrick(_args?: any) {
+    // Handled in onUpdateActionButtons
+  }
+
+  onEnteringStateEndRound(_args?: any) {
+    this.enableAllPlayerPanels();
+    if (this.gamedatas) {
+      this.gamedatas.hand = [];
+      this.gamedatas.allLastCombos = {};
+      for (const pId of Object.keys(this.gamedatas.players || {})) {
+        const idNum = Number(pId);
+        if (this.gamedatas.handcount) this.gamedatas.handcount[idNum] = 0;
+        if (this.gamedatas.capturedpoints) this.gamedatas.capturedpoints[idNum] = 0;
+      }
+    }
+    this.allLastCombos = {};
+    window.gameModel?.enterEndRound();
+  }
+
+  onLeavingState(stateName: string) {
+    clearTimeout(this.autoAcceptTimeout);
+    clearTimeout(this.autoCollectTimeout);
+    window.gameModel?.setAcceptingCardsCountdown(false);
+    window.gameModel?.setCollectingTrickCountdown(false);
+    const overall = document.getElementById("overall-content");
+    if (overall && stateName) {
+      overall.classList.remove(`gamestate_${stateName}`);
+    }
+  }
+
+  onUpdateActionButtons(stateName: string, args: any) {
+    this.stateName = stateName;
+    document
+      .getElementById("game_play_area")
+      ?.classList.toggle("isCurrentPlayerActive", this.isCurrentPlayerActive());
+    this.removeActionButtons();
+
+    window.gameModel?.setGameState(stateName, {
+      activePlayerId: this.getActivePlayerId(),
+      activePlayerIds: Array.isArray((this.gamedatas?.gamestate as any)?.multiactive)
+        ? (this.gamedatas.gamestate as any).multiactive
+        : undefined,
+      isCurrentPlayerActive: this.isCurrentPlayerActive(),
+    });
+
+    if (this.isCurrentPlayerActive()) {
+      switch (stateName) {
+        case "giveCards":
+          this.addActionButton(
+            "resetPassCards_button",
+            _("Reset choices"),
+            "onResetPassCards",
+            undefined,
+            false,
+            "gray",
+          );
+          this.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
+          break;
+
+        case "showPassedCards":
+          clearTimeout(this.autoAcceptTimeout);
+          if (document.visibilityState === "visible") {
+            window.gameModel?.setAcceptingCardsCountdown(true);
+            this.autoAcceptTimeout = window.setTimeout(() => this.onAcceptCards(), 2000);
+          }
+          this.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
+          break;
+
+        case "mahjongPlay":
+          this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
+          break;
+
+        case "phoenixPlay":
+          this.addActionButton(
+            "choosePhoenix",
+            _("Choose a value for the Phoenix"),
+            "onChoosePhoenix",
+          );
+          this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
+          break;
+
+        case "chooseDragonGift":
+          this.onEnteringStateChooseDragonGift(args);
+          break;
+
+        case "confirmTrick":
+          clearTimeout(this.autoCollectTimeout);
+          if (this.bRealtime) {
+            window.gameModel?.setCollectingTrickCountdown(true);
+            this.autoCollectTimeout = window.setTimeout(() => this.collect(), 2000);
+          }
+          break;
+      }
+    }
+
+    if (!this.isSpectator && this.gamedatas?.players) {
+      const player = this.gamedatas.players[this.player_id];
+      if (player && String(player.call_grand_tichu) === Bet.NO_BET_YET) {
+        this.addActionButton(
+          "noBet",
+          _("No bet"),
+          () => this.onGrandTichuBet(Bet.NO_BET),
+          undefined,
+          false,
+          "gray",
+        );
+        this.addTooltip("noBet", _("Don't call Grand Tichu"), "");
+
+        this.addActionButton(
+          "makeGTBet",
+          _("Grand Tichu"),
+          () => this.onGrandTichuBet(Bet.GRAND_TICHU),
+          undefined,
+          false,
+          "red",
+        );
+        this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Preference & View Action Handlers
+  // ===========================================================================
+
+  onThemeChange(themeNumber: number) {
+    localStorage.setItem("tichu_theme", String(themeNumber));
+    window.gameModel?.setTheme(Number(themeNumber));
+  }
+
+  setTheme(themeNumber: number) {
+    this.onThemeChange(themeNumber);
+  }
+
+  onOrderChange(order: "rank" | "color") {
+    window.gameModel?.setHandSortOrder(order);
+  }
+
+  onReorderByRank(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    this.onOrderChange("rank");
+  }
+
+  onReorderByColor(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    this.onOrderChange("color");
+  }
+
+  onLayoutChange(square: boolean) {
+    window.gameModel?.setSquareTable(Boolean(square));
+  }
+
+  onReorderTable(square: boolean) {
+    this.onLayoutChange(square);
+  }
+
+  onDirectionChange(clockwise: boolean) {
+    window.gameModel?.setClockwise(Boolean(clockwise));
+  }
+
+  changeOrder(clockwise: boolean) {
+    this.onDirectionChange(clockwise);
+  }
+
+  toggleExperimentalReplay(enable?: boolean) {
+    this.experimentalArchiveModeEnabled = enable ?? !this.experimentalArchiveModeEnabled;
+    window.gameModel?.setExperimentalReplayOpen(false);
+    const overall = document.getElementById("overall-content");
+    if (overall) {
+      overall.classList.toggle("experimentalArchiveMode", this.experimentalArchiveModeEnabled);
+    }
+    if (this.experimentalArchiveModeEnabled && !document.getElementById("game_play_replay")) {
+      const replay = document.createElement("tichu-replay");
+      replay.setAttribute("id", "game_play_replay");
+      replay.addEventListener("exit", () => this.toggleExperimentalReplay(false));
+      const wrap =
+        document.getElementById("game_play_area_wrap") ||
+        document.getElementById("game_play_area")?.parentElement;
+      wrap?.appendChild(replay);
+    }
+    this.rescale();
+  }
 
   rescale() {
-    const areaElement = document.getElementById("game_play_area")!;
-    const replayElement = document.getElementById("game_play_replay")!;
+    const areaElement = document.getElementById("game_play_area");
+    const replayElement = document.getElementById("game_play_replay");
     const gameElement = this.experimentalArchiveModeEnabled ? replayElement : areaElement;
-    const areaWrapElement = document.getElementById("game_play_area_wrap")!;
+    const areaWrapElement = document.getElementById("game_play_area_wrap");
+    if (!areaWrapElement || !gameElement) return;
+
     const widthAvailable = areaWrapElement.clientWidth;
     const heightAvailable = document.documentElement.clientHeight - 120;
 
@@ -221,1062 +765,90 @@ export class Tichu {
     )}px`;
   }
 
-  setup(gamedatas: Gamedatas) {
-    debug("SETUP", gamedatas);
+  // ===========================================================================
+  // Player Action Methods
+  // ===========================================================================
 
-    // Replaces BGA css zoom feature, which is not supported on Firefox.
-    // The css zoom is disabled in tichu.css.
-    new ResizeObserver(() => requestAnimationFrame(() => this.rescale())).observe(
-      document.getElementById("game_play_area_wrap")!,
-    );
-    window.addEventListener("resize", () => requestAnimationFrame(() => this.rescale()));
-    $("game_play_area")?.classList.toggle("isAllInfoExposed", this.isAllInfoExposed());
+  onGiveCard(index: number) {
+    if (this.gamedatas?.gamestate?.name !== "giveCards" || !this.isCurrentPlayerActive()) return;
+    window.gameModel?.toggleGiveCardSlot(index);
+  }
 
-    const player_ids = new Array();
-    for (const player_id in gamedatas.players) {
-      player_ids.push(parseInt(player_id));
-      if (gamedatas.handcount[player_id] === undefined) gamedatas.handcount[player_id] = 0;
+  onResetPassCards() {
+    if (!this.checkAction("giveCards", true)) return;
+    window.gameModel?.resetPassCards();
+  }
+
+  onPassCards() {
+    if (!this.checkAction("giveCards", false)) return;
+    const givenIds = window.gameModel?.getCardsToGiveIds() ?? null;
+    if (!givenIds || givenIds.length !== 3) {
+      this.showMessage(_("You must select exactly 3 cards"), "error");
+      return;
     }
-
-    this.setupGameBoards(gamedatas);
-
-    const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
-    this.statusEl = playArea.querySelector("tichu-status") as HTMLElement;
-    this.statusEl?.addEventListener("show-current-trick", () => this.showCurrentTrick());
-    this.updateStatus();
-
-    this.addTooltipToClass("hand", _("Cards in hand"), "");
-    this.addTooltipToClass("star", _("Points captured"), "");
-    this.addTooltipToClass("grandtichublack", _("Grand Tichu bet yet to be made"), "");
-    this.addTooltipToClass("tichublack", _("Tichu bet yet to be made"), "");
-    this.addTooltipToClass("grandtichucolor", _("Grand Tichu bet"), "");
-    this.addTooltipToClass("tichucolor", _("Tichu bet"), "");
-    this.addTooltipToClass("firstoutcolor", _("First player out"), "");
-    this.addTooltipToClass("cardback", _("has passed"), "");
-
-    document
-      .getElementById("overall-content")
-      ?.classList.toggle("tiki", this.getGameUserPreference(103) == 1);
-    document.getElementById("overall-content")?.classList.toggle("archiveMode", !!g_archive_mode);
-    this.updateMahjongWish(gamedatas.mahjongWish);
-
-    if (gamedatas.firstoutplayer != 0) {
-      const firstout = $("firstoutcolor_" + gamedatas.firstoutplayer);
-      if (firstout) dojo.style(firstout, "display", "inline-block");
-    }
-
-    this.setupPlayerHand();
-
-    this.mahjongValues = this.setupValueChoice("mahjong", 14);
-    this.phoenixValues = this.setupValueChoice("phoenixChoice", 13);
-
-    this.allLastCombos = gamedatas["allLastCombos"];
-    this.displayLastCombos(player_ids, gamedatas["passes"]);
-
-    Array.from($("playertables")?.children ?? []).forEach((el, i) => {
-      dojo.connect(
-        el.children[0] as HTMLElement,
-        "onclick",
-        dojo.hitch(this, () => this.onGiveCard(i)),
-      );
-    });
-
-    this.setupNotifications();
-
-    if (this.getGameUserPreference(100) == 2) {
-      this.onReorderTable(true);
-    }
-
-    this.changeOrder(this.getGameUserPreference(101) != 1);
-    this.setTheme((this.getGameUserPreference(104) as number) ?? 0);
-
-    this.updateCardsPlayed();
-    initStudioTestHelper(this);
-
-    debug("Ending game setup");
+    const toGive = givenIds.join(";") + ";";
+    this.takeAction("giveTheCards", { cards: toGive });
   }
 
-  private isAllInfoExposed() {
-    return this.gamedatas.isAllInfoExposed == 1;
-  }
-
-  private updateStatus() {
-    this.statusEl?.setAttribute("roundCount", `${this.gamedatas.round}`);
-    this.statusEl?.setAttribute("trickCount", `${this.gamedatas.trick}`);
-    this.statusEl?.setAttribute("trickPoints", `${this.gamedatas.currentTrickValue}`);
-    this.statusEl?.setAttribute("trickSize", `${this.gamedatas.currentTrick.length}`);
-  }
-
-  private setupGameBoards(gamedatas: Gamedatas) {
-    for (const player of Object.values(gamedatas.players)) {
-      const player_id = player.id;
-      const isCurrent = player_id === this.player_id;
-      dojo.place(
-        this.format_block("jstpl_player_board", player as Object as { [key: string]: string }),
-        "player_board_" + player_id,
-      );
-
-      if (player.call_grand_tichu === Bet.GRAND_TICHU) {
-        dojostyle(".grandtichucolor." + player_id, "display", "inline-block");
-        dojostyle(".tichublack." + player_id, "display", "none");
-      }
-      if (player.call_grand_tichu === Bet.NO_BET_YET) {
-        dojostyle(".grandtichublack." + player_id, "display", "inline-block");
-      }
-
-      if (player.call_tichu === Bet.TICHU) {
-        dojostyle(".tichucolor." + player_id, "display", "inline-block");
-      }
-      if (player.call_tichu === Bet.NO_BET_YET) {
-        dojostyle(".tichublack." + player_id, "display", "inline-block");
-      }
-
-      (dojo.query(".handcount." + player_id) as any).innerHTML(gamedatas.handcount[player_id]);
-      if (gamedatas.handcount[player_id] === 0) {
-        this.disablePlayerPanel(player_id);
-        $("playertable_" + player_id)?.classList.add("disabled");
-      }
-      if (player_id === Number(gamedatas.lastComboPlayer)) {
-        $("playertable_" + player_id)?.classList.add("lastComboPlayer");
-      }
-
-      (dojo.query(".pointcount." + player_id) as any).innerHTML(
-        gamedatas.capturedpoints[player_id],
-      );
-    }
-
-    dojo.query(".playertabletext").forEach((e: Node) => {
-      const span = document.createElement("SPAN");
-      span.innerText = _("Select a card and click here");
-      e.appendChild(span);
-    });
-  }
-
-  private setupPlayerHand() {
-    this.playerHand = this.createStock($("myhand")!, this.cardwidth, this.cardheight);
-    for (const card of this.gamedatas.hand) {
-      addCardToStock(this.playerHand, card);
-    }
-    this.updateStockOverlap(this.playerHand);
-
-    for (const themeNo of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
-      dojo.connect(
-        $(`theme${themeNo}`),
-        "onclick",
-        dojo.hitch(this, (e: Event) => this.setTheme(themeNo)),
-      );
-    }
-    dojo.connect(
-      $("order_by_rank"),
-      "onclick",
-      dojo.hitch(this, (e: Event) => this.onReorderByRank(e)),
-    );
-    dojo.connect(
-      $("order_by_color"),
-      "onclick",
-      dojo.hitch(this, (e: Event) => this.onReorderByColor(e)),
-    );
-    dojo.connect(
-      $("list_table"),
-      "onclick",
-      dojo.hitch(this, () => this.onReorderTable(false)),
-    );
-    dojo.connect(
-      $("square_table"),
-      "onclick",
-      dojo.hitch(this, () => this.onReorderTable(true)),
-    );
-    dojo.connect(
-      $("clockwise"),
-      "onclick",
-      dojo.hitch(this, () => this.changeOrder(true)),
-    );
-    dojo.connect(
-      $("counterClockwise"),
-      "onclick",
-      dojo.hitch(this, () => this.changeOrder(false)),
-    );
-    if ($("expReplay")) {
-      dojo.connect(
-        $("expReplay"),
-        "onclick",
-        dojo.hitch(this, () => this.toggleExperimentalReplay(true)),
-      );
-    }
-
-    this.addTooltipHtml("list_table", _("You can change this permanently in the user settings"));
-    this.addTooltipHtml("square_table", _("You can change this permanently in the user settings"));
-    this.addTooltipHtml(
-      "clockwise",
-      _(
-        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings",
-      ),
-    );
-    this.addTooltipHtml(
-      "counterClockwise",
-      _(
-        "This will affect the arrangement of the square table and the order of players when passing the cards.<br>You can change this permanently in the user settings",
-      ),
-    );
-  }
-
-  private setTheme(themeNo: number) {
-    for (const n of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
-      document.body.classList.remove(`theme${n}`);
-    }
-    document.body.classList.add(`theme${themeNo}`);
-  }
-
-  private removeMyActionButtons() {
-    document.getElementById("bomb_button")?.replaceChildren();
-    document.getElementById("play_button")?.replaceChildren();
-    document.getElementById("pass_button")?.replaceChildren();
-    document.getElementById("pass_trick_button")?.replaceChildren();
-    document.getElementById("tichu_button")?.replaceChildren();
-    dojo.place(this.format_block("jstpl_my_hand", {}), "play_button", "only");
-  }
-
-  private addMyActionButton(
-    id: string,
-    label: string,
-    method: EventListener,
-    color: string,
-    dest: string,
-  ) {
-    const args = {
-      id,
-      label,
-      addclass: `bgabutton bgabutton_${color}`,
-    };
-    dojo.place(this.format_block("jstpl_my_action_button", args), dest, "only");
-    dojo.connect($(id), "onclick", dojo.hitch(this, method));
-  }
-
-  private createStock(element: HTMLElement, cardWidth: number, cardHeight: number) {
-    const stock = new ebg.stock() as TichuStock;
-    stock.create(this, element, cardWidth, cardHeight);
-    stock.setSelectionAppearance("class");
-    stock.setOverlap(30, 0);
-    new ResizeObserver(() => requestAnimationFrame(() => this.updateStockOverlap(stock))).observe(
-      element,
-    );
-    stock.image_items_per_row = 14;
-    const cardImgFile =
-      this.getGameUserPreference(103) == 1 ? "img/tiki-cards.png" : "img/tichu-cards.png";
-    for (let color = 1; color <= 4; color++) {
-      for (let value = 1; value <= 14; value++) {
-        const type = stockType(color, value);
-        const weight = 2 * (4 * (value - 1) + (color - 1));
-        stock.addItemType(type, weight, g_gamethemeurl + cardImgFile, type);
-        stock.onItemCreate = dojo.hitch(this, "setupNewCard");
-      }
-    }
-    return stock;
-  }
-
-  /**
-   * We would like the card overlap to depend on the width of the container element.
-   * We have to make sure that this method gets called every time that the number of cards in a
-   * stock changes or the size of the container element changes.
-   *
-   * We think it is useful to only allow overlap between 12% and 60%.
-   */
-  private updateStockOverlap(stock?: TichuStock) {
-    if (!stock) return;
-
-    const availableWidthForOverlapPerItem =
-      (stock.container_div.clientWidth - (stock.item_width + stock.item_margin)) /
-      (stock.items.length - 1);
-    let overlap = Math.floor(
-      ((availableWidthForOverlapPerItem - stock.item_margin - 1) / stock.item_width) * 100,
-    );
-    if (overlap > 60) overlap = 60;
-    if (overlap < 12) overlap = 12;
-    stock.setOverlap(overlap, 0);
-  }
-
-  private setupValueChoice(idName: string, count: number): TichuStock {
-    const valueChoice = new ebg.stock() as TichuStock;
-    valueChoice.create(this, $(idName), this.cardChoiceWidth, this.cardChoiceHeight);
-    valueChoice.setSelectionAppearance("class");
-    valueChoice.setSelectionMode(1);
-    valueChoice.image_items_per_row = 7;
-
-    for (let value = 0; value < count; value++) {
-      valueChoice.addItemType(value, value, g_gamethemeurl + "img/tichu-icons-table.png", value);
-      valueChoice.addToStockWithId(value, String(value + 2));
-    }
-    return valueChoice;
-  }
-
-  private displayLastCombos(playerIds: number[], passes: number[]) {
-    if (this.allLastCombos === undefined) return;
-    playerIds.forEach((playerId) => {
-      this.resetComboStock(playerId);
-      const combo = this.allLastCombos[playerId];
-      if (combo && combo.cards?.length > 0) {
-        this.addCardsToStock(this.tableCombos[playerId]!, combo.cards);
-        this.setDescription(playerId, combo.description);
-      } else if (passes.indexOf(playerId) >= 0) {
-        this.setPass(playerId);
-      }
-    });
-  }
-
-  private resetComboStock(playerId: number) {
-    if (playerId in this.tableCombos) {
-      this.tableCombos[playerId]!.removeAll();
-    } else {
-      this.tableCombos[playerId] = this.createStock(
-        $("lastcombo_" + playerId)!,
-        this.cardwidth * 0.75,
-        this.cardheight * 0.75,
-      );
-      this.tableCombos[playerId]!.extraClasses = "smallCards";
-      this.tableCombos[playerId]!.setSelectionMode(0);
-    }
-  }
-
-  private setDescription(playerId: number, desc: string) {
-    const translatedDesc = _(desc);
-    this.addTooltipHtml("playertable_" + playerId, translatedDesc);
-  }
-
-  private addCardsToStock(stock: TichuStock, cards: Card[], playerId: number | null = null) {
-    const weights: Weights = {};
-    let i = 0;
-    for (const card of cards) {
-      if (Number(playerId) === Number(this.player_id)) {
-        this.playerHand!.removeFromStockById(String(card.id));
-        this.gamedatas.hand = this.gamedatas.hand.filter((c) => String(c.id) !== String(card.id));
-      }
-      addCardToStock(stock, card);
-      weights[cardToStockType(card)] = i++;
-    }
-    stock.changeItemsWeight(weights);
-    this.updateStockOverlap(this.playerHand!);
-    this.updateStockOverlap(stock);
-  }
-
-  private animateIcon(clazz: string, player_id: number) {
-    const block = this.format_block("jstpl_temp", {
-      clazz: clazz,
-      id: String(player_id),
-    });
-    const e = dojo.place(block, "game_play_area");
-
-    this.fadeOutAndDestroy(e, 1000, 1000);
-  }
-
-  onEnteringState(stateName: string, stateObject: any) {
-    debug("Entering state: " + stateName, stateObject);
-    this.active_player = stateObject.active_player;
-    this.stateName = stateName;
-
-    if (stateName !== "confirmTrick") {
-      clearTimeout(this.autoCollectTimeout);
-    }
-    if (stateName !== "showPassedCards") {
-      clearTimeout(this.autoAcceptTimeout);
-    }
-
-    const methodName = "onEnteringState" + stateName.charAt(0).toUpperCase() + stateName.slice(1);
-    const thisMethods = this as unknown as { [key: string]: Function };
-    if (thisMethods[methodName] !== undefined) thisMethods[methodName]!(stateObject.args);
-  }
-
-  onEnteringStateNewRound(args: any) {
-    dojohtml(".pointcount", "0");
-    dojostyle(".cardback", "display", "none");
-    this.resetLastCombos();
-    this.gamedatas.capturedCards = [];
-    this.gamedatas.hand = [];
-    this.playerHand?.removeAll();
-    this.gamedatas.currentTrick = [];
-    this.gamedatas.currentTrickValue = 0;
-    this.gamedatas.firstoutplayer = 0;
-    this.gamedatas.round++;
-    this.gamedatas.trick = 0;
-    for (const id in this.gamedatas.players) {
-      this.gamedatas.players[id]!.call_tichu = Bet.NO_BET_YET;
-      this.gamedatas.players[id]!.call_grand_tichu = Bet.NO_BET_YET;
-    }
-    (dojo.query(".last-played-container") as any).removeClass("disabled");
-
-    this.updateStatus();
-    this.updateMahjongWish(0);
-  }
-
-  onEnteringStateGrandTichuBets(args: any) {
-    this.resetLastCombos();
-  }
-
-  /** This is the legacy state that requires a user action for accepting cards. */
-  onEnteringStateShowPassedCards(args: any) {
-    this.showPassedCards(args);
-  }
-
-  /** This is the new state that does not require a user action. */
-  onEnteringStateAcceptPassedCards(args: any) {
-    this.showPassedCards(args);
-  }
-
-  /** This is shared by the new state and the legacy state. */
-  showPassedCards(args: any) {
-    dojohtml(".handcount", "14");
-    if (args._private === undefined) return;
-    args._private.forEach((card: Card, i: number) => {
-      const x = this.cardwidth * (Number(card.type_arg) - 1);
-      const y = this.cardheight * (Number(card.type) - 1);
-      dojo.place(
-        this.format_block("jstpl_cardontable", {
-          x: String(x),
-          y: String(y),
-          player_id: card.location_arg,
-          card_id: card.id,
-        }),
-        "receiveplayertable_" + card.passed_from,
-      );
-    });
-  }
-
-  onEnteringStateNewTrick(args: any) {
-    this.resetLastCombos();
-    this.gamedatas.capturedCards.push(...this.gamedatas.currentTrick);
-    this.gamedatas.currentTrick = [];
-    this.gamedatas.currentTrickValue = 0;
-    this.gamedatas.trick++;
-    this.updateStatus();
-  }
-
-  onEnteringStatePlayComboOpen(args: any) {
-    dojo.query(".active").forEach((el: Node) => (el as HTMLElement).classList.remove("active"));
-    document.getElementById("playertable_" + this.active_player)?.classList.add("active");
-  }
-
-  onEnteringStateMahjongPlay(args: any) {
-    if (this.isCurrentPlayerActive()) {
-      dojostyle("#mahjongpanel", "display", "block");
-      this.mahjongValues.updateDisplay("");
-    }
-    this.playerHand!.unselectAll();
-  }
-
-  onEnteringStatePhoenixPlay(args: any) {
-    if (this.isCurrentPlayerActive()) {
-      dojostyle("#phoenixpanel", "display", "block");
-      this.allowedValues = args._private.values;
-      // variante 1
-      this.phoenixValues!.removeAll();
-      args._private.values.forEach((value: number) => {
-        this.phoenixValues!.addToStock(value - 2);
-      });
-      this.phoenixValues!.updateDisplay("");
-    }
-    this.playerHand!.unselectAll();
-  }
-
-  onEnteringStatePlayCombo(args: any) {
-    dojo.query(".active").forEach((el: Node) => (el as HTMLElement).classList.remove("active"));
-    document.getElementById("playertable_" + this.active_player)?.classList.add("active");
-  }
-
-  onEnteringStatePlayBomb(args: any) {
-    document.getElementById("playertable_" + args.active)?.classList.add("active");
-  }
-
-  onEnteringStateChooseDragonGift(args: any) {
-    if (!this.isCurrentPlayerActive()) return;
-
-    const left = this.clockwise ? 0 : 1;
-    const right = this.clockwise ? 1 : 0;
-    this.addActionButton("giveDragonBefore_button", _("Give cards to " + args.enemies[left]), () =>
-      this.onGiveDragon(left),
-    );
-    this.addActionButton("giveDragonAfter_button", _("Give cards to " + args.enemies[right]), () =>
-      this.onGiveDragon(right),
-    );
-  }
-
-  onEnteringStateEndRound(args: any) {
-    this.playerHand!.removeAll();
-    this.enableAllPlayerPanels();
-    this.cleanPlayersPanel();
-  }
-
-  onEnteringStateConfirmTrick(args: any) {
-    dojo.query(".active").forEach((el: Node) => (el as HTMLElement).classList.remove("active"));
-    document.getElementById("playertable_" + this.active_player)?.classList.add("active");
-  }
-
-  onLeavingState(stateName: string) {
-    debug("Leaving state: " + stateName);
-    clearTimeout(this.autoCollectTimeout);
+  onAcceptCards() {
     clearTimeout(this.autoAcceptTimeout);
+    window.gameModel?.setAcceptingCardsCountdown(false);
+    if (!this.checkAction("acceptCards")) return;
+    this.takeAction("acceptCards", {});
   }
 
-  updateCardsPlayed() {
-    if (!this.isAllInfoExposed()) return;
+  onGrandTichuBet(bet: Bet) {
+    this.takeAction("grandTichuBet", { bet });
+  }
 
-    for (let color = 1; color <= 4; color++) {
-      for (let value = 1; value <= 14; value++) {
-        const id = `playedCard_${color}_${value}`;
-        document.getElementById(id)?.classList.remove("captured");
-        document.getElementById(id)?.classList.remove("trick");
-        document.getElementById(id)?.classList.remove("hand");
-      }
+  onTichuBet(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
     }
-
-    const captured = this.gamedatas.capturedCards;
-    for (const card of captured) {
-      const id = `playedCard_${card.type}_${card.type_arg}`;
-      document.getElementById(id)?.classList.add("captured");
-    }
-    const trick = this.gamedatas.currentTrick;
-    for (const card of trick) {
-      const id = `playedCard_${card.type}_${card.type_arg}`;
-      document.getElementById(id)?.classList.add("trick");
-    }
-    const hand = this.gamedatas.hand;
-    for (const card of hand) {
-      const id = `playedCard_${card.type}_${card.type_arg}`;
-      document.getElementById(id)?.classList.add("hand");
-    }
-  }
-
-  onUpdateActionButtons(stateName: string, args: any) {
-    debug("onUpdateActionButtons: " + stateName);
-    document
-      .getElementById("game_play_area")!
-      .classList.toggle("isCurrentPlayerActive", this.isCurrentPlayerActive());
-    const player = this.gamedatas.players[this.player_id]!;
-    this.removeActionButtons();
-    this.removeMyActionButtons();
-    this.updateCardsPlayed();
-    if (this.isCurrentPlayerActive()) {
-      switch (stateName) {
-        case "giveCards":
-          this.addActionButton(
-            "resetPassCards_button",
-            _("Reset choices"),
-            "onResetPassCards",
-            undefined,
-            false,
-            "gray",
-          );
-          this.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
-          break;
-        // This is a legacy state. The new state "acceptAllCards" does not require a user action.
-        case "showPassedCards":
-          clearTimeout(this.autoAcceptTimeout);
-          if (document.visibilityState === "visible") {
-            dojo.place(this.format_block("jstpl_auto_accept", {}), "play_button", "only");
-            clearTimeout(this.autoAcceptTimeout);
-            this.autoAcceptTimeout = setTimeout(() => this.onAcceptCards(), 2000);
-          }
-          this.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
-          break;
-        case "mahjongPlay":
-          this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
-          break;
-        case "phoenixPlay":
-          this.addActionButton(
-            "choosePhoenix",
-            _("Choose a value for the Phoenix"),
-            "onChoosePhoenix",
-          );
-          this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
-          break;
-        case "playComboOpen":
-          this.addMyActionButton(
-            "myPlayCombo",
-            _("Play selected cards"),
-            () => this.playCombo("playCombo"),
-            "blue",
-            "play_button",
-          );
-          break;
-        case "playCombo":
-          this.addMyActionButton(
-            "myPlayCombo",
-            _("Play selected cards"),
-            () => this.playCombo("playCombo"),
-            "blue",
-            "play_button",
-          );
-          this.addMyActionButton(
-            "myPass",
-            _("Pass"),
-            () => this.onPass(true),
-            "red",
-            "pass_button",
-          );
-          this.addMyActionButton(
-            "myPassTrick",
-            _("Auto-Pass this Trick"),
-            () => this.onPass(false),
-            "gray",
-            "pass_trick_button",
-          );
-          this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
-          break;
-        case "playBomb":
-          this.addMyActionButton(
-            "myPlayCombo",
-            _("Play selected cards"),
-            () => this.playCombo("playCombo"),
-            "blue",
-            "play_button",
-          );
-          this.addMyActionButton(
-            "myCancel",
-            _("Cancel"),
-            () => this.takeAction("cancel"),
-            "red",
-            "pass_button",
-          );
-          break;
-        case "confirmTrick":
-          if (this.bRealtime) {
-            dojo.place(this.format_block("jstpl_auto_collect", {}), "play_button", "only");
-            clearTimeout(this.autoCollectTimeout);
-            this.autoCollectTimeout = setTimeout(() => this.collect(), 2000);
-          } else {
-            this.addMyActionButton(
-              "myConfirmTrick",
-              _("Collect"),
-              () => this.collect(),
-              "blue",
-              "play_button",
-            );
-          }
-          this.addMyActionButton(
-            "myPlayBomb",
-            _("Play a Bomb"),
-            () => this.playCombo("playBomb"),
-            "gray",
-            "bomb_button",
-          );
-      }
-    } else if (
-      !this.isSpectator &&
-      (stateName === "playCombo" || stateName === "confirmTrick") &&
-      this.playerHand!.getAllItems().length > 0
-    ) {
-      if (Number(player.pass) < 2) {
-        this.addMyActionButton(
-          "myPassTrick",
-          _("Auto-Pass this Trick"),
-          () => this.onPass(false),
-          "gray",
-          "pass_trick_button",
-        );
-        this.addTooltip("myPassTrick", _("Automatically pass until the end of this trick."), "");
-      }
-      if (Number(player.pass) === 0) {
-        this.addMyActionButton(
-          "myPassOnce",
-          _("Auto-Pass once"),
-          () => this.onPass(true),
-          "red",
-          "pass_button",
-        );
-        this.addTooltip(
-          "myPassOnce",
-          _("Automatically pass next time(unless a new trick starts)"),
-          "",
-        );
-      }
-      if (Number(player.pass) > 0) {
-        this.addMyActionButton(
-          "myCancelAutopass",
-          _("Cancel Auto-Pass"),
-          () => this.cancelAutopass(),
-          "red",
-          "pass_button",
-        );
-        this.addTooltip(
-          "myCancelAutopass",
-          _("You have chosen to automatically pass during this trick. Click to cancel"),
-          "",
-        );
-      }
-      this.addMyActionButton(
-        "myPlayBomb",
-        _("Play a Bomb"),
-        () => this.playCombo("playBomb"),
-        "gray",
-        "bomb_button",
-      );
-    }
-
-    if (!this.isSpectator) {
-      if (player.call_grand_tichu === Bet.NO_BET_YET) {
-        this.addActionButton(
-          "noBet",
-          _("No bet"),
-          () => this.onGrandTichuBet(Bet.NO_BET),
-          undefined,
-          false,
-          "gray",
-        );
-        this.addTooltip("noBet", _("Don't call Grand Tichu"), "");
-        this.addActionButton(
-          "makeGTBet",
-          _("Grand Tichu"),
-          () => this.onGrandTichuBet(Bet.GRAND_TICHU),
-          undefined,
-          false,
-          "red",
-        );
-        this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
-      }
-      if (player.call_tichu === Bet.NO_BET_YET && this.gamedatas.firstoutplayer == 0) {
-        this.addMyActionButton(
-          "myMakeTichuBet",
-          _("Tichu"),
-          () => this.onTichuBet(),
-          "green",
-          "tichu_button",
-        );
-        this.addTooltip("myMakeTichuBet", _("Bet 100 Points, tha you will finish first"), "");
-      }
-    }
-
-    this.updateStatus();
-  }
-
-  private resetLastCombos() {
-    for (const [key, comboStock] of Object.entries(this.tableCombos)) {
-      comboStock.removeAll();
-      $("lastcombo_" + key)!.innerHTML = "";
-      this.addTooltip("playertable_" + key, "", "");
-    }
-    (dojo.query(".lastComboPlayer") as any).removeClass("lastComboPlayer");
-  }
-
-  private cleanPlayersPanel() {
-    dojohtml(".handcount", "0");
-    dojohtml(".pointcount", "0");
-    dojostyle(".grandtichublack", "display", "inline-block");
-    dojostyle(".tichublack", "display", "inline-block");
-    dojostyle(".grandtichucolor", "display", "none");
-    dojostyle(".tichucolor", "display", "none");
-    dojostyle(".firstoutcolor", "display", "none");
-    dojostyle(".cardback", "display", "none");
-  }
-
-  private getCardValueByTypeID(cardTypeID: number) {
-    //get card value based on it's unique identifier
-    return (cardTypeID % 14) + 1;
-  }
-
-  private getCardColorByTypeID(cardTypeID: number) {
-    //get card color based on it's unique identifier
-    return Math.floor(cardTypeID / 14) + 1;
-  }
-
-  private setPass(playerId: number) {
-    const cardImgFile =
-      this.getGameUserPreference(103) == 1 ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
-    const img = g_gamethemeurl + cardImgFile;
-    $("lastcombo_" + playerId)!.innerHTML =
-      "<span class = 'pass'> <img src='" +
-      img +
-      "' width='75px' height='112.5px' alt='pass'> </span>";
-    ($("cardback_" + playerId) as HTMLElement).style.display = "inline-block";
-    this.setDescription(playerId, "Pass");
-  }
-
-  private setupNewCard(card_div: HTMLElement, card_type_id: number, card_id: string) {
-    if (
-      this.getCardValueByTypeID(card_type_id) === 10 ||
-      this.getCardValueByTypeID(card_type_id) === 13
-    )
-      this.addTooltip(card_div.id, _("Scores 10 points"), "");
-    if (this.getCardValueByTypeID(card_type_id) === 5)
-      this.addTooltip(card_div.id, _("Scores 5 points"), "");
-    if (card_type_id === 0)
-      this.addTooltip(
-        card_div.id,
-        _("Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it."),
-        "",
-      );
-    if (card_type_id === 14)
-      this.addTooltip(
-        card_div.id,
-        _(
-          "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5.",
-        ),
-        "",
-      );
-    if (card_type_id === 28)
-      this.addTooltip(
-        card_div.id,
-        _(
-          "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead.",
-        ),
-        "",
-      );
-    if (card_type_id === 42)
-      this.addTooltip(
-        card_div.id,
-        _(
-          "The Mahjong's owner starts. Worth 1. When played, owner may wish for a rank to be fulfilled by the next regular player if possible.",
-        ),
-        "",
-      );
-  }
-
-  private cancelPhoenix() {
-    dojo.style($("phoenixpanel")!, "display", "none");
-    this.takeAction("cancelPhoenix", {});
-  }
-
-  private showCurrentTrick() {
-    const myDlg = new ebg.popindialog();
-    myDlg.create("myDialogCurrentTrick");
-    myDlg.setTitle(_("Cards in current Trick"));
-    myDlg.setContent('<div id="currentTrickCards"></div>');
-    myDlg.show();
-    let stock = this.createStock(
-      $("currentTrickCards")!,
-      this.cardwidth * 0.75,
-      this.cardheight * 0.75,
-    );
-    stock.extraClasses = "smallCards";
-    stock.setSelectionMode(0);
-    for (const card of this.gamedatas.currentTrick) {
-      addCardToStock(stock, card);
-    }
-  }
-
-  private onGrandTichuBet(bet: Bet) {
-    debug("onGrandTichuBet");
-    if (!this.checkAction("grandTichuBet")) return;
-
-    this.takeAction("grandTichuBet", { bet: bet });
-    this.removeActionButtons();
-  }
-
-  private onTichuBet() {
-    debug("onTichuBet");
-    // Note that we cannot check the action here, because it may not be the player's turn.
-    // But you can call Tichu out of turn.
-
     this.takeAction("tichuBet", { bet: Bet.TICHU });
-    this.removeActionButtons();
   }
 
-  // client side action only
-  private onGiveCard(i: number) {
-    debug("onGiveCard", i);
-    if (this.stateName !== "giveCards") return;
-    if (!this.isCurrentPlayerActive()) return;
-
-    const items = this.playerHand!.getSelectedItems();
-    const player_id = this.player_id;
-    const stockItem = this.cardsToPass[i];
-
-    if (!stockItem) {
-      if (items.length != 1) return;
-      const card: StockItem = items[0]!;
-      this.cardsToPass[i] = card;
-      const value = this.getCardValueByTypeID(card.type);
-      const color = this.getCardColorByTypeID(card.type);
-      const x = this.cardwidth * (value - 1);
-      const y = this.cardheight * (color - 1);
-      const direction = i + 1;
-
-      dojo.place(
-        this.format_block("jstpl_cardontable", {
-          x: String(x),
-          y: String(y),
-          player_id: String(player_id),
-          card_id: String(card.id),
-        }),
-        "giveplayertable_" + direction,
-      );
-
-      if ($("myhand_item_" + card.id)) {
-        this.playerHand!.removeFromStockById(String(card.id));
-      } else {
-        debug("Failed to remove card from hand");
-      }
-    } else {
-      $("cardontable_" + player_id + "_" + stockItem.id)!.remove();
-      addItemToStock(this.playerHand!, stockItem);
-      this.cardsToPass[i] = undefined;
+  onPlayBomb(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
     }
-    this.updateStockOverlap(this.playerHand);
+    this.playCombo("playBomb");
   }
 
-  // DANGER: The state action is named "giveCards", but the php action is "giveTheCards".
-  private onPassCards() {
-    debug("onPassCards");
-    if (!this.checkAction("giveCards")) return;
-
-    const items = this.cardsToPass;
-    for (let i = 0; i < 3; i++) {
-      if (!items[i]) {
-        this.showMessage(_("You must select exactly 3 cards"), "error");
-        return;
-      }
+  onCancelBomb(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
     }
+    this.takeAction("cancel");
+  }
 
-    let to_give = "";
-    for (const i in items) {
-      dojo.destroy("cardontable_" + this.player_id + "_" + items[i]!.id);
-      to_give += items[i]!.id + ";";
+  onPlayCombo(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
     }
-
-    this.cardsToPass = [];
-    this.takeAction("giveTheCards", { cards: to_give });
+    if (!this.checkAction("playCombo")) return;
+    this.playCombo("playCombo");
   }
 
-  private onAcceptCards() {
-    debug("onAcceptCards");
-    clearTimeout(this.autoAcceptTimeout);
-    if (this.stateName !== "showPassedCards") return;
-    this.takeAction("acceptCards");
-  }
-
-  private onMakeAWish(evt: Event) {
-    debug("onMakeAWish");
-    if (!this.checkAction("makeAWish")) return;
-
-    const items = this.mahjongValues.getSelectedItems();
-    if (items.length > 0) {
-      evt.preventDefault();
-      this.takeAction("makeAWish", { wish: items[0]!.id });
+  playCombo(actionName: string) {
+    const items = this.playerHand.getSelectedItems();
+    this.playerHand.unselectAll();
+    const cardIds = items.map((item) => item.id).join(";");
+    if (items.length === 0 && actionName === "playCombo") {
+      this.showMessage(_("You have to select some cards first"), "error");
+      return;
     }
+    clearTimeout(this.autoCollectTimeout);
+    this.takeAction(actionName, { cards: cardIds });
   }
 
-  private onChoosePhoenix(evt: Event) {
-    debug("onChoosePhoenix");
-    // It is a bit weird that the names "phoenixPlay" and "choosePhoenix" don't match.
-    if (!this.checkAction("phoenixPlay")) return;
-
-    const items = this.phoenixValues.getSelectedItems();
-    if (items.length === 1) {
-      if (this.allowedValues.indexOf(items[0]!.type + 2) < 0) return;
-      dojostyle("#phoenixpanel", "display", "none");
-      evt.preventDefault();
-      this.takeAction("choosePhoenix", { phoenixValue: items[0]!.type + 2 });
-    }
-  }
-
-  // client side action only
-  private onReorderByRank(evt: Event) {
-    debug("onReorderByRank");
-    evt.preventDefault();
-
-    const newWeights: Weights = {};
-    for (let color = 1; color <= 4; color++) {
-      for (let value = 1; value <= 14; value++) {
-        const type = stockType(color, value);
-        newWeights[type] = 2 * (4 * (value - 1) + color - 1);
-      }
-    }
-    this.playerHand!.changeItemsWeight(newWeights);
-    dojo.style("order_by_rank", "display", "none");
-    dojo.style("order_by_color", "display", "inline");
-  }
-
-  // client side action only
-  private onReorderTable(square: boolean) {
-    debug("onReorderTable");
-
-    if (square) {
-      $("game_play_area")!.classList.add("squareTable");
-      dojo.style("square_table", "display", "none");
-      dojo.style("list_table", "display", "inline");
-    } else {
-      $("game_play_area")!.classList.remove("squareTable");
-      dojo.style("square_table", "display", "inline");
-      dojo.style("list_table", "display", "none");
-    }
-  }
-
-  private toggleExperimentalReplay(enabled: boolean) {
-    this.experimentalArchiveModeEnabled = enabled;
-    document
-      .getElementById("overall-content")
-      ?.classList.toggle("experimentalArchiveMode", enabled);
-
-    const playArea = document.getElementById("game_play_area_wrap") as HTMLElement;
-    let replayEl: any = playArea?.querySelector("tichu-replay#game_play_replay");
-    if (!replayEl) {
-      replayEl = document.createElement("tichu-replay");
-      replayEl.id = "game_play_replay";
-      playArea.insertBefore(replayEl, playArea.firstChild);
-      replayEl.addEventListener("exit", () => this.toggleExperimentalReplay(false));
-    }
-
-    this.rescale();
-  }
-
-  // client side action only
-  private changeOrder(clockwise: boolean) {
-    debug(`changeOrder ${clockwise} ${this.getGameUserPreference(101)}`);
-
-    this.clockwise = clockwise;
-    $("game_play_area")!.classList.toggle("clockwise", clockwise);
-  }
-
-  // client side action only
-  private onReorderByColor(evt: Event) {
-    debug("onReorderByColor");
-    evt.preventDefault();
-
-    const newWeights: Weights = {};
-    for (let color = 1; color <= 4; color++) {
-      for (let value = 1; value <= 14; value++) {
-        const type = stockType(color, value);
-        newWeights[type] = value === 1 ? 2 * type : (newWeights[type] = 100 + 2 * type);
-      }
-    }
-    this.playerHand!.changeItemsWeight(newWeights);
-
-    dojo.style("order_by_rank", "display", "inline");
-    dojo.style("order_by_color", "display", "none");
-  }
-
-  // client side action only
-  private onResetPassCards() {
-    debug("onResetPassCards");
-
-    const player_id = this.player_id;
-    for (const item of this.cardsToPass) {
-      if (!item) continue;
-      $("cardontable_" + player_id + "_" + item.id)!.remove();
-      addItemToStock(this.playerHand!, item);
-    }
-    this.cardsToPass = [];
-  }
-
-  private onGiveDragon(player: number) {
-    debug("onGiveDragon");
-    if (!this.checkAction("chooseDragonGift")) return;
-    this.takeAction("chooseDragonGift", { player: player });
-  }
-
-  private playCombo(action: string) {
-    debug("onPlayCombo");
-    // Note that we cannot check the action here, because it may not be the player's turn.
-    // But you can play a bomb out of turn.
-
-    const selected = this.playerHand!.getSelectedItems().map((stockItem) => stockItem.id);
-    this.takeAction(action, { cards: selected.join(";") });
-  }
-
-  // Note that is either normal pass or auto-pass depending on whose turn it is.
-  private onPass(onlyOnce: boolean) {
-    debug("onPass", { onlyOnce: onlyOnce });
-    // Note that we cannot check the action here, because it may not be the player's turn.
-    // But you can auto-pass out of turn.
-
-    if (this.getGameUserPreference(102) == 1 && this.playerHand!.getSelectedItems().length > 0) {
+  onPass(onlyOnce: boolean) {
+    const selected = this.playerHand.getSelectedItems();
+    if (selected.length > 0 && this.getGameUserPreference(102) == 1) {
       this.showMessage(
         _(
           "You have to unselect your cards first. (You can disable this safeguard in the user settings)",
@@ -1285,38 +857,91 @@ export class Tichu {
       );
       return;
     }
-    this.takeAction("pass", { onlyOnce: onlyOnce });
+    this.playerHand.unselectAll();
+    this.takeAction("pass", { onlyOnce });
   }
 
-  private cancelAutopass() {
-    debug("onCancelAutopass");
-    // Note that we cannot check the action here, because it may not be the player's turn.
-    // But you can cancel auto-pass out of turn.
-
+  cancelAutopass(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
     this.takeAction("cancelAutopass");
   }
 
-  private collect() {
-    debug("onCollect");
-    clearTimeout(this.autoCollectTimeout);
-    if (!this.checkAction("collect")) return;
+  onChoosePhoenix(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    const val = window.gameModel?.getState().selectedPhoenixValue ?? null;
+    if (val === null) {
+      this.showMessage(_("You need to choose ONE value for the Phoenix"), "error");
+      return;
+    }
+    const phoenixValue = Number(val);
+    if ((window.gameModel?.getState().hand.length ?? 0) === 1 && phoenixValue === 14) {
+      this.confirmationDialog(
+        _(
+          "Do you really want to choose Ace for the Phoenix in this bomb? It looks like your only remaining card can not be played on this bomb.",
+        ),
+        () => this.choosePhoenix(phoenixValue),
+      );
+      return;
+    }
+    this.choosePhoenix(phoenixValue);
+  }
 
+  choosePhoenix(phoenixValue: number) {
+    window.gameModel?.setSelectedPhoenixValue(null);
+    this.takeAction("choosePhoenix", { phoenixValue });
+  }
+
+  cancelPhoenix() {
+    window.gameModel?.setSelectedPhoenixValue(null);
+    this.takeAction("cancelPhoenix");
+  }
+
+  onMakeAWish(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    const wish = window.gameModel?.getState().selectedMahjongWish ?? null;
+    if (wish === null) {
+      this.showMessage(_("You need to choose ONE value to wish"), "error");
+      return;
+    }
+    window.gameModel?.setSelectedMahjongWish(null);
+    this.takeAction("makeAWish", { wish });
+  }
+
+  onGiveDragon(player: number) {
+    if (!this.checkAction("chooseDragonGift")) return;
+    this.takeAction("chooseDragonGift", { player });
+  }
+
+  onChooseDragonGift(player: number) {
+    this.onGiveDragon(player);
+  }
+
+  collect() {
+    clearTimeout(this.autoCollectTimeout);
+    window.gameModel?.setCollectingTrickCountdown(false);
+    if (!this.checkAction("collect")) return;
     this.takeAction("collect");
   }
 
-  private takeAction(action: string, args: any = {}) {
+  takeAction(action: string, args: any = {}) {
     args.lock = true;
     this.ajaxcall("/tichu/tichu/" + action + ".html", args, this, () => {});
   }
 
-  setupNotifications() {
-    debug("notifications subscriptions setup");
+  // ===========================================================================
+  // Notification Subscriptions & Handlers
+  // ===========================================================================
 
-    // Make sure to read the documentation about "Synchronous Notifications" in the BGA Studio docs
-    // before making any changes here.
-    // Be aware that using `undefined` here means that you have to make abolutely sure that
-    // `setSynchronousDuration` is called in your handler.
-    // Also be aware that using 0 may completely break the flow and cause missed notifications.
+  setupNotifications() {
     const notifs: Partial<{ [id in keyof NotifTypes]: any }> = {
       dealCards: 500,
       grandTichuBet: undefined,
@@ -1340,77 +965,160 @@ export class Tichu {
     }
   }
 
-  private notif_devConsole(notif: Notif & { args: NotifTypes["devConsole"] }) {
-    debug("notif_devConsole", notif);
+  notif_devConsole(notif: Notif & { args: NotifTypes["devConsole"] }) {
     window.console.log(`DEV NOTIF: ${notif.args.msg}`);
   }
 
-  private notif_dealCards(notif: Notif & { args: NotifTypes["dealCards"] }) {
-    debug("notif_dealCards", notif);
-
-    if (notif.args.cards.length === 8) {
-      this.gamedatas.hand = [];
-      this.playerHand.removeAll();
+  notif_dealCards(notif: Notif & { args: NotifTypes["dealCards"] }) {
+    const cards = notif.args.cards || [];
+    const totalCards = cards.length === 8 ? 8 : 14;
+    if (this.gamedatas) {
+      if (totalCards === 8) {
+        this.gamedatas.hand = [...cards];
+      } else {
+        const existingIds = new Set((this.gamedatas.hand || []).map((c) => String(c.id)));
+        for (const card of cards) {
+          if (!existingIds.has(String(card.id))) {
+            this.gamedatas.hand.push(card);
+          }
+        }
+      }
+      if (!this.gamedatas.handcount) this.gamedatas.handcount = {};
+      for (const pId of Object.keys(this.gamedatas.players || {})) {
+        this.gamedatas.handcount[Number(pId)] = totalCards;
+      }
     }
-    for (const card of notif.args.cards) {
-      this.gamedatas.hand.push(card);
-      addCardToStock(this.playerHand, card);
-    }
-    this.updateStockOverlap(this.playerHand);
-    const totalCards = notif.args.cards.length === 8 ? 8 : 14;
-    dojohtml(".handcount", `${totalCards}`);
+    window.gameModel?.dealCards(cards);
   }
 
-  private notif_grandTichuBet(notif: Notif & { args: NotifTypes["grandTichuBet"] }) {
-    // MUST call setSynchronousDuration
-    debug("notif_grandTichuBet", notif);
+  notif_passCards(notif: Notif & { args: NotifTypes["passCards"] }) {
+    const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
+    if (!Array.isArray(ids)) return;
+    if (this.gamedatas?.hand) {
+      const idSet = new Set(ids.map(String));
+      this.gamedatas.hand = this.gamedatas.hand.filter((c) => !idSet.has(String(c.id)));
+    }
+    window.gameModel?.applyPassCardsNotif(ids);
+  }
 
+  notif_acceptCards(notif: Notif & { args: NotifTypes["acceptCards"] }) {
+    clearTimeout(this.autoAcceptTimeout);
+    window.gameModel?.setAcceptingCardsCountdown(false);
+    const cards = notif.args.cards || [];
+
+    const acceptFn = () => {
+      if (this.gamedatas) {
+        if (!this.gamedatas.hand) this.gamedatas.hand = [];
+        const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
+        for (const card of cards) {
+          if (!existingIds.has(String(card.id))) {
+            this.gamedatas.hand.push(card);
+          }
+        }
+      }
+      window.gameModel?.finishAcceptCards(cards);
+    };
+
+    if ((this as any).instantaneousMode) {
+      acceptFn();
+    } else {
+      setTimeout(() => window.gameModel?.startAcceptCardsAnimation(), 1500);
+      setTimeout(acceptFn, 2000);
+    }
+  }
+
+  notif_playCombo(notif: Notif & { args: NotifTypes["playCombo"] }) {
+    const playerId = Number(notif.args.player_id);
+    const cards = notif.args.cards || [];
+    const comboName = notif.args.combo_name || "";
+    const points = Number(notif.args.points || 0);
+
+    if (this.gamedatas) {
+      this.gamedatas.currentTrick = [...(this.gamedatas.currentTrick || []), ...cards];
+      this.gamedatas.currentTrickValue = Number(this.gamedatas.currentTrickValue || 0) + points;
+      if (!this.gamedatas.handcount) this.gamedatas.handcount = {};
+      const prevCount = Number(this.gamedatas.handcount[playerId] ?? 0);
+      const nextCount = Math.max(0, prevCount - cards.length);
+      this.gamedatas.handcount[playerId] = nextCount;
+
+      if (playerId === Number(this.player_id) && Array.isArray(this.gamedatas.hand)) {
+        const playedIds = new Set(cards.map((c: Card) => String(c.id)));
+        this.gamedatas.hand = this.gamedatas.hand.filter((c) => !playedIds.has(String(c.id)));
+      }
+      this.allLastCombos[playerId] = {
+        cards,
+        description: comboName,
+        type: 0,
+        phoenixValue: null,
+      };
+      this.gamedatas.allLastCombos = this.allLastCombos as Record<number, Combo>;
+      this.gamedatas.lastComboPlayer = String(playerId);
+      this.gamedatas.lastComboDescription = comboName;
+    }
+
+    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points);
+  }
+
+  notif_pass(notif: Notif & { args: NotifTypes["pass"] }) {
+    const playerId = Number(notif.args.player_id);
+    if (this.allLastCombos) {
+      delete this.allLastCombos[playerId];
+    }
+    window.gameModel?.applyPass(playerId);
+  }
+
+  notif_captureCards(notif: Notif & { args: NotifTypes["captureCards"] }) {
+    const playerId = Number(notif.args.player_id);
+    const trickValue = Number(notif.args.trick_value || 0);
+
+    if (this.gamedatas) {
+      if (!this.gamedatas.capturedpoints) this.gamedatas.capturedpoints = {};
+      const prevPts = Number(this.gamedatas.capturedpoints[playerId] ?? 0);
+      this.gamedatas.capturedpoints[playerId] = prevPts + trickValue;
+    }
+
+    window.gameModel?.applyCaptureCards(playerId, trickValue);
+  }
+
+  notif_grandTichuBet(notif: Notif & { args: NotifTypes["grandTichuBet"] }) {
+    const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
-    this.gamedatas.players[notif.args.player_id]!.call_grand_tichu = bet;
-    dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+    if (this.gamedatas?.players?.[playerId]) {
+      this.gamedatas.players[playerId]!.call_grand_tichu = bet;
+      if (bet === Bet.GRAND_TICHU) {
+        this.gamedatas.players[playerId]!.call_tichu = Bet.NO_BET;
+      }
+    }
+    window.gameModel?.applyGrandTichuBet(playerId, bet);
     if (bet === Bet.GRAND_TICHU) {
-      this.gamedatas.players[notif.args.player_id]!.call_tichu = Bet.NO_BET;
-      dojostyle(".grandtichucolor." + notif.args.player_id, "display", "inline-block");
-      dojostyle(".tichublack." + notif.args.player_id, "display", "none");
-      this.animateIcon("grandtichucolor", notif.args.player_id);
+      window.gameModel?.triggerBetAnimation(playerId, 200);
       playSound("tichu_laser");
       this.notifqueue.setSynchronousDuration(1000);
     } else {
-      // If the notification was just a "this player has made no bet", then there is no good reason
-      // to freeze the UI for 1 second. 1 ms should be fine.
       this.notifqueue.setSynchronousDuration(1);
     }
-
     this.onUpdateActionButtons(this.stateName, {});
   }
 
-  private notif_tichuBet(notif: Notif & { args: NotifTypes["tichuBet"] }) {
-    // MUST call setSynchronousDuration
-    debug("notif_tichuBet", notif);
-
+  notif_tichuBet(notif: Notif & { args: NotifTypes["tichuBet"] }) {
+    const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
-    this.gamedatas.players[notif.args.player_id]!.call_tichu = bet;
-    this.gamedatas.players[notif.args.player_id]!.call_grand_tichu = Bet.NO_BET;
-    dojostyle(".tichublack." + notif.args.player_id, "display", "none");
-    dojostyle(".grandtichublack." + notif.args.player_id, "display", "none");
+    if (this.gamedatas?.players?.[playerId]) {
+      this.gamedatas.players[playerId]!.call_tichu = bet;
+      this.gamedatas.players[playerId]!.call_grand_tichu = Bet.NO_BET;
+    }
+    window.gameModel?.applyTichuBet(playerId, bet);
     if (bet === Bet.TICHU) {
-      dojostyle(".tichucolor." + notif.args.player_id, "display", "inline-block");
-      this.animateIcon("tichucolor", notif.args.player_id);
+      window.gameModel?.triggerBetAnimation(playerId, 100);
       playSound("tichu_laser");
       this.notifqueue.setSynchronousDuration(1000);
     } else {
-      // If the notification was just a "this player has made no bet" or "this player has already
-      // played their first card, so cannot bet anymore", then there is no good reason
-      // to freeze the UI for 1 second. 1 ms should be fine.
       this.notifqueue.setSynchronousDuration(1);
     }
-
     this.onUpdateActionButtons(this.stateName, {});
   }
 
-  private notif_confirmTichu(notif: Notif & { args: NotifTypes["confirmTichu"] }) {
-    debug("notif_confirmTichu", notif);
-
+  notif_confirmTichu(notif: Notif & { args: NotifTypes["confirmTichu"] }) {
     const titleSave = this.gamedatas.gamestate.descriptionmyturn;
     const s = notif.args.grand ? "grand " : "";
     this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
@@ -1430,158 +1138,55 @@ export class Tichu {
     );
   }
 
-  private notif_playCombo(notif: Notif & { args: NotifTypes["playCombo"] }) {
-    debug("notif_playCombo", notif);
+  notif_mahjongWishGranted(_notif: Notif) {
+    if (this.gamedatas) {
+      this.gamedatas.mahjongWish = 0;
+    }
+    window.gameModel?.setMahjongWish(0);
+  }
 
+  notif_wishMade(notif: Notif & { args: NotifTypes["wishMade"] }) {
+    const wish = Number(notif.args.wish);
+    if (this.gamedatas) {
+      this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? wish : 0;
+    }
+    window.gameModel?.setMahjongWish(wish);
+  }
+
+  notif_playerGoOut(notif: Notif & { args: NotifTypes["playerGoOut"] }) {
     const playerId = Number(notif.args.player_id);
-    this.resetComboStock(playerId);
-    this.addCardsToStock(this.tableCombos[playerId]!, notif.args.cards, playerId);
-    dojohtml("pass", "");
-    ($("cardback_" + playerId) as HTMLElement).style.display = "none";
-    this.setDescription(playerId, notif.args.combo_name);
-    dojo.query(".handcount." + playerId).forEach((node: Node) => {
-      const el = node as HTMLElement;
-      el.innerHTML = String(parseInt(el.innerHTML) - notif.args.cards.length);
-    });
-    (dojo.query(".lastComboPlayer") as any).removeClass("lastComboPlayer");
-    $("playertable_" + playerId)!.classList.add("lastComboPlayer");
-    this.gamedatas.currentTrick.push(...notif.args.cards);
-    this.gamedatas.currentTrickValue += notif.args.points;
-    this.updateStatus();
-  }
-
-  private notif_wishMade(notif: Notif & { args: NotifTypes["wishMade"] }) {
-    debug("notif_wishMade", notif);
-
-    dojostyle("#mahjongpanel", "display", "none");
-    this.updateMahjongWish(notif.args.wish);
-  }
-
-  private updateMahjongWish(wish: number) {
-    this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? Number(wish) : 0;
-    const indicator = $("mahjongIndicator") as HTMLElement;
-    if (wish > 0 && wish < 15) {
-      const w = wish - 2;
-      const x = w % 7;
-      const y = (w - x) / 7;
-      dojo.place(
-        this.format_block("jstpl_mahjong", {
-          value: String(wish),
-          x: String(x * 75),
-          y: String(y * 112.5),
-        }),
-        "mahjongIndicator",
-      );
-      indicator.style.display = "block";
-    } else {
-      indicator.innerHTML = "";
-      indicator.style.display = "none";
+    const firstOutId = Number(notif.args.firstout_id);
+    if (playerId === firstOutId && this.gamedatas) {
+      this.gamedatas.firstoutplayer = playerId;
     }
+    this.disablePlayerPanel(playerId);
+    window.gameModel?.applyPlayerGoOut(playerId, firstOutId);
   }
 
-  private notif_mahjongWishGranted(notif: Notif) {
-    debug("notif_mahjongWishGranted", notif);
-
-    this.updateMahjongWish(0);
-  }
-
-  private notif_playerGoOut(notif: Notif & { args: NotifTypes["playerGoOut"] }) {
-    debug("notif_playerGoOut", notif);
-
-    if (notif.args.player_id === notif.args.firstout_id) {
-      this.gamedatas.firstoutplayer = notif.args.player_id;
-      dojo.style($("firstoutcolor_" + notif.args.player_id)!, "display", "inline-block");
-    }
-    this.disablePlayerPanel(notif.args.player_id);
-    $("playertable_" + notif.args.player_id)!.classList.add("disabled");
-  }
-
-  private notif_pass(notif: Notif & { args: NotifTypes["pass"] }) {
-    debug("notif_pass", notif);
-
-    const playerId = notif.args.player_id;
-    this.tableCombos[playerId]!.removeAll();
-    this.setPass(playerId);
-    dojo.query(".active").forEach((node: Node) => {
-      const el = node as HTMLElement;
-      el.classList.remove("active");
-    });
-    document.getElementById("playertable_" + notif.args.player_id)?.classList.add("active");
-  }
-
-  private notif_captureCards(notif: Notif & { args: NotifTypes["captureCards"] }) {
-    debug("notif_captureCards", notif);
-
-    const playerId = notif.args.player_id;
-    const trick_value = notif.args.trick_value;
-    const old_score = parseInt($("pointcount_" + playerId)!.innerHTML);
-    const new_score = old_score + trick_value;
-
-    dojohtml(".pointcount." + playerId, `${new_score}`);
-    dojostyle(".cardback", "display", "none");
-  }
-
-  private notif_newScores(notif: Notif & { args: NotifTypes["newScores"] }) {
-    debug("notif_newScores", notif);
-
-    const newScores = notif.args.newScores;
+  notif_newScores(notif: Notif & { args: NotifTypes["newScores"] }) {
+    const newScores = notif.args.newScores || {};
     for (const player_id in newScores) {
       const pId = Number(player_id);
-      this.scoreCtrl[pId]!.toValue(newScores[pId]!);
-      if (this.gamedatas.players[pId]) {
+      this.scoreCtrl[pId]?.toValue(newScores[pId]!);
+      if (this.gamedatas?.players?.[pId]) {
         (this.gamedatas.players[pId] as any).score = String(newScores[pId]!);
       }
     }
+    window.gameModel?.applyNewScores(newScores);
   }
 
-  private notif_autopass(notif: Notif & { args: NotifTypes["autopass"] }) {
-    debug("notif_autopass", notif);
-
-    if (!this.isSpectator) this.gamedatas.players[this.player_id]!.pass = notif.args.autopass;
+  notif_autopass(notif: Notif & { args: NotifTypes["autopass"] }) {
+    if (!this.isSpectator && this.gamedatas?.players?.[this.player_id]) {
+      this.gamedatas.players[this.player_id]!.pass = notif.args.autopass;
+    }
+    window.gameModel?.setAutopass(notif.args.autopass);
     this.onUpdateActionButtons(this.stateName, {});
-  }
-
-  private notif_acceptCards(notif: Notif & { args: NotifTypes["acceptCards"] }) {
-    debug("notif_acceptCards", notif);
-    clearTimeout(this.autoAcceptTimeout);
-
-    const acceptFn = () => {
-      for (const card of notif.args.cards) {
-        const cardOnTable = "cardontable_" + this.player_id + "_" + card.id;
-        this.gamedatas.hand.push(card);
-        addCardToStock(this.playerHand, card);
-        this.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
-      }
-      this.updateStockOverlap(this.playerHand);
-    };
-
-    if ((this as any).instantaneousMode) {
-      acceptFn();
-    } else {
-      setTimeout(acceptFn, 2000);
-    }
-  }
-
-  private notif_passCards(notif: Notif & { args: NotifTypes["passCards"] }) {
-    debug("notif_passCards", notif);
-
-    // The format of the notification has changed. Let's be backwards compatible for a while.
-    // Support for the old format can be removed in October 2023.
-    // New format: notif.args.cardIds
-    // Old format: notif.args
-    const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
-
-    for (const id of ids) {
-      this.gamedatas.hand = this.gamedatas.hand.filter((c) => String(c.id) !== String(id));
-      this.playerHand.removeFromStockById(String(id));
-    }
-    this.updateStockOverlap(this.playerHand);
   }
 }
 
 export interface Tichu extends GameGui {}
 
-define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter", "ebg/stock"], function (
+define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter"], function (
   // @ts-ignore
   dojo,
   // @ts-ignore

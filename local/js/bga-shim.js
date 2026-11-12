@@ -73,10 +73,112 @@
   window.g_replayFrom = undefined;
   window.g_tutorialwritten = undefined;
 
+  function queryDeepId(root, id) {
+    if (!root) return null;
+    if (root.getElementById) {
+      const found = root.getElementById(id);
+      if (found) return found;
+    }
+    if (root.shadowRoot) {
+      const found = queryDeepId(root.shadowRoot, id);
+      if (found) return found;
+    }
+    const allElements = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    for (let i = 0; i < allElements.length; i++) {
+      const node = allElements[i];
+      if (node.shadowRoot) {
+        const found = queryDeepId(node.shadowRoot, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function querySingleDeepAll(selector, root = document) {
+    if (!root || !selector) return [];
+    const results = [];
+    if (root.querySelectorAll) {
+      results.push(...Array.from(root.querySelectorAll(selector)));
+    }
+    if (root.shadowRoot) {
+      results.push(...querySingleDeepAll(selector, root.shadowRoot));
+    }
+    const allElements = root.querySelectorAll ? root.querySelectorAll("*") : [];
+    for (let i = 0; i < allElements.length; i++) {
+      const node = allElements[i];
+      if (node && node.shadowRoot) {
+        results.push(...querySingleDeepAll(selector, node.shadowRoot));
+      }
+    }
+    return results;
+  }
+
+  function queryDeepAll(selector, root = document) {
+    if (!selector) return [];
+    const results = [];
+    const seen = new Set();
+    const addUnique = (items) => {
+      for (let i = 0; i < items.length; i++) {
+        const el = items[i];
+        if (el && !seen.has(el)) {
+          seen.add(el);
+          results.push(el);
+        }
+      }
+    };
+
+    const parts = String(selector)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (let p = 0; p < parts.length; p++) {
+      const part = parts[p];
+      const direct = querySingleDeepAll(part, root);
+      if (direct.length > 0) {
+        addUnique(direct);
+        continue;
+      }
+      const segments = part
+        .replace(/(\\[0-9a-fA-F]{1,6})\s/g, "$1\x00")
+        .split(/\s+/)
+        .map((s) => s.replace(/\x00/g, " "))
+        .filter(Boolean);
+      if (segments.length > 1) {
+        let currentRoots = [root];
+        for (let s = 0; s < segments.length; s++) {
+          const seg = segments[s];
+          const nextRoots = [];
+          const nextSeen = new Set();
+          for (let r = 0; r < currentRoots.length; r++) {
+            const matches = querySingleDeepAll(seg, currentRoots[r]);
+            for (let m = 0; m < matches.length; m++) {
+              const matchEl = matches[m];
+              if (matchEl && !nextSeen.has(matchEl)) {
+                nextSeen.add(matchEl);
+                nextRoots.push(matchEl);
+              }
+            }
+          }
+          currentRoots = nextRoots;
+          if (currentRoots.length === 0) break;
+        }
+        addUnique(currentRoots);
+      }
+    }
+    return results;
+  }
+
+  function queryDeep(selector, root = document) {
+    const all = queryDeepAll(selector, root);
+    return all[0] || null;
+  }
+
   window.$ = function (idOrEl) {
     if (!idOrEl) return null;
     if (typeof idOrEl === "string") {
-      return document.getElementById(idOrEl);
+      const el = document.getElementById(idOrEl);
+      if (el) return el;
+      return queryDeepId(document, idOrEl);
     }
     return idOrEl;
   };
@@ -225,6 +327,15 @@
       return arr;
     };
 
+    arr.on = function (eventName, handler) {
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] && arr[i].addEventListener) {
+          arr[i].addEventListener(eventName, handler);
+        }
+      }
+      return arr;
+    };
+
     return arr;
   }
 
@@ -238,7 +349,7 @@
       if (!selector) return enhanceQueryList([]);
       try {
         const cleanSelector = sanitizeSelector(selector);
-        return enhanceQueryList(ctx.querySelectorAll(cleanSelector));
+        return enhanceQueryList(queryDeepAll(cleanSelector, ctx));
       } catch (_err) {
         return enhanceQueryList([]);
       }
@@ -2098,7 +2209,7 @@
 
     _collectVisibleActionButtons() {
       const btns = [];
-      const nodes = document.querySelectorAll(
+      const nodes = queryDeepAll(
         "#generalactions .bgabutton, #buttons .bgabutton, #buttons .action-button",
       );
       for (const node of nodes) {
@@ -2223,20 +2334,20 @@
       );
       const pSummaries = playersOrdered.map((p) => {
         const pId = Number(p.id);
-        const hcEl = document.querySelector(`.handcount.${CSS.escape(String(pId))}`);
+        const hcEl = queryDeep(`.handcount.${CSS.escape(String(pId))}`);
         const hc = hcEl
           ? hcEl.textContent.trim()
           : gd.handcount && gd.handcount[pId] !== undefined
             ? gd.handcount[pId]
             : "?";
-        const ptEl = document.getElementById(`pointcount_${pId}`);
+        const ptEl = window.$(`pointcount_${pId}`);
         const pts = ptEl
           ? ptEl.textContent.trim()
           : gd.capturedpoints && gd.capturedpoints[pId] !== undefined
             ? gd.capturedpoints[pId]
             : "0";
         const combo = this.allLastCombos && this.allLastCombos[pId];
-        const passEl = document.querySelector(`#lastcombo_${pId} .pass`);
+        const passEl = queryDeep(`#lastcombo_${pId} .pass`);
         let lastStr = "";
         if (combo && Array.isArray(combo.cards) && combo.cards.length > 0) {
           lastStr = `, last=[${combo.cards.map((c) => formatCardPretty(c, false)).join(" ")}]`;
@@ -2259,6 +2370,7 @@
     }
 
     _syncGamedatasAfterNotif(notif) {
+      if (window.gameModel) return;
       if (!notif || !this.gamedatas) return;
       const gd = this.gamedatas;
       const args = notif.args || {};
@@ -2275,7 +2387,7 @@
         if (pId === Number(this.player_id) && Array.isArray(gd.hand)) {
           gd.hand = gd.hand.filter((c) => !playedIdSet.has(String(c.id)));
         }
-        const hcEl = document.querySelector(`.handcount.${CSS.escape(String(pId))}`);
+        const hcEl = queryDeep(`.handcount.${CSS.escape(String(pId))}`);
         if (!gd.handcount) gd.handcount = {};
         if (hcEl) {
           gd.handcount[pId] = parseInt(hcEl.textContent || "0", 10) || 0;
@@ -2302,7 +2414,7 @@
       } else if (notif.type === "captureCards") {
         const pId = Number(args.player_id);
         if (!gd.capturedpoints) gd.capturedpoints = {};
-        const ptEl = document.getElementById(`pointcount_${pId}`);
+        const ptEl = window.$(`pointcount_${pId}`);
         if (ptEl) {
           gd.capturedpoints[pId] = parseInt(ptEl.textContent || "0", 10) || 0;
         }
@@ -2410,178 +2522,39 @@
         this._ensurePlayedCardsGrid();
       }
 
-      // 2. Compute seat rotation relative to the new viewer (matching PlayerManager::getNextPlayers(null, true))
-      const playersDesc = Object.values(gd.players || {}).sort(
-        (a, b) => Number(b.no) - Number(a.no),
-      );
-      if (playersDesc.length === 4) {
-        const refPlayerId =
-          !this.isSpectator && gd.players[this.player_id]
-            ? Number(this.player_id)
-            : Number(playersDesc[3].id);
-        const lastId = Number(playersDesc[3].id);
-        let guard = 0;
-        while (
-          Number(playersDesc[3].id) !== refPlayerId &&
-          Number(playersDesc[0].id) !== lastId &&
-          guard++ < 4
-        ) {
-          playersDesc.push(playersDesc.shift());
-        }
-
-        // Update #playertables (the 3 pass recipients: DIR 1, 2, 3) in-place
-        const playertablesEl = document.getElementById("playertables");
-        if (playertablesEl) {
-          const wrappers = Array.from(playertablesEl.children);
-          for (let dirIdx = 0; dirIdx < 3; dirIdx++) {
-            const targetP = playersDesc[dirIdx];
-            const wrapper = wrappers[dirIdx];
-            const tableDiv = wrapper && wrapper.children && wrapper.children[0];
-            if (!targetP || !tableDiv) continue;
-            const dir = dirIdx + 1;
-            tableDiv.id = "playertable_" + targetP.id;
-            tableDiv.className = "playertable playertable_" + dir;
-            const nameEl = tableDiv.querySelector(".playertablename");
-            if (nameEl) {
-              nameEl.style.color = "#" + (targetP.color || "000000");
-              nameEl.textContent = targetP.name;
-            }
-            const gtEl = tableDiv.querySelector(".tichubets .grandtichucolor");
-            if (gtEl) {
-              gtEl.className = "icon big grandtichucolor " + targetP.id;
-            }
-            const tEl = tableDiv.querySelector(".tichubets .tichucolor");
-            if (tEl) {
-              tEl.className = "icon big tichucolor " + targetP.id;
-            }
-            const recvEl = tableDiv.querySelector(".receivePassCard");
-            if (recvEl) {
-              recvEl.id = "receiveplayertable_" + targetP.id;
-              recvEl.innerHTML = "";
-            }
-            const giveEl = tableDiv.querySelector(".givePassCard");
-            if (giveEl) {
-              giveEl.id = "giveplayertable_" + dir;
-              giveEl.innerHTML = "";
-            }
+      // 2. Rehydrate via Tichu.rehydrateModel() (Lit + RxJS GameModel) when available
+      if (typeof this.rehydrateModel === "function") {
+        this.rehydrateModel();
+        for (const player of Object.values(gd.players || {})) {
+          const pId = Number(player.id);
+          if (this.scoreCtrl && this.scoreCtrl[pId]) {
+            this.scoreCtrl[pId].setValue(player.score || 0);
           }
         }
-
-        // Update #card-last-played-area positions (bottom, right, top, left)
-        const reversed = playersDesc.slice().reverse();
-        const posClasses = ["bottom", "right", "top", "left"];
-        for (let i = 0; i < reversed.length; i++) {
-          const p = reversed[i];
-          const container = document.querySelector(
-            `#card-last-played-area .last-played-container#playertable_${p.id}`,
-          );
-          if (container) {
-            container.classList.remove(
-              "bottom",
-              "right",
-              "top",
-              "left",
-              "active",
-              "disabled",
-              "lastComboPlayer",
-            );
-            container.classList.add(posClasses[i]);
+      } else {
+        // Legacy fallback
+        const playersDesc = Object.values(gd.players || {}).sort(
+          (a, b) => Number(b.no) - Number(a.no),
+        );
+        if (playersDesc.length === 4) {
+          const refPlayerId =
+            !this.isSpectator && gd.players[this.player_id]
+              ? Number(this.player_id)
+              : Number(playersDesc[3].id);
+          const lastId = Number(playersDesc[3].id);
+          let guard = 0;
+          while (
+            Number(playersDesc[3].id) !== refPlayerId &&
+            Number(playersDesc[0].id) !== lastId &&
+            guard++ < 4
+          ) {
+            playersDesc.push(playersDesc.shift());
           }
         }
-      }
-
-      // 3. Re-populate playerHand stock & clear cardsToPass
-      this.cardsToPass = [];
-      dojo.query("#playertables .cardontable").forEach((el) => dojo.destroy(el));
-      if (this.playerHand) {
-        this.playerHand.removeAll();
-        for (const card of gd.hand || []) {
-          const stType = (Number(card.type) - 1) * 14 + (Number(card.type_arg) - 1);
-          this.playerHand.addToStockWithId(stType, card.id);
-        }
-        if (typeof this.updateStockOverlap === "function") {
-          this.updateStockOverlap(this.playerHand);
-        }
-      }
-
-      // 4. Update all 4 player panels & table icons
-      this.enableAllPlayerPanels();
-      dojo
-        .query(
-          ".grandtichublack, .tichublack, .grandtichucolor, .tichucolor, .firstoutcolor, .cardback",
-        )
-        .style("display", "none");
-
-      for (const player of Object.values(gd.players || {})) {
-        const pId = Number(player.id);
-        if (gd.handcount[pId] === undefined) gd.handcount[pId] = 0;
-        if (gd.capturedpoints[pId] === undefined) gd.capturedpoints[pId] = 0;
-
-        if (this.scoreCtrl && this.scoreCtrl[pId]) {
-          this.scoreCtrl[pId].setValue(player.score || 0);
-        }
-
-        if (String(player.call_grand_tichu) === "200") {
-          dojo.query(".grandtichucolor." + pId).style("display", "inline-block");
-          dojo.query(".tichublack." + pId).style("display", "none");
-        } else if (String(player.call_grand_tichu) === "-1") {
-          dojo.query(".grandtichublack." + pId).style("display", "inline-block");
-        }
-
-        if (String(player.call_tichu) === "100") {
-          dojo.query(".tichucolor." + pId).style("display", "inline-block");
-        } else if (
-          String(player.call_tichu) === "-1" &&
-          String(player.call_grand_tichu) !== "200"
-        ) {
-          dojo.query(".tichublack." + pId).style("display", "inline-block");
-        }
-
-        dojo.query(".handcount." + pId).innerHTML(String(gd.handcount[pId]));
-        dojo.query(".pointcount." + pId).innerHTML(String(gd.capturedpoints[pId]));
-
-        if (Number(gd.handcount[pId]) === 0) {
-          this.disablePlayerPanel(pId);
-          dojo.query("#playertable_" + pId).addClass("disabled");
-        }
-        if (pId === Number(gd.lastComboPlayer)) {
-          dojo.query("#playertable_" + pId).addClass("lastComboPlayer");
-        }
-      }
-
-      if (Number(gd.firstoutplayer) !== 0) {
-        const foEl = document.getElementById("firstoutcolor_" + gd.firstoutplayer);
-        if (foEl) foEl.style.display = "inline-block";
-      }
-
-      // 5. Update last combos and passes
-      const playerIds = Object.keys(gd.players || {}).map((id) => parseInt(id, 10));
-      if (typeof this.resetLastCombos === "function") {
-        this.resetLastCombos();
-      }
-      this.allLastCombos = gd.allLastCombos || {};
-      if (Number(gd.lastComboPlayer) > 0) {
-        dojo.query("#playertable_" + gd.lastComboPlayer).addClass("lastComboPlayer");
-      }
-      if (typeof this.displayLastCombos === "function") {
-        this.displayLastCombos(playerIds, gd.passes || []);
-      }
-
-      // 6. Update Mahjong wish, choice panels, status, played cards, and logs
-      dojo.style("mahjongpanel", "display", "none");
-      dojo.style("phoenixpanel", "display", "none");
-      if (typeof this.updateMahjongWish === "function") {
-        this.updateMahjongWish(gd.mahjongWish);
-      }
-      if (typeof this.updateStatus === "function") {
-        this.updateStatus();
-      }
-      if (typeof this.updateCardsPlayed === "function") {
-        this.updateCardsPlayed();
       }
       this._hydrateInitialLogs();
 
-      // 7. Enter current state and update action buttons
+      // 3. Enter current state and update action buttons
       if (st && st.name) {
         this.updatePageTitle(st);
         if (typeof this.onEnteringState === "function") {
@@ -3650,16 +3623,17 @@
 
       const players = Object.values(gd.players || {})
         .sort((a, b) => Number(a.no) - Number(b.no))
-        .map((p) => {
+        .map((p, idx) => {
           const pId = Number(p.id);
-          const hcEl = document.querySelector(`.handcount.${CSS.escape(String(pId))}`);
-          const ptEl = document.getElementById(`pointcount_${pId}`);
-          const scoreEl = document.getElementById(`player_score_${pId}`);
+          const hcEl = queryDeep(`.handcount.${CSS.escape(String(pId))}`);
+          const ptEl = window.$(`pointcount_${pId}`);
+          const scoreEl = window.$(`player_score_${pId}`);
           return {
-            seat: Number(p.no),
+            seat: idx,
+            no: Number(p.no),
             id: pId,
             name: p.name,
-            team: Number(p.team ?? Number(p.no) % 2),
+            team: Number(p.team ?? idx % 2),
             handCount: hcEl
               ? parseInt(hcEl.textContent || "0", 10)
               : Number(gd.handcount[pId] ?? 0),
@@ -3690,7 +3664,7 @@
             description: combo.description,
             cards: combo.cards.map(formatCardCode),
           };
-        } else if (document.querySelector(`#lastcombo_${p.id} .pass`)) {
+        } else if (queryDeep(`#lastcombo_${p.id} .pass`)) {
           tableCombos[`P${p.seat}:${p.name}`] = "PASS";
         } else {
           tableCombos[`P${p.seat}:${p.name}`] = null;
@@ -3774,7 +3748,7 @@
       }
 
       // 2. Check #myhand .stockitem count vs gamedatas.hand
-      const myHandItems = document.querySelectorAll("#myhand .stockitem");
+      const myHandItems = queryDeepAll("#myhand .stockitem");
       if (!ui.isSpectator && stateName !== "endRound" && stateName !== "newRound") {
         const stagedPassCount = Array.isArray(ui.cardsToPass)
           ? ui.cardsToPass.filter(Boolean).length
@@ -3788,13 +3762,13 @@
       }
 
       // 3. Check <tichu-status> attributes
-      const statusEl = document.querySelector("#game_play_area_wrap tichu-status");
+      const statusEl = queryDeep("#game_play_area_wrap tichu-status") || queryDeep("tichu-status");
       if (!statusEl) {
         throw new Error("[ASSERT_UI FAILED] <tichu-status> element missing from DOM");
       }
-      const attrRound = Number(statusEl.getAttribute("roundCount"));
-      const attrTrick = Number(statusEl.getAttribute("trickCount"));
-      const attrPts = Number(statusEl.getAttribute("trickPoints"));
+      const attrRound = Number(statusEl.getAttribute("roundCount") ?? statusEl.roundCount);
+      const attrTrick = Number(statusEl.getAttribute("trickCount") ?? statusEl.trickCount);
+      const attrPts = Number(statusEl.getAttribute("trickPoints") ?? statusEl.trickPoints);
       if (attrRound !== Number(gd.round)) {
         throw new Error(
           `[ASSERT_UI FAILED] <tichu-status> roundCount (${attrRound}) !== gamedatas.round (${gd.round})`,
@@ -3814,7 +3788,7 @@
       // 4. Check all 4 player panels and handcounts
       for (const p of Object.values(gd.players || {})) {
         const pId = Number(p.id);
-        const hcNodes = document.querySelectorAll(`.handcount.${CSS.escape(String(pId))}`);
+        const hcNodes = queryDeepAll(`.handcount.${CSS.escape(String(pId))}`);
         if (hcNodes.length === 0) {
           throw new Error(`[ASSERT_UI FAILED] Missing .handcount.${pId} elements in DOM`);
         }
@@ -4136,7 +4110,7 @@
 
             await tt.betGrandTichu(200, 0);
             tt.assertUI();
-            const gtIcon = document.querySelector(".grandtichucolor.\\32 385074");
+            const gtIcon = queryDeep(".grandtichucolor.\\32 385074");
             assertCond(
               gtIcon && gtIcon.style.display === "inline-block",
               "Expected P0 Grand Tichu badge to be visible",
@@ -4197,7 +4171,7 @@
               `Expected mahjongPlay after playing MJ, got ${sWishState.state.name}`,
             );
             assertCond(
-              document.getElementById("mahjongpanel")?.style.display === "block",
+              window.$("mahjongpanel")?.style.display === "block",
               "Expected #mahjongpanel to be visible in mahjongPlay",
             );
 
@@ -4212,7 +4186,7 @@
               `Expected mahjongWish === 9, got ${sAfterWish.mahjongWish}`,
             );
             assertCond(
-              document.getElementById("mahjongIndicator")?.style.display === "block",
+              window.$("mahjongIndicator")?.style.display === "block",
               "Expected #mahjongIndicator to be visible when wish=9",
             );
 
@@ -4226,7 +4200,7 @@
               `Expected mahjongWish to reset to 0 after fulfillment, got ${sGranted.mahjongWish}`,
             );
             assertCond(
-              document.getElementById("mahjongIndicator")?.style.display === "none",
+              window.$("mahjongIndicator")?.style.display === "none",
               "Expected #mahjongIndicator to hide after wish granted",
             );
             break;
@@ -4247,7 +4221,7 @@
               `Expected phoenixPlay for ambiguous straight, got ${sPh.state.name}`,
             );
             assertCond(
-              document.getElementById("phoenixpanel")?.style.display === "block",
+              window.$("phoenixpanel")?.style.display === "block",
               "Expected #phoenixpanel to be visible in phoenixPlay",
             );
 
@@ -4259,7 +4233,7 @@
               `Expected playComboOpen after cancelPhoenix, got ${sCancel.state.name}`,
             );
             assertCond(
-              document.getElementById("phoenixpanel")?.style.display === "none",
+              window.$("phoenixpanel")?.style.display === "none",
               "Expected #phoenixpanel to be hidden after cancelPhoenix",
             );
 
@@ -4288,7 +4262,7 @@
               `Expected P1 (2385075) active, got ${s0.activePlayerId}`,
             );
             assertCond(
-              Boolean(document.getElementById("myPlayBomb")),
+              Boolean(window.$("myPlayBomb")),
               "Expected out-of-turn #myPlayBomb button for P2",
             );
 
@@ -4323,7 +4297,7 @@
               `Expected 10 cards left in P2 hand, got ${sBombed.hand.length}`,
             );
             assertCond(
-              document.querySelectorAll("#lastcombo_2385076 .stockitem").length === 4,
+              queryDeepAll("#lastcombo_2385076 .stockitem").length === 4,
               "Expected 4 bomb cards displayed in #lastcombo_2385076",
             );
             break;
@@ -4527,13 +4501,13 @@
 
           const stName = ui.gamedatas.gamestate.name;
           if (stName === "grandTichuBets") {
-            if (followActive && ui.isCurrentPlayerActive()) {
+            if (ui.isCurrentPlayerActive()) {
               await tt.betGrandTichu(0);
             } else {
               await tt.actForOthers();
             }
           } else if (stName === "giveCards") {
-            if (followActive && ui.isCurrentPlayerActive()) {
+            if (ui.isCurrentPlayerActive()) {
               await tt.giveCards();
             } else {
               await tt.actForOthers();

@@ -423,6 +423,106 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     } catch (_e) {}
   }
 
+  function querySingleDeepAll<T extends Element = Element>(
+    selector: string,
+    root: Document | Element | ShadowRoot = document,
+  ): T[] {
+    const results: T[] = [];
+    if ((root as Document).querySelectorAll) {
+      results.push(...(Array.from((root as Document).querySelectorAll(selector)) as T[]));
+    }
+    if ((root as Element).shadowRoot) {
+      results.push(...querySingleDeepAll<T>(selector, (root as Element).shadowRoot!));
+    }
+    const allElements = (root as Document).querySelectorAll
+      ? (root as Document).querySelectorAll("*")
+      : [];
+    for (let i = 0; i < allElements.length; i++) {
+      const node = allElements[i] as Element;
+      if (node && node.shadowRoot) {
+        results.push(...querySingleDeepAll<T>(selector, node.shadowRoot));
+      }
+    }
+    return results;
+  }
+
+  function queryDeepAll<T extends Element = Element>(
+    selector: string,
+    root: Document | Element | ShadowRoot = document,
+  ): T[] {
+    if (!selector) return [];
+    const results: T[] = [];
+    const seen = new Set<Element>();
+    const addUnique = (items: T[]) => {
+      for (let i = 0; i < items.length; i++) {
+        const el = items[i]!;
+        if (!seen.has(el)) {
+          seen.add(el);
+          results.push(el);
+        }
+      }
+    };
+
+    const parts = selector
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (let p = 0; p < parts.length; p++) {
+      const part = parts[p]!;
+      const direct = querySingleDeepAll<T>(part, root);
+      if (direct.length > 0) {
+        addUnique(direct);
+        continue;
+      }
+      const segments = part
+        .replace(/(\\[0-9a-fA-F]{1,6})\s/g, "$1\x00")
+        .split(/\s+/)
+        .map((s) => s.replace(/\x00/g, " "))
+        .filter(Boolean);
+      if (segments.length > 1) {
+        let currentRoots: (Document | Element | ShadowRoot)[] = [root];
+        for (let s = 0; s < segments.length; s++) {
+          const seg = segments[s]!;
+          const nextRoots: Element[] = [];
+          const nextSeen = new Set<Element>();
+          for (let r = 0; r < currentRoots.length; r++) {
+            const matches = querySingleDeepAll<Element>(seg, currentRoots[r]!);
+            for (let m = 0; m < matches.length; m++) {
+              const matchEl = matches[m]!;
+              if (!nextSeen.has(matchEl)) {
+                nextSeen.add(matchEl);
+                nextRoots.push(matchEl);
+              }
+            }
+          }
+          currentRoots = nextRoots;
+          if (currentRoots.length === 0) break;
+        }
+        addUnique(currentRoots as T[]);
+      }
+    }
+    return results;
+  }
+
+  function queryDeep<T extends Element = Element>(
+    selector: string,
+    root: Document | Element | ShadowRoot = document,
+  ): T | null {
+    const all = queryDeepAll<T>(selector, root);
+    return all[0] || null;
+  }
+
+  function getElementByIdDeep(
+    id: string,
+    root: Document | Element | ShadowRoot = document,
+  ): HTMLElement | null {
+    if ((root as Document).getElementById) {
+      const el = (root as Document).getElementById(id);
+      if (el) return el;
+    }
+    return queryDeep<HTMLElement>(`#${CSS.escape(id)}`, root);
+  }
+
   const tt = {
     help() {
       const rows = [
@@ -548,9 +648,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
       const players = sortedPlayers.map((p: any, idx: number) => {
         const pId = Number(p.id);
-        const hcEl = document.querySelector(`.handcount.${CSS.escape(String(pId))}`);
-        const ptEl = document.getElementById(`pointcount_${pId}`);
-        const scoreEl = document.getElementById(`player_score_${pId}`);
+        const hcEl = queryDeep(`.handcount.${CSS.escape(String(pId))}`);
+        const ptEl = getElementByIdDeep(`pointcount_${pId}`);
+        const scoreEl = getElementByIdDeep(`player_score_${pId}`);
         const activeIds: number[] =
           ui.bga && ui.bga.players && typeof ui.bga.players.getActivePlayerIds === "function"
             ? ui.bga.players.getActivePlayerIds().map(Number)
@@ -586,7 +686,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }));
 
       const buttons: { id: string; label: string }[] = [];
-      const btnNodes = document.querySelectorAll(
+      const btnNodes = queryDeepAll(
         "#generalactions .bgabutton, #buttons .bgabutton, #buttons .action-button",
       );
       for (let i = 0; i < btnNodes.length; i++) {
@@ -670,7 +770,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         throw new Error("[ASSERT_UI FAILED] #overall-content element missing from DOM");
       }
 
-      const myHandItems = document.querySelectorAll("#myhand .stockitem:not(.to_be_destroyed)");
+      const myHandItems = queryDeepAll("#myhand .stockitem:not(.to_be_destroyed)");
       if (!ui.isSpectator && stateName !== "endRound" && stateName !== "newRound") {
         const stagedPassCount = Array.isArray(ui.cardsToPass)
           ? ui.cardsToPass.filter(Boolean).length
@@ -683,13 +783,13 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
       }
 
-      const statusEl = document.querySelector("#game_play_area_wrap tichu-status");
+      const statusEl = queryDeep("#game_play_area_wrap tichu-status") || queryDeep("tichu-status");
       if (!statusEl) {
         throw new Error("[ASSERT_UI FAILED] <tichu-status> element missing from DOM");
       }
-      const attrRound = Number(statusEl.getAttribute("roundCount"));
-      const attrTrick = Number(statusEl.getAttribute("trickCount"));
-      const attrPts = Number(statusEl.getAttribute("trickPoints"));
+      const attrRound = Number(statusEl.getAttribute("roundCount") || (statusEl as any).roundCount);
+      const attrTrick = Number(statusEl.getAttribute("trickCount") || (statusEl as any).trickCount);
+      const attrPts = Number(statusEl.getAttribute("trickPoints") || (statusEl as any).trickPoints);
       if (attrRound !== Number(gd.round)) {
         throw new Error(
           `[ASSERT_UI FAILED] <tichu-status> roundCount (${attrRound}) !== gamedatas.round (${gd.round})`,
@@ -709,7 +809,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       const players = getSortedPlayers();
       for (let i = 0; i < players.length; i++) {
         const pId = Number(players[i].id);
-        const hcNodes = document.querySelectorAll(`.handcount.${CSS.escape(String(pId))}`);
+        const hcNodes = queryDeepAll(`.handcount.${CSS.escape(String(pId))}`);
         if (hcNodes.length === 0) {
           throw new Error(`[ASSERT_UI FAILED] Missing .handcount.${pId} elements in DOM`);
         }
