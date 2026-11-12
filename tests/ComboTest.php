@@ -29,6 +29,13 @@ final class ComboTest extends TestCase
       "Phoenix a half step above 1",
       Combo::checkSingle([card(TYPE_PHOENIX, 1)])["description"]
     );
+    LogManager::$lastComboForTesting = new Combo([DR]);
+    $this->assertEquals(1.5, Combo::checkSingle([PH])["phoenixValue"]);
+    LogManager::$lastComboForTesting = new Combo([A0]);
+    $phOnTen = new Combo([PH]);
+    $this->assertEquals(10.5, $phOnTen->phoenixValue);
+    LogManager::$lastComboForTesting = $phOnTen;
+    $this->assertEquals(11.0, Combo::checkSingle([PH])["phoenixValue"]);
     $this->assertNull(Combo::checkSingle([DOG]));
     $this->assertEquals("Mahjong", Combo::checkSingle([MJ])["description"]);
   }

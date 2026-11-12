@@ -202,7 +202,7 @@ class Tichu extends Table
         $this->setGameStateValue("mahjongWish", 0);
         NotificationManager::mahjongGranted();
       } else {
-        if ($combo->type != BOMB_COMBO && $currentHand->canFulFillWish($wish, $lastCombo)) {
+        if ($currentHand->canFulFillWish($wish, $lastCombo)) {
           throw new UserException(
             sprintf(
               $this->_("You must grant the Mahjong Wish and play a %s"),

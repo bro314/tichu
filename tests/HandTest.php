@@ -389,6 +389,30 @@ final class HandTest extends TestCase
         new Combo([A2, B2, C2, D2])
       )
     );
+    // Straight flush starting at $idx > 0 must use $len = $i - $idx, not array index $i
+    $this->assertFalse(
+      (new Hand([A2, A3, A5, A6, A7, A8, A9, AJ]))->canFulFillWish(11, new Combo([AA]))
+    );
+    // Two straight flushes containing wish where second has higher array index $i but shorter length
+    $this->assertTrue(
+      (new Hand([A5, A6, A7, A8, A9, A0, B2, B3, B5, B6, B7, B8, B9]))->canFulFillWish(
+        7,
+        new Combo([C2, C3, C4, C5, C6, C7])
+      )
+    );
+    // Two 5-card straight flushes containing wish where second has higher array index $i but lower rank
+    $this->assertTrue(
+      (new Hand([A5, A6, A7, A8, A9, B2, B4, B5, B6, B7, B8]))->canFulFillWish(
+        6,
+        new Combo([C4, C5, C6, C7, C8])
+      )
+    );
+
+    // Null-safety checks
+    $this->assertTrue((new Hand([A3]))->canFulFillWish(3, null));
+    $this->assertFalse((new Hand([A3]))->canFulFillWish(4, null));
+    $this->assertNull((new Hand([A3]))->getWishHighestSingle(4));
+    $this->assertNull((new Hand([PH, A3]))->getWishHighestPair(4));
   }
 }
 ?>

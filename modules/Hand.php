@@ -26,14 +26,11 @@ class Hand
 
   public function canFulFillWish($wish, $combo)
   {
-    if ($combo->type == NO_COMBO || $combo->type == DOG_COMBO) {
+    if (is_null($combo) || $combo->type == NO_COMBO || $combo->type == DOG_COMBO) {
       return in_array($wish, array_column($this->cards, "type_arg"));
     }
     if (!in_array($wish, array_column($this->cards, "type_arg"))) {
       return false;
-    }
-    if (is_null($combo)) {
-      return true;
     }
     $length = count($combo->cards);
     $name = Combo::$comboNames[$combo->type];
@@ -193,7 +190,7 @@ class Hand
     $card = array_reduce($this->cards, function ($carry, $item) use ($wish) {
       return $carry ?? ($item["type_arg"] == $wish ? $item : null);
     });
-    return new Combo([$card]);
+    return is_null($card) ? null : new Combo([$card]);
   }
 
   public function getHighestSingle()
@@ -219,7 +216,7 @@ class Hand
         return $card["type_arg"] == $wish;
       })
     );
-    if ($this->phoenix) {
+    if ($this->phoenix && count($filtered) > 0) {
       return new Combo([$this->phoenix, $filtered[0]]);
     }
     if (count($filtered) > 1) {
@@ -547,9 +544,10 @@ class Hand
         while ($i <= $last && $values[$i] == $value + $i - $idx) {
           $i++;
         }
+        $len = $i - $idx;
         // check if it contains the wish and is better than any other found previously
-        if ($wish < $value + $i && ($i > $length || ($i == $length && $value > $val))) {
-          $length = $i - $idx;
+        if ($wish < $value + $len && ($len > $length || ($len == $length && $value > $val))) {
+          $length = $len;
           $val = $value;
         }
         $idx = $i - 1; //we can skip the values of this straight now

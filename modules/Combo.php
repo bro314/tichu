@@ -257,7 +257,10 @@ class Combo
     if ($card["type_arg"] == 1 && $card["type"] == TYPE_PHOENIX) {
       //get Value from last combo of this trick
       $lastCombo = LogManager::getLastCombo();
-      $val = $lastCombo->type == SINGLE_COMBO ? $lastCombo->cards[0]["type_arg"] : 1;
+      $val =
+        $lastCombo->type == SINGLE_COMBO && !$lastCombo->hasDragon()
+          ? $lastCombo->getFirstValue()
+          : 1;
       $phoenixValue = $val + 0.5;
       $description = "Phoenix a half step above " . CardManager::cardToStr($val);
     } else {

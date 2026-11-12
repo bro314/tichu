@@ -319,12 +319,55 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
     'P1 must not be allowed to play a 10 when holding a playable 9'
   );
 
+  // 2b. P1 cannot bypass the Mahjong wish by playing a bomb (2-3-4-5-6 Stars) that does not contain 9!
+  $nonWishedBombIds = \LocalTichuScenarios::getCardIds([[2, 2], [2, 3], [2, 4], [2, 5], [2, 6]]);
+  assertThrowsUserException(
+    static fn() => callAction($game, P1, 'playCombo', ['cards' => implode(';', $nonWishedBombIds)]),
+    'grant the Mahjong Wish',
+    'P1 must not be allowed to bypass the Mahjong wish by playing a bomb not containing 9'
+  );
+
   // 3. P1 plays the 9 -> fulfills wish and resets mahjongWish to 0!
   $nineId = (string) \LocalTichuScenarios::getCardId(1, 9);
   callAction($game, P1, 'playCombo', ['cards' => $nineId]);
 
   assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'mahjongWish should reset to 0 once fulfilled');
   assertSameVal((string) P2, $game->getActivePlayerId(), 'Turn should advance to P2');
+
+  // 4. Verify a player with [A2, A3, A5, A6, A7, A8, A9, AJ] when wish = 11 and lastCombo = Ace
+  // is allowed to pass (not deadlocked by getWishHighestBomb index vs length bug)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [2, 2]],
+    P1 => [[2, 14], [2, 3]],
+    P2 => [[1, 2], [1, 3], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 11]],
+    P3 => [[3, 2], [3, 3]],
+  ], 'captured_p0');
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 11]);
+  $aceStarsId = (string) \LocalTichuScenarios::getCardId(2, 14);
+  callAction($game, P1, 'playCombo', ['cards' => $aceStarsId]);
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'Turn should advance to P2 after P1 plays Ace');
+  callAction($game, P2, 'pass', ['onlyOnce' => true]);
+  assertSameVal((string) P3, $game->getActivePlayerId(), 'P2 must be allowed to pass when 5-9 straight flush does not contain wished Jack (11)');
+
+  // 5. Verify a player holding both a bomb with the wished rank (four 11s) and a bomb without it (2-6 Stars)
+  // when lastCombo = Ace cannot play the non-wished bomb and must play the wished bomb
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 2]],
+    P1 => [[2, 3]],
+    P2 => [[3, 2]],
+    P3 => [[1, 11], [2, 11], [3, 11], [4, 11], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]],
+  ], 'captured_p0');
+  $nonWishedBomb2 = \LocalTichuScenarios::getCardIds([[2, 4], [2, 5], [2, 6], [2, 7], [2, 8]]);
+  assertThrowsUserException(
+    static fn() => callAction($game, P3, 'playCombo', ['cards' => implode(';', $nonWishedBomb2)]),
+    'grant the Mahjong Wish',
+    'P3 must not play a non-wished bomb when holding a bomb that fulfills the wish'
+  );
+  $wishedBomb = \LocalTichuScenarios::getCardIds([[1, 11], [2, 11], [3, 11], [4, 11]]);
+  callAction($game, P3, 'playCombo', ['cards' => implode(';', $wishedBomb)]);
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Playing the wished bomb of Jacks should grant the wish');
 }
 
 // ============================================================================
