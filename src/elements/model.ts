@@ -130,7 +130,7 @@ export class Model {
   public readonly playerIds$ = select(this.players$, (players) => players.map((p) => p.player.id));
 
   public readonly playerNames$ = select(this.players$, (players) =>
-    players.map((p) => p.player.name)
+    players.map((p) => p.player.name),
   );
 
   public readonly passedCards$ = select(this.state$, (state) => state.passedCards);
@@ -215,7 +215,7 @@ export class Model {
 
   acceptCards(playerId: number) {
     const passedCards = this.getState().passedCards.filter(
-      (passedCard) => passedCard.to === playerId
+      (passedCard) => passedCard.to === playerId,
     );
     const cards = passedCards.map((passedCard) => passedCard.card);
     for (const card of cards) {
@@ -288,7 +288,7 @@ export class Model {
   nextPlayerId(playerId: number) {
     const player = this.getPlayerState(playerId);
     const nextPlayerState = this.getState().players.find(
-      (p) => Number(p.player.no) % 4 == (Number(player.player.no) + 1) % 4
+      (p) => Number(p.player.no) % 4 == (Number(player.player.no) + 1) % 4,
     );
     return nextPlayerState!.player.id;
   }

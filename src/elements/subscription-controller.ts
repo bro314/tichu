@@ -6,7 +6,7 @@ export type Provider<T> = () => T;
 export function subscribe<T>(
   host: ReactiveControllerHost & HTMLElement,
   provider: Provider<Observable<T>>,
-  callback: (t: T) => void
+  callback: (t: T) => void,
 ) {
   if (host.isConnected) throw new Error("component is already connected");
   host.addController(new SubscriptionController(provider, callback));
@@ -17,7 +17,7 @@ export class SubscriptionController<T> implements ReactiveController {
 
   constructor(
     private readonly provider: Provider<Observable<T>>,
-    private readonly callback: (t: T) => void
+    private readonly callback: (t: T) => void,
   ) {}
 
   hostConnected() {

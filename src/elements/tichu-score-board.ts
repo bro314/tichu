@@ -44,12 +44,12 @@ export class TichuScoreBoard extends LitElement {
     subscribe(
       this,
       () => window.model.round$,
-      (round) => (this.round = round)
+      (round) => (this.round = round),
     );
     subscribe(
       this,
       () => window.model.playerNames$,
-      (names) => (this.names = names)
+      (names) => (this.names = names),
     );
   }
 

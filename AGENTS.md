@@ -110,7 +110,8 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── TestUtils.php            # Card constants (`DR`, `PH`, `DOG`, `MJ`, `A2`..`DA`) and `card($type, $arg)` helper
 │   ├── ComboTest.php            # Unit tests for `Combo` validation and descriptions
 │   └── HandTest.php             # Comprehensive unit tests for `Hand` (bombs, highest combos, `canBeat`, `canFulFillWish`)
-├── local/                       # Self-contained local BGA runner & integration test suite (not uploaded to BGA Studio)
+├── local/                       # Self-contained local BGA runner, SFTP sync & integration test suite (not uploaded to BGA Studio)
+│   ├── sftp-sync.sh             # Fast non-interactive SFTP uploader (`npm run deploy:sftp` / `npm run deploy:sftp:all`)
 │   ├── router.php               # Built-in PHP server router (`php -S 127.0.0.1:8080 local/router.php`)
 │   ├── bga-backend.php          # SQLite-backed implementation of BGA `Table`, `Deck`, `GameState`, `APP_GameAction`, `game_view`
 │   ├── bot.php                  # Rule-compliant `LocalTichuBot` (`actForOtherPlayers`, `stepSingleBotTurn`, `autoPlayUntilPlayer`)
@@ -216,6 +217,7 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 - **Watch TypeScript**: `npm run watch` (`tsc --watch -p src`)
 - **Bundle into `tichu.js`**: `npm run bundle` (`esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js`)
 - **Full Build (Tests + Compile + Bundle)**: `npm run build` (`npm test && npm run compile && npm run bundle`)
+- **Upload to BGA Studio SFTP**: `npm run deploy:sftp` (uploads `tichu.js` + any git-modified deployable files in ~3s via `local/sftp-sync.sh`), `npm run deploy:sftp -- <file1> <file2>` (specific files), or `npm run deploy:sftp:all` (all deployable files)
 - **Format Code (TS + PHP)**: `npm run format` (`npx prettier --write .`)
 
 > **Important**: Always ensure `/opt/homebrew/bin` is on `PATH` (`export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`), and always run `npm run build` after modifying any `.ts` or `.php` file so that all unit + backend integration tests pass and `tichu.js` is updated for SFTP synchronization to BGA Studio.
@@ -292,37 +294,30 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      - Test accounts for multiplayer testing: `dashwood0` through `dashwood9` (10 accounts total).
      - Password for all `dashwood0`..`dashwood9` accounts: Read from `.vscode/bga-credentials.json` (`.studioWeb.password`).
 
-2. **Direct CLI SFTP Synchronization (Agent Workflow)**:
-   - Because `sshpass` and `lftp` are not installed on this machine, use `/usr/bin/expect` with `/usr/local/bin/sftp` to upload or download files non-interactively.
-   - **Important**: Always run `npm run build` before uploading if any `.ts` file in `src/` was modified, and ensure `tichu.js` is uploaded to `/tichu/tichu.js` (even though `tichu.js` is gitignored locally, BGA Studio serves `/tichu/tichu.js` directly).
-   - **Uploading Specific Changed Files to BGA Studio**:
+2. **Direct CLI SFTP Synchronization (`npm run deploy:sftp` / `local/sftp-sync.sh`)**:
+   - **Canonical SFTP Command**: Always use [`local/sftp-sync.sh`](file:///Users/brohlfs/git/tichu/local/sftp-sync.sh) via npm scripts with `WaitMsBeforeAsync: 10000` (completes in ~3 seconds). **Never** improvise inline `expect` regex scripts or Python `paramiko` one-liners.
+   - **Important**: Always run `npm run build` before uploading if any `.ts` file in `src/` was modified, so `tichu.js` is freshly bundled.
+   - **Upload `tichu.js` + any git-modified deployable files (Default, ~3s)**:
      ```bash
-     PW=$(jq -r '.sftp.password' .vscode/bga-credentials.json)
-     USER=$(jq -r '.sftp.username' .vscode/bga-credentials.json)
-     expect -c "
-     set timeout 30
-     spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
-     expect -nocase \"password:\"
-     send \"${PW}\r\"
-     expect \"sftp>\"
-     # Example: upload modified files to their matching remote paths under /tichu/
-     send \"put tichu.js /tichu/tichu.js\r\"
-     expect \"sftp>\"
-     send \"put tichu.css /tichu/tichu.css\r\"
-     expect \"sftp>\"
-     send \"bye\r\"
-     expect eof
-     "
+     npm run deploy:sftp
+     ```
+   - **Upload specific files only (~2.5s)**:
+     ```bash
+     npm run deploy:sftp -- tichu.js tichu.css
+     ```
+   - **Upload all deployable game files (`--all`, ~5s)**:
+     ```bash
+     npm run deploy:sftp:all
      ```
    - **Downloading / Diffing Remote BGA Studio Files Against Local**:
      ```bash
      PW=$(jq -r '.sftp.password' .vscode/bga-credentials.json)
      USER=$(jq -r '.sftp.username' .vscode/bga-credentials.json)
      mkdir -p /tmp/studio_tichu
-     expect -c "
+     /usr/bin/expect -c "
      set timeout 60
      spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
-     expect -nocase \"password:\"
+     expect \"Password:\"
      send \"${PW}\r\"
      expect \"sftp>\"
      send \"lcd /tmp/studio_tichu\r\"
@@ -334,12 +329,13 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      "
      ```
    - **Files Ignored from SFTP Upload**:
-     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `local`, `tests`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+     `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
-   - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and include its pure-locator snippet in the subagent prompt!
+   - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and inline its pure-locator snippet directly in the subagent prompt (never ask the `browser` subagent to `read_file` from the repo workspace, as its sandbox blocks workspace reads)!
    - Key highlights from `BGA_STUDIO_TESTING.md`:
      - **NEVER pass `page.evaluate(...)` or `waitForFunction(...)` to the `browser` subagent**: Its system prompt forbids them and causes 60–100s of LLM thinking overhead per step as it rewrites your script. Always use pure Playwright locators (`page.getByText`, `page.locator`, `page.frameLocator('iframe')`) to click `#studio-test-bar` buttons (`#tt_btn_smoke`, `#tt_btn_round`, `#tt_btn_game`, `#tt_btn_stop`, `#tt_btn_new`) and read `#tt_test_output`.
+     - **Zero Screenshots (`captureScreenshot: false`)**: Never take or parse screenshots during automated Studio or local testing when DOM state (`#tt_test_output`, `#logs`, `.stockitem`) provides exact structured JSON in milliseconds.
      - **Always Express Stop / CANCEL at Beginning & End**:
        - At the beginning on `https://studio.boardgamearena.com/gamepanel?game=tichu`, click `CANCEL` (if an unstarted table is open, which hides `Express start`) or `Express stop` (if a running table is open), then click BGA Studio's built-in **`Express start`** button.
        - At the end of the test, navigate to `https://studio.boardgamearena.com/table?table=<TABLE_ID>` and click BGA Studio's built-in **`Express stop`** button (or `#tt_btn_stop`) so no table is left dangling.
@@ -347,6 +343,10 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
        - Only active on `studio.boardgamearena.com` (double-guarded on client hostname and `$this->getBgaEnvironment() === 'studio'` on server).
        - Runs full 4-player Smoke Test (`#tt_btn_smoke` / `tt.runSmokeTest()`) in **~1.8s**, full round (`#tt_btn_round` / `tt.runRound()`) in **~8.3s**, and full game (`#tt_btn_game` / `tt.runGame()`) in **~60–90s** from a single tab without switching `&as=<player_id>` URLs.
      - **Player IDs**: `dashwood0` = `2385074`, `dashwood1` = `2385075`, `dashwood2` = `2385076`, `dashwood3` = `2385077`.
+   - **Mandatory Post-Invocation Profiling & Continuous BGA DOM Learning**:
+     - **Verify Subagent Lifecycle**: After every `browser` subagent turn (or if a run takes >20s), check `manage_subagents` (`Action: "list"`) to ensure the subagent is not stuck in a background retry loop. If a subagent errors out or stalls, kill it immediately.
+     - **Profile Every Browser Run**: Inspect the subagent's `<appDataDir>/brain/<subagent-id>/.system_generated/logs/transcript.jsonl` after each run to check how many steps it took and how many seconds each step spent.
+     - **Turn Every Slow Step Into a Permanent DOM Shortcut**: If the subagent took more than 1–2 `webview_browser` script calls, had to take a screenshot, or hit an unexpected BGA page state (e.g., modal popup, missing button, URL redirect), diagnose the exact DOM structure/selector or BGA client code responsible and codify the deterministic locator/flow in [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md) (and [`src/studio-test.ts`](file:///Users/brohlfs/git/tichu/src/studio-test.ts)) so the next run executes in a single zero-screenshot step.
    - **Studio Debugging Helpers & Gotchas**:
      - **Server SQL & Request Logs**: Navigate to `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>` to inspect full server-side request/SQL logs and PHP stack traces.
      - **`debug_<name>()` Methods**: Any `public function debug_<name>()` defined on `Tichu` in `tichu.game.php` automatically gets a clickable button in the Studio debug panel (`#toggleDebugFunctionsPanel`, DOM ID `debug_<name>`) for setting up test states or dumping data. Guard with `if ($this->getBgaEnvironment() !== 'studio') return;` or remove before release.
@@ -385,3 +385,24 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
   ```bash
   git push https://www.github.com/bro314/tichu.git main && git update-ref refs/remotes/origin/main HEAD
   ```
+
+---
+
+## 5. Agent Performance, Context Hygiene & Subagent Profiling
+
+To keep turn latency at **~3–5 seconds per step** (instead of 20–80s+ caused by context bloat or runaway subagents), strictly follow these rules:
+
+1. **Delegate Analysis of Huge `bga-platform/` & Stub Files to the `research` Subagent**:
+   - The local `bga-platform/` snapshot contains massive minified bundles (`bga-platform/js/sveltec/dist/main.js` is 193,181 lines; `ly_metasite.js` is 56,140 lines; `ly_studio.js` is 41,576 lines) and `_ide_helper.php` is 4,677 lines.
+   - **Never** read or grep large slices of `bga-platform/` or `_ide_helper.php` across multiple turns in the main conversation — doing so bloats the main transcript past 1 MB, triggers context compactions, and slows every subsequent LLM step to 20–60s.
+   - Whenever you need to understand how BGA's frontend/studio layer works (`ly_studio.js`, `ly_metasite.js`, `main.js`, or `_ide_helper.php`), invoke the **`research` subagent** (`Model: "flash"`) with a specific question and have it return only the distilled findings (exact function names, endpoints, DOM selectors, and a <20-line snippet).
+2. **Use `npm run deploy:sftp` (Never Improvise SFTP Commands)**:
+   - Always upload via `npm run deploy:sftp` (`bash local/sftp-sync.sh`) with `WaitMsBeforeAsync: 10000`. Never write ad-hoc Python `paramiko` scripts or custom `expect` regexes that can hang or background-timeout.
+3. **Avoid Unprompted Multi-Step Loops Before Answering the User**:
+   - When the user asks a question or reports an issue, answer directly or confirm before launching into a 10+ step edit/build/SFTP/browser cycle.
+   - Combine related edits into a single turn rather than interleaving many small `read_file` / `edit_file` steps.
+   - Recommend `/compact` (or starting a fresh conversation) once a conversation exceeds ~150 steps.
+4. **Profile Every `browser` Subagent Run & Eliminate Screenshots**:
+   - **Self-Contained Prompts**: Never ask the `browser` subagent to `read_file` from the repo workspace (its sandbox blocks workspace files, wasting a full turn). Always paste the exact pure-Playwright script from [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md).
+   - **No Screenshots (`captureScreenshot: false`)**: Do not use visual screenshot parsing to inspect BGA pages or game state. Read `#tt_test_output`, `#logs`, or specific DOM locators directly.
+   - **Post-Invocation Profiling**: Immediately after each `browser` subagent finishes, check its step count and step timings in `<appDataDir>/brain/<subagent-id>/.system_generated/logs/transcript.jsonl` and verify via `manage_subagents` that no subagent is left running. If any step was slow or required >1 `webview_browser` call, inspect the BGA page's DOM/JS to understand why, and record the direct selector/URL shortcut in [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md).

@@ -199,27 +199,22 @@ function resolveCardsFromHand(input: any, handCards: any[]): NormalizedCard[] | 
     let chosen: NormalizedCard | null = null;
 
     if (spec.kind === "id") {
-      chosen =
-        hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.id)) || null;
+      chosen = hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.id)) || null;
     } else if (spec.kind === "exact") {
       chosen =
-        hand.find(
-          (c) => !usedIds[c.id] && c.type === spec.suit && c.type_arg === spec.rank,
-        ) || null;
+        hand.find((c) => !usedIds[c.id] && c.type === spec.suit && c.type_arg === spec.rank) ||
+        null;
     } else if (spec.kind === "rank") {
       chosen = hand.find((c) => !usedIds[c.id] && c.type_arg === spec.rank) || null;
     } else if (spec.kind === "number") {
       if (forceIdMode || spec.value > 14) {
-        chosen =
-          hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.value)) || null;
+        chosen = hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.value)) || null;
       }
       if (!chosen && spec.value >= 1 && spec.value <= 14) {
-        chosen =
-          hand.find((c) => !usedIds[c.id] && c.type_arg === spec.value) || null;
+        chosen = hand.find((c) => !usedIds[c.id] && c.type_arg === spec.value) || null;
       }
       if (!chosen) {
-        chosen =
-          hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.value)) || null;
+        chosen = hand.find((c) => !usedIds[c.id] && String(c.id) === String(spec.value)) || null;
       }
     }
 
@@ -302,9 +297,7 @@ function pickDefaultPlayCardsFromHand(ui: any): NormalizedCard[] {
     if (dog) return [dog];
   }
 
-  const normals = hand
-    .filter((c) => c.type_arg >= 2)
-    .sort((a, b) => a.type_arg - b.type_arg);
+  const normals = hand.filter((c) => c.type_arg >= 2).sort((a, b) => a.type_arg - b.type_arg);
   if (normals.length > 0) return [normals[0]!];
   return [hand[0]!];
 }
@@ -334,9 +327,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   function getSortedPlayers(): any[] {
     const ui = getUi();
     const gd = (ui && ui.gamedatas) || {};
-    return Object.values(gd.players || {}).sort(
-      (a: any, b: any) => Number(a.no) - Number(b.no),
-    );
+    return Object.values(gd.players || {}).sort((a: any, b: any) => Number(a.no) - Number(b.no));
   }
 
   function formatPlayerTag(playerId: any): string {
@@ -371,9 +362,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       const exact = players.find((p) => Number(p.id) === num);
       if (exact) return Number(exact.id);
     }
-    const byName = players.find(
-      (p) => String(p.name || "").toLowerCase() === rawStr,
-    );
+    const byName = players.find((p) => String(p.name || "").toLowerCase() === rawStr);
     if (byName) return Number(byName.id);
     throw new Error(
       `Unknown seat or player "${seatOrPlayerId}". Expected 0..3, "P0".."P3", player name, or player ID.`,
@@ -438,25 +427,77 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     help() {
       const rows = [
         { Command: "tt.help()", Description: "Show BGA Studio console command cheat-sheet" },
-        { Command: "tt.status()", Description: "Inspect current table state, players, hand, trick, and buttons" },
+        {
+          Command: "tt.status()",
+          Description: "Inspect current table state, players, hand, trick, and buttons",
+        },
         { Command: "tt.hand()", Description: "Inspect viewer's cards in hand with codes & IDs" },
-        { Command: "tt.assertUI()", Description: "Verify live BGA Studio DOM matches gamedatas invariants" },
-        { Command: "tt.setSpeed('instant'|'normal')", Description: "Toggle instantaneousMode (1ms notification queue)" },
-        { Command: "await tt.betGrandTichu(0|200, seat?)", Description: "Place Grand Tichu bet for seat (via testuser)" },
-        { Command: "await tt.betAllGrandTichu([0,0,0,0])", Description: "Place Grand Tichu bets for all multiactive players in 1 tab" },
-        { Command: "await tt.giveCards(cards?)", Description: "Select & pass 3 cards from viewer's hand" },
-        { Command: "await tt.passAllCards(cards?)", Description: "Pass 3 cards for viewer + step bots for the other 3 players" },
+        {
+          Command: "tt.assertUI()",
+          Description: "Verify live BGA Studio DOM matches gamedatas invariants",
+        },
+        {
+          Command: "tt.setSpeed('instant'|'normal')",
+          Description: "Toggle instantaneousMode (1ms notification queue)",
+        },
+        {
+          Command: "await tt.betGrandTichu(0|200, seat?)",
+          Description: "Place Grand Tichu bet for seat (via testuser)",
+        },
+        {
+          Command: "await tt.betAllGrandTichu([0,0,0,0])",
+          Description: "Place Grand Tichu bets for all multiactive players in 1 tab",
+        },
+        {
+          Command: "await tt.giveCards(cards?)",
+          Description: "Select & pass 3 cards from viewer's hand",
+        },
+        {
+          Command: "await tt.passAllCards(cards?)",
+          Description: "Pass 3 cards for viewer + step bots for the other 3 players",
+        },
         { Command: "await tt.play(cards?)", Description: "Select & play combo from viewer's hand" },
-        { Command: "await tt.pass(onlyOnce=true, seat?)", Description: "Pass turn (or set auto-pass) for seat" },
-        { Command: "await tt.collect(seat?)", Description: "Immediately collect won trick in confirmTrick state" },
-        { Command: "await tt.wish(rank=15, seat?)", Description: "Make a Mahjong wish (2..14 or 15='none')" },
-        { Command: "await tt.choosePhoenix(rank?, seat?)", Description: "Choose ambiguous Phoenix rank" },
-        { Command: "await tt.giveDragon(0|1, seat?)", Description: "Gift Dragon trick to opponent 0 or 1" },
-        { Command: "await tt.step(moves=1)", Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves" },
-        { Command: "await tt.actForOthers()", Description: "Have server zombieTurn act for other players until your turn" },
-        { Command: "await tt.runSmokeTest(opts?)", Description: "Run full zero-click Studio smoke test (Grand Tichu + Pass + Tricks + UI assertions)" },
-        { Command: "await tt.runRound(opts?)", Description: "Play a full round to completion on Studio and assert UI" },
-        { Command: "await tt.runGame(opts?)", Description: "Fast-forward entire game to gameEnd (state 99) on Studio" },
+        {
+          Command: "await tt.pass(onlyOnce=true, seat?)",
+          Description: "Pass turn (or set auto-pass) for seat",
+        },
+        {
+          Command: "await tt.collect(seat?)",
+          Description: "Immediately collect won trick in confirmTrick state",
+        },
+        {
+          Command: "await tt.wish(rank=15, seat?)",
+          Description: "Make a Mahjong wish (2..14 or 15='none')",
+        },
+        {
+          Command: "await tt.choosePhoenix(rank?, seat?)",
+          Description: "Choose ambiguous Phoenix rank",
+        },
+        {
+          Command: "await tt.giveDragon(0|1, seat?)",
+          Description: "Gift Dragon trick to opponent 0 or 1",
+        },
+        {
+          Command: "await tt.step(moves=1)",
+          Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves",
+        },
+        {
+          Command: "await tt.actForOthers()",
+          Description: "Have server zombieTurn act for other players until your turn",
+        },
+        {
+          Command: "await tt.runSmokeTest(opts?)",
+          Description:
+            "Run full zero-click Studio smoke test (Grand Tichu + Pass + Tricks + UI assertions)",
+        },
+        {
+          Command: "await tt.runRound(opts?)",
+          Description: "Play a full round to completion on Studio and assert UI",
+        },
+        {
+          Command: "await tt.runGame(opts?)",
+          Description: "Fast-forward entire game to gameEnd (state 99) on Studio",
+        },
       ];
       window.console.table(rows);
       return rows;
@@ -489,7 +530,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           }
         }
       }
-      logAnnounce("[TICHU STUDIO SPEED]", `Speed mode="${mode}" (instantaneousMode=${Boolean(ui && ui.instantaneousMode)})`);
+      logAnnounce(
+        "[TICHU STUDIO SPEED]",
+        `Speed mode="${mode}" (instantaneousMode=${Boolean(ui && ui.instantaneousMode)})`,
+      );
       return speedMode;
     },
 
@@ -525,9 +569,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           capturedPoints: ptEl
             ? parseInt(ptEl.textContent || "0", 10)
             : Number((gd.capturedpoints && gd.capturedpoints[pId]) ?? 0),
-          score: scoreEl
-            ? parseInt(scoreEl.textContent || "0", 10)
-            : Number(p.score ?? 0),
+          score: scoreEl ? parseInt(scoreEl.textContent || "0", 10) : Number(p.score ?? 0),
           grandTichu: Number(p.call_grand_tichu),
           tichu: Number(p.call_tichu),
           autopass: Number(p.pass || 0),
@@ -566,7 +608,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         },
         viewer: ui.isSpectator ? "spectator" : formatPlayerTag(ui.player_id),
         viewerId: ui.isSpectator ? 0 : Number(ui.player_id),
-        isMyTurn: Boolean(typeof ui.isCurrentPlayerActive === "function" && ui.isCurrentPlayerActive()),
+        isMyTurn: Boolean(
+          typeof ui.isCurrentPlayerActive === "function" && ui.isCurrentPlayerActive(),
+        ),
         activePlayer: st.active_player ? formatPlayerTag(st.active_player) : null,
         activePlayerId: st.active_player ? Number(st.active_player) : null,
         multiactive: Array.isArray(st.multiactive)
@@ -739,7 +783,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       const ui = getUi();
       const players = getSortedPlayers();
       const multi: number[] =
-        ui && ui.gamedatas && ui.gamedatas.gamestate && Array.isArray(ui.gamedatas.gamestate.multiactive)
+        ui &&
+        ui.gamedatas &&
+        ui.gamedatas.gamestate &&
+        Array.isArray(ui.gamedatas.gamestate.multiactive)
           ? ui.gamedatas.gamestate.multiactive.map(Number)
           : players.map((p) => Number(p.id));
 
@@ -787,7 +834,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           ui.onGiveCard(i);
         }
         for (let i = 0; i < 3; i++) {
-          const node = document.getElementById("cardontable_" + ui.player_id + "_" + chosenCards[i]!.id);
+          const node = document.getElementById(
+            "cardontable_" + ui.player_id + "_" + chosenCards[i]!.id,
+          );
           if (node && node.parentNode) node.parentNode.removeChild(node);
         }
         ui.cardsToPass = [];
@@ -942,7 +991,11 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         throw new Error("BGA Studio actions helper is not available");
       }
       clearTimeout(ui.autoCollectTimeout);
-      logAnnounce("[TICHU STUDIO STEP]", `Running debug_bgaPlayMoves (moves=${moves})...`, "#d2a8ff");
+      logAnnounce(
+        "[TICHU STUDIO STEP]",
+        `Running debug_bgaPlayMoves (moves=${moves})...`,
+        "#d2a8ff",
+      );
       await ui.bga.actions.performAction(
         "debug_bgaPlayMoves",
         { moves: Number(moves) || 1 },
@@ -964,7 +1017,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return tt.status(false);
     },
 
-    async runSmokeTest({ tricks = 3, speed = "instant" }: { tricks?: number; speed?: "normal" | "fast" | "instant" } = {}) {
+    async runSmokeTest({
+      tricks = 3,
+      speed = "instant",
+    }: { tricks?: number; speed?: "normal" | "fast" | "instant" } = {}) {
       const t0 = Date.now();
       tt.setSpeed(speed);
       logAnnounce(
@@ -1047,7 +1103,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return result;
     },
 
-    async runRound({ speed = "instant", maxSteps = 12 }: { speed?: "normal" | "fast" | "instant"; maxSteps?: number } = {}) {
+    async runRound({
+      speed = "instant",
+      maxSteps = 12,
+    }: { speed?: "normal" | "fast" | "instant"; maxSteps?: number } = {}) {
       const t0 = Date.now();
       tt.setSpeed(speed);
       let cur = tt.status(false)!;
@@ -1077,12 +1136,19 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         currentRound: cur.round,
         state: cur.state.name,
         batches,
-        players: cur.players.map((p: any) => ({ name: p.name, score: p.score, handCount: p.handCount })),
+        players: cur.players.map((p: any) => ({
+          name: p.name,
+          score: p.score,
+          handCount: p.handCount,
+        })),
         elapsedMs: Date.now() - t0,
       };
     },
 
-    async runGame({ speed = "instant", maxBatches = 40 }: { speed?: "normal" | "fast" | "instant"; maxBatches?: number } = {}) {
+    async runGame({
+      speed = "instant",
+      maxBatches = 40,
+    }: { speed?: "normal" | "fast" | "instant"; maxBatches?: number } = {}) {
       const t0 = Date.now();
       tt.setSpeed(speed);
       let cur = tt.status(false)!;

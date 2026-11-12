@@ -31,6 +31,12 @@ npm run watch
 
 # Format TypeScript, JS, CSS, and PHP files with Prettier
 npm run format
+
+# Upload tichu.js + modified deployable files to BGA Studio via SFTP (~3s)
+npm run deploy:sftp
+
+# Upload all deployable game files to BGA Studio via SFTP (~5s)
+npm run deploy:sftp:all
 ```
 
 > **Note**: `tichu.js` and `dist/` are ignored by Git (`.gitignore`), but `tichu.js` **must** be built (`npm run build`) and synced to the BGA Studio server via SFTP so BGA can load the client code.
@@ -64,28 +70,28 @@ tt.help(); // List all console test runner commands
 
 ## Project Structure
 
-| Path                                 | Description                                                                                                                                                                                                  |
-| :----------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tichu.game.php`                     | Main server-side game logic (`class Tichu extends Table`), state actions, and DB upgrades                                                                                                                    |
-| `tichu.action.php`                   | Server-side AJAX action endpoints called from the client                                                                                                                                                     |
-| `tichu.view.php` & `tichu_tichu.tpl` | Server-side view builder and HTML/JS layout template                                                                                                                                                         |
-| `states.inc.php`                     | BGA finite state machine configuration                                                                                                                                                                       |
-| `material.inc.php`                   | Card suits, ranks, special cards, combo labels, and module imports                                                                                                                                           |
-| `gameinfos.inc.php`                  | BGA game metadata                                                                                                                                                                                            |
-| `gameoptions.inc.php`                | Game variants (score target, team selection) and user preferences (layout, order, art, theme)                                                                                                                |
-| `stats.inc.php`                      | Table and player statistics configuration                                                                                                                                                                    |
-| `dbmodel.sql`                        | Database schema extensions (`player` custom columns, `card` table, `actionlog` table)                                                                                                                        |
-| `modules/`                           | Backend PHP classes (`Combo`, `Hand`, `Constants`, `Utils`) and managers (`CardManager`, `LogManager`, `NotificationManager`, `PlayerManager`)                                                               |
-| `src/tichu.ts`                       | Main TypeScript client controller (`bgagame.tichu`)                                                                                                                                                          |
-| `src/studio-test.ts`                 | BGA Studio test toolbar (`#studio-test-bar`) and console runner (`window.tt`), active only on `studio.boardgamearena.com`                                                                                    |
-| `src/elements/`                      | Lit + RxJS web components (`<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`)                                                                     |
-| `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                 |
-| `tests/`                             | PHPUnit test suite (`ComboTest.php`, `HandTest.php`) and BGA stubs                                                                                                                                           |
-| `local/`                             | Self-contained local BGA runner (`router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), backend integration tests (`integration-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
+| Path                                 | Description                                                                                                                                                                                                                                     |
+| :----------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tichu.game.php`                     | Main server-side game logic (`class Tichu extends Table`), state actions, and DB upgrades                                                                                                                                                       |
+| `tichu.action.php`                   | Server-side AJAX action endpoints called from the client                                                                                                                                                                                        |
+| `tichu.view.php` & `tichu_tichu.tpl` | Server-side view builder and HTML/JS layout template                                                                                                                                                                                            |
+| `states.inc.php`                     | BGA finite state machine configuration                                                                                                                                                                                                          |
+| `material.inc.php`                   | Card suits, ranks, special cards, combo labels, and module imports                                                                                                                                                                              |
+| `gameinfos.inc.php`                  | BGA game metadata                                                                                                                                                                                                                               |
+| `gameoptions.inc.php`                | Game variants (score target, team selection) and user preferences (layout, order, art, theme)                                                                                                                                                   |
+| `stats.inc.php`                      | Table and player statistics configuration                                                                                                                                                                                                       |
+| `dbmodel.sql`                        | Database schema extensions (`player` custom columns, `card` table, `actionlog` table)                                                                                                                                                           |
+| `modules/`                           | Backend PHP classes (`Combo`, `Hand`, `Constants`, `Utils`) and managers (`CardManager`, `LogManager`, `NotificationManager`, `PlayerManager`)                                                                                                  |
+| `src/tichu.ts`                       | Main TypeScript client controller (`bgagame.tichu`)                                                                                                                                                                                             |
+| `src/studio-test.ts`                 | BGA Studio test toolbar (`#studio-test-bar`) and console runner (`window.tt`), active only on `studio.boardgamearena.com`                                                                                                                       |
+| `src/elements/`                      | Lit + RxJS web components (`<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`)                                                                                                        |
+| `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                                                    |
+| `tests/`                             | PHPUnit test suite (`ComboTest.php`, `HandTest.php`) and BGA stubs                                                                                                                                                                              |
+| `local/`                             | Self-contained local BGA runner (`router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), backend integration tests (`integration-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
 
 ## Syncing & Deploying to BGA Studio
 
-1. **SFTP Sync**: Configure your SFTP client (such as the VS Code SFTP extension in `.vscode/sftp.json` or `lftp`) to sync the repository root (including the built `tichu.js`, excluding `node_modules/`, `dist/`, `.git/`, and `.vscode/`) to your BGA Studio `/tichu/` directory on `1.studio.boardgamearena.com:2022`.
+1. **SFTP Sync**: Run `npm run deploy:sftp` (or `npm run deploy:sftp:all`) to upload `tichu.js` and modified deployable game files to `/tichu/` on `1.studio.boardgamearena.com:2022` via `local/sftp-sync.sh` (using credentials in `.vscode/bga-credentials.json` or `.vscode/sftp.json`).
 2. **Testing on Studio**: Test multiplayer flows using BGA Studio's multi-account session switcher at `https://studio.boardgamearena.com`.
    - Restart the test table if you modify `dbmodel.sql`.
    - Reload game configurations in the BGA Studio Control Panel if you modify `gameinfos.inc.php`, `gameoptions.inc.php`, `states.inc.php`, or `stats.inc.php`.

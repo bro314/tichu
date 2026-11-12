@@ -48,7 +48,7 @@ export class TichuPlayer extends LitElement {
         this.points = player?.roundPoints ?? 0;
         this.active = player?.active ?? false;
         this.name = player?.player?.name ?? "";
-      }
+      },
     );
     subscribe(
       this,
@@ -65,21 +65,21 @@ export class TichuPlayer extends LitElement {
         const previousId = window.model.nextPlayerId(partnerId);
         const previous = players.find((p) => p.player.id === previousId);
         this.previousHand = previous?.cards ?? [];
-      }
+      },
     );
     subscribe(
       this,
       () => window.model.latestCombo$(this.playerId),
       (combo) => {
         this.combo = combo?.cards;
-      }
+      },
     );
     subscribe(
       this,
       () => window.model.lastComboPlayer$,
       (lastComboPlayer) => {
         this.isLastComboPlayer = lastComboPlayer === this.playerId;
-      }
+      },
     );
     subscribe(
       this,
@@ -98,7 +98,7 @@ export class TichuPlayer extends LitElement {
           if (passed.to === partnerId) this.passedToPartner = passed.card;
           if (passed.to === nextId) this.passedToNext = passed.card;
         }
-      }
+      },
     );
   }
 

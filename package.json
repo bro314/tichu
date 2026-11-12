@@ -12,7 +12,9 @@
     "watch": "tsc --watch -p src",
     "format": "npx prettier --write .",
     "bundle": "esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js",
-    "build": "npm test && npm run compile && npm run bundle"
+    "build": "npm test && npm run compile && npm run bundle",
+    "deploy:sftp": "bash local/sftp-sync.sh",
+    "deploy:sftp:all": "bash local/sftp-sync.sh --all"
   },
   "repository": {
     "type": "git",

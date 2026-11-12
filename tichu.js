@@ -560,25 +560,76 @@
       help: function() {
         var rows = [
           { Command: "tt.help()", Description: "Show BGA Studio console command cheat-sheet" },
-          { Command: "tt.status()", Description: "Inspect current table state, players, hand, trick, and buttons" },
+          {
+            Command: "tt.status()",
+            Description: "Inspect current table state, players, hand, trick, and buttons"
+          },
           { Command: "tt.hand()", Description: "Inspect viewer's cards in hand with codes & IDs" },
-          { Command: "tt.assertUI()", Description: "Verify live BGA Studio DOM matches gamedatas invariants" },
-          { Command: "tt.setSpeed('instant'|'normal')", Description: "Toggle instantaneousMode (1ms notification queue)" },
-          { Command: "await tt.betGrandTichu(0|200, seat?)", Description: "Place Grand Tichu bet for seat (via testuser)" },
-          { Command: "await tt.betAllGrandTichu([0,0,0,0])", Description: "Place Grand Tichu bets for all multiactive players in 1 tab" },
-          { Command: "await tt.giveCards(cards?)", Description: "Select & pass 3 cards from viewer's hand" },
-          { Command: "await tt.passAllCards(cards?)", Description: "Pass 3 cards for viewer + step bots for the other 3 players" },
+          {
+            Command: "tt.assertUI()",
+            Description: "Verify live BGA Studio DOM matches gamedatas invariants"
+          },
+          {
+            Command: "tt.setSpeed('instant'|'normal')",
+            Description: "Toggle instantaneousMode (1ms notification queue)"
+          },
+          {
+            Command: "await tt.betGrandTichu(0|200, seat?)",
+            Description: "Place Grand Tichu bet for seat (via testuser)"
+          },
+          {
+            Command: "await tt.betAllGrandTichu([0,0,0,0])",
+            Description: "Place Grand Tichu bets for all multiactive players in 1 tab"
+          },
+          {
+            Command: "await tt.giveCards(cards?)",
+            Description: "Select & pass 3 cards from viewer's hand"
+          },
+          {
+            Command: "await tt.passAllCards(cards?)",
+            Description: "Pass 3 cards for viewer + step bots for the other 3 players"
+          },
           { Command: "await tt.play(cards?)", Description: "Select & play combo from viewer's hand" },
-          { Command: "await tt.pass(onlyOnce=true, seat?)", Description: "Pass turn (or set auto-pass) for seat" },
-          { Command: "await tt.collect(seat?)", Description: "Immediately collect won trick in confirmTrick state" },
-          { Command: "await tt.wish(rank=15, seat?)", Description: "Make a Mahjong wish (2..14 or 15='none')" },
-          { Command: "await tt.choosePhoenix(rank?, seat?)", Description: "Choose ambiguous Phoenix rank" },
-          { Command: "await tt.giveDragon(0|1, seat?)", Description: "Gift Dragon trick to opponent 0 or 1" },
-          { Command: "await tt.step(moves=1)", Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves" },
-          { Command: "await tt.actForOthers()", Description: "Have server zombieTurn act for other players until your turn" },
-          { Command: "await tt.runSmokeTest(opts?)", Description: "Run full zero-click Studio smoke test (Grand Tichu + Pass + Tricks + UI assertions)" },
-          { Command: "await tt.runRound(opts?)", Description: "Play a full round to completion on Studio and assert UI" },
-          { Command: "await tt.runGame(opts?)", Description: "Fast-forward entire game to gameEnd (state 99) on Studio" }
+          {
+            Command: "await tt.pass(onlyOnce=true, seat?)",
+            Description: "Pass turn (or set auto-pass) for seat"
+          },
+          {
+            Command: "await tt.collect(seat?)",
+            Description: "Immediately collect won trick in confirmTrick state"
+          },
+          {
+            Command: "await tt.wish(rank=15, seat?)",
+            Description: "Make a Mahjong wish (2..14 or 15='none')"
+          },
+          {
+            Command: "await tt.choosePhoenix(rank?, seat?)",
+            Description: "Choose ambiguous Phoenix rank"
+          },
+          {
+            Command: "await tt.giveDragon(0|1, seat?)",
+            Description: "Gift Dragon trick to opponent 0 or 1"
+          },
+          {
+            Command: "await tt.step(moves=1)",
+            Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves"
+          },
+          {
+            Command: "await tt.actForOthers()",
+            Description: "Have server zombieTurn act for other players until your turn"
+          },
+          {
+            Command: "await tt.runSmokeTest(opts?)",
+            Description: "Run full zero-click Studio smoke test (Grand Tichu + Pass + Tricks + UI assertions)"
+          },
+          {
+            Command: "await tt.runRound(opts?)",
+            Description: "Play a full round to completion on Studio and assert UI"
+          },
+          {
+            Command: "await tt.runGame(opts?)",
+            Description: "Fast-forward entire game to gameEnd (state 99) on Studio"
+          }
         ];
         window.console.table(rows);
         return rows;
@@ -1307,7 +1358,11 @@
                   state: cur.state.name,
                   batches: batches,
                   players: cur.players.map(function(p) {
-                    return { name: p.name, score: p.score, handCount: p.handCount };
+                    return {
+                      name: p.name,
+                      score: p.score,
+                      handCount: p.handCount
+                    };
                   }),
                   elapsedMs: Date.now() - t0
                 }];

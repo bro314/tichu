@@ -63,8 +63,7 @@
   window.g_gamethemeurl = "/";
   localStorage.removeItem("tichu_local_archive_mode");
   const initialGamestate = (initPayload.gamedatas && initPayload.gamedatas.gamestate) || {};
-  window.g_archive_mode =
-    Number(initialGamestate.id) === 99 || initialGamestate.name === "gameEnd";
+  window.g_archive_mode = Number(initialGamestate.id) === 99 || initialGamestate.name === "gameEnd";
   // Keep a deep clone of raw gamelogs so <tichu-replay>'s in-place tidyUpGamelogs()
   // does not corrupt our master array.
   let masterGamelogs = Array.isArray(initPayload.gamelogs)
@@ -886,11 +885,7 @@
         maxRow = Math.max(maxRow, row);
         let top = maxRow * (this.item_height + verticalOverlapPx + this.item_margin);
         let left = (index - maxRow * itemsPerRow) * (stepWidth + this.item_margin);
-        if (
-          this.vertical_overlap !== 0 &&
-          index % 2 === 0 &&
-          this.use_vertical_overlap_as_offset
-        ) {
+        if (this.vertical_overlap !== 0 && index % 2 === 0 && this.use_vertical_overlap_as_offset) {
           top += verticalOverlapPx;
         }
         index++;
@@ -959,8 +954,7 @@
         }
       }
 
-      const totalHeight =
-        (maxRow + 1) * (this.item_height + verticalOverlapPx + this.item_margin);
+      const totalHeight = (maxRow + 1) * (this.item_height + verticalOverlapPx + this.item_margin);
       container.style.height = totalHeight + "px";
     }
 
@@ -1418,7 +1412,9 @@
           this.last_packet_id = pktId;
         }
         // Keep master gamelogs updated for replay mode
-        if (!masterGamelogs.some((existing) => String(existing.packet_id) === String(pkt.packet_id))) {
+        if (
+          !masterGamelogs.some((existing) => String(existing.packet_id) === String(pkt.packet_id))
+        ) {
           masterGamelogs.push(JSON.parse(JSON.stringify(pkt)));
         }
         const dataArr = Array.isArray(pkt.data) ? pkt.data : [];
@@ -1507,11 +1503,14 @@
 
       const scaledWaitMs = this._scaleDuration(waitMs);
 
-      this._processTimer = setTimeout(() => {
-        this._processTimer = null;
-        this.isProcessing = false;
-        this.processNext();
-      }, Math.max(0, scaledWaitMs));
+      this._processTimer = setTimeout(
+        () => {
+          this._processTimer = null;
+          this.isProcessing = false;
+          this.processNext();
+        },
+        Math.max(0, scaledWaitMs),
+      );
     }
 
     dispatchSingleNotif(notif) {
@@ -1551,10 +1550,7 @@
             ? notif.args.map(String)
             : [];
           game.updatePageTitle(game.gamedatas.gamestate);
-          game.onUpdateActionButtons(
-            game.gamedatas.gamestate.name,
-            game.gamedatas.gamestate.args,
-          );
+          game.onUpdateActionButtons(game.gamedatas.gamestate.name, game.gamedatas.gamestate.args);
           game._renderDevBar();
           game._logStateAnnouncement();
         }
@@ -1665,7 +1661,9 @@
     }
 
     getCurrentPlayer() {
-      return (this.gamedatas && this.gamedatas.players && this.gamedatas.players[this.player_id]) || null;
+      return (
+        (this.gamedatas && this.gamedatas.players && this.gamedatas.players[this.player_id]) || null
+      );
     }
 
     isCurrentPlayerSpectator() {
@@ -1778,7 +1776,9 @@
         params && params.replaceByYou && Number(playerId) === Number(this.player_id)
           ? window._("You")
           : p.name;
-      return '<span style="font-weight:700;color:#' + (p.color || "000000") + '">' + label + "</span>";
+      return (
+        '<span style="font-weight:700;color:#' + (p.color || "000000") + '">' + label + "</span>"
+      );
     }
 
     format_string_recursive(log, args) {
@@ -1790,7 +1790,8 @@
           return this.getFormattedPlayerName(this.player_id, { replaceByYou: true });
         }
         if (key === "actplayer") {
-          const actId = this.gamedatas && this.gamedatas.gamestate && this.gamedatas.gamestate.active_player;
+          const actId =
+            this.gamedatas && this.gamedatas.gamestate && this.gamedatas.gamestate.active_player;
           if (actId) {
             return this.getFormattedPlayerName(actId, { replaceByYou: false });
           }
@@ -1823,7 +1824,9 @@
     }
 
     addActionButton(id, label, method, destination, blinking, color) {
-      const destEl = destination ? window.$(destination) : document.getElementById("generalactions");
+      const destEl = destination
+        ? window.$(destination)
+        : document.getElementById("generalactions");
       if (!destEl) return;
 
       const existing = document.getElementById(id);
@@ -1835,8 +1838,7 @@
       btn.id = id;
       btn.href = "#";
       const btnColor = color || "blue";
-      btn.className =
-        "bgabutton bgabutton_" + btnColor + (blinking ? " blinking" : "");
+      btn.className = "bgabutton bgabutton_" + btnColor + (blinking ? " blinking" : "");
       btn.innerHTML = String(label ?? "");
 
       const handler =
@@ -1907,8 +1909,10 @@
       const rawDur = duration !== undefined ? Number(duration) : 1000;
       const rawDel = delay !== undefined ? Number(delay) : 0;
       const mode = this.notifqueue ? this.notifqueue.speedMode : "normal";
-      const dur = mode === "instant" ? Math.min(rawDur, 5) : mode === "fast" ? Math.min(rawDur, 60) : rawDur;
-      const del = mode === "instant" ? Math.min(rawDel, 1) : mode === "fast" ? Math.min(rawDel, 30) : rawDel;
+      const dur =
+        mode === "instant" ? Math.min(rawDur, 5) : mode === "fast" ? Math.min(rawDur, 60) : rawDur;
+      const del =
+        mode === "instant" ? Math.min(rawDel, 1) : mode === "fast" ? Math.min(rawDel, 30) : rawDel;
 
       setTimeout(() => {
         if (!el.parentNode) return;
@@ -1932,8 +1936,10 @@
       const rawDur = duration !== undefined ? Number(duration) : 500;
       const rawDel = delay !== undefined ? Number(delay) : 0;
       const mode = this.notifqueue ? this.notifqueue.speedMode : "normal";
-      const dur = mode === "instant" ? Math.min(rawDur, 5) : mode === "fast" ? Math.min(rawDur, 60) : rawDur;
-      const del = mode === "instant" ? Math.min(rawDel, 1) : mode === "fast" ? Math.min(rawDel, 20) : rawDel;
+      const dur =
+        mode === "instant" ? Math.min(rawDur, 5) : mode === "fast" ? Math.min(rawDur, 60) : rawDur;
+      const del =
+        mode === "instant" ? Math.min(rawDel, 1) : mode === "fast" ? Math.min(rawDel, 20) : rawDel;
 
       setTimeout(() => {
         if (!el.parentNode) return;
@@ -2165,7 +2171,9 @@
       if (!notif || !notif.type) return;
       const args = notif.args || {};
       const plainLog = notif.log
-        ? this.format_string_recursive(notif.log, args).replace(/<[^>]+>/g, "").trim()
+        ? this.format_string_recursive(notif.log, args)
+            .replace(/<[^>]+>/g, "")
+            .trim()
         : "";
 
       const details = [];
@@ -2498,10 +2506,11 @@
 
       // 4. Update all 4 player panels & table icons
       this.enableAllPlayerPanels();
-      dojo.query(".grandtichublack, .tichublack, .grandtichucolor, .tichucolor, .firstoutcolor, .cardback").style(
-        "display",
-        "none",
-      );
+      dojo
+        .query(
+          ".grandtichublack, .tichublack, .grandtichucolor, .tichucolor, .firstoutcolor, .cardback",
+        )
+        .style("display", "none");
 
       for (const player of Object.values(gd.players || {})) {
         const pId = Number(player.id);
@@ -2879,19 +2888,24 @@
             : this.localOptions.turnBased
               ? 1
               : 0;
-      const gameLength = opts.gameLength !== undefined ? opts.gameLength : this.localOptions.gameLength || 2;
-      const playerTeams = opts.playerTeams !== undefined ? opts.playerTeams : this.localOptions.playerTeams || 1;
+      const gameLength =
+        opts.gameLength !== undefined ? opts.gameLength : this.localOptions.gameLength || 2;
+      const playerTeams =
+        opts.playerTeams !== undefined ? opts.playerTeams : this.localOptions.playerTeams || 1;
 
       localStorage.removeItem("tichu_local_archive_mode");
-      return fetch(`/local/new-game?as=${encodeURIComponent(this.isSpectator ? 0 : this.player_id)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameLength: gameLength,
-          playerTeams: playerTeams,
-          turnBased: turnBased,
-        }),
-      })
+      return fetch(
+        `/local/new-game?as=${encodeURIComponent(this.isSpectator ? 0 : this.player_id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gameLength: gameLength,
+            playerTeams: playerTeams,
+            turnBased: turnBased,
+          }),
+        },
+      )
         .then((r) => r.json())
         .then((payload) => {
           if (payload && payload.status === 1) {
@@ -3117,11 +3131,7 @@
       for (let i = 0; i < playersList.length; i++) {
         const p = playersList[i];
         const isViewer = !this.isSpectator && Number(p.id) === Number(this.player_id);
-        const cls = [
-          "devbar-seat",
-          isViewer ? "is-viewer" : "",
-          p.isActive ? "is-active-turn" : "",
-        ]
+        const cls = ["devbar-seat", isViewer ? "is-viewer" : "", p.isActive ? "is-active-turn" : ""]
           .filter(Boolean)
           .join(" ");
 
@@ -3164,15 +3174,11 @@
       const tikiTip = escapeAttr(
         "Toggle between classic Tichu card artwork and Tiki Edition artwork.",
       );
-      const replayTip = escapeAttr(
-        "Open the Experimental Replay viewer for this finished game.",
-      );
+      const replayTip = escapeAttr("Open the Experimental Replay viewer for this finished game.");
       const muteTip = escapeAttr(
         "Toggle game sound effects (Tichu / Grand Tichu laser sound) on or off.",
       );
-      const newGameTip = escapeAttr(
-        "Reset the database and start a fresh 4-player Tichu game.",
-      );
+      const newGameTip = escapeAttr("Reset the database and start a fresh 4-player Tichu game.");
 
       bar.innerHTML =
         `<div class="devbar-group">` +
@@ -3478,9 +3484,7 @@
       if (dog) return [dog];
     }
 
-    const normals = hand
-      .filter((c) => c.type_arg >= 2)
-      .sort((a, b) => a.type_arg - b.type_arg);
+    const normals = hand.filter((c) => c.type_arg >= 2).sort((a, b) => a.type_arg - b.type_arg);
     if (normals.length > 0) return [normals[0]];
     return [hand[0]];
   }
@@ -3520,34 +3524,106 @@
     help() {
       const rows = [
         { Command: "tt.help()", Description: "Show this console command cheat-sheet" },
-        { Command: "tt.status()", Description: "Inspect current state, players, hand, trick, and buttons" },
+        {
+          Command: "tt.status()",
+          Description: "Inspect current state, players, hand, trick, and buttons",
+        },
         { Command: "tt.hand(seat?)", Description: "Inspect cards in hand (e.g. tt.hand(0))" },
-        { Command: "tt.assertUI()", Description: "Verify all live DOM elements match gamedatas invariants" },
-        { Command: "tt.setSpeed('normal'|'fast'|'instant')", Description: "Set notification/animation queue speed" },
-        { Command: "tt.setVerbose(true|false)", Description: "Toggle live [TICHU *] console announcements" },
-        { Command: "await tt.newGame(opts?)", Description: "Start a fresh game in-place ({ gameLength, playerTeams, turnBased })" },
-        { Command: "await tt.loadScenario(name, seat=0)", Description: "Load a deterministic scenario in-place without reloading" },
-        { Command: "await tt.switchSeat(0..3|'spectator')", Description: "Switch viewer seat in-place without reloading" },
-        { Command: "await tt.betGrandTichu(0|200, seat?)", Description: "Place Grand Tichu bet (0 = No bet, 200 = Grand Tichu)" },
+        {
+          Command: "tt.assertUI()",
+          Description: "Verify all live DOM elements match gamedatas invariants",
+        },
+        {
+          Command: "tt.setSpeed('normal'|'fast'|'instant')",
+          Description: "Set notification/animation queue speed",
+        },
+        {
+          Command: "tt.setVerbose(true|false)",
+          Description: "Toggle live [TICHU *] console announcements",
+        },
+        {
+          Command: "await tt.newGame(opts?)",
+          Description: "Start a fresh game in-place ({ gameLength, playerTeams, turnBased })",
+        },
+        {
+          Command: "await tt.loadScenario(name, seat=0)",
+          Description: "Load a deterministic scenario in-place without reloading",
+        },
+        {
+          Command: "await tt.switchSeat(0..3|'spectator')",
+          Description: "Switch viewer seat in-place without reloading",
+        },
+        {
+          Command: "await tt.betGrandTichu(0|200, seat?)",
+          Description: "Place Grand Tichu bet (0 = No bet, 200 = Grand Tichu)",
+        },
         { Command: "await tt.betTichu(seat?)", Description: "Call Tichu (100 pts)" },
-        { Command: "await tt.confirmTichu(100|200, seat?)", Description: "Confirm Tichu / Grand Tichu when prompted" },
-        { Command: "await tt.giveCards(cards?, seat?)", Description: "Visually place & pass 3 cards (e.g. ['S2','R2','B2'])" },
-        { Command: "await tt.play(cards?, seat?)", Description: "Select & play combo (e.g. ['MJ'], ['S5','R6','B7','G8','PH'])" },
-        { Command: "await tt.bomb(cards?, seat?)", Description: "Interrupt with Play a Bomb (and play bomb cards if given)" },
+        {
+          Command: "await tt.confirmTichu(100|200, seat?)",
+          Description: "Confirm Tichu / Grand Tichu when prompted",
+        },
+        {
+          Command: "await tt.giveCards(cards?, seat?)",
+          Description: "Visually place & pass 3 cards (e.g. ['S2','R2','B2'])",
+        },
+        {
+          Command: "await tt.play(cards?, seat?)",
+          Description: "Select & play combo (e.g. ['MJ'], ['S5','R6','B7','G8','PH'])",
+        },
+        {
+          Command: "await tt.bomb(cards?, seat?)",
+          Description: "Interrupt with Play a Bomb (and play bomb cards if given)",
+        },
         { Command: "await tt.cancelBomb(seat?)", Description: "Cancel out of playBomb state" },
-        { Command: "await tt.pass(onlyOnce=true, seat?)", Description: "Pass turn (or set auto-pass if out of turn)" },
+        {
+          Command: "await tt.pass(onlyOnce=true, seat?)",
+          Description: "Pass turn (or set auto-pass if out of turn)",
+        },
         { Command: "await tt.cancelAutopass(seat?)", Description: "Cancel out-of-turn auto-pass" },
-        { Command: "await tt.wish(rank=15, seat?)", Description: "Make a Mahjong wish (2..14, 'J','Q','K','A', or 15='none')" },
-        { Command: "await tt.choosePhoenix(rank, seat?)", Description: "Choose ambiguous Phoenix rank in phoenixPlay state" },
-        { Command: "await tt.cancelPhoenix(seat?)", Description: "Cancel ambiguous Phoenix play and return to playCombo" },
-        { Command: "await tt.collect(seat?)", Description: "Collect won trick in confirmTrick state" },
-        { Command: "await tt.giveDragon(0|1, seat?)", Description: "Gift Dragon trick to opponent 0 or 1 in chooseDragonGift" },
-        { Command: "await tt.step()", Description: "Execute 1 smart bot action and drain notifications into UI" },
-        { Command: "await tt.actForOthers()", Description: "Have bots act for the other 3 players and drain into UI" },
-        { Command: "await tt.runScenario(name, opts?)", Description: "Run end-to-end UI + backend test for a scenario" },
-        { Command: "await tt.runSuite(opts?)", Description: "Run all 7 deterministic integration test scenarios live" },
-        { Command: "await tt.runRound(opts?)", Description: "Play a full round live on screen with DOM assertions" },
-        { Command: "await tt.runGame(opts?)", Description: "Play a full game to gameEnd and verify <tichu-replay>" },
+        {
+          Command: "await tt.wish(rank=15, seat?)",
+          Description: "Make a Mahjong wish (2..14, 'J','Q','K','A', or 15='none')",
+        },
+        {
+          Command: "await tt.choosePhoenix(rank, seat?)",
+          Description: "Choose ambiguous Phoenix rank in phoenixPlay state",
+        },
+        {
+          Command: "await tt.cancelPhoenix(seat?)",
+          Description: "Cancel ambiguous Phoenix play and return to playCombo",
+        },
+        {
+          Command: "await tt.collect(seat?)",
+          Description: "Collect won trick in confirmTrick state",
+        },
+        {
+          Command: "await tt.giveDragon(0|1, seat?)",
+          Description: "Gift Dragon trick to opponent 0 or 1 in chooseDragonGift",
+        },
+        {
+          Command: "await tt.step()",
+          Description: "Execute 1 smart bot action and drain notifications into UI",
+        },
+        {
+          Command: "await tt.actForOthers()",
+          Description: "Have bots act for the other 3 players and drain into UI",
+        },
+        {
+          Command: "await tt.runScenario(name, opts?)",
+          Description: "Run end-to-end UI + backend test for a scenario",
+        },
+        {
+          Command: "await tt.runSuite(opts?)",
+          Description: "Run all 7 deterministic integration test scenarios live",
+        },
+        {
+          Command: "await tt.runRound(opts?)",
+          Description: "Play a full round live on screen with DOM assertions",
+        },
+        {
+          Command: "await tt.runGame(opts?)",
+          Description: "Play a full game to gameEnd and verify <tichu-replay>",
+        },
       ];
       window.console.table(rows);
       return rows;
@@ -3590,9 +3666,7 @@
             capturedPoints: ptEl
               ? parseInt(ptEl.textContent || "0", 10)
               : Number(gd.capturedpoints[pId] ?? 0),
-            score: scoreEl
-              ? parseInt(scoreEl.textContent || "0", 10)
-              : Number(p.score ?? 0),
+            score: scoreEl ? parseInt(scoreEl.textContent || "0", 10) : Number(p.score ?? 0),
             grandTichu: Number(p.call_grand_tichu),
             tichu: Number(p.call_tichu),
             autopass: Number(p.pass || 0),
@@ -3747,9 +3821,7 @@
         const texts = Array.from(hcNodes).map((n) => (n.textContent || "").trim());
         const numVal = parseInt(texts[0], 10);
         if (Number.isNaN(numVal) || numVal < 0 || numVal > 14) {
-          throw new Error(
-            `[ASSERT_UI FAILED] Invalid handcount "${texts[0]}" for player ${pId}`,
-          );
+          throw new Error(`[ASSERT_UI FAILED] Invalid handcount "${texts[0]}" for player ${pId}`);
         }
         if (!ui.isSpectator && pId === Number(ui.player_id) && stateName !== "endRound") {
           const actualHandLen = (gd.hand || []).length;
@@ -3862,11 +3934,7 @@
           ui.onGiveCard(i);
         }
         const pauseMs =
-          ui.notifqueue.speedMode === "instant"
-            ? 1
-            : ui.notifqueue.speedMode === "fast"
-              ? 35
-              : 140;
+          ui.notifqueue.speedMode === "instant" ? 1 : ui.notifqueue.speedMode === "fast" ? 35 : 140;
         await new Promise((r) => setTimeout(r, pauseMs));
 
         // Clean up the staged cardontable nodes before sending giveTheCards (matching onPassCards)
@@ -3903,11 +3971,7 @@
           ui.playerHand.selectItem(String(c.id));
         }
         const pauseMs =
-          ui.notifqueue.speedMode === "instant"
-            ? 1
-            : ui.notifqueue.speedMode === "fast"
-              ? 25
-              : 100;
+          ui.notifqueue.speedMode === "instant" ? 1 : ui.notifqueue.speedMode === "fast" ? 25 : 100;
         await new Promise((r) => setTimeout(r, pauseMs));
       }
 
@@ -3953,7 +4017,9 @@
       const ui = window.gameui;
       const parsedRank = parseRankToken(rank);
       if (!parsedRank || parsedRank < 2 || parsedRank > 15) {
-        throw new Error(`Invalid Mahjong wish rank "${rank}". Expected 2..14, J/Q/K/A, or 15 (no wish).`);
+        throw new Error(
+          `Invalid Mahjong wish rank "${rank}". Expected 2..14, J/Q/K/A, or 15 (no wish).`,
+        );
       }
       if (ui && ui.mahjongValues) {
         ui.mahjongValues.unselectAll();
@@ -4060,7 +4126,10 @@
           case "grand_tichu": {
             const s0 = await tt.loadScenario("grand_tichu", 0);
             tt.assertUI();
-            assertCond(s0.state.name === "grandTichuBets", `Expected grandTichuBets, got ${s0.state.name}`);
+            assertCond(
+              s0.state.name === "grandTichuBets",
+              `Expected grandTichuBets, got ${s0.state.name}`,
+            );
             assertCond(s0.hand.length === 8, `Expected 8 cards in P0 hand, got ${s0.hand.length}`);
             assertCond(Boolean(document.getElementById("makeGTBet")), "Missing #makeGTBet button");
             assertCond(Boolean(document.getElementById("noBet")), "Missing #noBet button");
@@ -4075,8 +4144,14 @@
 
             const sAfter = await tt.actForOthers();
             tt.assertUI();
-            assertCond(sAfter.state.name === "giveCards", `Expected giveCards, got ${sAfter.state.name}`);
-            assertCond(sAfter.hand.length === 14, `Expected 14 cards in P0 hand, got ${sAfter.hand.length}`);
+            assertCond(
+              sAfter.state.name === "giveCards",
+              `Expected giveCards, got ${sAfter.state.name}`,
+            );
+            assertCond(
+              sAfter.hand.length === 14,
+              `Expected 14 cards in P0 hand, got ${sAfter.hand.length}`,
+            );
             break;
           }
 
@@ -4084,7 +4159,10 @@
             const s0 = await tt.loadScenario("give_cards", 0);
             tt.assertUI();
             assertCond(s0.state.name === "giveCards", `Expected giveCards, got ${s0.state.name}`);
-            assertCond(s0.hand.length === 14, `Expected 14 cards in P0 hand, got ${s0.hand.length}`);
+            assertCond(
+              s0.hand.length === 14,
+              `Expected 14 cards in P0 hand, got ${s0.hand.length}`,
+            );
 
             const sAfter = await tt.giveCards(["S2", "R2", "B2"], 0);
             tt.assertUI();
@@ -4092,7 +4170,10 @@
               sAfter.state.name === "playComboOpen",
               `Expected playComboOpen after all 4 players pass, got ${sAfter.state.name}`,
             );
-            assertCond(sAfter.hand.length === 14, `Expected 14 cards after acceptCards, got ${sAfter.hand.length}`);
+            assertCond(
+              sAfter.hand.length === 14,
+              `Expected 14 cards after acceptCards, got ${sAfter.hand.length}`,
+            );
             const sevens = sAfter.hand.filter((c) => c.type_arg === 7);
             assertCond(
               sevens.length === 4,
@@ -4104,7 +4185,10 @@
           case "mahjong_wish": {
             const s0 = await tt.loadScenario("mahjong_wish", 0);
             tt.assertUI();
-            assertCond(s0.state.name === "playComboOpen", `Expected playComboOpen, got ${s0.state.name}`);
+            assertCond(
+              s0.state.name === "playComboOpen",
+              `Expected playComboOpen, got ${s0.state.name}`,
+            );
 
             const sWishState = await tt.play(["MJ"], 0);
             tt.assertUI();
@@ -4119,8 +4203,14 @@
 
             const sAfterWish = await tt.wish(9, 0);
             tt.assertUI();
-            assertCond(sAfterWish.state.name === "playCombo", `Expected playCombo, got ${sAfterWish.state.name}`);
-            assertCond(sAfterWish.mahjongWish === 9, `Expected mahjongWish === 9, got ${sAfterWish.mahjongWish}`);
+            assertCond(
+              sAfterWish.state.name === "playCombo",
+              `Expected playCombo, got ${sAfterWish.state.name}`,
+            );
+            assertCond(
+              sAfterWish.mahjongWish === 9,
+              `Expected mahjongWish === 9, got ${sAfterWish.mahjongWish}`,
+            );
             assertCond(
               document.getElementById("mahjongIndicator")?.style.display === "block",
               "Expected #mahjongIndicator to be visible when wish=9",
@@ -4145,7 +4235,10 @@
           case "phoenix_ambiguous": {
             const s0 = await tt.loadScenario("phoenix_ambiguous", 0);
             tt.assertUI();
-            assertCond(s0.state.name === "playComboOpen", `Expected playComboOpen, got ${s0.state.name}`);
+            assertCond(
+              s0.state.name === "playComboOpen",
+              `Expected playComboOpen, got ${s0.state.name}`,
+            );
 
             const sPh = await tt.play(["S5", "R6", "B7", "G8", "PH"], 0);
             tt.assertUI();
@@ -4179,7 +4272,10 @@
               sChosen.state.name === "playCombo",
               `Expected playCombo after choosePhoenix(9), got ${sChosen.state.name}`,
             );
-            assertCond(sChosen.hand.length === 9, `Expected 9 cards left in P0 hand, got ${sChosen.hand.length}`);
+            assertCond(
+              sChosen.hand.length === 9,
+              `Expected 9 cards left in P0 hand, got ${sChosen.hand.length}`,
+            );
             break;
           }
 
@@ -4222,7 +4318,10 @@
               sBombed.state.name === "playCombo",
               `Expected playCombo after bomb played, got ${sBombed.state.name}`,
             );
-            assertCond(sBombed.hand.length === 10, `Expected 10 cards left in P2 hand, got ${sBombed.hand.length}`);
+            assertCond(
+              sBombed.hand.length === 10,
+              `Expected 10 cards left in P2 hand, got ${sBombed.hand.length}`,
+            );
             assertCond(
               document.querySelectorAll("#lastcombo_2385076 .stockitem").length === 4,
               "Expected 4 bomb cards displayed in #lastcombo_2385076",
@@ -4275,7 +4374,10 @@
           case "double_victory": {
             const s0 = await tt.loadScenario("double_victory", 2);
             tt.assertUI();
-            assertCond(s0.state.name === "playComboOpen", `Expected playComboOpen, got ${s0.state.name}`);
+            assertCond(
+              s0.state.name === "playComboOpen",
+              `Expected playComboOpen, got ${s0.state.name}`,
+            );
             assertCond(s0.hand.length === 1, `Expected 1 card in P2 hand, got ${s0.hand.length}`);
 
             const sAfter = await tt.play(["SA"], 2);

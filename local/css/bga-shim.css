@@ -14,7 +14,13 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-family:
+    "Roboto",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Arial,
+    sans-serif;
   font-size: 14px;
   color: #1f2328;
 }
@@ -118,7 +124,9 @@ a:hover {
   pointer-events: none;
   opacity: 0;
   transform: translateY(-3px);
-  transition: opacity 0.1s ease, transform 0.1s ease;
+  transition:
+    opacity 0.1s ease,
+    transform 0.1s ease;
 }
 
 #local-dev-tooltip.visible {
@@ -172,7 +180,10 @@ a:hover {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.06s ease;
   user-select: none;
   white-space: nowrap;
   text-decoration: none !important;
@@ -378,7 +389,9 @@ a:hover {
   text-overflow: ellipsis;
   margin-top: 10px;
   margin-bottom: 10px;
-  transition: filter 0.12s ease, transform 0.06s ease;
+  transition:
+    filter 0.12s ease,
+    transform 0.06s ease;
 }
 
 #page-title .action-button,
@@ -575,7 +588,10 @@ a:hover {
   position: absolute;
   background-repeat: no-repeat;
   user-select: none;
-  transition: top 0.14s ease, left 0.14s ease, translate 0.12s ease;
+  transition:
+    top 0.14s ease,
+    left 0.14s ease,
+    translate 0.12s ease;
 }
 
 .stockitem_unselectable {
