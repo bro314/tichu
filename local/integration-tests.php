@@ -129,6 +129,10 @@ function test_new_game_and_deal_8_cards(): void
   assertSameVal('1', (string) $payload['players'][P3]['team'], 'P3 should be on Team 1');
   assertSameVal('000000', (string) $payload['players'][P0]['color'], 'P0 color in TEAM_1_3 should be 000000');
   assertSameVal('ff0000', (string) $payload['players'][P1]['color'], 'P1 color in TEAM_1_3 should be ff0000');
+  assertSameVal('1', (string) $payload['players'][P0]['no'], 'P0 player_no in TEAM_1_3 should be 1 (1-based for MySQL AUTO_INCREMENT PK)');
+  assertSameVal('2', (string) $payload['players'][P1]['no'], 'P1 player_no in TEAM_1_3 should be 2');
+  assertSameVal('3', (string) $payload['players'][P2]['no'], 'P2 player_no in TEAM_1_3 should be 3');
+  assertSameVal('4', (string) $payload['players'][P3]['no'], 'P3 player_no in TEAM_1_3 should be 4');
 
   // Verify TEAM_1_2 player_color and team assignments
   $game->createNewGame([

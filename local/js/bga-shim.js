@@ -3359,14 +3359,14 @@
     const pMatch = rawStr.match(/^p([0-3])$/);
     if (pMatch) {
       const seatNo = Number(pMatch[1]);
-      const found = players.find((p) => Number(p.no) === seatNo);
+      const found = players[seatNo] || players.find((p) => Number(p.no) === seatNo);
       return found ? Number(found.id) : 2385074 + seatNo;
     }
 
     const num = Number(rawStr);
     if (Number.isInteger(num)) {
       if (num >= 0 && num <= 3) {
-        const found = players.find((p) => Number(p.no) === num);
+        const found = players[num] || players.find((p) => Number(p.no) === num);
         return found ? Number(found.id) : 2385074 + num;
       }
       if (gd.players && gd.players[num]) {

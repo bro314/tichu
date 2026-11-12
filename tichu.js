@@ -7,6 +7,1578 @@
     dojo.query(selector).innerHTML(html);
   }
 
+  // dist/studio-test.js
+  var __assign = function() {
+    __assign = Object.assign || function(t) {
+      for (var s, i = 1, n = arguments.length; i < n; i++) {
+        s = arguments[i];
+        for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+          t[p] = s[p];
+      }
+      return t;
+    };
+    return __assign.apply(this, arguments);
+  };
+  var __awaiter = function(thisArg, _arguments, P, generator) {
+    function adopt(value) {
+      return value instanceof P ? value : new P(function(resolve) {
+        resolve(value);
+      });
+    }
+    return new (P || (P = Promise))(function(resolve, reject) {
+      function fulfilled(value) {
+        try {
+          step(generator.next(value));
+        } catch (e) {
+          reject(e);
+        }
+      }
+      function rejected(value) {
+        try {
+          step(generator["throw"](value));
+        } catch (e) {
+          reject(e);
+        }
+      }
+      function step(result) {
+        result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+      }
+      step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+  };
+  var __generator = function(thisArg, body) {
+    var _2 = { label: 0, sent: function() {
+      if (t[0] & 1) throw t[1];
+      return t[1];
+    }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() {
+      return this;
+    }), g;
+    function verb(n) {
+      return function(v) {
+        return step([n, v]);
+      };
+    }
+    function step(op) {
+      if (f) throw new TypeError("Generator is already executing.");
+      while (g && (g = 0, op[0] && (_2 = 0)), _2) try {
+        if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+        if (y = 0, t) op = [op[0] & 2, t.value];
+        switch (op[0]) {
+          case 0:
+          case 1:
+            t = op;
+            break;
+          case 4:
+            _2.label++;
+            return { value: op[1], done: false };
+          case 5:
+            _2.label++;
+            y = op[1];
+            op = [0];
+            continue;
+          case 7:
+            op = _2.ops.pop();
+            _2.trys.pop();
+            continue;
+          default:
+            if (!(t = _2.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _2 = 0;
+              continue;
+            }
+            if (op[0] === 3 && (!t || op[1] > t[0] && op[1] < t[3])) {
+              _2.label = op[1];
+              break;
+            }
+            if (op[0] === 6 && _2.label < t[1]) {
+              _2.label = t[1];
+              t = op;
+              break;
+            }
+            if (t && _2.label < t[2]) {
+              _2.label = t[2];
+              _2.ops.push(op);
+              break;
+            }
+            if (t[2]) _2.ops.pop();
+            _2.trys.pop();
+            continue;
+        }
+        op = body.call(thisArg, _2);
+      } catch (e) {
+        op = [6, e];
+        y = 0;
+      } finally {
+        f = t = 0;
+      }
+      if (op[0] & 5) throw op[1];
+      return { value: op[0] ? op[1] : void 0, done: true };
+    }
+  };
+  var SUIT_CODES = { 1: "S", 2: "R", 3: "B", 4: "G" };
+  var SUIT_SYMBOLS = { 1: "\u2660", 2: "\u2605", 3: "\uD83D\uDC99", 4: "\uD83D\uDFE2" };
+  var RANK_LABELS = {
+    2: "2",
+    3: "3",
+    4: "4",
+    5: "5",
+    6: "6",
+    7: "7",
+    8: "8",
+    9: "9",
+    10: "10",
+    11: "J",
+    12: "Q",
+    13: "K",
+    14: "A"
+  };
+  var SPECIAL_CODES = { 1: "DR", 2: "PH", 3: "DOG", 4: "MJ" };
+  function cardFromStockType(stockTypeVal, id) {
+    var st = Number(stockTypeVal);
+    var color = Math.floor(st / 14) + 1;
+    var value = st % 14 + 1;
+    return {
+      id: String(id !== null && id !== void 0 ? id : ""),
+      type: color,
+      type_arg: value
+    };
+  }
+  function normalizeCardObj(cardOrItem) {
+    var _a;
+    if (!cardOrItem || typeof cardOrItem !== "object")
+      return null;
+    if (cardOrItem.type_arg !== void 0) {
+      return {
+        id: String((_a = cardOrItem.id) !== null && _a !== void 0 ? _a : ""),
+        type: Number(cardOrItem.type),
+        type_arg: Number(cardOrItem.type_arg)
+      };
+    }
+    if (cardOrItem.type !== void 0) {
+      return cardFromStockType(Number(cardOrItem.type), cardOrItem.id);
+    }
+    return null;
+  }
+  function formatCardCode(cardOrItem) {
+    var c = normalizeCardObj(cardOrItem);
+    if (!c)
+      return "?";
+    if (c.type_arg === 1) {
+      return SPECIAL_CODES[c.type] || "SP";
+    }
+    return (SUIT_CODES[c.type] || "?") + (RANK_LABELS[c.type_arg] || String(c.type_arg));
+  }
+  function formatCardPretty(cardOrItem, withId) {
+    var c = normalizeCardObj(cardOrItem);
+    if (!c)
+      return "?";
+    var label = "";
+    if (c.type_arg === 1) {
+      label = SPECIAL_CODES[c.type] || "SP";
+    } else {
+      label = (RANK_LABELS[c.type_arg] || String(c.type_arg)) + (SUIT_SYMBOLS[c.type] || "");
+    }
+    if (withId && c.id) {
+      return "".concat(label, "(#").concat(c.id, ")");
+    }
+    return label;
+  }
+  function parseRankToken(tok) {
+    if (tok === null || tok === void 0)
+      return null;
+    var s = String(tok).trim().toUpperCase();
+    if (s === "NONE" || s === "NO" || s === "0" || s === "15")
+      return 15;
+    if (s === "J" || s === "JACK")
+      return 11;
+    if (s === "Q" || s === "QUEEN")
+      return 12;
+    if (s === "K" || s === "KING")
+      return 13;
+    if (s === "A" || s === "ACE")
+      return 14;
+    if (s === "MJ" || s === "MAHJONG" || s === "1")
+      return 1;
+    var n = parseInt(s, 10);
+    if (!isNaN(n) && n >= 2 && n <= 15)
+      return n;
+    return null;
+  }
+  function parseCardSpecToken(rawToken) {
+    if (rawToken && typeof rawToken === "object") {
+      var c = normalizeCardObj(rawToken);
+      if (c && c.id)
+        return { kind: "id", id: String(c.id) };
+      if (c)
+        return { kind: "exact", suit: c.type, rank: c.type_arg };
+    }
+    var raw = String(rawToken !== null && rawToken !== void 0 ? rawToken : "").trim();
+    if (!raw)
+      return null;
+    if (raw.indexOf("#") === 0) {
+      return { kind: "id", id: raw.slice(1).trim() };
+    }
+    var upper = raw.toUpperCase();
+    if (upper === "DR" || upper === "DRAGON")
+      return { kind: "exact", suit: 1, rank: 1 };
+    if (upper === "PH" || upper === "PHOENIX")
+      return { kind: "exact", suit: 2, rank: 1 };
+    if (upper === "DOG" || upper === "HOUND")
+      return { kind: "exact", suit: 3, rank: 1 };
+    if (upper === "MJ" || upper === "MAHJONG")
+      return { kind: "exact", suit: 4, rank: 1 };
+    var suitMap = {
+      S: 1,
+      R: 2,
+      B: 3,
+      G: 4
+    };
+    var suitFirst = upper.match(/^([SRBG])\s*(10|[2-9]|[JQKA])$/);
+    if (suitFirst) {
+      var suit = suitMap[suitFirst[1]];
+      var rank = parseRankToken(suitFirst[2]);
+      if (suit && rank)
+        return { kind: "exact", suit: suit, rank: rank };
+    }
+    var rankFirst = upper.match(/^(10|[2-9]|[JQKA])\s*([SRBG])$/);
+    if (rankFirst) {
+      var rank = parseRankToken(rankFirst[1]);
+      var suit = suitMap[rankFirst[2]];
+      if (suit && rank)
+        return { kind: "exact", suit: suit, rank: rank };
+    }
+    if (upper === "J" || upper === "Q" || upper === "K" || upper === "A") {
+      return { kind: "rank", rank: parseRankToken(upper) };
+    }
+    var num = Number(upper);
+    if (!isNaN(num) && Math.floor(num) === num && num > 0) {
+      return { kind: "number", value: num, id: String(num) };
+    }
+    return null;
+  }
+  function resolveCardsFromHand(input, handCards) {
+    var hand = [];
+    for (var i = 0; i < (handCards || []).length; i++) {
+      var norm = normalizeCardObj(handCards[i]);
+      if (norm)
+        hand.push(norm);
+    }
+    if (input === void 0 || input === null)
+      return null;
+    var tokens = [];
+    var forceIdMode = false;
+    if (typeof input === "string") {
+      if (input.indexOf(";") !== -1) {
+        forceIdMode = true;
+        tokens = input.split(";").map(function(s) {
+          return s.trim();
+        }).filter(Boolean);
+      } else {
+        tokens = input.split(/[,;\s]+/).map(function(s) {
+          return s.trim();
+        }).filter(Boolean);
+      }
+    } else if (Array.isArray(input)) {
+      tokens = input;
+    } else {
+      tokens = [input];
+    }
+    if (tokens.length === 0)
+      return [];
+    var parsed = tokens.map(parseCardSpecToken);
+    for (var i = 0; i < parsed.length; i++) {
+      if (!parsed[i]) {
+        throw new Error("Invalid card specification in: ".concat(JSON.stringify(input)));
+      }
+    }
+    var usedIds = {};
+    var resolved = [];
+    var _loop_1 = function(i2) {
+      var spec = parsed[i2];
+      var chosen = null;
+      if (spec.kind === "id") {
+        chosen = hand.find(function(c) {
+          return !usedIds[c.id] && String(c.id) === String(spec.id);
+        }) || null;
+      } else if (spec.kind === "exact") {
+        chosen = hand.find(function(c) {
+          return !usedIds[c.id] && c.type === spec.suit && c.type_arg === spec.rank;
+        }) || null;
+      } else if (spec.kind === "rank") {
+        chosen = hand.find(function(c) {
+          return !usedIds[c.id] && c.type_arg === spec.rank;
+        }) || null;
+      } else if (spec.kind === "number") {
+        if (forceIdMode || spec.value > 14) {
+          chosen = hand.find(function(c) {
+            return !usedIds[c.id] && String(c.id) === String(spec.value);
+          }) || null;
+        }
+        if (!chosen && spec.value >= 1 && spec.value <= 14) {
+          chosen = hand.find(function(c) {
+            return !usedIds[c.id] && c.type_arg === spec.value;
+          }) || null;
+        }
+        if (!chosen) {
+          chosen = hand.find(function(c) {
+            return !usedIds[c.id] && String(c.id) === String(spec.value);
+          }) || null;
+        }
+      }
+      if (!chosen) {
+        var availableStr = hand.map(function(c) {
+          return "".concat(formatCardCode(c), "(#").concat(c.id, ")");
+        }).join(", ");
+        throw new Error("Could not find card matching ".concat(JSON.stringify(spec), " in hand: [").concat(availableStr, "]"));
+      }
+      usedIds[chosen.id] = true;
+      resolved.push(chosen);
+    };
+    for (var i = 0; i < parsed.length; i++) {
+      _loop_1(i);
+    }
+    return resolved;
+  }
+  function pickThreeDefaultCardsFromHand(handCards) {
+    var hand = [];
+    for (var i = 0; i < (handCards || []).length; i++) {
+      var norm = normalizeCardObj(handCards[i]);
+      if (norm)
+        hand.push(norm);
+    }
+    if (hand.length < 3)
+      return hand;
+    var rankCounts = {};
+    for (var i = 0; i < hand.length; i++) {
+      var r = hand[i].type_arg;
+      rankCounts[r] = (rankCounts[r] || 0) + 1;
+    }
+    var sorted = hand.slice().sort(function(a, b) {
+      var aSpec = a.type_arg === 1 ? 1 : 0;
+      var bSpec = b.type_arg === 1 ? 1 : 0;
+      if (aSpec !== bSpec)
+        return aSpec - bSpec;
+      if (aSpec === 0) {
+        var aFreq = rankCounts[a.type_arg] || 1;
+        var bFreq = rankCounts[b.type_arg] || 1;
+        if (aFreq !== bFreq)
+          return aFreq - bFreq;
+        if (a.type_arg !== b.type_arg)
+          return a.type_arg - b.type_arg;
+      }
+      return Number(a.id) - Number(b.id);
+    });
+    return sorted.slice(0, 3);
+  }
+  function pickDefaultPlayCardsFromHand(ui) {
+    var gd = ui && ui.gamedatas || {};
+    var hand = [];
+    var rawHand = gd.hand || [];
+    for (var i = 0; i < rawHand.length; i++) {
+      var norm = normalizeCardObj(rawHand[i]);
+      if (norm)
+        hand.push(norm);
+    }
+    if (hand.length === 0)
+      return [];
+    if (ui && ui.playerHand) {
+      var selected = ui.playerHand.getSelectedItems();
+      if (selected && selected.length > 0) {
+        var selMap_1 = {};
+        for (var i = 0; i < selected.length; i++) {
+          selMap_1[String(selected[i].id)] = true;
+        }
+        return hand.filter(function(c) {
+          return Boolean(selMap_1[String(c.id)]);
+        });
+      }
+    }
+    var stName = gd.gamestate && gd.gamestate.name;
+    var wish = Number(gd.mahjongWish || 0);
+    if (wish >= 2 && wish <= 14) {
+      var wished = hand.find(function(c) {
+        return c.type_arg === wish;
+      });
+      if (wished)
+        return [wished];
+    }
+    if (stName === "playComboOpen") {
+      var mj = hand.find(function(c) {
+        return c.type_arg === 1 && c.type === 4;
+      });
+      if (mj)
+        return [mj];
+      var dog = hand.find(function(c) {
+        return c.type_arg === 1 && c.type === 3;
+      });
+      if (dog)
+        return [dog];
+    }
+    var normals = hand.filter(function(c) {
+      return c.type_arg >= 2;
+    }).sort(function(a, b) {
+      return a.type_arg - b.type_arg;
+    });
+    if (normals.length > 0)
+      return [normals[0]];
+    return [hand[0]];
+  }
+  function initStudioTestHelper(gameuiInstance) {
+    var win = window;
+    if (win.tt)
+      return;
+    var host = String(window.location && window.location.hostname || "");
+    if (host.indexOf("studio.boardgamearena.com") === -1)
+      return;
+    var consoleVerbose = true;
+    var speedMode = "normal";
+    function logAnnounce(tag, msg, color) {
+      if (color === void 0) {
+        color = "#58a6ff";
+      }
+      if (!consoleVerbose)
+        return;
+      try {
+        window.console.log("%c".concat(tag, "%c ").concat(msg), "font-weight:bold;color:".concat(color), "");
+      } catch (_e) {
+        window.console.log("".concat(tag, " ").concat(msg));
+      }
+    }
+    function getUi() {
+      return window.gameui || gameuiInstance;
+    }
+    function getSortedPlayers() {
+      var ui = getUi();
+      var gd = ui && ui.gamedatas || {};
+      return Object.values(gd.players || {}).sort(function(a, b) {
+        return Number(a.no) - Number(b.no);
+      });
+    }
+    function formatPlayerTag(playerId) {
+      if (!playerId || Number(playerId) === 0)
+        return "Spectator";
+      var players = getSortedPlayers();
+      var idx = players.findIndex(function(p2) {
+        return Number(p2.id) === Number(playerId);
+      });
+      if (idx === -1)
+        return "P?(".concat(playerId, ")");
+      var p = players[idx];
+      return "P".concat(idx, ":").concat(p.name);
+    }
+    function resolvePlayerId(seatOrPlayerId) {
+      var ui = getUi();
+      var players = getSortedPlayers();
+      if (seatOrPlayerId === void 0 || seatOrPlayerId === null) {
+        return ui ? ui.isSpectator ? 0 : Number(ui.player_id) : 0;
+      }
+      var rawStr = String(seatOrPlayerId).trim().toLowerCase();
+      var pMatch = rawStr.match(/^p([0-3])$/);
+      if (pMatch) {
+        var idx = Number(pMatch[1]);
+        return players[idx] ? Number(players[idx].id) : 0;
+      }
+      var num = Number(rawStr);
+      if (!isNaN(num) && Math.floor(num) === num) {
+        if (num >= 0 && num <= 3 && players[num]) {
+          return Number(players[num].id);
+        }
+        if (num >= 1 && num <= 4 && players[num - 1] && !players.some(function(p) {
+          return Number(p.id) === num;
+        })) {
+          return Number(players[num - 1].id);
+        }
+        var exact = players.find(function(p) {
+          return Number(p.id) === num;
+        });
+        if (exact)
+          return Number(exact.id);
+      }
+      var byName = players.find(function(p) {
+        return String(p.name || "").toLowerCase() === rawStr;
+      });
+      if (byName)
+        return Number(byName.id);
+      throw new Error('Unknown seat or player "'.concat(seatOrPlayerId, '". Expected 0..3, "P0".."P3", player name, or player ID.'));
+    }
+    function isQueueBusy() {
+      var ui = getUi();
+      if (!ui)
+        return false;
+      var actionsRunning = Number(ui.bga && ui.bga.actions && ui.bga.actions.ajaxcall_running || 0);
+      var sitecoreRunning = Number(window.g_sitecore && window.g_sitecore.ajaxcall_running || 0);
+      var nq = ui.notifqueue;
+      var queueLen = nq && Array.isArray(nq.queue) ? nq.queue.length : 0;
+      var waitingSync = Boolean(nq && nq.waiting_from_notifend !== null);
+      var resyncing = Boolean(nq && nq.notificationResendInProgress);
+      return actionsRunning > 0 || sitecoreRunning > 0 || queueLen > 0 || waitingSync || resyncing;
+    }
+    function waitUntilIdle(timeoutMs, settleMs) {
+      if (timeoutMs === void 0) {
+        timeoutMs = 15e3;
+      }
+      if (settleMs === void 0) {
+        settleMs = 50;
+      }
+      return new Promise(function(resolve) {
+        var start = Date.now();
+        var idleSince = null;
+        var check = function() {
+          if (Date.now() - start >= timeoutMs) {
+            resolve();
+            return;
+          }
+          if (isQueueBusy()) {
+            idleSince = null;
+            setTimeout(check, 12);
+            return;
+          }
+          if (idleSince === null) {
+            idleSince = Date.now();
+          }
+          if (Date.now() - idleSince >= settleMs) {
+            resolve();
+            return;
+          }
+          setTimeout(check, 12);
+        };
+        setTimeout(check, 12);
+      });
+    }
+    function dismissDialogsIfInstant() {
+      if (speedMode !== "instant")
+        return;
+      try {
+        var dojoObj = window.dojo;
+        if (dojoObj && typeof dojoObj.query === "function") {
+          dojoObj.query(".dijitDialog, .dijitDialogUnderlayWrapper").forEach(dojoObj.destroy);
+        }
+      } catch (_e) {
+      }
+    }
+    var tt = {
+      help: function() {
+        var rows = [
+          { Command: "tt.help()", Description: "Show BGA Studio console command cheat-sheet" },
+          { Command: "tt.status()", Description: "Inspect current table state, players, hand, trick, and buttons" },
+          { Command: "tt.hand()", Description: "Inspect viewer's cards in hand with codes & IDs" },
+          { Command: "tt.assertUI()", Description: "Verify live BGA Studio DOM matches gamedatas invariants" },
+          { Command: "tt.setSpeed('instant'|'normal')", Description: "Toggle instantaneousMode (1ms notification queue)" },
+          { Command: "await tt.betGrandTichu(0|200, seat?)", Description: "Place Grand Tichu bet for seat (via testuser)" },
+          { Command: "await tt.betAllGrandTichu([0,0,0,0])", Description: "Place Grand Tichu bets for all multiactive players in 1 tab" },
+          { Command: "await tt.giveCards(cards?)", Description: "Select & pass 3 cards from viewer's hand" },
+          { Command: "await tt.passAllCards(cards?)", Description: "Pass 3 cards for viewer + step bots for the other 3 players" },
+          { Command: "await tt.play(cards?)", Description: "Select & play combo from viewer's hand" },
+          { Command: "await tt.pass(onlyOnce=true, seat?)", Description: "Pass turn (or set auto-pass) for seat" },
+          { Command: "await tt.collect(seat?)", Description: "Immediately collect won trick in confirmTrick state" },
+          { Command: "await tt.wish(rank=15, seat?)", Description: "Make a Mahjong wish (2..14 or 15='none')" },
+          { Command: "await tt.choosePhoenix(rank?, seat?)", Description: "Choose ambiguous Phoenix rank" },
+          { Command: "await tt.giveDragon(0|1, seat?)", Description: "Gift Dragon trick to opponent 0 or 1" },
+          { Command: "await tt.step(moves=1)", Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves" },
+          { Command: "await tt.actForOthers()", Description: "Have server zombieTurn act for other players until your turn" },
+          { Command: "await tt.runSmokeTest(opts?)", Description: "Run full zero-click Studio smoke test (Grand Tichu + Pass + Tricks + UI assertions)" },
+          { Command: "await tt.runRound(opts?)", Description: "Play a full round to completion on Studio and assert UI" },
+          { Command: "await tt.runGame(opts?)", Description: "Fast-forward entire game to gameEnd (state 99) on Studio" }
+        ];
+        window.console.table(rows);
+        return rows;
+      },
+      setVerbose: function(enabled) {
+        if (enabled === void 0) {
+          enabled = true;
+        }
+        consoleVerbose = Boolean(enabled);
+        return consoleVerbose;
+      },
+      setSpeed: function(mode) {
+        if (mode === void 0) {
+          mode = "instant";
+        }
+        var ui = getUi();
+        speedMode = mode;
+        if (ui) {
+          ui.instantaneousMode = mode === "instant" || mode === "fast";
+          var nq = ui.notifqueue;
+          if (nq) {
+            if (!nq._origSynchronousNotifs && nq.synchronous_notifs) {
+              nq._origSynchronousNotifs = __assign({}, nq.synchronous_notifs);
+              nq._origSetSynchronousDuration = nq.setSynchronousDuration;
+            }
+            if (mode === "instant") {
+              nq.synchronous_notifs = {};
+              nq.setSynchronousDuration = function() {
+              };
+            } else if (nq._origSynchronousNotifs) {
+              nq.synchronous_notifs = __assign({}, nq._origSynchronousNotifs);
+              if (nq._origSetSynchronousDuration) {
+                nq.setSynchronousDuration = nq._origSetSynchronousDuration;
+              }
+            }
+          }
+        }
+        logAnnounce("[TICHU STUDIO SPEED]", 'Speed mode="'.concat(mode, '" (instantaneousMode=').concat(Boolean(ui && ui.instantaneousMode), ")"));
+        return speedMode;
+      },
+      waitUntilIdle: waitUntilIdle,
+      status: function(logToConsole) {
+        if (logToConsole === void 0) {
+          logToConsole = true;
+        }
+        var ui = getUi();
+        if (!ui || !ui.gamedatas)
+          return null;
+        var gd = ui.gamedatas;
+        var st = gd.gamestate || {};
+        var sortedPlayers = getSortedPlayers();
+        var players = sortedPlayers.map(function(p, idx) {
+          var _a, _b, _c, _d;
+          var pId = Number(p.id);
+          var hcEl = document.querySelector(".handcount.".concat(CSS.escape(String(pId))));
+          var ptEl = document.getElementById("pointcount_".concat(pId));
+          var scoreEl = document.getElementById("player_score_".concat(pId));
+          var activeIds = ui.bga && ui.bga.players && typeof ui.bga.players.getActivePlayerIds === "function" ? ui.bga.players.getActivePlayerIds().map(Number) : typeof ui.isPlayerActive === "function" && ui.isPlayerActive(pId) ? [pId] : [];
+          return {
+            seat: idx,
+            no: Number(p.no),
+            id: pId,
+            name: p.name,
+            team: Number((_a = p.team) !== null && _a !== void 0 ? _a : idx % 2),
+            handCount: hcEl ? parseInt(hcEl.textContent || "0", 10) : Number((_b = gd.handcount && gd.handcount[pId]) !== null && _b !== void 0 ? _b : 0),
+            capturedPoints: ptEl ? parseInt(ptEl.textContent || "0", 10) : Number((_c = gd.capturedpoints && gd.capturedpoints[pId]) !== null && _c !== void 0 ? _c : 0),
+            score: scoreEl ? parseInt(scoreEl.textContent || "0", 10) : Number((_d = p.score) !== null && _d !== void 0 ? _d : 0),
+            grandTichu: Number(p.call_grand_tichu),
+            tichu: Number(p.call_tichu),
+            autopass: Number(p.pass || 0),
+            isActive: activeIds.indexOf(pId) !== -1
+          };
+        });
+        var hand = (gd.hand || []).map(function(c) {
+          return {
+            id: String(c.id),
+            code: formatCardCode(c),
+            pretty: formatCardPretty(c, false),
+            type: Number(c.type),
+            type_arg: Number(c.type_arg)
+          };
+        });
+        var buttons = [];
+        var btnNodes = document.querySelectorAll("#generalactions .bgabutton, #buttons .bgabutton, #buttons .action-button");
+        for (var i = 0; i < btnNodes.length; i++) {
+          var node = btnNodes[i];
+          if (!node || node.classList.contains("hide") || node.style.display === "none")
+            continue;
+          buttons.push({
+            id: node.id || "btn",
+            label: (node.textContent || "").trim()
+          });
+        }
+        var summary = {
+          tableId: Number(ui.table_id || 0),
+          state: {
+            id: Number(st.id || 0),
+            name: st.name || "",
+            type: st.type || "",
+            possibleactions: st.possibleactions || []
+          },
+          viewer: ui.isSpectator ? "spectator" : formatPlayerTag(ui.player_id),
+          viewerId: ui.isSpectator ? 0 : Number(ui.player_id),
+          isMyTurn: Boolean(typeof ui.isCurrentPlayerActive === "function" && ui.isCurrentPlayerActive()),
+          activePlayer: st.active_player ? formatPlayerTag(st.active_player) : null,
+          activePlayerId: st.active_player ? Number(st.active_player) : null,
+          multiactive: Array.isArray(st.multiactive) ? st.multiactive.map(function(id) {
+            return formatPlayerTag(id);
+          }) : [],
+          multiactiveIds: Array.isArray(st.multiactive) ? st.multiactive.map(function(id) {
+            return Number(id);
+          }) : [],
+          round: Number(gd.round || 0),
+          trick: Number(gd.trick || 0),
+          trickPoints: Number(gd.currentTrickValue || 0),
+          mahjongWish: Number(gd.mahjongWish || 0),
+          firstOutPlayer: Number(gd.firstoutplayer || 0),
+          players: players,
+          hand: hand,
+          handCodes: hand.map(function(c) {
+            return c.code;
+          }),
+          buttons: buttons
+        };
+        if (logToConsole) {
+          logAnnounce("[TICHU STUDIO STATE]", "Table #".concat(summary.tableId, " | State=").concat(summary.state.name, "(#").concat(summary.state.id, ") | Round=").concat(summary.round, " Trick=").concat(summary.trick, " (").concat(summary.trickPoints, " pts) | Active=").concat(summary.activePlayer || summary.multiactive.join(",") || "-"));
+        }
+        return summary;
+      },
+      hand: function() {
+        var ui = getUi();
+        var cards = (ui && ui.gamedatas && ui.gamedatas.hand || []).map(function(c) {
+          return {
+            id: String(c.id),
+            code: formatCardCode(c),
+            pretty: formatCardPretty(c, true),
+            suit: Number(c.type),
+            rank: Number(c.type_arg)
+          };
+        });
+        logAnnounce("[TICHU STUDIO HAND]", "".concat(formatPlayerTag(ui && ui.player_id), " (").concat(cards.length, " cards): [").concat(cards.map(function(c) {
+          return "".concat(c.code, "(#").concat(c.id, ")");
+        }).join(", "), "]"), "#3fb950");
+        return cards;
+      },
+      assertUI: function() {
+        var ui = getUi();
+        if (!ui || !ui.gamedatas) {
+          throw new Error("[ASSERT_UI FAILED] window.gameui or gamedatas is missing");
+        }
+        var gd = ui.gamedatas;
+        var st = gd.gamestate || {};
+        var stateName = st.name || "";
+        var overall = document.getElementById("overall-content");
+        if (!overall) {
+          throw new Error("[ASSERT_UI FAILED] #overall-content element missing from DOM");
+        }
+        var myHandItems = document.querySelectorAll("#myhand .stockitem:not(.to_be_destroyed)");
+        if (!ui.isSpectator && stateName !== "endRound" && stateName !== "newRound") {
+          var stagedPassCount = Array.isArray(ui.cardsToPass) ? ui.cardsToPass.filter(Boolean).length : 0;
+          var expectedHandDom = Math.max(0, (gd.hand || []).length - stagedPassCount);
+          if (myHandItems.length !== expectedHandDom) {
+            throw new Error("[ASSERT_UI FAILED] #myhand .stockitem count (".concat(myHandItems.length, ") !== expected hand size (").concat(expectedHandDom, ", gamedatas.hand=").concat((gd.hand || []).length, ", staged=").concat(stagedPassCount, ")"));
+          }
+        }
+        var statusEl = document.querySelector("#game_play_area_wrap tichu-status");
+        if (!statusEl) {
+          throw new Error("[ASSERT_UI FAILED] <tichu-status> element missing from DOM");
+        }
+        var attrRound = Number(statusEl.getAttribute("roundCount"));
+        var attrTrick = Number(statusEl.getAttribute("trickCount"));
+        var attrPts = Number(statusEl.getAttribute("trickPoints"));
+        if (attrRound !== Number(gd.round)) {
+          throw new Error("[ASSERT_UI FAILED] <tichu-status> roundCount (".concat(attrRound, ") !== gamedatas.round (").concat(gd.round, ")"));
+        }
+        if (attrTrick !== Number(gd.trick)) {
+          throw new Error("[ASSERT_UI FAILED] <tichu-status> trickCount (".concat(attrTrick, ") !== gamedatas.trick (").concat(gd.trick, ")"));
+        }
+        if (attrPts !== Number(gd.currentTrickValue)) {
+          throw new Error("[ASSERT_UI FAILED] <tichu-status> trickPoints (".concat(attrPts, ") !== gamedatas.currentTrickValue (").concat(gd.currentTrickValue, ")"));
+        }
+        var players = getSortedPlayers();
+        for (var i = 0; i < players.length; i++) {
+          var pId = Number(players[i].id);
+          var hcNodes = document.querySelectorAll(".handcount.".concat(CSS.escape(String(pId))));
+          if (hcNodes.length === 0) {
+            throw new Error("[ASSERT_UI FAILED] Missing .handcount.".concat(pId, " elements in DOM"));
+          }
+          var numVal = parseInt((hcNodes[0].textContent || "").trim(), 10);
+          if (isNaN(numVal) || numVal < 0 || numVal > 14) {
+            throw new Error('[ASSERT_UI FAILED] Invalid handcount "'.concat(hcNodes[0].textContent, '" for player ').concat(pId));
+          }
+        }
+        return {
+          ok: true,
+          tableId: Number(ui.table_id || 0),
+          state: stateName,
+          viewer: ui.player_id,
+          handDomCount: myHandItems.length,
+          round: Number(gd.round),
+          trick: Number(gd.trick),
+          trickPoints: Number(gd.currentTrickValue)
+        };
+      },
+      ajax: function(actionName_1) {
+        return __awaiter(this, arguments, void 0, function(actionName, args, seatOrPlayerId) {
+          var ui, targetPlayerId, prevTestUser;
+          if (args === void 0) {
+            args = {};
+          }
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                if (!ui)
+                  throw new Error("window.gameui is not initialized");
+                targetPlayerId = seatOrPlayerId !== void 0 && seatOrPlayerId !== null ? resolvePlayerId(seatOrPlayerId) : Number(ui.player_id);
+                prevTestUser = ui.forceTestUser;
+                if (targetPlayerId && targetPlayerId !== Number(ui.player_id)) {
+                  ui.forceTestUser = targetPlayerId;
+                }
+                logAnnounce("[TICHU STUDIO ACTION]", "".concat(formatPlayerTag(targetPlayerId), " -> ").concat(actionName, " ").concat(JSON.stringify(args)), "#f0883e");
+                _a.label = 1;
+              case 1:
+                _a.trys.push([1, , 3, 4]);
+                return [4, new Promise(function(resolve, reject) {
+                  ui.ajaxcall("/tichu/tichu/".concat(actionName, ".html"), __assign(__assign({}, args), { lock: true }), ui, function() {
+                    return resolve();
+                  }, function(isErr, msg) {
+                    if (isErr)
+                      reject(new Error(msg || "".concat(actionName, " failed")));
+                    else
+                      resolve();
+                  });
+                })];
+              case 2:
+                _a.sent();
+                return [3, 4];
+              case 3:
+                ui.forceTestUser = prevTestUser;
+                return [7];
+              case 4:
+                return [4, waitUntilIdle(15e3, speedMode === "instant" ? 40 : 200)];
+              case 5:
+                _a.sent();
+                dismissDialogsIfInstant();
+                return [2, tt.status(false)];
+            }
+          });
+        });
+      },
+      betGrandTichu: function() {
+        return __awaiter(this, arguments, void 0, function(bet, seat) {
+          var numBet;
+          if (bet === void 0) {
+            bet = 0;
+          }
+          return __generator(this, function(_a) {
+            numBet = bet === true || Number(bet) === 200 ? 200 : 0;
+            return [2, tt.ajax("grandTichuBet", { bet: numBet }, seat)];
+          });
+        });
+      },
+      betAllGrandTichu: function() {
+        return __awaiter(this, arguments, void 0, function(bets) {
+          var ui, players, multi, idx, pId, betVal;
+          if (bets === void 0) {
+            bets = [0, 0, 0, 0];
+          }
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                players = getSortedPlayers();
+                multi = ui && ui.gamedatas && ui.gamedatas.gamestate && Array.isArray(ui.gamedatas.gamestate.multiactive) ? ui.gamedatas.gamestate.multiactive.map(Number) : players.map(function(p) {
+                  return Number(p.id);
+                });
+                idx = 0;
+                _a.label = 1;
+              case 1:
+                if (!(idx < players.length)) return [3, 4];
+                pId = Number(players[idx].id);
+                if (multi.indexOf(pId) === -1)
+                  return [3, 3];
+                betVal = Number(bets[idx]) === 200 ? 200 : 0;
+                return [4, tt.betGrandTichu(betVal, pId)];
+              case 2:
+                _a.sent();
+                _a.label = 3;
+              case 3:
+                idx++;
+                return [3, 1];
+              case 4:
+                return [4, waitUntilIdle(15e3, 200)];
+              case 5:
+                _a.sent();
+                return [2, tt.status(false)];
+            }
+          });
+        });
+      },
+      betTichu: function(seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          return __generator(this, function(_a) {
+            return [2, tt.ajax("tichuBet", { bet: 100 }, seat)];
+          });
+        });
+      },
+      confirmTichu: function() {
+        return __awaiter(this, arguments, void 0, function(bet, seat) {
+          if (bet === void 0) {
+            bet = 100;
+          }
+          return __generator(this, function(_a) {
+            return [2, tt.ajax("confirmTichu", { bet: Number(bet) }, seat)];
+          });
+        });
+      },
+      giveCards: function(cards) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, gd, chosenCards, i, i, node, toGiveStr;
+          return __generator(this, function(_a) {
+            ui = getUi();
+            gd = ui.gamedatas;
+            if (typeof ui.onResetPassCards === "function" && Array.isArray(ui.cardsToPass)) {
+              if (ui.cardsToPass.some(Boolean)) {
+                ui.onResetPassCards();
+              }
+            }
+            chosenCards = cards === void 0 || cards === null ? pickThreeDefaultCardsFromHand(gd.hand) : resolveCardsFromHand(cards, gd.hand);
+            if (!chosenCards || chosenCards.length !== 3) {
+              throw new Error("giveCards requires 3 cards, got ".concat(chosenCards ? chosenCards.length : 0));
+            }
+            if (ui.playerHand && typeof ui.onGiveCard === "function") {
+              for (i = 0; i < 3; i++) {
+                ui.playerHand.unselectAll();
+                ui.playerHand.selectItem(String(chosenCards[i].id));
+                ui.onGiveCard(i);
+              }
+              for (i = 0; i < 3; i++) {
+                node = document.getElementById("cardontable_" + ui.player_id + "_" + chosenCards[i].id);
+                if (node && node.parentNode)
+                  node.parentNode.removeChild(node);
+              }
+              ui.cardsToPass = [];
+            }
+            toGiveStr = chosenCards.map(function(c) {
+              return c.id;
+            }).join(";") + ";";
+            return [2, tt.ajax("giveTheCards", { cards: toGiveStr })];
+          });
+        });
+      },
+      passAllCards: function(cards) {
+        return __awaiter(this, void 0, void 0, function() {
+          var cur, remaining;
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                cur = tt.status(false);
+                if (cur.state.name !== "giveCards") {
+                  return [2, cur];
+                }
+                if (!cur.isMyTurn) return [3, 2];
+                return [4, tt.giveCards(cards)];
+              case 1:
+                cur = _a.sent();
+                _a.label = 2;
+              case 2:
+                if (!(cur.state.name === "giveCards")) return [3, 4];
+                remaining = cur.multiactiveIds.length || 3;
+                return [4, tt.step(remaining)];
+              case 3:
+                cur = _a.sent();
+                _a.label = 4;
+              case 4:
+                if (!!getUi().instantaneousMode) return [3, 6];
+                return [4, new Promise(function(r) {
+                  return setTimeout(r, 2100);
+                })];
+              case 5:
+                _a.sent();
+                _a.label = 6;
+              case 6:
+                return [4, waitUntilIdle(1e4, speedMode === "instant" ? 40 : 150)];
+              case 7:
+                _a.sent();
+                return [2, tt.status(false)];
+            }
+          });
+        });
+      },
+      play: function(cards) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, gd, chosenCards, i, cardIdStr;
+          return __generator(this, function(_a) {
+            ui = getUi();
+            gd = ui.gamedatas;
+            chosenCards = cards === void 0 || cards === null ? pickDefaultPlayCardsFromHand(ui) : resolveCardsFromHand(cards, gd.hand);
+            if (!chosenCards || chosenCards.length === 0) {
+              throw new Error("No cards selected or resolved for tt.play()");
+            }
+            if (ui.playerHand) {
+              ui.playerHand.unselectAll();
+              for (i = 0; i < chosenCards.length; i++) {
+                ui.playerHand.selectItem(String(chosenCards[i].id));
+              }
+            }
+            cardIdStr = chosenCards.map(function(c) {
+              return c.id;
+            }).join(";");
+            return [2, tt.ajax("playCombo", { cards: cardIdStr })];
+          });
+        });
+      },
+      pass: function() {
+        return __awaiter(this, arguments, void 0, function(onlyOnce, seat) {
+          var ui;
+          if (onlyOnce === void 0) {
+            onlyOnce = true;
+          }
+          return __generator(this, function(_a) {
+            ui = getUi();
+            if (ui && ui.playerHand && (seat === void 0 || seat === null)) {
+              ui.playerHand.unselectAll();
+            }
+            return [2, tt.ajax("pass", { onlyOnce: Boolean(onlyOnce) }, seat)];
+          });
+        });
+      },
+      collect: function(seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, st, targetSeat;
+          return __generator(this, function(_a) {
+            ui = getUi();
+            clearTimeout(ui.autoCollectTimeout);
+            st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+            targetSeat = seat !== void 0 && seat !== null ? seat : st && st.active_player ? Number(st.active_player) : void 0;
+            return [2, tt.ajax("collect", {}, targetSeat)];
+          });
+        });
+      },
+      wish: function() {
+        return __awaiter(this, arguments, void 0, function(rank, seat) {
+          var ui, parsedRank, st, targetSeat;
+          if (rank === void 0) {
+            rank = 15;
+          }
+          return __generator(this, function(_a) {
+            ui = getUi();
+            parsedRank = parseRankToken(rank);
+            if (!parsedRank || parsedRank < 2 || parsedRank > 15) {
+              throw new Error('Invalid Mahjong wish rank "'.concat(rank, '". Expected 2..14 or 15 (none).'));
+            }
+            st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+            targetSeat = seat !== void 0 && seat !== null ? seat : st && st.active_player ? Number(st.active_player) : void 0;
+            return [2, tt.ajax("makeAWish", { wish: parsedRank }, targetSeat)];
+          });
+        });
+      },
+      choosePhoenix: function(rank, seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, parsedRank, st, targetSeat;
+          return __generator(this, function(_a) {
+            ui = getUi();
+            parsedRank = rank !== void 0 ? parseRankToken(rank) : null;
+            if (!parsedRank && Array.isArray(ui.allowedValues) && ui.allowedValues.length > 0) {
+              parsedRank = Number(ui.allowedValues[0]);
+            }
+            if (!parsedRank) {
+              throw new Error('Invalid Phoenix value "'.concat(rank, '"'));
+            }
+            st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+            targetSeat = seat !== void 0 && seat !== null ? seat : st && st.active_player ? Number(st.active_player) : void 0;
+            return [2, tt.ajax("choosePhoenix", { phoenixValue: parsedRank }, targetSeat)];
+          });
+        });
+      },
+      cancelPhoenix: function(seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, st, targetSeat;
+          return __generator(this, function(_a) {
+            ui = getUi();
+            st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+            targetSeat = seat !== void 0 && seat !== null ? seat : st && st.active_player ? Number(st.active_player) : void 0;
+            return [2, tt.ajax("cancelPhoenix", {}, targetSeat)];
+          });
+        });
+      },
+      giveDragon: function() {
+        return __awaiter(this, arguments, void 0, function(enemyIndex, seat) {
+          var ui, st, targetSeat;
+          if (enemyIndex === void 0) {
+            enemyIndex = 0;
+          }
+          return __generator(this, function(_a) {
+            ui = getUi();
+            st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+            targetSeat = seat !== void 0 && seat !== null ? seat : st && st.active_player ? Number(st.active_player) : void 0;
+            return [2, tt.ajax("chooseDragonGift", { player: Number(enemyIndex) }, targetSeat)];
+          });
+        });
+      },
+      bomb: function(cards, seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, curState;
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                curState = ui.gamedatas && ui.gamedatas.gamestate && ui.gamedatas.gamestate.name;
+                if (!(curState !== "playBomb")) return [3, 2];
+                return [4, tt.ajax("playBomb", { cards: "" }, seat)];
+              case 1:
+                _a.sent();
+                if (cards === void 0 || cards === null) {
+                  return [2, tt.status(false)];
+                }
+                _a.label = 2;
+              case 2:
+                return [2, tt.play(cards)];
+            }
+          });
+        });
+      },
+      cancelBomb: function(seat) {
+        return __awaiter(this, void 0, void 0, function() {
+          return __generator(this, function(_a) {
+            return [2, tt.ajax("cancel", {}, seat)];
+          });
+        });
+      },
+      step: function() {
+        return __awaiter(this, arguments, void 0, function(moves) {
+          var ui;
+          if (moves === void 0) {
+            moves = 1;
+          }
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                if (!ui || !ui.bga || !ui.bga.actions) {
+                  throw new Error("BGA Studio actions helper is not available");
+                }
+                clearTimeout(ui.autoCollectTimeout);
+                logAnnounce("[TICHU STUDIO STEP]", "Running debug_bgaPlayMoves (moves=".concat(moves, ")..."), "#d2a8ff");
+                return [4, ui.bga.actions.performAction("debug_bgaPlayMoves", { moves: Number(moves) || 1 }, { checkAction: false, lock: false })];
+              case 1:
+                _a.sent();
+                return [4, waitUntilIdle(15e3, speedMode === "instant" ? 45 : 250)];
+              case 2:
+                _a.sent();
+                dismissDialogsIfInstant();
+                return [2, tt.status(false)];
+            }
+          });
+        });
+      },
+      actForOthers: function() {
+        return __awaiter(this, arguments, void 0, function(maxSteps) {
+          var i, s;
+          if (maxSteps === void 0) {
+            maxSteps = 12;
+          }
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                i = 0;
+                _a.label = 1;
+              case 1:
+                if (!(i < maxSteps)) return [3, 4];
+                s = tt.status(false);
+                if (!s || s.state.name === "gameEnd" || s.state.id === 99)
+                  return [3, 4];
+                if (s.isMyTurn && s.state.type === "activeplayer")
+                  return [3, 4];
+                if (s.isMyTurn && s.state.type === "multipleactiveplayer")
+                  return [3, 4];
+                return [4, tt.step(1)];
+              case 2:
+                _a.sent();
+                _a.label = 3;
+              case 3:
+                i++;
+                return [3, 1];
+              case 4:
+                return [2, tt.status(false)];
+            }
+          });
+        });
+      },
+      runSmokeTest: function() {
+        return __awaiter(this, arguments, void 0, function(_a) {
+          var t0, assertionsPassed, checkUI, startStatus, cur, stepsRun, elapsedMs, result;
+          var _b = _a === void 0 ? {} : _a, _c = _b.tricks, tricks = _c === void 0 ? 3 : _c, _d = _b.speed, speed = _d === void 0 ? "instant" : _d;
+          return __generator(this, function(_f) {
+            switch (_f.label) {
+              case 0:
+                t0 = Date.now();
+                tt.setSpeed(speed);
+                logAnnounce("[TICHU STUDIO SMOKE]", "\u25B6 Starting BGA Studio Smoke Test (tricks=".concat(tricks, ", speed=").concat(speed, ")..."), "#ffa657");
+                assertionsPassed = 0;
+                checkUI = function() {
+                  tt.assertUI();
+                  assertionsPassed++;
+                };
+                startStatus = tt.status(false);
+                if (!startStatus)
+                  throw new Error("Game UI not ready");
+                checkUI();
+                cur = tt.status(false);
+                stepsRun = 0;
+                if (!(cur.state.name === "grandTichuBets")) return [3, 5];
+                if (!cur.isMyTurn) return [3, 2];
+                return [4, tt.betGrandTichu(0)];
+              case 1:
+                cur = _f.sent();
+                stepsRun++;
+                _f.label = 2;
+              case 2:
+                if (!(cur.state.name === "grandTichuBets")) return [3, 4];
+                return [4, tt.step(cur.multiactiveIds.length || 3)];
+              case 3:
+                cur = _f.sent();
+                stepsRun++;
+                _f.label = 4;
+              case 4:
+                checkUI();
+                _f.label = 5;
+              case 5:
+                if (!(cur.state.name === "giveCards")) return [3, 7];
+                return [4, tt.passAllCards()];
+              case 6:
+                cur = _f.sent();
+                stepsRun += 2;
+                checkUI();
+                _f.label = 7;
+              case 7:
+                if (!(cur.isMyTurn && cur.state.name === "playComboOpen")) return [3, 9];
+                return [4, tt.play()];
+              case 8:
+                cur = _f.sent();
+                stepsRun++;
+                checkUI();
+                _f.label = 9;
+              case 9:
+                if (!(cur.state.name === "mahjongPlay")) return [3, 11];
+                return [4, tt.wish(15)];
+              case 10:
+                cur = _f.sent();
+                stepsRun++;
+                checkUI();
+                _f.label = 11;
+              case 11:
+                if (!(cur.state.name !== "gameEnd" && cur.state.id !== 99)) return [3, 15];
+                return [4, tt.step(Math.max(4, tricks * 4))];
+              case 12:
+                cur = _f.sent();
+                stepsRun++;
+                if (!(cur.state.name === "confirmTrick")) return [3, 14];
+                return [4, tt.collect()];
+              case 13:
+                cur = _f.sent();
+                stepsRun++;
+                _f.label = 14;
+              case 14:
+                checkUI();
+                _f.label = 15;
+              case 15:
+                elapsedMs = Date.now() - t0;
+                result = {
+                  ok: true,
+                  tableId: cur.tableId,
+                  startState: startStatus.state.name,
+                  endState: cur.state.name,
+                  round: cur.round,
+                  trick: cur.trick,
+                  viewerHandCount: cur.hand.length,
+                  stepsRun: stepsRun,
+                  assertionsPassed: assertionsPassed,
+                  elapsedMs: elapsedMs
+                };
+                logAnnounce("[TICHU STUDIO SMOKE]", "\u2714 PASS in ".concat(elapsedMs, "ms \u2014 Table #").concat(result.tableId, ", State=").concat(result.endState, ", Round=").concat(result.round, ", Trick=").concat(result.trick, ", Assertions=").concat(assertionsPassed), "#3fb950");
+                return [2, result];
+            }
+          });
+        });
+      },
+      runRound: function() {
+        return __awaiter(this, arguments, void 0, function(_a) {
+          var t0, cur, initialRound, batches;
+          var _b = _a === void 0 ? {} : _a, _c = _b.speed, speed = _c === void 0 ? "instant" : _c, _d = _b.maxSteps, maxSteps = _d === void 0 ? 12 : _d;
+          return __generator(this, function(_f) {
+            switch (_f.label) {
+              case 0:
+                t0 = Date.now();
+                tt.setSpeed(speed);
+                cur = tt.status(false);
+                initialRound = cur.round;
+                batches = 0;
+                _f.label = 1;
+              case 1:
+                if (!(cur.state.name !== "gameEnd" && cur.state.id !== 99 && cur.round === initialRound && batches < maxSteps)) return [3, 3];
+                return [4, tt.step(35)];
+              case 2:
+                cur = _f.sent();
+                batches++;
+                return [3, 1];
+              case 3:
+                if (!(cur.state.name === "confirmTrick")) return [3, 5];
+                return [4, tt.collect()];
+              case 4:
+                cur = _f.sent();
+                _f.label = 5;
+              case 5:
+                dismissDialogsIfInstant();
+                if (cur.state.name !== "gameEnd" && cur.state.id !== 99) {
+                  tt.assertUI();
+                }
+                return [2, {
+                  ok: true,
+                  tableId: cur.tableId,
+                  initialRound: initialRound,
+                  currentRound: cur.round,
+                  state: cur.state.name,
+                  batches: batches,
+                  players: cur.players.map(function(p) {
+                    return { name: p.name, score: p.score, handCount: p.handCount };
+                  }),
+                  elapsedMs: Date.now() - t0
+                }];
+            }
+          });
+        });
+      },
+      runGame: function() {
+        return __awaiter(this, arguments, void 0, function(_a) {
+          var t0, cur, batches;
+          var _b = _a === void 0 ? {} : _a, _c = _b.speed, speed = _c === void 0 ? "instant" : _c, _d = _b.maxBatches, maxBatches = _d === void 0 ? 40 : _d;
+          return __generator(this, function(_f) {
+            switch (_f.label) {
+              case 0:
+                t0 = Date.now();
+                tt.setSpeed(speed);
+                cur = tt.status(false);
+                batches = 0;
+                _f.label = 1;
+              case 1:
+                if (!(cur.state.name !== "gameEnd" && cur.state.id !== 99 && batches < maxBatches)) return [3, 3];
+                return [4, tt.step(50)];
+              case 2:
+                cur = _f.sent();
+                batches++;
+                return [3, 1];
+              case 3:
+                return [2, {
+                  ok: cur.state.name === "gameEnd" || cur.state.id === 99,
+                  tableId: cur.tableId,
+                  state: cur.state.name,
+                  round: cur.round,
+                  players: cur.players.map(function(p) {
+                    return { name: p.name, score: p.score };
+                  }),
+                  elapsedMs: Date.now() - t0
+                }];
+            }
+          });
+        });
+      },
+      expressStop: function(tableId) {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, tid, token, headers, r1;
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                tid = Number(tableId || ui && ui.table_id || 0);
+                if (!tid)
+                  throw new Error("No tableId available for expressStop");
+                token = window.bgaConfig && window.bgaConfig.requestToken || "";
+                headers = token ? { "X-Request-Token": token } : {};
+                return [4, fetch("/table/table/expressGameStopTable.html?table=".concat(tid, "&noerrortracking=true&dojo.preventCache=").concat(Date.now()), { headers: headers, credentials: "same-origin" }).then(function(r) {
+                  return r.json();
+                })];
+              case 1:
+                r1 = _a.sent();
+                if (!(!r1 || Number(r1.status) !== 1)) return [3, 3];
+                return [4, fetch("/table/table/quitgame.html?table=".concat(tid, "&neutralized=true&s=table_QuitGame&noerrortracking=true&dojo.preventCache=").concat(Date.now()), { headers: headers, credentials: "same-origin" }).then(function(r) {
+                  return r.json();
+                })];
+              case 2:
+                _a.sent();
+                _a.label = 3;
+              case 3:
+                return [2, { ok: true, stoppedTableId: tid }];
+            }
+          });
+        });
+      },
+      expressStartNew: function() {
+        return __awaiter(this, void 0, void 0, function() {
+          var ui, oldTableId, gameId, token, headers, _e_1, cJson, newTableId, sJson;
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                ui = getUi();
+                oldTableId = Number(ui && ui.table_id || 0);
+                gameId = Number(ui && ui.game_id || 1386);
+                token = window.bgaConfig && window.bgaConfig.requestToken || "";
+                headers = token ? { "X-Request-Token": token } : {};
+                if (!oldTableId) return [3, 4];
+                _a.label = 1;
+              case 1:
+                _a.trys.push([1, 3, , 4]);
+                return [4, tt.expressStop(oldTableId)];
+              case 2:
+                _a.sent();
+                return [3, 4];
+              case 3:
+                _e_1 = _a.sent();
+                return [3, 4];
+              case 4:
+                return [4, fetch("/table/table/createnew.html?game=".concat(gameId, "&gamemode=realtime&is_meeting=false&forceManual=true&lobbyType=kintsugi&noerrortracking=true&dojo.preventCache=").concat(Date.now()), { headers: headers, credentials: "same-origin" }).then(function(r) {
+                  return r.json();
+                })];
+              case 5:
+                cJson = _a.sent();
+                if (!cJson || Number(cJson.status) !== 1 || !cJson.data || !cJson.data.table) {
+                  throw new Error(cJson && cJson.error || "createnew failed");
+                }
+                newTableId = Number(cJson.data.table);
+                return [4, fetch("/tablemanager/tablemanager/expressStart.html?table=".concat(newTableId, "&noerrortracking=true&dojo.preventCache=").concat(Date.now()), { headers: headers, credentials: "same-origin" }).then(function(r) {
+                  return r.json();
+                })];
+              case 6:
+                sJson = _a.sent();
+                if (!sJson || Number(sJson.status) !== 1) {
+                  throw new Error(sJson && sJson.error || "expressStart failed");
+                }
+                return [2, {
+                  ok: true,
+                  stoppedTableId: oldTableId,
+                  newTableId: newTableId,
+                  tableviewUrl: "https://studio.boardgamearena.com/tableview?table=".concat(newTableId)
+                }];
+            }
+          });
+        });
+      }
+    };
+    function mountStudioTestBar() {
+      var _this = this;
+      if (window.g_archive_mode)
+        return;
+      if (document.getElementById("studio-test-bar"))
+        return;
+      var wrap = document.getElementById("game_play_area_wrap");
+      if (!wrap || !wrap.parentNode)
+        return;
+      var bar = document.createElement("div");
+      bar.id = "studio-test-bar";
+      bar.style.cssText = "background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;margin:4px 0 8px 0;font-family:monospace;font-size:12px;display:flex;flex-direction:column;gap:6px;z-index:100;position:relative;";
+      var btnStyle = "background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;";
+      var primaryBtnStyle = "background:#238636;color:#ffffff;border:1px solid #2ea043;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:bold;";
+      bar.innerHTML = '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;"><strong style="color:#58a6ff;">\u26A1 Studio Test (window.tt)</strong>' + '<button type="button" id="tt_btn_smoke" style="'.concat(primaryBtnStyle, '">\uD83E\uDDEA Smoke Test</button>') + '<button type="button" id="tt_btn_round" style="'.concat(btnStyle, '">\uD83C\uDFC1 Run Round</button>') + '<button type="button" id="tt_btn_game" style="'.concat(btnStyle, '">\uD83C\uDFC6 Run Game</button>') + '<button type="button" id="tt_btn_gt_all" style="'.concat(btnStyle, '">\u26A1 GT Bet All 4</button>') + '<button type="button" id="tt_btn_pass_all" style="'.concat(btnStyle, '">\uD83C\uDCCF Pass 3 + Bots</button>') + '<button type="button" id="tt_btn_step1" style="'.concat(btnStyle, '">\uD83E\uDD16 Step 1</button>') + '<button type="button" id="tt_btn_others" style="'.concat(btnStyle, '">\uD83E\uDD16 Act for Others</button>') + '<button type="button" id="tt_btn_assert" style="'.concat(btnStyle, '">\u2714 Assert UI</button>') + '<button type="button" id="tt_btn_new" style="'.concat(btnStyle, '">\uD83D\uDD04 New Express Table</button>') + '<button type="button" id="tt_btn_stop" style="background:#da3633;color:#ffffff;border:1px solid #f85149;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;">\u23F9 Express Stop</button><input type="text" id="tt_cmd_input" placeholder="e.g. runSmokeTest / status / wish:8" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 6px;font-family:monospace;font-size:11px;width:180px;" />' + '<button type="button" id="tt_cmd_run" style="'.concat(btnStyle, '">\u25B6 Run</button>') + '</div><pre id="tt_test_output" data-done="1" data-status="ready" style="margin:0;padding:4px 8px;background:#161b22;border:1px solid #21262d;border-radius:4px;color:#8b949e;max-height:110px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-size:11px;">Ready \u2014 click a button or run `await tt.runSmokeTest()` in console.</pre>';
+      wrap.parentNode.insertBefore(bar, wrap);
+      var outEl = document.getElementById("tt_test_output");
+      var runTask = function(label, fn) {
+        return __awaiter(_this, void 0, void 0, function() {
+          var res, err_1;
+          return __generator(this, function(_a) {
+            switch (_a.label) {
+              case 0:
+                outEl.setAttribute("data-done", "0");
+                outEl.setAttribute("data-status", "running");
+                outEl.style.color = "#d29922";
+                outEl.textContent = "Running ".concat(label, "...");
+                _a.label = 1;
+              case 1:
+                _a.trys.push([1, 3, , 4]);
+                return [4, fn()];
+              case 2:
+                res = _a.sent();
+                outEl.setAttribute("data-status", "pass");
+                outEl.setAttribute("data-done", "1");
+                outEl.style.color = "#3fb950";
+                outEl.textContent = JSON.stringify(res);
+                return [3, 4];
+              case 3:
+                err_1 = _a.sent();
+                outEl.setAttribute("data-status", "fail");
+                outEl.setAttribute("data-done", "1");
+                outEl.style.color = "#f85149";
+                outEl.textContent = JSON.stringify({
+                  ok: false,
+                  error: err_1 && err_1.message || String(err_1)
+                });
+                return [3, 4];
+              case 4:
+                return [2];
+            }
+          });
+        });
+      };
+      var bind = function(id, label, fn) {
+        var btn = document.getElementById(id);
+        if (btn) {
+          btn.addEventListener("click", function() {
+            return runTask(label, fn);
+          });
+        }
+      };
+      bind("tt_btn_smoke", "runSmokeTest", function() {
+        return tt.runSmokeTest({ tricks: 3, speed: "instant" });
+      });
+      bind("tt_btn_round", "runRound", function() {
+        return tt.runRound({ speed: "instant" });
+      });
+      bind("tt_btn_game", "runGame", function() {
+        return tt.runGame({ speed: "instant" });
+      });
+      bind("tt_btn_gt_all", "betAllGrandTichu", function() {
+        return tt.betAllGrandTichu([0, 0, 0, 0]);
+      });
+      bind("tt_btn_pass_all", "passAllCards", function() {
+        return tt.passAllCards();
+      });
+      bind("tt_btn_step1", "step(1)", function() {
+        return tt.step(1);
+      });
+      bind("tt_btn_others", "actForOthers", function() {
+        return tt.actForOthers();
+      });
+      bind("tt_btn_assert", "assertUI + status", function() {
+        return {
+          ui: tt.assertUI(),
+          status: tt.status(false)
+        };
+      });
+      bind("tt_btn_new", "expressStartNew", function() {
+        return tt.expressStartNew();
+      });
+      bind("tt_btn_stop", "expressStop", function() {
+        return tt.expressStop();
+      });
+      var cmdBtn = document.getElementById("tt_cmd_run");
+      var cmdInput = document.getElementById("tt_cmd_input");
+      if (cmdBtn && cmdInput) {
+        cmdBtn.addEventListener("click", function() {
+          var raw = (cmdInput.value || "").trim();
+          if (!raw)
+            return;
+          var colonIdx = raw.indexOf(":");
+          var method = (colonIdx === -1 ? raw : raw.slice(0, colonIdx)).trim();
+          var argRaw = colonIdx === -1 ? void 0 : raw.slice(colonIdx + 1).trim();
+          runTask(raw, function() {
+            return __awaiter(_this, void 0, void 0, function() {
+              var fn, parsedArg;
+              return __generator(this, function(_a) {
+                switch (_a.label) {
+                  case 0:
+                    fn = tt[method];
+                    if (typeof fn !== "function") {
+                      throw new Error('Unknown tt method: "'.concat(method, '"'));
+                    }
+                    if (!(argRaw === void 0 || argRaw === "")) return [3, 2];
+                    return [4, fn.call(tt)];
+                  case 1:
+                    return [2, _a.sent()];
+                  case 2:
+                    parsedArg = argRaw;
+                    try {
+                      parsedArg = JSON.parse(argRaw);
+                    } catch (_e) {
+                    }
+                    return [4, fn.call(tt, parsedArg)];
+                  case 3:
+                    return [2, _a.sent()];
+                }
+              });
+            });
+          });
+        });
+      }
+    }
+    mountStudioTestBar();
+    win.tt = tt;
+    win.tichuTest = tt;
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.tt = tt;
+        window.parent.tichuTest = tt;
+        window.parent.gameui = getUi();
+      }
+    } catch (_e) {
+    }
+    logAnnounce("[TICHU STUDIO READY]", "Console runner `window.tt` & `#studio-test-bar` attached. Type `tt.help()` or click `\uD83E\uDDEA Smoke Test`.", "#3fb950");
+  }
+
   // dist/tichu.js
   var Bet;
   (function(Bet2) {
@@ -125,6 +1697,7 @@
       this.changeOrder(this.getGameUserPreference(101) != 1);
       this.setTheme((_g = this.getGameUserPreference(104)) !== null && _g !== void 0 ? _g : 0);
       this.updateCardsPlayed();
+      initStudioTestHelper(this);
       debug("Ending game setup");
     };
     Tichu2.prototype.isAllInfoExposed = function() {
@@ -325,13 +1898,20 @@
       }
       var weights = {};
       var i = 0;
+      var _loop_2 = function(card2) {
+        if (Number(playerId) === Number(this_2.player_id)) {
+          this_2.playerHand.removeFromStockById(String(card2.id));
+          this_2.gamedatas.hand = this_2.gamedatas.hand.filter(function(c) {
+            return String(c.id) !== String(card2.id);
+          });
+        }
+        addCardToStock(stock, card2);
+        weights[cardToStockType(card2)] = i++;
+      };
+      var this_2 = this;
       for (var _i = 0, cards_1 = cards; _i < cards_1.length; _i++) {
         var card = cards_1[_i];
-        if (playerId === this.player_id) {
-          this.playerHand.removeFromStockById(card.id);
-        }
-        addCardToStock(stock, card);
-        weights[cardToStockType(card)] = i++;
+        _loop_2(card);
       }
       stock.changeItemsWeight(weights);
       this.updateStockOverlap(this.playerHand);
@@ -361,15 +1941,18 @@
         thisMethods[methodName](stateObject.args);
     };
     Tichu2.prototype.onEnteringStateNewRound = function(args) {
+      var _a;
       dojohtml(".pointcount", "0");
       dojostyle(".cardback", "display", "none");
       this.resetLastCombos();
       this.gamedatas.capturedCards = [];
       this.gamedatas.hand = [];
+      (_a = this.playerHand) === null || _a === void 0 ? void 0 : _a.removeAll();
       this.gamedatas.currentTrick = [];
       this.gamedatas.currentTrickValue = 0;
       this.gamedatas.firstoutplayer = 0;
       this.gamedatas.round++;
+      this.gamedatas.trick = 0;
       for (var id in this.gamedatas.players) {
         this.gamedatas.players[id].call_tichu = Bet.NO_BET_YET;
         this.gamedatas.players[id].call_grand_tichu = Bet.NO_BET_YET;
@@ -477,6 +2060,8 @@
     };
     Tichu2.prototype.onLeavingState = function(stateName) {
       debug("Leaving state: " + stateName);
+      clearTimeout(this.autoCollectTimeout);
+      clearTimeout(this.autoAcceptTimeout);
     };
     Tichu2.prototype.updateCardsPlayed = function() {
       var _a, _b, _c, _d, _e, _f;
@@ -932,6 +2517,10 @@
     };
     Tichu2.prototype.notif_dealCards = function(notif) {
       debug("notif_dealCards", notif);
+      if (notif.args.cards.length === 8) {
+        this.gamedatas.hand = [];
+        this.playerHand.removeAll();
+      }
       for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
         var card = _a[_i];
         this.gamedatas.hand.push(card);
@@ -1021,6 +2610,7 @@
       this.updateMahjongWish(notif.args.wish);
     };
     Tichu2.prototype.updateMahjongWish = function(wish) {
+      this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? Number(wish) : 0;
       var indicator = $("mahjongIndicator");
       if (wish > 0 && wish < 15) {
         var w = wish - 2;
@@ -1075,7 +2665,11 @@
       debug("notif_newScores", notif);
       var newScores = notif.args.newScores;
       for (var player_id in newScores) {
-        this.scoreCtrl[Number(player_id)].toValue(newScores[player_id]);
+        var pId = Number(player_id);
+        this.scoreCtrl[pId].toValue(newScores[pId]);
+        if (this.gamedatas.players[pId]) {
+          this.gamedatas.players[pId].score = String(newScores[pId]);
+        }
       }
     };
     Tichu2.prototype.notif_autopass = function(notif) {
@@ -1088,7 +2682,7 @@
       var _this = this;
       debug("notif_acceptCards", notif);
       clearTimeout(this.autoAcceptTimeout);
-      setTimeout(function() {
+      var acceptFn = function() {
         for (var _i = 0, _a = notif.args.cards; _i < _a.length; _i++) {
           var card = _a[_i];
           var cardOnTable = "cardontable_" + _this.player_id + "_" + card.id;
@@ -1097,22 +2691,27 @@
           _this.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
         }
         _this.updateStockOverlap(_this.playerHand);
-      }, 2e3);
+      };
+      if (this.instantaneousMode) {
+        acceptFn();
+      } else {
+        setTimeout(acceptFn, 2e3);
+      }
     };
     Tichu2.prototype.notif_passCards = function(notif) {
       var _a;
       debug("notif_passCards", notif);
       var ids = (_a = notif.args.cardIds) !== null && _a !== void 0 ? _a : notif.args;
-      var _loop_2 = function(id2) {
-        this_2.gamedatas.hand = this_2.gamedatas.hand.filter(function(c) {
-          return c.id !== id2;
+      var _loop_3 = function(id2) {
+        this_3.gamedatas.hand = this_3.gamedatas.hand.filter(function(c) {
+          return String(c.id) !== String(id2);
         });
-        this_2.playerHand.removeFromStockById(id2);
+        this_3.playerHand.removeFromStockById(String(id2));
       };
-      var this_2 = this;
+      var this_3 = this;
       for (var _i = 0, ids_1 = ids; _i < ids_1.length; _i++) {
         var id = ids_1[_i];
-        _loop_2(id);
+        _loop_3(id);
       }
       this.updateStockOverlap(this.playerHand);
     };
