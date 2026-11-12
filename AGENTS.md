@@ -7,7 +7,9 @@ This document provides comprehensive architectural, structural, and operational 
 ## 1. BGA Platform Overview & Developer Documentation
 
 ### Official BGA Studio Documentation
+
 When working on BGA game logic, client APIs, or platform conventions, consult the official BGA Studio Wiki:
+
 - **Main Studio Hub**: https://en.doc.boardgamearena.com/Studio
 - **Game Main PHP Logic (`*.game.php`)**: https://en.doc.boardgamearena.com/Main_game_logic:_yourgamename.game.php
 - **State Machine (`states.inc.php`)**: https://en.doc.boardgamearena.com/Your_game_state_machine:_states.inc.php
@@ -23,6 +25,7 @@ When working on BGA game logic, client APIs, or platform conventions, consult th
 - **Tichu Bug Tracker on BGA**: https://boardgamearena.com/bugs?game=1237 (individual bug reports are at `https://boardgamearena.com/bug?id=<BUG_ID>`)
 
 ### Authoritative API Stubs & External BGA Skill Reference
+
 - **Generated Stubs Beat the Wiki**: BGA ships generated [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS) on every Studio server and updates them ahead of the hand-written BGA Wiki. When the Wiki and the local stubs disagree, **trust the stubs** (and re-download `/tichu/_ide_helper.php` via SFTP if checking for newer platform APIs).
 - **Community BGA Agent Reference (`rbellec/claude-code-bga`)**:
   - Repo: https://github.com/rbellec/claude-code-bga (fetch via `https://www.github.com/rbellec/claude-code-bga.git` if cloning locally).
@@ -30,7 +33,9 @@ When working on BGA game logic, client APIs, or platform conventions, consult th
   - **Architecture Note**: That repo's `SKILL.md` defaults to the 2025+ BGA scaffold (`modules/php/States/*.php`, `modules/js/Game.js` ES6, `ItemManager`, `BgaCards`). **Tichu uses the classic BGA architecture** (`tichu.game.php`, `states.inc.php`, `tichu.action.php`, `Deck`, `ebg/stock`, Dojo `bgagame.tichu`), so only apply its classic-component references, platform pitfalls, or incremental migration patterns (`references/legacy-migration.md`) when relevant.
 
 ### How the BGA Architecture Works
+
 BGA games use an event-driven client-server architecture built on a finite state machine:
+
 1. **Database & State Machine (Server - PHP/MySQL)**:
    - Every table has its own isolated MySQL database created from `dbmodel.sql` at game setup (`setupNewGame`).
    - Standard BGA tables (`player`, `global`, `stats`, `gamelog`) are created automatically by the platform; `dbmodel.sql` adds custom columns to `player` and creates game-specific tables (`card`, `actionlog`).
@@ -126,7 +131,9 @@ BGA games use an event-driven client-server architecture built on a finite state
 ## 3. Core Game Mechanics & Implementation Details
 
 ### Card Representation
+
 Cards are stored in the `card` table (managed by BGA's `Deck` component) with `type` (color/suit, `1..4`) and `type_arg` (rank, `1..14`):
+
 - **Normal Cards (`type_arg` = `2..14`)**:
   - `2..10`: Numeric ranks 2 through 10.
   - `11`: Jack, `12`: Queen, `13`: King, `14`: Ace.
@@ -147,7 +154,9 @@ Cards are stored in the `card` table (managed by BGA's `Deck` component) with `t
   - `captured`: Tricks won by players (`card_location_arg` = `player_id`).
 
 ### Custom Action Log (`actionlog` table)
+
 Instead of relying solely on global variables for complex trick history, `LogManager.php` records structured JSON events in the `actionlog` table (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`):
+
 - `newRound`, `newTrick`: Increments round/trick counters.
 - `combo`: Stores played `Combo` details (`description`, `type`, `cards`, `phoenixValue`).
 - `pass`: Records a player passing.
@@ -157,6 +166,7 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 - `tichuCall`: Timestamp of the last Tichu/Grand Tichu call to trigger a confirmation prompt (`TICHU_CONFIRMATION_TRESHOLD = 60` seconds) if another player calls Tichu right after.
 
 ### Important Quirks & Guardrails
+
 1. **Action Naming Mismatch**:
    - In `states.inc.php`, the possible action for passing cards is `"giveCards"`, but the endpoint in `tichu.action.php` and method in `tichu.game.php` is named `giveTheCards`.
    - Similarly, the state possible action for choosing a Phoenix value is `"phoenixPlay"`, while the endpoint in `tichu.action.php` is `choosePhoenix`.
@@ -175,6 +185,7 @@ Instead of relying solely on global variables for complex trick history, `LogMan
    - Therefore, `npm run bundle` first bundles `./dist/tichu.js` with `--target=es5` into `tichu.js`, and then bundles `./src/elements/elements.ts` directly via `esbuild` (preserving ES6 classes) and appends it to `tichu.js`.
 
 ### BGA Platform Pitfalls & Best Practices (PHP, MySQL & Client)
+
 1. **PHP & Database (`dbmodel.sql`, `Table` DB Helpers, PHP 8.4)**:
    - **Never put `--` comments in `dbmodel.sql`**: BGA Studio strips all newlines from `dbmodel.sql` before passing it as a single string to MySQL, so any `--` comment silently swallows the rest of the schema!
    - **`getCollectionFromDb` vs. `getObjectListFromDB`**: `getCollectionFromDb($sql)` keys the returned associative array by the **first selected column**, silently overwriting duplicate keys. Always select a unique column first, or use `getObjectListFromDB($sql)` (`getObjectListFromDB($sql, true)` for a flat 1D array of values).
@@ -195,7 +206,9 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 ## 4. Building, Testing, and Deployment Workflow
 
 ### Frontend Build (TypeScript + esbuild)
+
 `tichu.js` is gitignored and generated from `src/` via npm scripts in `package.json`:
+
 - **Install dependencies**: `npm install` (and `composer install` for PHPUnit)
 - **Run all backend tests (Unit + Integration)**: `npm test` (`npm run test:unit && npm run test:integration`)
 - **Compile TypeScript (`src/` -> `dist/`)**: `npm run compile` (`tsc -p src`)
@@ -207,25 +220,28 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 > **Important**: Always ensure `/opt/homebrew/bin` is on `PATH` (`export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`), and always run `npm run build` after modifying any `.ts` or `.php` file so that all unit + backend integration tests pass and `tichu.js` is updated for SFTP synchronization to BGA Studio.
 
 ### Local Testing & Local BGA Runner (`tests/` & `local/`)
+
 Tichu has three fast local testing tiers that run without needing a BGA Studio connection:
 
 1. **Unit Tests (`npm run test:unit` / `./vendor/bin/phpunit tests`, ~40ms)**:
    - Tests pure card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` using `tests/stubs.php` and `tests/TestUtils.php`.
    - When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
 
-2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~130ms)**:
-   - Runs 11 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
-     - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `grandTichuBet`, 6-card deal)
-     - Passing 3 cards (`giveTheCards`, invalid card rejection & rollback, `stAcceptPassedCards`, Mahjong leader)
-     - Mahjong wish enforcement (`makeAWish`, `UserException` rollback when ignoring a wish that can be fulfilled)
-     - Ambiguous Phoenix choice (`ST_PHOENIX_PLAY`, `choosePhoenix`)
-     - Bomb interruption (`playBomb` out-of-turn during `playCombo` and `confirmTrick`, `cancel`, `pass`)
-     - Dragon trick gift (`confirmTrick` -> `ST_CHOOSE_DRAGON_GIFT` -> `chooseDragonGift` to opponent)
-     - Double victory (1–2 finish by partners, immediate round end, `+200`/`0` team scoring)
-     - Out-of-turn Tichu bet (`tichuBet` before playing first card, rejected after playing first card)
-     - Autopass & turn-based auto-skip (`pass` out of turn, `cancelAutopass`, `isAllInfoExposed` auto-skip)
-     - Full round end-to-end via `LocalTichuBot` (verifying 100 card points conservation across tricks + leftover hands)
-     - Full game end-to-end to 1000 points (`ST_GAME_END` = 99)
+2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~180ms)**:
+   - Runs 13 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
+     - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `TEAM_RANDOM` & team color assignment, `grandTichuBet`, 6-card deal)
+     - Out-of-turn Tichu bet (`tichuBet` before playing first card, `tichuCall` confirmation across trick boundaries, rejection after playing a card or duplicate bets)
+     - Passing 3 cards (`giveTheCards`, invalid card rejection & rollback, `stAcceptPassedCards`, `bombs_completed_by_partner` stat, Mahjong leader)
+     - Mahjong wish enforcement (`makeAWish`, `UserException` rollback when ignoring a wish that can be fulfilled including via non-wished bombs, straight-flush bomb wish detection)
+     - Dog lead transfer & restrictions (`DOG_COMBO` partner/next-player transfer, 3rd-player-out Dog round termination)
+     - Single & ambiguous Phoenix resolution (`ST_PHOENIX_PLAY`, `Combo::recheckPhoenix` straight/full-house auto-resolution, pre-`ST_PHOENIX_PLAY` Mahjong wish validation, `choosePhoenix`, `cancelPhoenix` after open/Dog leads)
+     - Bomb interruption (`playBomb` out-of-turn during `playCombo` and `confirmTrick`, 4-card hand requirement, `cancel`, `pass`)
+     - Dragon trick gift (`confirmTrick` -> `ST_CHOOSE_DRAGON_GIFT` -> `chooseDragonGift` to opponent, `tricks_win` stat tracking without double-counting on 3rd player out)
+     - Autopass & turn-based auto-skip (`pass` out of turn in `playCombo` and `confirmTrick`, `AUTOPASS_ONCE` reset when blocked by Mahjong wish, `cancelAutopass`, `isAllInfoExposed` auto-skip)
+     - Double victory & normal round scoring (1–2 finish by partners, `playerGoOut` notification, immediate round end, `+200`/`0` team scoring, round-to-round trick counter reset)
+     - Full multi-round game end-to-end via `LocalTichuBot` to 1000 points (`ST_GAME_END` = 99)
+     - Zombie turns (`zombieTurn` across all 9 `activeplayer` and `multipleactiveplayer` states with session isolation)
+     - Action & parameter validation (`cancel`, `makeAWish`, `chooseDragonGift`, `playCombo`, `playBomb`, `CardManager::cardToStr`)
    - Run both unit and backend integration tests together via **`npm test`**.
 
 3. **Local Browser Server & Frontend + Backend JS Console Integration Tests (`npm run local`)**:
@@ -262,6 +278,7 @@ Tichu has three fast local testing tiers that run without needing a BGA Studio c
      - **URL Autorun Hook**: Open `http://127.0.0.1:8080/?autorun=suite&speed=instant` (or `autorun=round`, `autorun=game`, `autorun=<scenario>`) to execute a test suite automatically on page load and write the result to `window.__tichuAutorunResult`.
 
 ### Deployment & Live Testing on BGA Studio
+
 BGA games cannot execute full multiplayer lifecycle locally; they run on the remote **BGA Studio** environment (`https://studio.boardgamearena.com`). The user does **not** use the VS Code SFTP extension; all SFTP syncing and BGA Studio testing/management are handled directly by the AI agent.
 
 1. **Credentials Storage (`.vscode/bga-credentials.json` & `.vscode/sftp.json`)**:
@@ -328,7 +345,7 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
    - **Studio Debugging Helpers & Gotchas**:
      - **Server SQL & Request Logs**: Navigate to `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>` to inspect full server-side request/SQL logs and PHP stack traces.
      - **`debug_<name>()` Methods**: Any `public function debug_<name>()` defined on `Tichu` in `tichu.game.php` automatically gets a clickable button in the Studio debug panel (`#toggleDebugFunctionsPanel`, DOM ID `debug_<name>`) for setting up test states or dumping data. Guard with `if ($this->getBgaEnvironment() !== 'studio') return;` or remove before release.
-     - **Express Start Real-Time Clock Auto-Abandon**: Express Start creates a real-time table with a short clock. If all test players navigate away or stay disconnected long enough, BGA auto-abandons the table (*"All players (with a positive clock) choosed to abandon this game"*, resulting in a `0–0` Tie). This is a Studio clock timeout, not a scoring bug — simply start a new table.
+     - **Express Start Real-Time Clock Auto-Abandon**: Express Start creates a real-time table with a short clock. If all test players navigate away or stay disconnected long enough, BGA auto-abandons the table (_"All players (with a positive clock) choosed to abandon this game"_, resulting in a `0–0` Tie). This is a Studio clock timeout, not a scoring bug — simply start a new table.
    - **When to restart vs. refresh**:
      - Modifying `tichu.js`, `tichu.css`, `tichu.view.php`, or `tichu_tichu.tpl`: Refresh browser (`F5`).
      - Modifying `tichu.game.php`, `tichu.action.php`, or `modules/*.php`: Takes effect on the next AJAX action or page refresh (`F5`).
@@ -356,10 +373,10 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
    - Whenever the user references a reported bug (by ID, title, or topic) or asks to inspect, reply to, or update the status of a bug, look it up at `https://boardgamearena.com/bugs?game=1237` (or `https://boardgamearena.com/bug?id=<BUG_ID>`).
 
 ### Git & GitHub Push Quirk (HTTPS vs. SSH)
+
 - The user's global `~/.gitconfig` has a rewrite rule (`url.git@github.com:.insteadof = https://github.com/`), while GitHub authentication on this machine is configured via the GitHub CLI (`gh auth git-credential`) over HTTPS rather than SSH keys.
 - As a result, a standard `git push` or `git push origin main` rewrites the remote URL to `git@github.com:bro314/tichu.git` and fails with `Permission denied (publickey)`.
 - **Solution**: Push using `https://www.github.com/bro314/tichu.git` (which bypasses the `https://github.com/` `insteadOf` prefix and redirects to HTTPS with `gh` credentials) and update the remote tracking ref:
   ```bash
   git push https://www.github.com/bro314/tichu.git main && git update-ref refs/remotes/origin/main HEAD
   ```
-
