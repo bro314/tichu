@@ -69,5 +69,6 @@ composer install
    - Restart the test table if you modify `dbmodel.sql`.
    - Reload game configurations in the BGA Studio Control Panel if you modify `gameinfos.inc.php`, `gameoptions.inc.php`, `states.inc.php`, or `stats.inc.php`.
 3. **Deploying to Production**: Build a new release from the BGA Studio Control Panel once all changes are synced and verified.
+4. **Bug Tracker**: Production bug reports for Tichu on BGA are tracked at [https://boardgamearena.com/bugs?game=1237](https://boardgamearena.com/bugs?game=1237).
 
 For detailed architectural notes and AI agent guidelines, see [AGENTS.md](./AGENTS.md).

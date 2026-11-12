@@ -19,6 +19,7 @@ When working on BGA game logic, client APIs, or platform conventions, consult th
 - **Statistics (`stats.inc.php`)**: https://en.doc.boardgamearena.com/Game_statistics:_stats.inc.php
 - **Post-Release & DB Migrations (`upgradeTableDb`)**: https://en.doc.boardgamearena.com/Post-release_phase
 - **Pre-Release Checklist**: https://en.doc.boardgamearena.com/Pre-release_checklist
+- **Tichu Bug Tracker on BGA**: https://boardgamearena.com/bugs?game=1237 (individual bug reports are at `https://boardgamearena.com/bug?id=<BUG_ID>`)
 
 ### How the BGA Architecture Works
 BGA games use an event-driven client-server architecture built on a finite state machine:
@@ -258,6 +259,12 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
         - Click **`⇨ Commit & build a new version now`**. This snapshots the SFTP `/tichu/` files into BGA's internal SVN/release system and builds a numbered release package (e.g., `YYMMDD-HHMM`).
      3. Under the **Versions available for production** section:
         - Locate the newly built version row and click its **Deploy** button to push it live to `boardgamearena.com`.
+
+5. **BGA Bug Reports (`https://boardgamearena.com/bugs?game=1237`)**:
+   - All production bug reports and feature suggestions for Tichu on Board Game Arena are tracked at:
+     - **Bug List**: `https://boardgamearena.com/bugs?game=1237` (Game ID `1237`)
+     - **Specific Bug Report**: `https://boardgamearena.com/bug?id=<BUG_ID>`
+   - Whenever the user references a reported bug (by ID, title, or topic) or asks to inspect, reply to, or update the status of a bug, look it up at `https://boardgamearena.com/bugs?game=1237` (or `https://boardgamearena.com/bug?id=<BUG_ID>`).
 
 ### Git & GitHub Push Quirk (HTTPS vs. SSH)
 - The user's global `~/.gitconfig` has a rewrite rule (`url.git@github.com:.insteadof = https://github.com/`), while GitHub authentication on this machine is configured via the GitHub CLI (`gh auth git-credential`) over HTTPS rather than SSH keys.
