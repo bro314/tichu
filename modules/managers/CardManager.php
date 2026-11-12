@@ -130,6 +130,7 @@ class CardManager
           case 4:
             return "Mahjong";
         }
+        break;
       case 11:
         if ($plural) {
           return "Jacks";

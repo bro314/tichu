@@ -127,7 +127,7 @@ class Tichu extends Table
     $result["lastComboPlayer"] = $lastCombo->player;
     $result["lastComboDescription"] = $lastCombo->description;
 
-    list($lastCombos, $passes) = LogManager::getLastCombos($currentPlayerId);
+    list($lastCombos, $passes) = LogManager::getLastCombos();
     $result["allLastCombos"] = $lastCombos;
     $result["passes"] = $passes;
 
@@ -254,6 +254,10 @@ class Tichu extends Table
     if ($checkAction) {
       $this->checkAction("chooseDragonGift");
     }
+    $playertogive = (int) $playertogive;
+    if ($playertogive !== 0 && $playertogive !== 1) {
+      throw new UserException(clienttranslate("Invalid player choice"));
+    }
     $players = PlayerManager::getPlayers();
     $trickWinner = LogManager::getLastComboPlayer();
     $nextPlayers = PlayerManager::getNextPlayers($trickWinner);
@@ -285,7 +289,6 @@ class Tichu extends Table
     if (count($inPlay) == 1 || $doubleVic) {
       $this->gamestate->nextState("endRound");
     } else {
-      $action = LogManager::getLastAction("confirm")["arg"];
       $this->gamestate->nextState("newTrick");
     }
   }
@@ -336,8 +339,16 @@ class Tichu extends Table
     }
 
     $playerId = $this->getCurrentPlayerId();
+    if (CardManager::getDeck()->countCardInLocation("hand", $playerId) < 4) {
+      throw new UserException(clienttranslate("You cannot play a bomb now"));
+    }
+
     $lastCombo = LogManager::getLastCombo();
-    if ($lastCombo == null && $playerId != $this->getActivePlayerId()) {
+    if (
+      ($name === "playCombo" && ($lastCombo == null || $lastCombo->type == NO_COMBO)) ||
+      (($lastCombo == null || $lastCombo->type == NO_COMBO) &&
+        $playerId != $this->getActivePlayerId())
+    ) {
       throw new UserException(clienttranslate('You can\'t bomb before the trick starts'));
     }
 
@@ -376,7 +387,13 @@ class Tichu extends Table
   {
     $this->checkAction("playCombo");
     $playerId = $this->getCurrentPlayerId();
+    if (empty($cards_ids)) {
+      throw new UserException(clienttranslate("You must select at least one card"));
+    }
     $cards = array_values(CardManager::getDeck()->getCards($cards_ids));
+    if (count($cards) != count(array_unique($cards_ids))) {
+      throw new UserException(clienttranslate("You don't have all these cards in your hand"));
+    }
     $this->checkCardsInHand($cards, $playerId);
 
     $combo = new Combo($cards);
@@ -423,7 +440,7 @@ class Tichu extends Table
     $currentMahjongWish = $this->getGameStateValue("mahjongWish");
     if ($currentMahjongWish > 0) {
       $cardsInHand = CardManager::getDeck()->getPlayerHand($player_id);
-      $hand = new Hand($cardsInHand, $this);
+      $hand = new Hand($cardsInHand);
       if ($hand->canFulfillWish($currentMahjongWish, LogManager::getLastCombo())) {
         throw new UserException(
           sprintf(
@@ -451,6 +468,7 @@ class Tichu extends Table
 
   function cancel()
   {
+    $this->checkAction("cancel");
     $action = LogManager::getLastAction("changePlayer");
     LogManager::insert($action["arg"]["active"], "changePlayer", [
       "transition" => $action["arg"]["last"],
@@ -570,6 +588,13 @@ class Tichu extends Table
 
   function confirmTichu($bet)
   {
+    $bet = (int) $bet;
+    if (!in_array($bet, [0, 100, 200], true)) {
+      throw new UserException(clienttranslate("Invalid Tichu bet"));
+    }
+    if ($bet == 0) {
+      return;
+    }
     if ($bet == 200) {
       $this->grandTichuBet(200, true);
     } else {
@@ -652,7 +677,10 @@ class Tichu extends Table
    */
   function acceptCards($player_id = null)
   {
-    $player_id = $player_id ?? $this->getCurrentPlayerId();
+    if ($player_id === null) {
+      $this->checkAction("acceptCards");
+      $player_id = $this->getCurrentPlayerId();
+    }
     $this->acceptCardsForPlayer($player_id);
     $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
   }
@@ -675,6 +703,10 @@ class Tichu extends Table
   {
     if ($checkAction) {
       $this->checkAction("makeAWish");
+    }
+    $wish = (int) $wish;
+    if ($wish < 2 || $wish > 15) {
+      throw new UserException(clienttranslate("Invalid wish value"));
     }
 
     if ($wish == 15) {
@@ -738,16 +770,18 @@ class Tichu extends Table
   // arg for legacy state
   function argShowPassedCards()
   {
+    $private = CardManager::getPassedCards();
     return [
-      "_private" => ($result["passedCards"] = CardManager::getPassedCards()),
+      "_private" => $private,
     ];
   }
 
   // arg for new state
   function argAcceptPassedCards()
   {
+    $private = CardManager::getPassedCards();
     return [
-      "_private" => ($result["passedCards"] = CardManager::getPassedCards()),
+      "_private" => $private,
     ];
   }
 
@@ -963,7 +997,7 @@ class Tichu extends Table
     }
 
     $next_players = PlayerManager::getNextPlayers($player_id); //next players (including those without cards)
-    $handCounts = $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
+    $handCounts = CardManager::getDeck()->countCardsByLocationArgs("hand");
     $next = null;
     if ($lastCombo->type == DOG_COMBO) {
       // Dog transfers right to deal to partner so next player is skipped
@@ -1393,80 +1427,6 @@ class Tichu extends Table
   function upgradeTableDb($from_version)
   {
     if ($from_version <= 2102011339) {
-      // revision 78876
-      // ! important ! Use DBPREFIX_<table_name> for all tables
-      //checking if column exists
-      //Utils::die("TEST");
-      $players = $this->getObjectListFromDB("SELECT * FROM player");
-      // player_has_bomb is obsolete.
-      if (!isset($players[0]["player_has_bomb"])) {
-        $this->applyDbUpgradeToAllDB(
-          "ALTER TABLE DBPREFIX_player ADD `player_has_bomb` INT NOT NULL DEFAULT '0'"
-        );
-      }
-      if (!isset($players[0]["player_pass"])) {
-        $this->applyDbUpgradeToAllDB(
-          "ALTER TABLE DBPREFIX_player ADD `player_pass` INT NOT NULL DEFAULT '0'"
-        );
-      }
-      $this->applyDbUpgradeToAllDB("CREATE TABLE IF NOT EXISTS DBPREFIX_actionlog (
-				`log_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-				`log_player` int(10) NOT NULL,
-				`log_round` int(10) unsigned NOT NULL,
-				`log_trick` int(10) unsigned NOT NULL,
-				`log_action` varchar(16) NOT NULL,
-				`log_arg` varchar(1024),
-				PRIMARY KEY (`log_id`)
-			) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1;");
-      $state = $this->gamestate->getCurrentMainState()->name;
-      $this->DbQuery(
-        "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES (0,0,0, 'newRound', '')"
-      );
-      $combos = $this->getCollectionFromDb(
-        "SELECT combo_player_id, combo_display FROM combo",
-        true
-      );
-      $n = 0;
-      $deck = CardManager::getDeck();
-      foreach ($combos as $pId => $cardIds) {
-        if (strlen($cardIds) == 0) {
-          LogManager::insert($pId, "pass");
-          continue;
-        }
-        $cards = array_values($deck->getCards(explode(",", $cardIds)));
-        $combo = new Combo($cards);
-        if (is_array($combo->phoenixValue)) {
-          $combo->setPhoenixValue(
-            $this->getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id=29")
-          );
-        }
-        LogManager::playCombo($pId, $combo);
-      }
-      $deck->moveAllCardsInLocation("lastcombo", "combos");
-      $deck->moveAllCardsInLocation("allcombos", "combos");
-      switch ($state) {
-        case "grandTichuBets":
-        case "giveCards":
-        case "showPassedCards":
-          LogManager::insert(0, "newRound");
-          break;
-        case "phoenixPlay":
-          $cards = array_values($deck->getCardsInLocation("phoenixPlay"));
-          $player = $cards[0]["location_arg"];
-          $combo = new Combo($cards);
-          if (!is_array($combo->phoenixValue)) {
-            $combo->phoenixValue = [$combo->phoenixValue];
-          }
-          LogManager::askPhoenix($player, $combo);
-          $deck->moveAllCardsInLocation("phoenixPlay", "hand", null, $player);
-          break;
-      }
-    }
-  }
-
-  function upgradeTableDb1($from_version)
-  {
-    if ($from_version <= 2101032301) {
       // ! important ! Use DBPREFIX_<table_name> for all tables
       // player_has_bomb is obsolete.
       $players = $this->getObjectListFromDB("SELECT * FROM player");
@@ -1527,7 +1487,6 @@ class Tichu extends Table
       $this->applyDbUpgradeToAllDB(
         "UPDATE DBPREFIX_card SET card_location='combos' WHERE card_location IN ('lastcombo', 'allcombos')"
       );
-      $playerids = $this->getObjectListFromDB("SELECT player_id FROM player ORDER BY player_no");
       switch ($state) {
         case "grandTichuBets":
         case "giveCards":

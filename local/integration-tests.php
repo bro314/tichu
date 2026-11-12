@@ -1287,6 +1287,103 @@ function test_zombie_turns_across_all_states(): void
 }
 
 // ============================================================================
+// Test 13: test_action_and_parameter_validation_and_card_to_str
+// ============================================================================
+function test_action_and_parameter_validation_and_card_to_str(): void
+{
+  $game = new \Tichu();
+
+  // 1. cancel() outside playBomb must throw UserException
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name']);
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'cancel'),
+    null,
+    'Calling cancel() outside playBomb must throw UserException'
+  );
+
+  // 2. acceptCards() outside showPassedCards must throw UserException
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'acceptCards'),
+    null,
+    'Calling acceptCards() outside showPassedCards must throw UserException'
+  );
+
+  // 3. confirmTichu() with invalid bet must throw UserException
+  assertThrowsUserException(
+    static fn() => $game->confirmTichu(999),
+    null,
+    'Calling confirmTichu(999) with invalid bet must throw UserException'
+  );
+
+  // 4. playCombo([]) (empty card array) and playCombo([9999]) (non-existent card ID) must throw UserException
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'playCombo', ['cards' => '']),
+    'at least one card',
+    'Calling playCombo([]) with empty card array must throw UserException'
+  );
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'playCombo', ['cards' => '9999']),
+    'in your hand',
+    'Calling playCombo([9999]) with card not in hand must throw UserException'
+  );
+
+  // 5. makeAWish(99) (invalid wish rank) must throw UserException
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  assertSameVal('mahjongPlay', $game->gamestate->state()['name']);
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'makeAWish', ['wish' => 99]),
+    'Invalid wish value',
+    'Calling makeAWish(99) must throw UserException'
+  );
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'makeAWish', ['wish' => 1]),
+    'Invalid wish value',
+    'Calling makeAWish(1) must throw UserException'
+  );
+
+  // 6. chooseDragonGift(5) (invalid opponent index) must throw UserException
+  \LocalTichuScenarios::setupScenario($game, 'dragon_gift', P0);
+  callAction($game, P3, 'pass', ['onlyOnce' => true]);
+  callAction($game, P0, 'collect');
+  assertSameVal('chooseDragonGift', $game->gamestate->state()['name']);
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'chooseDragonGift', ['player' => 5]),
+    'Invalid player choice',
+    'Calling chooseDragonGift(5) must throw UserException'
+  );
+
+  // 7. playBomb() when player has < 4 cards in hand must throw UserException
+  \LocalTichuScenarios::setupScenario($game, 'bomb_interrupt', P0);
+  // Leave P2 with only 3 cards in hand
+  \APP_DbObject::DbQuery(
+    "UPDATE card SET card_location = 'captured', card_location_arg = " .
+      P0 .
+      " WHERE card_location = 'hand' AND card_location_arg = " .
+      P2
+  );
+  $threeCardIds = \LocalTichuScenarios::getCardIds([[1, 7], [2, 7], [3, 7]]);
+  \CardManager::getDeck()->moveCards($threeCardIds, 'hand', P2);
+  assertSameVal(3, \CardManager::getDeck()->countCardInLocation('hand', P2), 'P2 should have 3 cards in hand');
+  assertThrowsUserException(
+    static fn() => callAction($game, P2, 'playBomb', ['cards' => '']),
+    'cannot play a bomb',
+    'Calling playBomb() with fewer than 4 cards in hand must throw UserException'
+  );
+
+  // 8. CardManager::cardToStr() with type_arg == 1 returns special card names and does not fall through to case 11 (Jack)
+  assertSameVal('Dragon', \CardManager::cardToStr(['type' => 1, 'type_arg' => 1]), 'type 1, type_arg 1 should be Dragon');
+  assertSameVal('Phoenix', \CardManager::cardToStr(['type' => 2, 'type_arg' => 1]), 'type 2, type_arg 1 should be Phoenix');
+  assertSameVal('Dog', \CardManager::cardToStr(['type' => 3, 'type_arg' => 1]), 'type 3, type_arg 1 should be Dog');
+  assertSameVal('Mahjong', \CardManager::cardToStr(['type' => 4, 'type_arg' => 1]), 'type 4, type_arg 1 should be Mahjong');
+  assertTrueVal(
+    \CardManager::cardToStr(['type' => 0, 'type_arg' => 1]) !== 'Jack',
+    'cardToStr case 1 must have a break statement and not fall through to case 11 (Jack)'
+  );
+}
+
+// ============================================================================
 // Runner Execution
 // ============================================================================
 $tests = [
@@ -1302,6 +1399,7 @@ $tests = [
   'test_double_victory_and_normal_round_scoring',
   'test_full_multi_round_game_to_completion',
   'test_zombie_turns_across_all_states',
+  'test_action_and_parameter_validation_and_card_to_str',
 ];
 
 echo "====================================================================\n";

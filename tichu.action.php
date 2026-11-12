@@ -56,7 +56,7 @@ class action_tichu extends APP_GameAction
   public function confirmTichu()
   {
     $this->setAjaxMode();
-    $bet = $this->getArg("bet", AT_enum, true, false, ["100", "200"]);
+    $bet = $this->getArg("bet", AT_enum, true, false, ["0", "100", "200"]);
     $this->game->confirmTichu($bet);
     $this->ajaxResponse();
   }
@@ -64,7 +64,7 @@ class action_tichu extends APP_GameAction
   public function makeAWish()
   {
     $this->setAjaxMode();
-    $wish = $this->getArg("wish", AT_posint, false, null);
+    $wish = $this->getArg("wish", AT_posint, true);
     $this->game->makeAWish($wish);
     $this->ajaxResponse();
   }
@@ -160,7 +160,7 @@ class action_tichu extends APP_GameAction
   public function chooseDragonGift()
   {
     $this->setAjaxMode();
-    $playertogive = $this->getArg("player", AT_posint, false, null);
+    $playertogive = $this->getArg("player", AT_posint, true);
     $this->game->chooseDragonGift($playertogive);
     $this->ajaxResponse();
   }
