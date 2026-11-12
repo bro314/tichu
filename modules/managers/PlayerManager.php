@@ -61,8 +61,8 @@ class PlayerManager
         }
 
         if (isset($default_colors[$table_order - 1])) {
-          $player_no = $table_order - 1;
-          $player_team = $player_no % 2;
+          $player_no = $table_order;
+          $player_team = ($table_order - 1) % 2;
           $color = $default_colors[$player_team];
         }
       }

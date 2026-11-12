@@ -8,6 +8,7 @@
  * -----
  */
 import { dojohtml, dojostyle } from "./util";
+import { initStudioTestHelper } from "./studio-test";
 
 interface StockItem {
   id: number;
@@ -290,6 +291,7 @@ export class Tichu {
     this.setTheme((this.getGameUserPreference(104) as number) ?? 0);
 
     this.updateCardsPlayed();
+    initStudioTestHelper(this);
 
     debug("Ending game setup");
   }
@@ -544,8 +546,9 @@ export class Tichu {
     const weights: Weights = {};
     let i = 0;
     for (const card of cards) {
-      if (playerId === this.player_id) {
-        this.playerHand!.removeFromStockById(card.id);
+      if (Number(playerId) === Number(this.player_id)) {
+        this.playerHand!.removeFromStockById(String(card.id));
+        this.gamedatas.hand = this.gamedatas.hand.filter((c) => String(c.id) !== String(card.id));
       }
       addCardToStock(stock, card);
       weights[cardToStockType(card)] = i++;
@@ -588,10 +591,12 @@ export class Tichu {
     this.resetLastCombos();
     this.gamedatas.capturedCards = [];
     this.gamedatas.hand = [];
+    this.playerHand?.removeAll();
     this.gamedatas.currentTrick = [];
     this.gamedatas.currentTrickValue = 0;
     this.gamedatas.firstoutplayer = 0;
     this.gamedatas.round++;
+    this.gamedatas.trick = 0;
     for (const id in this.gamedatas.players) {
       this.gamedatas.players[id]!.call_tichu = Bet.NO_BET_YET;
       this.gamedatas.players[id]!.call_grand_tichu = Bet.NO_BET_YET;
@@ -706,6 +711,8 @@ export class Tichu {
 
   onLeavingState(stateName: string) {
     debug("Leaving state: " + stateName);
+    clearTimeout(this.autoCollectTimeout);
+    clearTimeout(this.autoAcceptTimeout);
   }
 
   updateCardsPlayed() {
@@ -1341,6 +1348,10 @@ export class Tichu {
   private notif_dealCards(notif: Notif & { args: NotifTypes["dealCards"] }) {
     debug("notif_dealCards", notif);
 
+    if (notif.args.cards.length === 8) {
+      this.gamedatas.hand = [];
+      this.playerHand.removeAll();
+    }
     for (const card of notif.args.cards) {
       this.gamedatas.hand.push(card);
       addCardToStock(this.playerHand, card);
@@ -1447,6 +1458,7 @@ export class Tichu {
   }
 
   private updateMahjongWish(wish: number) {
+    this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? Number(wish) : 0;
     const indicator = $("mahjongIndicator") as HTMLElement;
     if (wish > 0 && wish < 15) {
       const w = wish - 2;
@@ -1514,7 +1526,11 @@ export class Tichu {
 
     const newScores = notif.args.newScores;
     for (const player_id in newScores) {
-      this.scoreCtrl[Number(player_id)]!.toValue(newScores[player_id]!);
+      const pId = Number(player_id);
+      this.scoreCtrl[pId]!.toValue(newScores[pId]!);
+      if (this.gamedatas.players[pId]) {
+        (this.gamedatas.players[pId] as any).score = String(newScores[pId]!);
+      }
     }
   }
 
@@ -1529,7 +1545,7 @@ export class Tichu {
     debug("notif_acceptCards", notif);
     clearTimeout(this.autoAcceptTimeout);
 
-    setTimeout(() => {
+    const acceptFn = () => {
       for (const card of notif.args.cards) {
         const cardOnTable = "cardontable_" + this.player_id + "_" + card.id;
         this.gamedatas.hand.push(card);
@@ -1537,7 +1553,13 @@ export class Tichu {
         this.slideToObjectAndDestroy(cardOnTable, "myhand", 500, 0);
       }
       this.updateStockOverlap(this.playerHand);
-    }, 2000);
+    };
+
+    if ((this as any).instantaneousMode) {
+      acceptFn();
+    } else {
+      setTimeout(acceptFn, 2000);
+    }
   }
 
   private notif_passCards(notif: Notif & { args: NotifTypes["passCards"] }) {
@@ -1550,8 +1572,8 @@ export class Tichu {
     const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
 
     for (const id of ids) {
-      this.gamedatas.hand = this.gamedatas.hand.filter((c) => c.id !== id);
-      this.playerHand.removeFromStockById(id);
+      this.gamedatas.hand = this.gamedatas.hand.filter((c) => String(c.id) !== String(id));
+      this.playerHand.removeFromStockById(String(id));
     }
     this.updateStockOverlap(this.playerHand);
   }

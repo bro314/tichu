@@ -1,6 +1,6 @@
 # BGA_STUDIO_TESTING.md — Fast Playbook for BGA Studio & 4-Player Testing
 
-This document provides exact URLs, DOM/iframe selectors, JavaScript (`gameui`) shortcuts, and anti-patterns to avoid so that AI agents can start, switch players, and play test games on **BGA Studio** (`https://studio.boardgamearena.com`) in **seconds** rather than minutes.
+This document provides exact URLs, DOM/iframe selectors, the built-in `#studio-test-bar` (`window.tt`), and anti-patterns to avoid so that AI agents can Express-start, test, and Express-stop games on **BGA Studio** (`https://studio.boardgamearena.com`) in **~6 seconds**.
 
 ---
 
@@ -16,154 +16,97 @@ All 10 test accounts on `https://studio.boardgamearena.com` share the password s
 | **`dashwood3`** | `2385077` | Test Player 4 |
 | `dashwood4`..`dashwood9` | — | Additional test accounts |
 
-> **Important**: You only ever need to log in as **`dashwood0`**. BGA Studio allows `dashwood0` to view and act as any test player on the table via `&as=<player_id>`. You do **not** need multiple cookie jars or separate logins.
->
-> **Note on Express Start Clock Timeout**: Express Start creates a **real-time** table with a short clock. If a test table is left idle with no active client connected, BGA will eventually auto-abandon it (*"All players (with a positive clock) choosed to abandon this game"*, ending in a `0–0` Tie). That is a Studio clock timeout, not a game bug — just Express Start a fresh table. For server-side SQL/request logs and PHP stack traces on a table, check `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>`.
+> **Important**: You only ever need to log in as **`dashwood0`**. BGA Studio allows `dashwood0` to view and act as any test player on the table via `&as=<player_id>`, and the Studio test runner (`window.tt` / `#studio-test-bar` in `src/studio-test.ts`) executes actions across all 4 seats automatically from a single browser tab without switching URLs!
 
 ---
 
-## 2. CRITICAL: `/tableview` and `/tablereplay` Use an `iframe`!
+## 2. CRITICAL Rules for the `browser` Subagent
 
-When you open `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>` or `https://studio.boardgamearena.com/tablereplay?...`:
-- The outer page (`/tableview` or `/tablereplay`) is just a wrapper shell.
-- **The entire BGA game UI (`#noBet`, `#passCards_button`, `#myhand`, `#myPlayCombo`, `#myPass`, `#expReplay`, `tichu-replay#game_play_replay`, and `window.gameui`) lives inside the child `iframe` (`/1/tichu/tichu/...` or `/archive/archive/frame.html...`)!**
-- Therefore:
-  - **NEVER** use `page.locator('#noBet')` on `/tableview` or `/tablereplay` — it will time out for 30 seconds!
-  - **ALWAYS** use `const frame = page.frameLocator('iframe');` for Playwright locators (e.g., `frame.locator('#noBet')` or `frame.locator('#expReplay')`), **OR** `const gameFrame = page.frames().find(f => f.url().includes('/tichu') || f.url().includes('/archive/'));` when calling `gameFrame.evaluate(() => window.gameui...)`!
-
----
-
-## 3. Stopping an Existing Table & Starting a New 4-Player Game ("Express Start")
-
-### Stopping an Existing Express Start Table:
-If an earlier Express Start table (`<OLD_TABLE_ID>`) is still running, BGA Studio will block starting a new one until the old one is stopped:
-- **Do NOT** click regular "Quit game" / "Abandon" (that only leaves for 1 player while the other 3 test accounts keep the table alive!).
-- **DO THIS**: Navigate to `https://studio.boardgamearena.com/table?table=<OLD_TABLE_ID>` and click **`Express stop`** (`page.getByText('Express stop').click()`). That terminates the table for all 4 test accounts in 1 click.
-
-### Starting a New 4-Player Game ("Express Start"):
-1. Navigate directly to:
-   ```text
-   https://studio.boardgamearena.com/gamepanel?game=tichu
-   ```
-2. If **`Express start`** is not immediately visible, click the **`Play`** button first to expand the quick-play panel.
-3. Click **`Express start`** (`page.getByText('Express start').click()`).
-4. Wait for navigation to `/tableview?table=<TABLE_ID>` (or `/table?table=<TABLE_ID>`) and read `tableId = new URL(page.url()).searchParams.get('table')`.
+1. **NEVER pass `page.evaluate(...)` or `waitForFunction(...)` to the `browser` subagent**:
+   - The `browser` subagent's system prompt forbids `page.evaluate` and `waitForFunction`. If you include them in a prompt, the subagent will spend **60–100 seconds of LLM thinking time per step** rewriting your script!
+   - Instead, use **pure Playwright locators** (`page.goto`, `page.getByText`, `page.locator`, `page.frameLocator('iframe')`) to click the `#studio-test-bar` buttons (`#tt_btn_smoke`, `#tt_btn_round`, `#tt_btn_game`, `#tt_btn_stop`, `#tt_btn_new`) and read `#tt_test_output`.
+2. **`/tableview` and `/tablereplay` Use an `iframe`**:
+   - The entire BGA game UI (`#studio-test-bar`, `#tt_btn_smoke`, `#tt_test_output`, `#noBet`, `#passCards_button`, `#myhand`, `#myPlayCombo`, `#myPass`) lives inside the child `iframe` (`/1/tichu/tichu/...`)!
+   - Always use `const frame = page.frameLocator('iframe');` for locators inside the game.
+3. **Always Do an "Express stop / CANCEL" Check at Both Beginning and End**:
+   - At the **beginning** on `https://studio.boardgamearena.com/gamepanel?game=tichu`:
+     - If an unstarted lobby table was left open, BGA Studio hides the **Express start** button and shows a **CANCEL** button instead. Click `CANCEL` first so **Express start** appears!
+     - If a running table was left open, click **Express stop** first.
+   - At the **end** of the test:
+     - Navigate to `https://studio.boardgamearena.com/table?table=<TABLE_ID>` and click BGA Studio's built-in **`Express stop`** button (or click `#tt_btn_stop` in `#studio-test-bar`) so no Studio table is ever left dangling!
 
 ---
 
-## 4. Complete 4-Player Game Loop (Copy-Paste Ready Scripts)
+## 3. Copy-Paste 1-Step End-to-End Studio Verification (~6.5 Seconds Total)
 
-Once you have `tableId`, every phase across all 4 players can be executed in **one single `webview_browser` script per phase** using `page.frameLocator('iframe')`!
+Delegate this single `webview_browser` script to the `browser` subagent (`Model: "flash"`). It performs the beginning cleanup check, clicks BGA Studio's built-in **Express start**, runs the full 4-player Smoke Test (`#tt_btn_smoke`: Grand Tichu bets -> Pass 3 cards -> Accept cards -> Play 2 tricks + UI/DOM assertions in ~1.8s), and clicks BGA Studio's built-in **Express stop** at the end:
 
-### Phase 1: Grand Tichu Bets (All 4 Players in 1 Step, ~6 seconds)
 ```javascript
-const tableId = '<TABLE_ID>';
-const pids = ['2385074', '2385075', '2385076', '2385077'];
+const t0 = Date.now();
+await page.goto('https://studio.boardgamearena.com/gamepanel?game=tichu', { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(1500);
 
-for (const pid of pids) {
-  await page.goto(`https://studio.boardgamearena.com/tableview?table=${tableId}&as=${pid}`, {
-    waitUntil: 'domcontentloaded'
-  });
-  const frame = page.frameLocator('iframe');
-  const noBet = frame.locator('#noBet');
-  await noBet.waitFor({ state: 'visible', timeout: 15000 });
-  await noBet.click({ force: true });
-  await page.waitForTimeout(300);
+// 1. Beginning check: If an unstarted table is open on gamepanel, click its built-in "CANCEL" button first.
+const cancelBtn = page.getByText('CANCEL', { exact: true });
+if ((await cancelBtn.count()) > 0 && (await cancelBtn.first().isVisible())) {
+  await cancelBtn.first().click();
+  await page.waitForTimeout(1000);
 }
-return { grandTichuDone: true };
-```
-
-### Phase 2: Passing 3 Cards (`giveCards` — All 4 Players in 1 Step, ~10 seconds)
-```javascript
-const tableId = '<TABLE_ID>';
-const pids = ['2385074', '2385075', '2385076', '2385077'];
-
-for (const pid of pids) {
-  await page.goto(`https://studio.boardgamearena.com/tableview?table=${tableId}&as=${pid}`, {
-    waitUntil: 'domcontentloaded'
-  });
-  const frame = page.frameLocator('iframe');
-  await frame.locator('#passCards_button').waitFor({ state: 'visible', timeout: 15000 });
-
-  // Wait for the game iframe's window.gameui to be ready and assign 3 cards programmatically
-  const gameFrame = page.frames().find(f => f.url().includes('/tichu'));
-  await gameFrame.waitForFunction(() => Boolean(window.gameui && window.gameui.playerHand && window.gameui.playerHand.getAllItems().length === 14));
-  await gameFrame.evaluate(() => {
-    const ui = window.gameui;
-    ui.playerHand.unselectAll();
-    const items = ui.playerHand.getAllItems().slice(0, 3);
-    items.forEach((item, idx) => {
-      ui.playerHand.unselectAll();
-      ui.playerHand.selectItem(String(item.id));
-      ui.onGiveCard(idx);
-    });
-  });
-
-  await frame.locator('#passCards_button').click({ force: true });
-  await page.waitForTimeout(300);
+// Or if a running table shows "Express stop" on gamepanel, click it:
+const stopBtn0 = page.getByText('Express stop');
+if ((await stopBtn0.count()) > 0 && (await stopBtn0.first().isVisible())) {
+  await stopBtn0.first().click();
+  await page.waitForTimeout(1000);
 }
 
-// Wait ~3.5s for the acceptCards animation to complete and return the Mahjong owner (active_player)
-await page.waitForTimeout(3500);
-const gameFrame = page.frames().find(f => f.url().includes('/tichu'));
-const state = await gameFrame.evaluate(() => ({
-  stateName: window.gameui.gamedatas.gamestate.name,
-  activePlayer: window.gameui.gamedatas.gamestate.active_player
-}));
-return state;
+// 2. Click BGA Studio's built-in "Express start" button
+const expressStartBtn = page.getByText('Express start').first();
+await expressStartBtn.waitFor({ state: 'visible', timeout: 10000 });
+await expressStartBtn.click();
+
+// Wait for redirect to /tableview?table=<ID>
+await page.waitForURL(/tableview\?table=/, { timeout: 20000 });
+const tableId = new URL(page.url()).searchParams.get('table');
+
+// 3. Run the fast smoke test inside the game iframe (~1.8s)
+const frame = page.frameLocator('iframe');
+await frame.locator('#tt_btn_smoke').waitFor({ state: 'visible', timeout: 15000 });
+await frame.locator('#tt_btn_smoke').click();
+await frame.locator('#tt_test_output[data-done="1"][data-status="pass"]').waitFor({ state: 'attached', timeout: 20000 });
+const smokeResult = await frame.locator('#tt_test_output').innerText();
+
+// 4. End check: Go to BGA Studio's table page and click the built-in "Express stop" button
+await page.goto(`https://studio.boardgamearena.com/table?table=${tableId}`, { waitUntil: 'domcontentloaded' });
+const expressStopBtn = page.getByText('Express stop').first();
+await expressStopBtn.waitFor({ state: 'visible', timeout: 10000 });
+await expressStopBtn.click();
+await page.waitForTimeout(1000);
+
+return {
+  tableId,
+  totalMs: Date.now() - t0,
+  smokeResult: JSON.parse(smokeResult),
+  expressStoppedAtEnd: true
+};
 ```
 
-### Phase 3: Playing & Resolving a Trick (Lead + 3 Passes + Collect in 1 Step, ~10 seconds)
-```javascript
-const tableId = '<TABLE_ID>';
-const leadPid = '<ACTIVE_PLAYER_ID>'; // Returned from Phase 2
+---
 
-// 1. Lead a normal single card (rank >= 2 so it doesn't trigger Mahjong wish or Dog)
-await page.goto(`https://studio.boardgamearena.com/tableview?table=${tableId}&as=${leadPid}`, {
-  waitUntil: 'domcontentloaded'
-});
-let frame = page.frameLocator('iframe');
-await frame.locator('#myPlayCombo').waitFor({ state: 'visible', timeout: 15000 });
-let gameFrame = page.frames().find(f => f.url().includes('/tichu'));
+## 4. Studio Test Bar (`#studio-test-bar`) & `window.tt` Reference (`src/studio-test.ts`)
 
-await gameFrame.evaluate(() => {
-  const ui = window.gameui;
-  ui.playerHand.unselectAll();
-  const normalCard = ui.gamedatas.hand.find(c => Number(c.type_arg) >= 2);
-  ui.playerHand.selectItem(String(normalCard.id));
-});
-await frame.locator('#myPlayCombo').click({ force: true });
-await page.waitForTimeout(500);
+When loaded on `studio.boardgamearena.com` (never on `boardgamearena.com` production), [`src/studio-test.ts`](file:///Users/brohlfs/git/tichu/src/studio-test.ts) mounts `#studio-test-bar` at the top of `#game_play_area_wrap` and exposes `window.tt` (`window.tichuTest`):
 
-// 2. Pass with the other 3 players in turn order
-for (let i = 0; i < 3; i++) {
-  gameFrame = page.frames().find(f => f.url().includes('/tichu'));
-  const nextPid = await gameFrame.evaluate(() => window.gameui.gamedatas.gamestate.active_player);
-  await page.goto(`https://studio.boardgamearena.com/tableview?table=${tableId}&as=${nextPid}`, {
-    waitUntil: 'domcontentloaded'
-  });
-  frame = page.frameLocator('iframe');
-  await frame.locator('#myPass').waitFor({ state: 'visible', timeout: 15000 });
-  gameFrame = page.frames().find(f => f.url().includes('/tichu'));
-  await gameFrame.evaluate(() => window.gameui.playerHand.unselectAll());
-  await frame.locator('#myPass').click({ force: true });
-  await page.waitForTimeout(500);
-}
+| Button ID | Label | `window.tt` Method | Typical Duration | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `#tt_btn_smoke` | `🧪 Smoke Test` | `await tt.runSmokeTest()` | **~1.8s** | Batch-executes Grand Tichu bets (all 4 players), passes 3 cards (all 4 players), accepts cards, plays 2 tricks, and runs `tt.assertUI()` after each phase. |
+| `#tt_btn_round` | `🏁 Run Round` | `await tt.runRound({ maxMoves: 250 })` | **~8.3s** | Plays a complete round from deal to scoring using server-side batched bot turns (`debug_bgaPlayMoves`). |
+| `#tt_btn_game` | `🏆 Run Game` | `await tt.runGame({ maxRounds: 15 })` | **~60–90s** | Plays a complete multi-round game to 1000 points (`gameEnd`). |
+| `#tt_btn_gt_all` | `⚡ GT Bet All 4` | `await tt.grandTichuAll()` | ~0.4s | Submits Grand Tichu `"no bet"` for all 4 seats in one server call (`debug_bgaGrandTichuAll`). |
+| `#tt_btn_pass_all` | `🃏 Pass 3 + Bots` | `await tt.giveCardsAll()` | ~0.5s | Passes 3 lowest cards for all 4 seats in one server call (`debug_bgaGiveCardsAll`). |
+| `#tt_btn_step1` | `🤖 Step 1` | `await tt.stepBot()` | ~0.3s | Executes 1 rule-compliant bot move on the server (`debug_bgaStepBot`). |
+| `#tt_btn_others` | `🤖 Act for Others` | `await tt.actForOthers()` | ~0.5s | Advances bots until it is the viewing player's turn (`debug_bgaActForOthers`). |
+| `#tt_btn_assert` | `✔ Assert UI` | `await tt.assertUI()` | ~0.2s | Verifies client `gamedatas`, hand Stock counts, table combo Stock, and Mahjong wish badge against server state (`debug_bgaState`). |
+| `#tt_btn_new` | `🔄 New Express Table` | `await tt.expressStartNew()` | ~1.2s | Express-stops the current table, creates a new table, and Express-starts it. |
+| `#tt_btn_stop` | `⏹ Express Stop` | `await tt.expressStop()` | ~0.4s | Express-stops the current table (or quits/cancels if unstarted). |
 
-// 3. Return to leadPid and collect trick immediately (bypassing 2s auto-collect timer)
-await page.goto(`https://studio.boardgamearena.com/tableview?table=${tableId}&as=${leadPid}`, {
-  waitUntil: 'domcontentloaded'
-});
-frame = page.frameLocator('iframe');
-await frame.locator('#ebd-body').waitFor({ state: 'visible', timeout: 15000 });
-gameFrame = page.frames().find(f => f.url().includes('/tichu'));
-await gameFrame.waitForFunction(() => Boolean(window.gameui && window.gameui.gamedatas));
-await gameFrame.evaluate(() => {
-  if (window.gameui.gamedatas.gamestate.name === 'confirmTrick') {
-    window.gameui.collect();
-  }
-});
-await page.waitForTimeout(500);
-const finalStatus = await frame.locator('#pagemaintitletext').innerText();
-return { finalStatus };
-```
+You can also run arbitrary commands via `#tt_cmd_input` + `#tt_cmd_run` (e.g., `status`, `assertUI`, `wish:8`, `dragon:2385075`, `pass`, `play:[12,15]`) and read the JSON result from `#tt_test_output` (`data-done="1"`, `data-status="pass" | "fail"`).

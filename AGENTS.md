@@ -89,6 +89,7 @@ BGA games use an event-driven client-server architecture built on a finite state
 ├── src/                         # TypeScript client source code
 │   ├── tsconfig.json            # TypeScript compiler configuration (outputs to `dist/`)
 │   ├── tichu.ts                 # Main BGA client class (`Tichu`), Dojo integration, state & notification handlers
+│   ├── studio-test.ts           # Studio-only test runner (`window.tt` & `#studio-test-bar`, only active on `studio.boardgamearena.com`)
 │   ├── util.ts                  # Dojo query helpers (`dojostyle`, `dojohtml`)
 │   ├── types/
 │   │   └── bga-framework.d.ts   # TypeScript ambient declarations for BGA framework (`ebg`, `dojo`, `GameGui`, `Stock`)
@@ -336,12 +337,16 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `local`, `tests`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
-   - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and include its key instructions/snippets in the subagent prompt!
+   - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and include its pure-locator snippet in the subagent prompt!
    - Key highlights from `BGA_STUDIO_TESTING.md`:
+     - **NEVER pass `page.evaluate(...)` or `waitForFunction(...)` to the `browser` subagent**: Its system prompt forbids them and causes 60–100s of LLM thinking overhead per step as it rewrites your script. Always use pure Playwright locators (`page.getByText`, `page.locator`, `page.frameLocator('iframe')`) to click `#studio-test-bar` buttons (`#tt_btn_smoke`, `#tt_btn_round`, `#tt_btn_game`, `#tt_btn_stop`, `#tt_btn_new`) and read `#tt_test_output`.
+     - **Always Express Stop / CANCEL at Beginning & End**:
+       - At the beginning on `https://studio.boardgamearena.com/gamepanel?game=tichu`, click `CANCEL` (if an unstarted table is open, which hides `Express start`) or `Express stop` (if a running table is open), then click BGA Studio's built-in **`Express start`** button.
+       - At the end of the test, navigate to `https://studio.boardgamearena.com/table?table=<TABLE_ID>` and click BGA Studio's built-in **`Express stop`** button (or `#tt_btn_stop`) so no table is left dangling.
+     - **Studio Test Runner (`src/studio-test.ts` + `debug_bga*` in `tichu.game.php`)**:
+       - Only active on `studio.boardgamearena.com` (double-guarded on client hostname and `$this->getBgaEnvironment() === 'studio'` on server).
+       - Runs full 4-player Smoke Test (`#tt_btn_smoke` / `tt.runSmokeTest()`) in **~1.8s**, full round (`#tt_btn_round` / `tt.runRound()`) in **~8.3s**, and full game (`#tt_btn_game` / `tt.runGame()`) in **~60–90s** from a single tab without switching `&as=<player_id>` URLs.
      - **Player IDs**: `dashwood0` = `2385074`, `dashwood1` = `2385075`, `dashwood2` = `2385076`, `dashwood3` = `2385077`.
-     - **Express Start**: Always click **`Express start`** directly from `https://studio.boardgamearena.com/gamepanel?game=tichu` (never create a lobby table first and click Express Start inside the lobby table, as that causes `Duplicate entry '1' for key 'player.PRIMARY'`).
-     - **Fast Player Switching**: Switch players by navigating directly to `https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<PLAYER_ID>` (or keeping 4 tabs open to those URLs) rather than hunting for the tiny `➔` arrow in the DOM.
-     - **Avoid Overlapping Card Clicks**: Use `window.gameui.playerHand.unselectAll()` and `window.gameui.playerHand.selectItem(String(cardId))` (and `window.gameui.onGiveCard(slotIdx)` for passing 3 cards) via `page.evaluate(...)` instead of coordinate-clicking overlapping `.stockitem` divs.
    - **Studio Debugging Helpers & Gotchas**:
      - **Server SQL & Request Logs**: Navigate to `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>` to inspect full server-side request/SQL logs and PHP stack traces.
      - **`debug_<name>()` Methods**: Any `public function debug_<name>()` defined on `Tichu` in `tichu.game.php` automatically gets a clickable button in the Studio debug panel (`#toggleDebugFunctionsPanel`, DOM ID `debug_<name>`) for setting up test states or dumping data. Guard with `if ($this->getBgaEnvironment() !== 'studio') return;` or remove before release.
