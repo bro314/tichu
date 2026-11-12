@@ -497,6 +497,83 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   // P2 CAN beat 10.5 with a Jack (11)
   callAction($game, P2, 'playCombo', ['cards' => $jackPagodasId]);
   assertSameVal((string) P3, $game->getActivePlayerId());
+
+  // Part C: Playing [4, 5, 6, 7, PH] over a 3-4-5-6-7 straight -> auto-resolves Phoenix to 8 (4-5-6-7-8) without ST_PHOENIX_PLAY
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 3], [2, 4], [3, 5], [4, 6], [1, 7], [1, 2]],
+    P1 => [[1, 4], [2, 5], [3, 6], [4, 7], [2, 1], [2, 2]],
+    P2 => [[4, 5], [1, 6], [2, 7], [3, 8], [4, 9], [3, 2]],
+    P3 => [[4, 2], [4, 3]],
+  ], 'captured_p0');
+  $p0Straight3to7 = \LocalTichuScenarios::getCardIds([[1, 3], [2, 4], [3, 5], [4, 6], [1, 7]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $p0Straight3to7)]);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId());
+
+  $p1Straight4to7Phx = \LocalTichuScenarios::getCardIds([[1, 4], [2, 5], [3, 6], [4, 7], [2, 1]]);
+  callAction($game, P1, 'playCombo', ['cards' => implode(';', $p1Straight4to7Phx)]);
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Playing [4,5,6,7,PH] over 3-4-5-6-7 should auto-resolve to 4-5-6-7-8 without phoenixPlay');
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'Turn should advance directly to P2');
+  $resolvedCombo = \LogManager::getLastCombo();
+  assertSameVal(8, (int) $resolvedCombo->phoenixValue, 'Phoenix should auto-resolve to 8');
+  assertSameVal('Run of 5 cards from 4 to 8', $resolvedCombo->description);
+
+  // Part D: Playing [4, 5, 6, 7, PH] over a 2-3-4-5-6 straight -> enters ST_PHOENIX_PLAY because both 3-4-5-6-7 and 4-5-6-7-8 beat it
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [1, 9]],
+    P1 => [[1, 4], [2, 5], [3, 6], [4, 7], [2, 1], [2, 9]],
+    P2 => [[4, 5], [1, 6], [2, 7], [3, 8], [4, 9], [3, 2]],
+    P3 => [[4, 2], [4, 3]],
+  ], 'captured_p0');
+  $p0Straight2to6 = \LocalTichuScenarios::getCardIds([[1, 2], [1, 3], [2, 4], [3, 5], [4, 6]]);
+  $p1Straight4to7Phx = \LocalTichuScenarios::getCardIds([[1, 4], [2, 5], [3, 6], [4, 7], [2, 1]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $p0Straight2to6)]);
+  callAction($game, P1, 'playCombo', ['cards' => implode(';', $p1Straight4to7Phx)]);
+  $stateBothBeat = $game->gamestate->state(P1);
+  assertSameVal('phoenixPlay', $stateBothBeat['name'], 'Playing [4,5,6,7,PH] over 2-3-4-5-6 must enter phoenixPlay because both 3..7 and 4..8 beat 2..6');
+  assertSameVal([8, 3], $stateBothBeat['args']['_private']['values'] ?? []);
+  callAction($game, P1, 'choosePhoenix', ['phoenixValue' => 3]);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal('Run of 5 cards from 3 to 7', \LogManager::getLastCombo()->description);
+
+  // Part E: Ambiguous Phoenix combo violating an active Mahjong wish when player can fulfill the wish -> throws UserException before ST_PHOENIX_PLAY
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 4], [2, 5], [3, 6], [4, 7], [2, 1], [1, 9]],
+    P1 => [[2, 2], [2, 3]],
+    P2 => [[3, 2], [3, 3]],
+    P3 => [[4, 2], [4, 3]],
+  ], 'captured_p0');
+  $p0Straight4to7Phx = \LocalTichuScenarios::getCardIds([[1, 4], [2, 5], [3, 6], [4, 7], [2, 1]]);
+  $game->setGameStateValue('mahjongWish', 9);
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'playCombo', ['cards' => implode(';', $p0Straight4to7Phx)]),
+    'Mahjong Wish',
+    'Ambiguous Phoenix combo that ignores executable Mahjong wish must throw UserException before entering phoenixPlay'
+  );
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'State must remain playComboOpen after Mahjong wish rejection');
+
+  // Part F: cancelPhoenix() after a DOG_COMBO lead returns to ST_PLAY_COMBO_OPEN (playComboOpen), not ST_PLAY_COMBO
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[3, 1], [1, 2]],
+    P1 => [[2, 2], [2, 3]],
+    P2 => [[1, 4], [2, 5], [3, 6], [4, 7], [2, 1], [3, 9]],
+    P3 => [[4, 2], [4, 3]],
+  ], 'captured_p0');
+  $dogCardId = (string) \LocalTichuScenarios::getCardId(3, 1);
+  $p2Straight4to7Phx = \LocalTichuScenarios::getCardIds([[1, 4], [2, 5], [3, 6], [4, 7], [2, 1]]);
+  callAction($game, P0, 'playCombo', ['cards' => $dogCardId]);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name']);
+  assertSameVal((string) P2, $game->getActivePlayerId());
+
+  callAction($game, P2, 'playCombo', ['cards' => implode(';', $p2Straight4to7Phx)]);
+  assertSameVal('phoenixPlay', $game->gamestate->state()['name']);
+  callAction($game, P2, 'cancelPhoenix');
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'cancelPhoenix after Dog lead must return to playComboOpen');
+  assertSameVal((string) P2, $game->getActivePlayerId());
 }
 
 // ============================================================================

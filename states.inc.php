@@ -169,11 +169,11 @@ $machinestates = [
 
   ST_PHOENIX_PLAY => [
     "name" => "phoenixPlay",
-    "description" => clienttranslate('${actplayer} must play a card combination, or pass'),
+    "description" => clienttranslate('${actplayer} must choose a value for the phoenix'),
     "descriptionmyturn" => clienttranslate('${you} must choose a value for the phoenix'),
     "type" => "activeplayer",
     "args" => "argsPhoenixPlay",
-    "possibleactions" => ["phoenixPlay"],
+    "possibleactions" => ["phoenixPlay", "cancelPhoenix"],
     "transitions" => [
       "nextPlayer" => ST_NEXT_PLAYER,
       "playCombo" => ST_PLAY_COMBO,

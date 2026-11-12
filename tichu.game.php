@@ -165,6 +165,25 @@ class Tichu extends Table
     return self::$instance->getCurrentPlayerId();
   }
 
+  function checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand = null)
+  {
+    $wish = $this->getGameStateValue("mahjongWish");
+    if ($wish != 0 && !in_array($wish, array_column($cards, "type_arg"))) {
+      if ($currentHand === null) {
+        $cardsInHand = CardManager::getDeck()->getCardsInLocation("hand", $playerId);
+        $currentHand = new Hand($cardsInHand);
+      }
+      if ($currentHand->canFulFillWish($wish, $lastCombo)) {
+        throw new UserException(
+          sprintf(
+            $this->_("You must grant the Mahjong Wish and play a %s"),
+            CardManager::cardToStr($wish)
+          )
+        );
+      }
+    }
+  }
+
   function completePlayCombo($playerId, $combo)
   {
     $player = PlayerManager::getPlayer($playerId);
@@ -202,14 +221,7 @@ class Tichu extends Table
         $this->setGameStateValue("mahjongWish", 0);
         NotificationManager::mahjongGranted();
       } else {
-        if ($currentHand->canFulFillWish($wish, $lastCombo)) {
-          throw new UserException(
-            sprintf(
-              $this->_("You must grant the Mahjong Wish and play a %s"),
-              CardManager::cardToStr($wish)
-            )
-          );
-        }
+        $this->checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand);
       }
     }
 
@@ -374,6 +386,7 @@ class Tichu extends Table
     }
 
     if (is_array($combo->phoenixValue)) {
+      $this->checkMahjongWishFulfillment($playerId, $cards, LogManager::getLastCombo());
       LogManager::askPhoenix($playerId, $combo);
       $this->gamestate->nextState("phoenixPlay");
     } else {
@@ -647,8 +660,9 @@ class Tichu extends Table
 
   function cancelPhoenix()
   {
+    $this->checkAction("cancelPhoenix");
     $last = LogManager::getLastCombo();
-    if ($last->type == NO_COMBO) {
+    if (in_array($last->type, [NO_COMBO, DOG_COMBO])) {
       $this->gamestate->nextState("cancel");
     } else {
       $this->gamestate->nextState("playCombo");

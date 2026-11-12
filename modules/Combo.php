@@ -83,15 +83,27 @@ class Combo
   //check which phoenixvalues can be played
   public function recheckPhoenix()
   {
-    $lastCombo = LogManager::getLastCombo();
-    if (in_array($lastCombo->type, [NO_COMBO, DOG_COMBO])) {
+    if (!is_array($this->phoenixValue)) {
       return;
     }
-    if ($lastCombo->type != $this->type) {
+    $lastCombo = LogManager::getLastCombo();
+    if (is_null($lastCombo) || in_array($lastCombo->type, [NO_COMBO, DOG_COMBO])) {
+      return;
+    }
+    if ($lastCombo->type != $this->type || count($lastCombo->cards) != count($this->cards)) {
       $this->setPhoenixValue($this->phoenixValue[0]); // will throw in completePlayCombo
       return;
     }
     $val = $lastCombo->getFirstValue();
+    if ($this->type == STRAIGHT_COMBO) {
+      $lowFirst = $this->phoenixValue[1];
+      if ($lowFirst > $val) {
+        return; // both values can beat it
+      }
+      // low option can't beat it; use high option, completePlayCombo will check if it beats $lastCombo
+      $this->setPhoenixValue($this->phoenixValue[0]);
+      return;
+    }
     if ($this->phoenixValue[0] > $val) {
       return;
     } // both values can beat it
