@@ -4,7 +4,10 @@ declare const define: Function;
 
 declare const ebg: {
   core: {
+    core: any;
+    sitecore: any;
     gamegui: any;
+    i18n: any;
   };
   counter: {
     new (): Counter;
@@ -15,6 +18,20 @@ declare const ebg: {
   popindialog: {
     new (): PopinDialog;
   };
+  gamenotif: {
+    new (): GameNotifQueue;
+  };
+  scrollmap: any;
+  dices: any;
+  zone: any;
+  expandablesection: any;
+  draggable: any;
+  pageheader: any;
+  playerlocation: any;
+  tableresults: any;
+  chatinput: any;
+  thumb: any;
+  webpush: any;
 };
 
 declare const dojo: Dojo;
@@ -49,6 +66,14 @@ declare const g_tutorialwritten: Object | undefined;
 declare function _(str: string): string;
 
 /**
+ * Returns a translated sentence from a specific domain.
+ *
+ * @param domain translation domain
+ * @param str english sentence
+ */
+declare function __(domain: string, str: string): string;
+
+/**
  * Get an HTML element using its "id" attribute.
  * @param text element id
  */
@@ -59,10 +84,12 @@ declare function $(text: ElementOrId): HTMLElement;
  *
  * @param name the name of the lib, usually prefixed by `bga-`
  * @param version the version, either taking the last available version `1.x` or a fixed version `1.0.0`
+ * @param type module format (e.g. `"esm"`)
  */
-declare function getLibUrl(name: string, version: string): string;
+declare function getLibUrl(name: string, version: string, type?: string): string;
 
 declare function playSound(sound: string): void;
+declare function stopSound(sound: string): void;
 
 interface Gamestate {
   active_player?: string;
@@ -72,6 +99,17 @@ interface Gamestate {
   type: string;
   description?: string;
   descriptionmyturn?: string;
+  descriptionnoother?: string;
+  descriptionmyturnnoother?: string;
+  possibleactions?: string[];
+  multiactive?: string[];
+  transitions?: { [transitionName: string]: number | string };
+  updateGameProgression?: number;
+  reflexion?: {
+    total: { [playerId: number]: number };
+    initial?: { [playerId: number]: number };
+    initial_ts?: { [playerId: number]: number };
+  };
   private_state?: Gamestate;
 }
 
@@ -80,6 +118,17 @@ interface Gamedatas<P = Player> {
   gamestates: { [gamestateId: number]: Gamestate };
   playerorder: (string | number)[];
   players: { [playerId: number]: P };
+  counters?: { [counterName: string]: { counter_name: string; counter_value: number } };
+  notifications?: {
+    last_packet_id: number;
+    move_nbr: number;
+    table_next_notification_no?: number;
+  };
+  decision?: any;
+  tablespeed?: number | string;
+  game_result_neutralized?: number | string;
+  neutralized_player_id?: number | string;
+  turn_based_Multiactive_guiding?: boolean | number;
 }
 
 interface Player {
@@ -91,39 +140,113 @@ interface Player {
   is_ai: string;
   name: string;
   score: string;
+  score_aux?: string | number;
   zombie: number;
+  no: number;
+  avatar?: string;
+  ack?: string;
+  team?: number | string;
+  concede?: number | string;
 }
 
 declare class GameNotifQueue {
+  queue: Notif[];
   next_log_id: number;
+  game: GameGui | null;
+  dispatchedNotificationUids: Set<string>;
+  checkSequence: boolean;
+  last_packet_id: number;
+  channelLastReceivedPacketId: { [channel: string]: number };
+  channelLastAppliedPacketId: { [channel: string]: number };
+  notificationResendInProgress: boolean;
+  onNotificationResyncComplete: (() => void) | null;
+  prevpacketBuffer: any[];
+  prevpacketBufferTimeout: number | null;
+  prevpacketBufferTimeoutMs: number;
+  prevpacketBufferTimeoutResendRearmMs: number;
+  synchronous_notifs: { [notifType: string]: number };
+  waiting_from_notifend: Notif | null;
+  synchronousNotifEndTimeout: number | null;
+  ignoreNotificationChecks: { [notifType: string]: (notif: Notif) => boolean };
+  moveSyncBuffer: { [moveId: string]: any };
+  currentNotifCallback: string | null;
+  onPlaceLogOnChannel: ((notif: Notif) => boolean) | null;
+  lastMsgTime: number;
+  bStopAfterOneNotif?: boolean;
+  log_notification_name?: boolean;
 
   /**
-   * Set the notification deinfed by notif_type as "synchronous"
+   * Set the notification defined by notif_type as "synchronous"
    * @param notif_type - the type of notification
    * @param duration - the duration of notification wait in milliseconds
    * If "duration" is specified: set a simple timer for it (milliseconds)
    * If "duration" is not specified, the notification handler MUST call "setSynchronousDuration"
    */
   setSynchronous(notif_type: string, duration?: number): void;
+
   /**
    * Set dynamically the duration of a synchronous notification
    * MUST be called if your notification has not been associated with a duration in "setSynchronous"
-   * @param duration - how long to hold off till next notficiation received (milliseconds)
+   * @param duration - how long to hold off till next notification received (milliseconds)
    */
   setSynchronousDuration(duration: number): void;
 
+  isSynchronousNotifProcessed(): boolean;
+
   /**
    * Ignore notification if predicate is true
-   * @param notif_type  - the type of notificatio
+   * @param notif_type  - the type of notification
    * @param predicate - the function that if returned true will make framework not dispatch notification.
-   * NOTE: this cannot be used for syncronious unbound notifications
+   * NOTE: this cannot be used for synchronous unbound notifications
    */
-  setIgnoreNotificationCheck(notif_type: string, predicate: (notif: object) => boolean): void;
+  setIgnoreNotificationCheck(notif_type: string, predicate: (notif: Notif) => boolean): void;
+
+  clearSynchronousNotificationEndTimer(): void;
+  scheduleSynchronousNotificationEnd(duration: number): void;
+  onSynchronousNotificationEnd(): void;
+  onNotification(packet: any): void;
+  resynchronizeNotifications(
+    bLoadHistory?: boolean,
+    fromPacketId?: number | null,
+    onComplete?: () => void,
+  ): void;
+  dispatchNotifications(): boolean;
+  dispatchNotification(notif: Notif, bMoveSoundPlayed?: boolean): boolean;
+  hasDispatchedNotificationUid(uid: string): boolean;
+  rememberDispatchedNotificationUid(uid: string): void;
+  formatLog(log: string, args: any): string;
+  addChatToLog(
+    text: string,
+    seemore?: string | boolean,
+    translate?: boolean,
+    customClass?: string,
+  ): void;
+  addToLog(
+    text: string,
+    seemore?: string | boolean,
+    logaction?: any,
+    isGameLog?: boolean,
+    isChat?: boolean,
+    isHistory?: boolean,
+    time?: number,
+    move_id?: number | string,
+  ): number | undefined;
+  onTranslateLog(evt: Event): void;
+  playerNameFilter(args: any): any;
+  playerNameFilterGame(args: any): any;
+  debugReplayNotif(evt: Event): void;
 }
 
 declare class StatusBar {
+  game: GameGui;
+  currentAutoclickTimer?: number;
+  currentAutoclickButton?: HTMLButtonElement;
+  currentAutoclickProgressBar?: HTMLDivElement;
+  currentAutoclickAnimation?: Animation;
+  currentAutoclickRemainingTime?: number;
+
   /**
-   * Set the title displayed on the status bar. Il will automatically apply styling on `${you}`, `${actplayer}`, or any variable passed in args (for example, entering state args).
+   * Set the title displayed on the status bar. It will automatically apply styling on `${you}`, `${actplayer}`, or any variable passed in args (for example, entering state args).
    *
    * @param {string} title the title to set
    * @param {Object} args the optional args to use in format_string_recursive to format the title
@@ -152,15 +275,15 @@ declare class StatusBar {
     label: string,
     callback: Function,
     params?: {
-      color?: "primary" | "secondary" | "alert";
+      color?: "primary" | "secondary" | "alert" | "blue" | "gray" | "red";
       id?: string;
       classes?: string | string[];
-      destination?: HTMLElement;
+      destination?: ElementOrId;
       title?: string;
       disabled?: boolean;
       tooltip?: string;
       confirm?: string | (() => string | undefined | null);
-      autoclick?: boolean;
+      autoclick?: boolean | { abortSignal?: AbortSignal; pausable?: boolean };
     },
   ): HTMLButtonElement;
 
@@ -171,13 +294,18 @@ declare class StatusBar {
 }
 
 declare class Sounds {
+  game: GameGui;
+
   /**
    * Load a sound file to be used with play.
    *
    * @param {string} id the id to be used by play
    * @param {string} fileName the file name, without extension (there should be a .ogg and a .mp3 with that file name in the img folder). If unset, it will try with the id as file name.
    */
-  load(id: string, fileName: string): void;
+  load(id: string, fileName?: string): void;
+
+  dontPreloadSounds(sounds: string[]): void;
+  preloadSounds(sounds: string[]): void;
 
   /**
    * Play the sound with the given id.
@@ -185,13 +313,36 @@ declare class Sounds {
    * @param {string} id the sound id
    */
   play(id: string): void;
+
+  getSoundUrl(id?: string): string;
 }
 
 declare class GameGui<G = Gamedatas> {
+  bga: any;
+  bgaInternal: any;
+  bgaSoundService: any;
+  bgaRtcService: any;
+  bgaTimeService: any;
+  bgaChatService: any;
+  bgaMessageService: any;
+  bgaTableCounters: { [counterName: string]: Counter[] };
+  bgaPlayerCounters: { [counterName: string]: { [playerId: number]: Counter[] } };
+
+  game_id: number;
+  game_name: string;
+  game_version: string;
+  game_name_displayed: string;
+
   /**
    * Return true if the game is in realtime. Note that having a distinct behavior in realtime and turn-based should be exceptional.
    */
   bRealtime: boolean;
+  bTutorialMode: boolean;
+  bHotseatMode: boolean;
+  bCoopGame: boolean;
+  is_coop: boolean;
+  bSoloGame: boolean;
+  isSimul: boolean;
 
   /**
    * Returns true during replay/archive mode if animations should be skipped.
@@ -205,10 +356,14 @@ declare class GameGui<G = Gamedatas> {
    */
   gamedatas: G;
 
+  channel: string | null;
+  privatechannel: string | null;
+
   /**
    * id of the player who is looking at the game. The player may not be part of the game (i.e. spectator)
    */
   player_id: number;
+  table_id: number;
 
   /**
    * Flag set to true if the user at the table is a spectator (not a player).
@@ -219,6 +374,7 @@ declare class GameGui<G = Gamedatas> {
    * Boolean indicating that we are in client state
    */
   on_client_state: boolean;
+  last_server_state: Gamestate | null;
 
   /**
    * The player panel score counters.
@@ -226,13 +382,82 @@ declare class GameGui<G = Gamedatas> {
   scoreCtrl: { [player_id: number]: Counter };
 
   statusBar: StatusBar;
+  images: any;
   sounds: Sounds;
+  tableOptions: any;
+  userPreferences: any;
+  players: any;
+  actions: any;
+  notifications: any;
+  display3d: any;
+  debug: any;
+  gameArea: any;
+  playerPanels: any;
+  dialogs: any;
+  states: any;
   notifqueue: GameNotifQueue;
+
+  prefs: { [prefId: number]: { value: number | string; [key: string]: any } };
+  ebgControls: any[];
+  interface_autoscale: boolean;
+  gameinterface_zoomFactor: number;
+  currentZoom: number;
+  mozScale: number;
+  screenMinWidth: number;
+  rotateToPosition: { [nodeId: string]: number };
+  connections: any[];
+  subscriptions: any[];
+  comet_subscriptions: any[];
+  tooltips: { [nodeId: string]: any };
+  tooltipsInfos: {
+    [nodeId: string]: { help?: string; action?: string; html?: string; delay?: number };
+  };
+  bHideTooltips: boolean;
+  defaultTooltipPosition: string[];
+  dontPreloadList: { [imageName: string]: boolean };
+  disableNextMoveSoundFlag: boolean;
+  dockedChat: boolean;
+  chat_on_gs_side: boolean;
+  chatbarWindows: { [windowId: string]: any };
+  ajaxcall_running: number;
+  page_is_unloading: boolean;
+  window_visibility: "visible" | "hidden";
+  isTouchDevice: boolean;
+  currentPlayerReflexionTime: {
+    positive: boolean;
+    mn: number;
+    s: number;
+    h?: number;
+    string?: string;
+  };
+  activePlayerReflexionTime: {
+    positive: boolean;
+    mn: number;
+    s: number;
+    h?: number;
+    string?: string;
+  };
+
+  completesetup(
+    game_name: string,
+    game_version: string,
+    game_id: number,
+    gamedatas: G,
+    player_id: number,
+    channel: string,
+    privatechannel: string,
+    globalUserInfos: any,
+    bRealtime: boolean,
+    table_id: number,
+    bTutorialMode: boolean,
+  ): void;
 
   /**
    * Setup the whole game GUI with datas from the game
    */
-  setup(gamedatas: G): void;
+  setup(gamedatas: G, keep_existing_gamedatas_limited?: boolean): void;
+
+  setupNotifications(): void;
 
   /**
    * This method is called each time we enter a new game state. You can use this method to perform some user interface changes at this moment. To access state arguments passed via calling php arg* method use args?.args. Typically you would do something only for active player, using this.isCurrentPlayerActive() check. It is also called (for the current game state only) when doing a browser refresh (after the setup method is called).
@@ -242,7 +467,7 @@ declare class GameGui<G = Gamedatas> {
    * @param {string} stateName the name of the state
    * @param {Object} args an object containing the state args
    */
-  onEnteringState(stateName: string, args: { args: { [key: string]: any } | null }): void;
+  onEnteringState(stateName: string, args: Gamestate): void;
 
   /**
    * This method is called each time we leave a game state. You can use this method to perform some user interface changes at this point (i.e. cleanup).
@@ -265,14 +490,16 @@ declare class GameGui<G = Gamedatas> {
    */
   onUpdateActionButtons(stateName: string, args: { [key: string]: any } | null): void;
 
+  onUpdateActionButtonsBefore(stateName: string, args: { [key: string]: any } | null): void;
+
   /**
-   * Client state is an override of a real server game state, useful in some situations where several steps  must be done on client side without any server interaction.
+   * Client state is an override of a real server game state, useful in some situations where several steps must be done on client side without any server interaction.
    * Client state acts like a server game state. Real current server game state can be restored with "restoreServerGameState" method.
    *
    * @param {string} stateName the name of the state
    * @param {Object} args the state args
    */
-  setClientState(stateName: string, args: { [key: string]: any }): void;
+  setClientState(stateName: string, args?: { [key: string]: any }): void;
 
   /**
    * If you are in client state it will restore the current server state (cheap undo).
@@ -286,9 +513,13 @@ declare class GameGui<G = Gamedatas> {
   disableNextMoveSound(): void;
 
   /**
-   * This function can be overridden in your game to manage some resizing on the client side when the browser window is resized. This function is also triggered at load time, so it can be used to adapt to the :viewport size at the start of the game too.
+   * This function can be overridden in your game to manage some resizing on the client side when the browser window is resized. This function is also triggered at load time, so it can be used to adapt to the viewport size at the start of the game too.
    */
   onScreenWidthChange(): void;
+
+  onPlaceLogOnChannel(notif: Notif): boolean;
+  registerEbgControl(control: any): void;
+  adaptViewportSize(): void;
 
   /**
    * Returns the getBoundingClientRect ignoring the possible zoom factor linked to the autoscale.
@@ -298,6 +529,13 @@ declare class GameGui<G = Gamedatas> {
    * @returns the bounding client rect full size
    */
   getBoundingClientRectIgnoreZoom(obj: ElementOrId): DOMRect;
+
+  getCurrentPlayerId(): number;
+  getCurrentPlayer(): Player;
+  getPlayerColor(player_id: number | string): string | null;
+  getPlayerName(player_id: number | string): string;
+  isCurrentPlayerSpectator(): boolean;
+  isSpectatorOrArchive(): boolean;
 
   /**
    * Returns true if the player on whose browser the code is running is currently active (it's his turn to play).
@@ -312,7 +550,7 @@ declare class GameGui<G = Gamedatas> {
    * @param {number} player_id the player to check
    * @returns {boolean} is specified player active
    */
-  isPlayerActive(player_id: number): boolean;
+  isPlayerActive(player_id: number | string): boolean;
 
   /**
    * Get the list of current active players ids
@@ -343,11 +581,15 @@ declare class GameGui<G = Gamedatas> {
 
   /**
    * This function allows to update the current page title and turn description according to the game state arguments.
-   * Note: this functional also will calls this.onUpdateActionButtons.
+   * Note: this function also calls this.onUpdateActionButtons.
    *
    * @deprecated If you just want to change the page title, use `this.statusBar.setTitle`
    */
-  updatePageTitle(): void;
+  updatePageTitle(state?: Gamestate | null): void;
+
+  setDescriptionOnMyTurn(text: string, moreargs?: any): void;
+  setMainTitle(text: string, position?: "before" | "after"): void;
+  setSubTitle(text: string, args?: any): void;
 
   /**
    * @deprecated use this.statusBar.addActionButton instead
@@ -356,7 +598,7 @@ declare class GameGui<G = Gamedatas> {
     id: string,
     label: string,
     method: string | Function,
-    destination?: string,
+    destination?: ElementOrId,
     blinking?: boolean,
     color?: string,
   ): void;
@@ -366,15 +608,31 @@ declare class GameGui<G = Gamedatas> {
    */
   removeActionButtons(): void;
 
+  addImageActionButton(
+    id: string,
+    imageHtml: string,
+    method: string | Function,
+    destination?: ElementOrId,
+    blinking?: boolean,
+    color?: string,
+    tooltip?: string,
+  ): void;
+
+  addLastTurnBanner(text?: string, args?: any): void;
+  removeLastTurnBanner(): void;
+  addWinConditionBanner(text: string, args?: any): void;
+
   /**
-   * @deprecated use the.bgaPerformAction
+   * @deprecated use this.bgaPerformAction
    */
   ajaxcall(
     url: string,
     args: object,
-    bind: GameGui,
+    bind: any,
     resultHandler: (result: any) => void,
-    allHandler?: (err: any, result?: any) => void,
+    allHandler?: (err: any, result?: any, errorCode?: any) => void,
+    method?: string,
+    customErrorHandler?: (err: any, ioArgs: any) => void,
   ): void;
 
   /**
@@ -392,18 +650,26 @@ declare class GameGui<G = Gamedatas> {
 
   /**
    * This is independent of the player being active, so can be used instead of this.checkAction(). This is particularly useful for multiplayer states when the player is not active in a 'player may like to change their mind' scenario. Unlike this.checkAction, this function does NOT take interface locking into account
-   * if action is not in list of possible actions (defined by "possibleaction" in current game state) it will return false and show "This move is not authorized now" error (unconditionally).
+   * if action is not in list of possible actions (defined by "possibleaction" in current game state) it will return false and show "This move is not authorized now" error (unless nomessage is true).
    * otherwise returns true
    *
    * @param {string} action the action to test
+   * @param {boolean} nomessage if we want a silent check. default false.
    * @returns {boolean} the action is possible
    */
-  checkPossibleActions(action: string): boolean;
+  checkPossibleActions(action: string, nomessage?: boolean): boolean;
 
   /**
    * Shows predefined user error that move is unauthorized now.
    */
   showMoveUnauthorized(): void;
+
+  checkLock(nomessage?: boolean): boolean;
+  isInterfaceLocked(): boolean;
+  isInterfaceUnlocked(): boolean;
+  lockInterface(uuid?: string, type?: string | null): void;
+  unlockInterface(uuid?: string): void;
+  onLockInterface(lockData: { status: string; uuid: string; type?: string | null }): void;
 
   /**
    * Tell the interface to not preload a specific image in your img root directory.
@@ -411,10 +677,16 @@ declare class GameGui<G = Gamedatas> {
    */
   dontPreloadImage(image: string): void;
 
+  dontPreloadImages(images: string[]): void;
+  ensureSpecificImageLoading(imagelist: string[], rootUrl?: string): void;
+
   /**
    * Ensure some specific images are loaded.
    */
   ensureSpecificGameImageLoading(imagelist: string[]): void;
+
+  loadBgaGameLib(name: string, version: string): Promise<[any, any]>;
+  registerBgaGameLibs(libs: [string, string][]): Promise<void>;
 
   /**
    * Function to know if animations should be played.
@@ -438,7 +710,7 @@ declare class GameGui<G = Gamedatas> {
    * and register them with dojo.subscribe.
    * Registered notifications will be synchronous and will have a minimum duration (if animations are active, by default 500ms with text and 1ms without).
    * If the notification function returns a Promise, the notification will end when the promise AND the minimum durations are over.
-   * In case of a notification function returning a Promise, the dev is rsponsible to make it resolve instantaneously if animations are not active.
+   * In case of a notification function returning a Promise, the dev is responsible to make it resolve instantaneously if animations are not active.
    *
    * Example of usage: `setupNotifications() { this.bgaSetupPromiseNotifications(); }`
    * And declaration of a notif will just be :
@@ -479,6 +751,8 @@ declare class GameGui<G = Gamedatas> {
    */
   setGameUserPreference(pref_id: number, value: number): void;
 
+  getTableOption(option_id: number): number;
+
   /**
    * Trigger an ajax call for a game action.
    *
@@ -495,7 +769,7 @@ declare class GameGui<G = Gamedatas> {
       checkAction?: boolean;
       checkPossibleActions?: boolean;
     },
-  ): Promise<any>;
+  ): Promise<any> | undefined;
 
   /**
    * Return the Game Area div (for all displayed game components).
@@ -519,7 +793,7 @@ declare class GameGui<G = Gamedatas> {
    * @param args the log args
    * @returns {Object} you must `return { log, args };`
    */
-  bgaFormatText(log: string, args: any): { log: string; args: any };
+  bgaFormatText?(log: string, args: any): { log: string; args: any };
 
   /**
    * Allow the games to declare a `bgaFormatText` function that will be called at the beginning of each
@@ -542,8 +816,11 @@ declare class GameGui<G = Gamedatas> {
    * @param {Object} args the substitutions
    * @returns {string} the updated string
    */
-  format_string(string: string, args: { [key: string]: string }): string;
-  format_block(string: string, args: { [key: string]: string }): string;
+  format_string(string: string, args: { [key: string]: any }): string;
+  format_block(jstpl_name: string, args: { [key: string]: any }): string;
+  clienttranslate_string(str: string): string;
+  strip_tags(input: string, allowed?: string): string;
+  nl2br(str: string, is_xhtml?: boolean): string;
 
   /**
    * Places mobile_obj on target_obj, set the absolute positions and centers the mobile_obj on target_obj, effect is immediate
@@ -573,7 +850,19 @@ declare class GameGui<G = Gamedatas> {
    * Attach mobile_obj to a new parent, keeping its absolute position in the screen constant.
    * !! mobile_obj is no longer valid after that (a new corresponding mobile_obj is returned)
    */
-  attachToNewParent(mobile_obj: ElementOrId, new_parent: ElementOrId): HTMLElement;
+  attachToNewParent(
+    mobile_obj: ElementOrId,
+    new_parent: ElementOrId,
+    position?: string,
+    no_3d_projection?: boolean,
+  ): HTMLElement;
+
+  attachToNewParentNoDestroy(
+    mobile_obj: ElementOrId,
+    new_parent: ElementOrId,
+    position?: string,
+    no_3d_projection?: boolean,
+  ): HTMLElement;
 
   /**
    * Return an animation that is moving (slide) a DOM object over another one
@@ -597,6 +886,15 @@ declare class GameGui<G = Gamedatas> {
     delay?: number,
   ): DojoAnimation;
 
+  slideToObjectPctPos(
+    mobile_obj: ElementOrId,
+    target_obj: ElementOrId,
+    pct_x: number,
+    pct_y: number,
+    duration?: number,
+    delay?: number,
+  ): DojoAnimation;
+
   /**
    * Create a temporary object and slide it from a point to another one, then destroy it.
    */
@@ -607,6 +905,7 @@ declare class GameGui<G = Gamedatas> {
     to: ElementOrId,
     duration?: number,
     delay?: number,
+    scale?: number,
   ): DojoAnimation;
 
   /**
@@ -624,16 +923,43 @@ declare class GameGui<G = Gamedatas> {
    */
   fadeOutAndDestroy(node: ElementOrId, duration?: number, delay?: number): DojoAnimation;
 
+  transformSlideAnimTo3d(
+    anim: DojoAnimation,
+    node: HTMLElement,
+    duration?: number,
+    delay?: number | null,
+    delta_x?: number,
+    delta_y?: number,
+  ): DojoAnimation;
+
   /**
-   * It starts the animation, and stored the rotation degree in the class, so next time you rotate object - it is additive.
+   * It starts the animation, and stores the rotation degree in the class, so next time you rotate object - it is additive.
    * The animation is triggered instantly.
    */
-  rotateTo(node: ElementOrId, degree: number): DojoAnimation;
+  rotateTo(node: ElementOrId, degree: number): void;
 
   /**
    * Rotate with no animation.
    */
   rotateInstantTo(node: ElementOrId, degree: number): void;
+
+  rotateInstantDelta(node: ElementOrId, degree: number): void;
+  getAbsRotationAngle(node: ElementOrId): number;
+
+  updateCounters(counters: {
+    [counterName: string]: { counter_name: string; counter_value: number | string };
+  }): void;
+  setCounter(counter_id: ElementOrId, value: number): void;
+  incCounter(counter_id: ElementOrId, value: number): void;
+  decrCounter(counter_id: ElementOrId, value?: number): void;
+
+  connect(node: ElementOrId | Window | Document, event: string, method: string | Function): void;
+  disconnect(node: ElementOrId | Window | Document, event: string): void;
+  connectClass(className: string, event: string, method: string | Function): void;
+  connectQuery(selector: string, event: string, method: string | Function): void;
+  disconnectAll(): void;
+  addStyleToClass(cssClass: string, styleProperty: string, value: string): void;
+  addEventToClass(cssClass: string, event: string, method: string): void;
 
   /**
    * Add a simple text tooltip to the DOM node.
@@ -641,13 +967,13 @@ declare class GameGui<G = Gamedatas> {
    * Specify 'actionStringTranslated' to display some information about "what happens when I click on this element?".
    * Set one of them to '' if unused.
    *
-   * @param {string} id the object id to attach the tooltip to.
-   * @param {string} help the help message
-   * @param {string} action the action message
+   * @param {ElementOrId} nodeId the object or object id to attach the tooltip to.
+   * @param {string} helpStringTranslated the help message
+   * @param {string} actionStringTranslated the action message
    * @param {number} delay optional delay, in ms (default 400)
    */
   addTooltip(
-    nodeId: string,
+    nodeId: ElementOrId,
     helpStringTranslated: string,
     actionStringTranslated: string,
     delay?: number,
@@ -656,11 +982,11 @@ declare class GameGui<G = Gamedatas> {
   /**
    * Add an HTML tooltip to the DOM node.
    *
-   * @param {string} id the object id to attach the tooltip to.
+   * @param {ElementOrId} nodeId the object or object id to attach the tooltip to.
    * @param {string} html the html code of the message
    * @param {number} delay optional delay, in ms (default 400)
    */
-  addTooltipHtml(nodeId: string, html: string, delay?: number): void;
+  addTooltipHtml(nodeId: ElementOrId, html: string, delay?: number): void;
 
   /**
    * Same as addTooltip but for all elements of a given class.
@@ -680,9 +1006,11 @@ declare class GameGui<G = Gamedatas> {
   /**
    * Remove a tooltip from the DOM node with given id.
    *
-   * @param {string} id the object id to attach the tooltip to.
+   * @param {ElementOrId} nodeId the object or object id to remove the tooltip from.
    */
-  removeTooltip(nodeId: string): void;
+  removeTooltip(nodeId: ElementOrId): void;
+
+  switchDisplayTooltips(): void;
 
   /**
    * When an important action with a lot of consequences is triggered by the player, you may want to propose a confirmation dialog.
@@ -693,8 +1021,11 @@ declare class GameGui<G = Gamedatas> {
    */
   confirmationDialog(text: string, callback: Function, callback_cancel?: Function): void;
 
+  warningDialog(text: string, callback?: Function): void;
+  infoDialog(text: string, title: string, callback?: Function, useBgaConfirm?: boolean): void;
+
   /**
-   * You can use this dialog to give user a choice with small amount of options .
+   * You can use this dialog to give user a choice with small amount of options.
    *
    * @param {string} text message will be shown to user, use _() to translate
    * @param {Object} choices associative array "value => text to display"
@@ -702,22 +1033,33 @@ declare class GameGui<G = Gamedatas> {
    */
   multipleChoiceDialog(
     text: string,
-    choices: { [value: number]: string },
-    callback: Function,
+    choices: { [value: string]: string } | string[],
+    callback: (choice: string) => void,
   ): void;
+
+  askForValueDialog(title: string, callback: (value: string) => void, description?: string): void;
+
+  displayTableWindow(
+    id: string,
+    title: string,
+    table: any[][],
+    header?: string | { str: string; args: any },
+    footer?: string,
+    closing?: string,
+  ): PopinDialog;
 
   /**
    * Display a score over an element.
    *
-   * @param {string} anchor_id the element to show the score on
+   * @param {ElementOrId} anchor_id the element to show the score on
    * @param {string} color the score color
-   * @param {number} score  the score number
-   * @param {number} duration  duration
-   * @param {number} dx delta x
-   * @param {number} dy delta y
+   * @param {number} score the score number
+   * @param {number} duration duration
+   * @param {number} offset_x delta x
+   * @param {number} offset_y delta y
    */
   displayScoring(
-    anchor_id: string,
+    anchor_id: ElementOrId,
     color: string,
     score: number | string,
     duration?: number,
@@ -728,13 +1070,14 @@ declare class GameGui<G = Gamedatas> {
   /**
    * Display a text bubble over an element.
    *
-   * @param {string} anchor_id the element to show the bubble on
+   * @param {ElementOrId} anchor_id the element to show the bubble on
    * @param {string} text the bubble text
-   * @param {number} duration  duration
+   * @param {number} delay delay
+   * @param {number} duration duration
    * @param {string} custom_class CSS class
    */
   showBubble(
-    anchor_id: string,
+    anchor_id: ElementOrId,
     text: string,
     delay?: number,
     duration?: number,
@@ -746,14 +1089,14 @@ declare class GameGui<G = Gamedatas> {
    *
    * @param {number} player_id the player to disable
    */
-  disablePlayerPanel(player_id: number): void;
+  disablePlayerPanel(player_id: number | string): void;
 
   /**
    * Mark the player panel as enabled.
    *
    * @param {number} player_id the player to enable
    */
-  enablePlayerPanel(player_id: number): void;
+  enablePlayerPanel(player_id: number | string): void;
 
   /**
    * Mark all player panels as enabled.
@@ -770,7 +1113,7 @@ declare class GameGui<G = Gamedatas> {
   addAutomataPlayerPanel(
     id: number,
     name: string,
-    params: {
+    params?: {
       color?: string;
       iconClass?: string;
       score?: number;
@@ -782,13 +1125,26 @@ declare interface Notif<T = any> {
   type: string; // type of the notification (as passed by php function)
   log: string; // the log string passed from php notification
   args: T; // This is the arguments that you passed on your notification method on php
-  player_id: number;
-  move_id: string;
-  time: number;
+  move_id?: number | string;
+  time?: number;
   uid: string;
+  table_id?: number | string;
+  bIsTableMsg?: boolean;
+  channelorig?: string;
+  gamenameorig?: string;
+  lock_uuid?: string;
+  synchro?: number;
+  h?: string;
+  loadprevious?: boolean;
+  donotpreview?: boolean;
 }
 
 declare class Counter {
+  span: HTMLElement | null;
+  current_value: number;
+  target_value: number;
+  speed: number;
+
   constructor();
 
   /**
@@ -817,7 +1173,7 @@ declare class Counter {
   /**
    * Increment the value and animate from the previous value.
    *
-   * @param {number} increment the increment to add to current value
+   * @param {number} by the increment to add to current value
    * @returns the new value
    */
   incValue(by: number): number;
@@ -842,20 +1198,37 @@ declare class Counter {
    * Note it just changes display value once, it does not actually disable it, i.e. if you set it again, it will be shown again.
    */
   disable(): void;
+
+  makeCounterProgress(): void;
+  finishCounterMove(): void;
 }
 
 declare class PopinDialog {
+  id: string | null;
+  target_id: string | null;
+  container_id: string;
+  popinElement: HTMLElement | null;
+  underlayElement: HTMLElement | null;
+  helpLinkElement: HTMLAnchorElement | null;
+  closeButtonElement: HTMLAnchorElement | null;
+  bCloseIsHiding: boolean;
+  onShow: (() => void) | null;
+  onHide: (() => void) | null;
+  onDestroy: (() => void) | null;
+
   /**
    * Create the popin on the DOM.
    *
    * @param {string} id popin id
+   * @param {string} target_id optional parent container id
+   * @param {boolean} closeOnUnderlayClick whether clicking the underlay closes the dialog
    */
-  create(id: string): void;
+  create(id: string, target_id?: string, closeOnUnderlayClick?: boolean): void;
 
   /**
    * Remove the popin.
    */
-  destroy(): void;
+  destroy(bAnimate?: boolean): void;
 
   /**
    * Replace the close callback (top right corner 'close' icon) by a custom one.
@@ -876,12 +1249,16 @@ declare class PopinDialog {
    */
   setTitle(title: string): void;
 
+  setZIndex(zIndex: number | string): void;
+
   /**
    * Set the popin max width.
    *
    * @param {number} maxwidth the max width, in px
    */
   setMaxWidth(maxwidth: number): void;
+
+  setHelpLink(href: string): void;
 
   /**
    * Set the content of the popin.
@@ -890,19 +1267,21 @@ declare class PopinDialog {
    */
   setContent(html: string): void;
 
+  adjustSizeAndPosition(): void;
+
   /**
    * Show the popin.
    */
-  show(): void;
+  show(bAnimate?: boolean): void;
 
   /**
    * Hide the popin.
    */
-  hide(): void;
+  hide(bAnimate?: boolean): void;
 }
 
 declare interface StockItems {
-  id: string;
+  id: any;
   type: number;
   loc?: string;
 }
@@ -914,66 +1293,183 @@ declare interface StockItemType {
 }
 
 declare class Stock {
-  items: StockItems[];
+  page: GameGui | null;
+  container_div: HTMLElement;
+  item_height: number;
+  item_width: number;
+  backgroundSize: string | null;
   item_type: { [cardUniqueId: number]: StockItemType };
-  selectionClass: string;
-  container_div: HTMLDivElement;
+  items: StockItems[];
+  item_selected: { [itemId: string]: number };
+  next_item_id: number;
   control_name: string; // the container_div id
+  selectable: number;
+  selectionApparance: string;
+  apparenceBorderWidth: string;
+  selectionClass: string;
+  extraClasses: string;
   centerItems: boolean;
-  image_items_per_row: number;
+  item_margin: number;
+  autowidth: boolean;
+  order_items: boolean;
+  horizontal_overlap: number;
+  vertical_overlap: number;
+  use_vertical_overlap_as_offset: boolean;
+  jstpl_stock_item: string;
+  image_items_per_row: number | null;
+  image_in_vertical_row: boolean;
+  hResize: any;
+  duration: number;
+  onItemCreate: ((itemDiv: HTMLElement, itemType: any, itemDivId: string) => any) | null;
+  onItemDelete: ((itemDivId: string, itemType: any, itemId: string | number) => any) | null;
 
   create(game: GameGui, container_div: HTMLElement, cardwidth: number, cardheight: number): void;
-  setSelectionMode(selectionMode: number): void;
-  updateDisplay(from?: string): void;
-  setSelectionAppearance(appearance: string): void;
-  addToStock(cardUniqueId: number): void;
-  addToStockWithId(cardUniqueId: number, cardId: string, from?: string): void;
+  destroy(): void;
+  count(): number;
   addItemType(
     cardUniqueId: number,
     cardWeight: number,
     cardsurl: string,
-    imagePosition: number,
+    imagePosition?: number,
   ): void;
-  getSelectedItems(): any[];
-  unselectAll(): void;
+  addToStock(cardUniqueId: number, from?: ElementOrId): void;
+  addToStockWithId(
+    cardUniqueId: number,
+    cardId: string | number,
+    from?: ElementOrId,
+    location?: string,
+  ): void;
+  removeFromStock(type: number, to?: ElementOrId, noupdate?: boolean): boolean;
+  removeFromStockById(id: string | number, to?: ElementOrId, noupdate?: boolean): boolean;
   removeAll(): void;
-  removeFromStockById(id: string, to?: string): void;
-  removeAllTo(to: string): void;
-  unselectItem(id: string): void;
-  setOverlap(horizontal_percent: number, vertical_percent: number): void;
-  onItemCreate(itemDiv: HTMLElement, itemType: any, itemDivId: string): any;
+  removeAllTo(to: ElementOrId): void;
+  getPresentTypeList(): { [type: number]: 1 };
+  getItemDivId(id: string | number): string;
+  updateDisplay(from?: ElementOrId): void;
+  resetItemsPosition(): void;
+  changeItemsWeight(weights: { [type: number]: number }): void;
+  sortItems(): void;
+  setSelectionMode(selectionMode: number): void;
+  setSelectionAppearance(appearance: string): void;
+  isSelected(id: string | number): boolean;
+  selectItem(id: string | number): void;
+  unselectItem(id: string | number): void;
+  selectAll(): void;
+  unselectAll(): void;
+  onClickOnItem(evt: Event): void;
   onChangeSelection(control_name: string, item_id?: string): any;
+  getSelectedItems(): StockItems[];
+  getUnselectedItems(): StockItems[];
+  getItemNumber(): number;
+  getAllItems(): StockItems[];
+  getItemsByType(type: number): StockItems[];
+  getFirstItemOfType(type: number): StockItems | null;
+  getItemsByWeight(weight: number): StockItems[];
+  getFirstItemWithWeight(weight: number): StockItems | null;
+  getItemById(id: string | number): StockItems | null;
+  getItemTypeById(id: string | number): number | null;
+  getItemWeightById(id: string | number): number | null;
+  selectItemsByType(type: number): void;
+  unselectItemsByType(type: number): void;
+  setOverlap(horizontal_percent: number, vertical_percent?: number): void;
+  resizeItems(width: number, height: number, image_width?: number, image_height?: number): void;
 }
 
 declare class DojoAnimation {
-  play(): void;
+  node: HTMLElement;
+  duration: number;
+  delay?: number;
+  repeat: number;
+  rate: number;
+  curve: any;
+  easing?: (n: number) => number;
+  beforeBegin?: (node: HTMLElement) => void;
+  onBegin?: (values: any) => void;
+  onPlay?: (values: any) => void;
+  onAnimate?: (values: any) => void;
+  onPause?: (values: any) => void;
+  onStop?: (values: any) => void;
+  onEnd?: (node: HTMLElement) => void;
+
+  play(delay?: number | null, gotoStart?: boolean): DojoAnimation;
+  pause(): DojoAnimation;
+  gotoPercent(percent: number, andPlay?: boolean): DojoAnimation;
+  stop(gotoEnd?: boolean): DojoAnimation;
+  destroy(): void;
+  status(): "playing" | "paused" | "stopped";
 }
 
 interface Dojo {
+  byId: (nodeId: ElementOrId, doc?: Document) => HTMLElement;
+  isDescendant: (node: ElementOrId, ancestor: ElementOrId) => boolean;
+  setSelectable: (node: ElementOrId, selectable: boolean) => void;
   attr: Function;
-  create: Function;
-  place: (html: string, nodeId: string, action?: string) => HTMLElement;
+  getAttr: (node: ElementOrId, name: string) => any;
+  setAttr: (node: ElementOrId, name: string | { [key: string]: any }, value?: any) => HTMLElement;
+  hasAttr: (node: ElementOrId, name: string) => boolean;
+  removeAttr: (node: ElementOrId, name: string) => void;
+  prop: Function;
+  getProp: (node: ElementOrId, name: string) => any;
+  setProp: (node: ElementOrId, name: string | { [key: string]: any }, value?: any) => HTMLElement;
   style: Function;
-  hitch: Function;
-  hasClass: (nodeId: string, className: string) => boolean;
-  addClass: (nodeId: string, className: string) => void;
-  removeClass: (nodeId: string, className?: string) => void;
-  toggleClass: (nodeId: string, className: string, forceValue?: boolean) => void;
-  connect: (node: HTMLElement, eventType: string, callback: Function) => any;
-  disconnect: Function;
-  query: Function;
-  subscribe: Function;
-  string: any;
-  fx: any;
-  marginBox: Function;
-  position: Function;
-  contentBox: Function;
-  clone: Function;
-  fadeIn: Function;
-  trim: Function;
-  stopEvent: (evt: Event) => void;
-  destroy: (nodeId: string) => void;
-  forEach: Function;
+  getStyle: (node: ElementOrId, name?: string) => any;
+  setStyle: (node: ElementOrId, style: string | { [key: string]: any }, value?: any) => any;
+  getComputedStyle: (node: Element) => CSSStyleDeclaration;
+  hasClass: (nodeId: ElementOrId, className: string) => boolean;
+  addClass: (nodeId: ElementOrId, className: string | string[]) => void;
+  removeClass: (nodeId: ElementOrId, className?: string | string[]) => void;
+  toggleClass: (nodeId: ElementOrId, className: string | string[], forceValue?: boolean) => void;
+  replaceClass: (
+    node: ElementOrId,
+    addClassStr: string | string[],
+    removeClassStr?: string | string[],
+  ) => void;
+  toDom: (frag: string, doc?: Document) => Node;
+  place: (node: ElementOrId, refNode: ElementOrId, position?: string | number) => HTMLElement;
+  create: Function;
   empty: (nodeId: ElementOrId) => void;
-  byId: (nodeId: ElementOrId) => HTMLElement;
+  destroy: (nodeId: ElementOrId) => void;
+  position: Function;
+  marginBox: Function;
+  contentBox: Function;
+  window: any;
+  body: (doc?: Document) => HTMLElement;
+  hitch: Function;
+  clone: Function;
+  mixin: (dest: any, ...sources: any[]) => any;
+  extend: (ctor: Function, ...props: any[]) => Function;
+  declare: Function;
+  trim: Function;
+  connect: (
+    obj: any,
+    eventType: string,
+    contextOrCallback: any,
+    method?: string | Function,
+    dontFix?: boolean,
+  ) => any;
+  disconnect: Function;
+  subscribe: Function;
+  unsubscribe: (handle: any) => void;
+  publish: (topic: string, args?: any[]) => any;
+  stopEvent: (evt: Event) => void;
+  fixEvent: (evt: Event, sender?: Element) => Event;
+  query: Function;
+  forEach: Function;
+  map: Function;
+  filter: Function;
+  indexOf: (arr: any[], value: any, fromIndex?: number, findLast?: boolean) => number;
+  some: Function;
+  every: Function;
+  fadeIn: Function;
+  fadeOut: Function;
+  animateProperty: Function;
+  anim: Function;
+  fx: any;
+  string: any;
+  date: any;
+  keys: { [key: string]: number };
+  xhrGet: (args: any) => any;
+  xhrPost: (args: any) => any;
+  toJson: (obj: any, prettyPrint?: boolean) => string;
+  fromJson: (js: string) => any;
 }

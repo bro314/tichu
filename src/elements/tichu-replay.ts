@@ -44,7 +44,7 @@ export class TichuReplay extends LitElement {
 
   private model: Model = new Model();
 
-  private notifs: Notif[] = [];
+  private notifs: (Notif & { player_id: number })[] = [];
 
   /** State at index i is the state before replaying notification i. */
   private states: State[] = [];
