@@ -5,3 +5,6 @@ node_modules/**
 vendor/**
 bga-platform/**
 tichu.js
+local/*.db
+local/*.db-*
+local/*.sqlite

@@ -1,0 +1,679 @@
+/*
+ * BGA Platform CSS Shim & Local Developer Toolbar Styles
+ * Emulates BGA Studio layout, buttons, stocks, popin dialogs, player panels, and logs.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  color: #1f2328;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+blockquote,
+dl,
+dd,
+ol,
+ul,
+form,
+fieldset,
+legend {
+  margin: 0;
+  padding: 0;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 400;
+  margin: 0;
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+h4 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-top: 20px;
+  margin-bottom: 5px;
+}
+
+p {
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+a {
+  color: #2b579a;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================================
+ * 1. Top Local Developer Bar (#local-dev-bar)
+ * ============================================================================ */
+
+#local-dev-bar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: 44px;
+  background: #161b22;
+  color: #e6edf3;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  z-index: 9000;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  flex-wrap: wrap;
+}
+
+#local-dev-tooltip {
+  position: fixed;
+  z-index: 10001;
+  max-width: 320px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #0d1117;
+  color: #f0f6fc;
+  border: 1px solid #58a6ff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+#local-dev-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.devbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.devbar-brand {
+  font-weight: 700;
+  font-size: 13px;
+  color: #58a6ff;
+  margin-right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.devbar-divider {
+  width: 1px;
+  height: 22px;
+  background: #30363d;
+  margin: 0 4px;
+}
+
+.devbar-label {
+  color: #8b949e;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.devbar-btn,
+.devbar-seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+  user-select: none;
+  white-space: nowrap;
+  text-decoration: none !important;
+}
+
+.devbar-btn:hover,
+.devbar-seat:hover {
+  background: #30363d;
+  border-color: #8b949e;
+  color: #ffffff;
+}
+
+.devbar-btn:active,
+.devbar-seat:active {
+  transform: translateY(1px);
+}
+
+.devbar-seat.is-viewer {
+  background: #1f6feb;
+  border-color: #58a6ff;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.4);
+}
+
+.devbar-seat.is-active-turn {
+  border-color: #f0883e;
+}
+
+.devbar-color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  flex-shrink: 0;
+}
+
+.devbar-turn-badge {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #3fb950;
+  box-shadow: 0 0 6px #3fb950;
+  animation: devbar-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes devbar-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+}
+
+.devbar-meta {
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 500;
+}
+
+.devbar-btn.active-toggle {
+  background: #238636;
+  border-color: #2ea043;
+  color: #ffffff;
+}
+
+.devbar-btn.bot-btn {
+  background: #2d333b;
+  border-color: #444c56;
+  color: #79c0ff;
+}
+.devbar-btn.bot-btn:hover {
+  background: #373e47;
+  border-color: #58a6ff;
+}
+
+.devbar-btn.danger-btn {
+  background: #21262d;
+  border-color: #da3633;
+  color: #ff7b72;
+}
+.devbar-btn.danger-btn:hover {
+  background: #da3633;
+  color: #ffffff;
+}
+
+/* ============================================================================
+ * 2. Toast Notifications (#local-toast-container)
+ * ============================================================================ */
+
+#local-toast-container {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  pointer-events: none;
+}
+
+.local-toast {
+  pointer-events: auto;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #32383f;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  border-left: 4px solid #58a6ff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  animation: toast-in 0.18s ease-out;
+}
+
+.local-toast.local-toast-error {
+  background: #b91c1c;
+  border-left-color: #fca5a5;
+}
+
+.local-toast.local-toast-info {
+  background: #1e3a8a;
+  border-left-color: #93c5fd;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================================================
+ * 3. BGA Page Title / Status Bar (#page-title)
+ * ============================================================================ */
+
+#overall-content {
+  margin-top: 10px;
+}
+
+#page-title {
+  background: rgba(246, 248, 250, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 6px 16px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#maintitlebar_content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2328;
+}
+
+#generalactions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ============================================================================
+ * 4. BGA Action Buttons (.bgabutton)
+ * ============================================================================ */
+
+.bgabutton {
+  display: inline-block;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-decoration: none !important;
+  user-select: none;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 1px 0 #000;
+  text-shadow: rgba(0, 0, 0, 0.4) 0 1px 0;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 10px;
+  margin-bottom: 10px;
+  transition: filter 0.12s ease, transform 0.06s ease;
+}
+
+#page-title .action-button,
+#page-title .bgabutton {
+  line-height: 16px;
+  margin-top: 0;
+  margin-bottom: 2px;
+}
+
+.bgabutton:hover {
+  filter: brightness(1.07);
+  text-decoration: none !important;
+}
+
+.bgabutton:active {
+  transform: translateY(1px);
+}
+
+.bgabutton_blue,
+.bgabutton_primary {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #4871b6 0%, #3b5f9c 100%);
+  border-color: #2f4d80;
+}
+
+.bgabutton_red,
+.bgabutton_alert {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #c92727 0%, #b01e1e 100%);
+  border-color: #8f1616;
+}
+
+.bgabutton_green {
+  color: #ffffff !important;
+  background: linear-gradient(180deg, #89a538 0%, #748d2d 100%);
+  border-color: #5d7223;
+}
+
+.bgabutton_gray,
+.bgabutton_secondary {
+  color: #1f2328 !important;
+  background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
+  border-color: #9ca3af;
+}
+
+.bgabutton.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ============================================================================
+ * 5. Main Game Layout (#page-content, #left-side, #right-side)
+ * ============================================================================ */
+
+#page-content {
+  padding: 0 10px 24px 10px;
+}
+
+#main-game-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+#left-side {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+}
+
+#right-side {
+  width: 240px;
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 1120px) {
+  #main-game-layout {
+    flex-direction: column;
+  }
+  #right-side {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+  #player_boards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+  }
+}
+
+/* ============================================================================
+ * 6. Right-Side Player Boards & Game Logs
+ * ============================================================================ */
+
+#player_boards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-board {
+  transition: opacity 0.2s ease;
+}
+
+.player-board.disabled_panel {
+  opacity: 0.55;
+  filter: grayscale(0.35);
+}
+
+.player_board_inner {
+  padding: 8px 10px !important;
+}
+
+.player-name {
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.player-name a {
+  text-decoration: none;
+}
+
+.player_score {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon16_point {
+  color: #d97706;
+  font-size: 15px;
+}
+
+.ha_board {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+}
+
+.ha_board .count {
+  margin-right: 8px;
+}
+
+#logs_wrap {
+  background: var(--bg-color-lighter, rgba(246, 231, 212, 0.85));
+  border-radius: var(--border-radius, 6px);
+  box-shadow: var(--elevation);
+  padding: 8px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+#logs {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.log {
+  background: rgba(255, 255, 255, 0.72);
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #1f2328;
+  margin-right: 0 !important;
+}
+
+.log .timestamp {
+  float: right;
+  font-size: 10px;
+  color: #656d76;
+  margin-left: 6px;
+}
+
+/* ============================================================================
+ * 7. ebg.stock & Card Sprite Rules
+ * ============================================================================ */
+
+.stockitem {
+  border: 0 solid red;
+  cursor: pointer;
+  position: absolute;
+  background-repeat: no-repeat;
+  user-select: none;
+  transition: top 0.14s ease, left 0.14s ease, translate 0.12s ease;
+}
+
+.stockitem_unselectable {
+  cursor: default !important;
+}
+
+.stockitem_selected {
+  border: 2px solid red !important;
+}
+
+/* Tiki theme live override for stock cards */
+.tiki #myhand .stockitem,
+.tiki .last-played-combo .stockitem,
+.tiki #currentTrickCards .stockitem,
+.tiki #playedCards .arg {
+  background-image: url("/img/tiki-cards.png") !important;
+}
+
+/* ============================================================================
+ * 8. ebg.popindialog Modal Styles
+ * ============================================================================ */
+
+.bga-popin-underlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.bga-popin-dialog {
+  background: #f6f0e6;
+  color: #1f2328;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  min-width: 340px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: auto;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.bga-popin-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #e7dccb;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.bga-popin-close {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  color: #57606a;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.bga-popin-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #1f2328;
+}
+
+.bga-popin-content {
+  padding: 16px;
+}
+
+.local-score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.local-score-table th,
+.local-score-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  text-align: center;
+}
+
+.local-score-table th:first-child,
+.local-score-table td:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.local-score-table tr:last-child td {
+  font-weight: 700;
+  border-top: 2px solid rgba(0, 0, 0, 0.25);
+  border-bottom: none;
+}

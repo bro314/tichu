@@ -4,11 +4,15 @@
   "description": "Tichu for BoardGameArena",
   "main": "tichu.js",
   "scripts": {
+    "test:unit": "php -d error_reporting=24575 ./vendor/bin/phpunit tests",
+    "test:integration": "php local/integration-tests.php",
+    "test": "npm run test:unit && npm run test:integration",
+    "local": "php -S 127.0.0.1:8080 local/router.php",
     "compile": "tsc -p src",
     "watch": "tsc --watch -p src",
     "format": "npx prettier --write .",
     "bundle": "esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js",
-    "build": "npm run compile && npm run bundle"
+    "build": "npm test && npm run compile && npm run bundle"
   },
   "repository": {
     "type": "git",

@@ -104,6 +104,16 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── TestUtils.php            # Card constants (`DR`, `PH`, `DOG`, `MJ`, `A2`..`DA`) and `card($type, $arg)` helper
 │   ├── ComboTest.php            # Unit tests for `Combo` validation and descriptions
 │   └── HandTest.php             # Comprehensive unit tests for `Hand` (bombs, highest combos, `canBeat`, `canFulFillWish`)
+├── local/                       # Self-contained local BGA runner & integration test suite (not uploaded to BGA Studio)
+│   ├── router.php               # Built-in PHP server router (`php -S 127.0.0.1:8080 local/router.php`)
+│   ├── bga-backend.php          # SQLite-backed implementation of BGA `Table`, `Deck`, `GameState`, `APP_GameAction`, `game_view`
+│   ├── bot.php                  # Rule-compliant `LocalTichuBot` (`actForOtherPlayers`, `stepSingleBotTurn`, `autoPlayUntilPlayer`)
+│   ├── scenarios.php            # Deterministic test scenarios (`grand_tichu`, `give_cards`, `mahjong_wish`, `phoenix_ambiguous`, `bomb_interrupt`, `dragon_gift`, `double_victory`)
+│   ├── integration-tests.php    # Fast in-memory SQLite backend integration test suite (`npm run test:integration`)
+│   ├── schema.sql               # SQLite schema for `player`, `global`, `stats`, `card`, `actionlog`, and `notifications`
+│   ├── view/common/game.view.php # Stub included by `tichu.view.php`
+│   ├── js/bga-shim.js           # Lean frontend shim (`dojo`, `declare`, `ebg.stock`, `ebg.counter`, `ebg.popindialog`, `GameGui`), dev bar, console announcer, and `window.tt` test runner
+│   └── css/bga-shim.css         # BGA base layout, `.stockitem`, `.bgabutton`, `.whiteblock`, and `#local-dev-bar` styles
 └── img/                         # Game assets
     ├── tichu-cards.png          # Standard card sprite sheet (14 columns x 4 rows, 100x150px per card)
     ├── tiki-cards.png           # Tiki Edition card sprite sheet (14 columns x 4 rows)
@@ -186,19 +196,70 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 
 ### Frontend Build (TypeScript + esbuild)
 `tichu.js` is gitignored and generated from `src/` via npm scripts in `package.json`:
-- **Install dependencies**: `npm install`
+- **Install dependencies**: `npm install` (and `composer install` for PHPUnit)
+- **Run all backend tests (Unit + Integration)**: `npm test` (`npm run test:unit && npm run test:integration`)
 - **Compile TypeScript (`src/` -> `dist/`)**: `npm run compile` (`tsc -p src`)
 - **Watch TypeScript**: `npm run watch` (`tsc --watch -p src`)
 - **Bundle into `tichu.js`**: `npm run bundle` (`esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js`)
-- **Full Build (Compile + Bundle)**: `npm run build`
+- **Full Build (Tests + Compile + Bundle)**: `npm run build` (`npm test && npm run compile && npm run bundle`)
 - **Format Code (TS + PHP)**: `npm run format` (`npx prettier --write .`)
 
-> **Important**: Always run `npm run build` after modifying any `.ts` file so that `tichu.js` is updated for SFTP synchronization to BGA Studio.
+> **Important**: Always ensure `/opt/homebrew/bin` is on `PATH` (`export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`), and always run `npm run build` after modifying any `.ts` or `.php` file so that all unit + backend integration tests pass and `tichu.js` is updated for SFTP synchronization to BGA Studio.
 
-### Local Unit Testing (PHPUnit)
-Backend card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` is unit-tested using PHPUnit 9 (`composer.json`):
-- **Run tests**: `./vendor/bin/phpunit tests` (requires `php` CLI installed on the machine; tests use `tests/stubs.php` and `tests/TestUtils.php` so no database or BGA server connection is needed).
-- When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
+### Local Testing & Local BGA Runner (`tests/` & `local/`)
+Tichu has three fast local testing tiers that run without needing a BGA Studio connection:
+
+1. **Unit Tests (`npm run test:unit` / `./vendor/bin/phpunit tests`, ~40ms)**:
+   - Tests pure card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` using `tests/stubs.php` and `tests/TestUtils.php`.
+   - When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
+
+2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~130ms)**:
+   - Runs 11 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
+     - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `grandTichuBet`, 6-card deal)
+     - Passing 3 cards (`giveTheCards`, invalid card rejection & rollback, `stAcceptPassedCards`, Mahjong leader)
+     - Mahjong wish enforcement (`makeAWish`, `UserException` rollback when ignoring a wish that can be fulfilled)
+     - Ambiguous Phoenix choice (`ST_PHOENIX_PLAY`, `choosePhoenix`)
+     - Bomb interruption (`playBomb` out-of-turn during `playCombo` and `confirmTrick`, `cancel`, `pass`)
+     - Dragon trick gift (`confirmTrick` -> `ST_CHOOSE_DRAGON_GIFT` -> `chooseDragonGift` to opponent)
+     - Double victory (1–2 finish by partners, immediate round end, `+200`/`0` team scoring)
+     - Out-of-turn Tichu bet (`tichuBet` before playing first card, rejected after playing first card)
+     - Autopass & turn-based auto-skip (`pass` out of turn, `cancelAutopass`, `isAllInfoExposed` auto-skip)
+     - Full round end-to-end via `LocalTichuBot` (verifying 100 card points conservation across tricks + leftover hands)
+     - Full game end-to-end to 1000 points (`ST_GAME_END` = 99)
+   - Run both unit and backend integration tests together via **`npm test`**.
+
+3. **Local Browser Server & Frontend + Backend JS Console Integration Tests (`npm run local`)**:
+   - **Start the local server**:
+     ```bash
+     npm run local
+     # Or: /opt/homebrew/bin/php -S 127.0.0.1:8080 local/router.php
+     ```
+     Then open `http://127.0.0.1:8080` in the browser (`local/tichu.db` is created and seeded automatically, and is gitignored).
+   - **Interactive Dev Toolbar (`#local-dev-bar`)**:
+     - Switch seats in place (`P0`–`P3` or `Spectator`), trigger bot moves (`🤖 Act for Others`, `🤖 Step 1`, `⚡ Auto-Bot`), toggle `🔀 Auto-Switch` (automatically switches the UI to whichever player's turn is next), toggle `⏱ Real-Time` vs. `🃏 Exposed Cards`, toggle `🗿 Tiki` card art, or start a `🔄 New Game`.
+   - **Live Console Announcer**:
+     - Every state transition (`[TICHU STATE]`), player action (`[TICHU ACTION]`), server notification (`[TICHU NOTIF]`), and UI assertion (`[TICHU UI]`) is logged in real time to the browser DevTools console.
+   - **Console Test Runner (`window.tt` / `window.tichuTest`)**:
+     - Run fast, visual, zero-click frontend+backend integration tests directly from the browser DevTools console (or via `page.evaluate` in the `browser` subagent) while watching the UI update live:
+       ```js
+       // Run all 7 deterministic scenarios + UI/DOM invariant checks (~370ms at "instant" speed)
+       await tt.runSuite({ speed: "instant" }); // speeds: "instant" (0ms), "fast" (80ms), "normal" (350ms)
+
+       // Play a full round end-to-end through the real client UI & notification queue (~3s)
+       await tt.runRound({ speed: "instant" });
+
+       // Play a full game to 1000 points
+       await tt.runGame({ speed: "instant", maxRounds: 15 });
+
+       // Load a specific scenario ("grand_tichu", "give_cards", "mahjong_wish", "phoenix_ambiguous", "bomb_interrupt", "dragon_gift", "double_victory")
+       await tt.loadScenario("bomb_interrupt");
+
+       // Inspect current state, hands, and legal actions, or assert DOM vs. gamedatas consistency
+       tt.status();
+       tt.assertUI();
+       tt.help();
+       ```
+     - **URL Autorun Hook**: Open `http://127.0.0.1:8080/?autorun=suite&speed=instant` (or `autorun=round`, `autorun=game`, `autorun=<scenario>`) to execute a test suite automatically on page load and write the result to `window.__tichuAutorunResult`.
 
 ### Deployment & Live Testing on BGA Studio
 BGA games cannot execute full multiplayer lifecycle locally; they run on the remote **BGA Studio** environment (`https://studio.boardgamearena.com`). The user does **not** use the VS Code SFTP extension; all SFTP syncing and BGA Studio testing/management are handled directly by the AI agent.
@@ -255,7 +316,7 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      "
      ```
    - **Files Ignored from SFTP Upload**:
-     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+     Do not upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `local`, `tests`, `node_modules`, `dist`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
    - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and include its key instructions/snippets in the subagent prompt!
@@ -280,7 +341,7 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
 4. **Pushing a Release to Production (`boardgamearena.com`)**:
    - **CRITICAL SAFETY GUARDRAIL**: **NEVER** build a release or deploy a new version to production without getting **explicit, clear confirmation from the user first**. Safe actions like `Reload game informations` or `Dry run build (to check code warnings)` can be clicked anytime, but committing/building/deploying a release requires user approval.
    - Once confirmed by the user, follow these steps on `https://studio.boardgamearena.com/studiogame?game=tichu`:
-     1. Ensure all local changes are compiled (`npm run build`), synced via SFTP to `/tichu/`, and verified on a Studio test table.
+     1. Ensure all local changes are tested and compiled (`npm run build`, which runs `npm test` + `compile` + `bundle`, plus `await tt.runSuite({ speed: "instant" })` in the local runner if frontend code changed), synced via SFTP to `/tichu/`, and verified on a Studio test table.
      2. Under the **Build a new release version** section on `https://studio.boardgamearena.com/studiogame?game=tichu`:
         - Click **`⇨ Dry run build (to check code warnings)`** first and verify there are no blocking warnings or errors in the modal popup.
         - Fill in the **`Release note: what has changed since the last release?`** input field (max 250 chars).

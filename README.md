@@ -19,10 +19,11 @@ This repository contains the implementation of the partnership climbing card gam
 ### Frontend Build & Formatting
 
 ```bash
-# Install dependencies
+# Install JS & PHP dependencies
 npm install
+composer install
 
-# Compile TypeScript (src/ -> dist/) and bundle into tichu.js
+# Run all unit + backend integration tests, compile TypeScript (src/ -> dist/), and bundle into tichu.js
 npm run build
 
 # Watch TypeScript files for compilation during development
@@ -34,13 +35,31 @@ npm run format
 
 > **Note**: `tichu.js` and `dist/` are ignored by Git (`.gitignore`), but `tichu.js` **must** be built (`npm run build`) and synced to the BGA Studio server via SFTP so BGA can load the client code.
 
-### Running Unit Tests
+### Running Tests & Local BGA Runner
 
-Unit tests cover card combinations (`Combo.php`) and hand evaluation / Mahjong wish fulfillment (`Hand.php`) using local BGA framework stubs (`tests/stubs.php`):
+You can run Tichu completely locally (with SQLite and a lightweight BGA frontend shim in `local/`) and execute fast automated tests:
 
 ```bash
-composer install
-./vendor/bin/phpunit tests
+# Run both PHPUnit unit tests and SQLite backend integration tests (~170ms)
+npm test
+
+# Run only PHPUnit unit tests (Combo & Hand logic)
+npm run test:unit
+
+# Run only in-memory SQLite backend integration tests (11 end-to-end suites)
+npm run test:integration
+
+# Start the local interactive BGA runner at http://127.0.0.1:8080
+npm run local
+```
+
+When `npm run local` is running at `http://127.0.0.1:8080`, you can play interactively using the top dev toolbar (seat switcher, bots, auto-switch turn mode, Tiki art toggle) or run frontend+backend integration tests directly from the browser DevTools console via `window.tt` (`window.tichuTest`):
+
+```js
+await tt.runSuite({ speed: "instant" }); // Run all 7 deterministic UI + backend scenarios
+await tt.runRound({ speed: "fast" });    // Watch a full round play out in the UI
+await tt.runGame({ speed: "instant" });  // Play a complete game to 1000 points
+tt.help();                               // List all console test runner commands
 ```
 
 ## Project Structure
@@ -61,6 +80,7 @@ composer install
 | `src/elements/` | Lit + RxJS web components (`<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`) |
 | `tichu.css` | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling |
 | `tests/` | PHPUnit test suite (`ComboTest.php`, `HandTest.php`) and BGA stubs |
+| `local/` | Self-contained local BGA runner (`router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), backend integration tests (`integration-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
 
 ## Syncing & Deploying to BGA Studio
 
