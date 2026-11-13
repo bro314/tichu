@@ -44,12 +44,12 @@ Goal: Instant, reload-free two-way preference sync between BGA's settings panel 
 ## 4. Decisions & Alternatives for You
 
 1. **Where to persist Hand Sort Order (`rank` / `color` / `preserve`)**:
-   - **Option A (Recommended)**: Store in `localStorage` (`tichu_hand_sort_order`) for instant per-browser persistence without adding a new BGA user preference slot (keeping `"preserve"` cleanly per-table or resetting gracefully on new deal).
+   - **Option A (Recommended) (CONFIRMED)**: Store in `localStorage` (`tichu_hand_sort_order`) for instant per-browser persistence without adding a new BGA user preference slot (keeping `"preserve"` cleanly per-table or resetting gracefully on new deal).
    - **Option B**: Add User Preference ID `105` in `gameoptions.inc.php` (`Sort by Rank` / `Sort by Suit`). _Note_: BGA syncs prefs `105` across devices via server DB, which is nice, OR you can keep `105` for Rank vs Suit (`0`/`1`) and still let `"preserve"` (custom drag order) live cleanly in `localStorage` / table state.
 2. **Spectator & Archive Replay Preference Access (`safeGetPref`)**:
-   - **Option A (Recommended)**: Write a `safeGetPref(prefId: number, fallback: number): number` helper checking `typeof this.getGameUserPreference === "function"` inside `try/catch`, falling back to `this.prefs?.[prefId]?.value ?? fallback`. Never assume `this.prefs` is populated in archive mode.
+   - **Option A (Recommended) (CONFIRMED)**: Write a `safeGetPref(prefId: number, fallback: number): number` helper checking `typeof this.getGameUserPreference === "function"` inside `try/catch`, falling back to `this.prefs?.[prefId]?.value ?? fallback`. Never assume `this.prefs` is populated in archive mode.
 3. **Should changing Order of Play (`101`) also re-render without reload?**:
-   - **Option A (Recommended)**: Yes — verify `onPreferenceChange(101, val)` updates `GameModel.orderOfPlay$` / player panel ordering cleanly (check `tichu-last-played.ts` & `tichu-pass-area.ts` seat rotation!) so `"needReload" => false` works cleanly for `101` as well as `100, 102, 103, 104`.
+   - **Option A (Recommended) (CONFIRMED)**: Yes — verify `onPreferenceChange(101, val)` updates `GameModel.orderOfPlay$` / player panel ordering cleanly (check `tichu-last-played.ts` & `tichu-pass-area.ts` seat rotation!) so `"needReload" => false` works cleanly for `101` as well as `100, 102, 103, 104`.
 
 ---
 
@@ -95,12 +95,12 @@ Goal: Instant, reload-free two-way preference sync between BGA's settings panel 
 
 ### Verification Checklist
 
-- [ ] `gameoptions.inc.php` has `"needReload" => false` for prefs `100..104`.
-- [ ] Toggling prefs `100`, `101`, `102`, `103`, `104` via BGA settings dropdown updates UI immediately **without** page reload.
-- [ ] Clicking theme/layout/Tiki buttons in `#myhandwrap` calls `setGameUserPreference` and persists across an explicit browser refresh (`F5`).
-- [ ] No `"temporarily"` apology tooltip text remains in `src/elements/tichu-hand.ts`.
-- [ ] Spectator / Archive replay mode loads without console errors (`safeGetPref` returns fallback cleanly) and local preview toggles don't fire AJAX errors.
-- [ ] `npm run build` and `npm test` pass; local Playwright/browser verification confirms live switching + `localStorage` sort persistence.
+- [x] `gameoptions.inc.php` has `"needReload" => false` for prefs `100..104`.
+- [x] Toggling prefs `100`, `101`, `102`, `103`, `104` via BGA settings dropdown updates UI immediately **without** page reload.
+- [x] Clicking theme/layout/Tiki buttons in `#myhandwrap` calls `setGameUserPreference` and persists across an explicit browser refresh (`F5`).
+- [x] No `"temporarily"` apology tooltip text remains in `src/elements/tichu-hand.ts`.
+- [x] Spectator / Archive replay mode loads without console errors (`safeGetPref` returns fallback cleanly) and local preview toggles don't fire AJAX errors.
+- [x] `npm run build` and `npm test` pass; local Playwright/browser verification confirms live switching + `localStorage` sort persistence.
 
 ### Kickoff Prompt for a Fresh Agent
 

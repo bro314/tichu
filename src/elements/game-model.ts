@@ -47,6 +47,7 @@ export interface BetAnimation {
 export interface LiveGamePrefs {
   squareTable?: boolean;
   clockwise?: boolean;
+  confirmPassWithSelection?: boolean;
   isTiki?: boolean;
   theme?: number;
   handSortOrder?: "rank" | "color";
@@ -85,11 +86,24 @@ export interface LiveGameState {
   selectedPhoenixValue: number | null;
   clockwise: boolean;
   squareTable: boolean;
+  confirmPassWithSelection: boolean;
   theme: number;
   isTiki: boolean;
   experimentalReplayOpen: boolean;
   trickModalOpen: boolean;
   betAnimations: BetAnimation[];
+}
+
+function getStoredHandSortOrder(): "rank" | "color" {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem("tichu_hand_sort_order");
+      if (raw === "color" || raw === "rank") return raw;
+    }
+  } catch (_e) {
+    // ignore storage errors
+  }
+  return "rank";
 }
 
 export const initialLiveGameState: LiveGameState = {
@@ -104,7 +118,7 @@ export const initialLiveGameState: LiveGameState = {
   collectingTrickCountdown: false,
   hand: [],
   selectedCardIds: [],
-  handSortOrder: "rank",
+  handSortOrder: getStoredHandSortOrder(),
   stateName: "",
   activePlayerId: "",
   activePlayerIds: [],
@@ -124,6 +138,7 @@ export const initialLiveGameState: LiveGameState = {
   selectedPhoenixValue: null,
   clockwise: true,
   squareTable: false,
+  confirmPassWithSelection: true,
   theme: 0,
   isTiki: false,
   experimentalReplayOpen: false,
@@ -235,6 +250,10 @@ export class GameModel {
   public readonly selectedPhoenixValue$ = select(this.state$, (s) => s.selectedPhoenixValue);
   public readonly clockwise$ = select(this.state$, (s) => s.clockwise);
   public readonly squareTable$ = select(this.state$, (s) => s.squareTable);
+  public readonly confirmPassWithSelection$ = select(
+    this.state$,
+    (s) => s.confirmPassWithSelection,
+  );
   public readonly theme$ = select(this.state$, (s) => s.theme);
   public readonly isTiki$ = select(this.state$, (s) => s.isTiki);
   public readonly experimentalReplayOpen$ = select(this.state$, (s) => s.experimentalReplayOpen);
@@ -398,7 +417,11 @@ export class GameModel {
     const squareTable =
       prefs?.squareTable !== undefined ? Boolean(prefs.squareTable) : Number(prefs?.[100]) === 2;
     const clockwise =
-      prefs?.clockwise !== undefined ? Boolean(prefs.clockwise) : Number(prefs?.[101]) !== 1;
+      prefs?.clockwise !== undefined ? Boolean(prefs.clockwise) : Number(prefs?.[101] ?? 1) === 2;
+    const confirmPassWithSelection =
+      prefs?.confirmPassWithSelection !== undefined
+        ? Boolean(prefs.confirmPassWithSelection)
+        : Number(prefs?.[102] ?? 1) !== 2;
     const isTiki = prefs?.isTiki !== undefined ? Boolean(prefs.isTiki) : Number(prefs?.[103]) === 1;
     const rawTheme =
       prefs?.theme !== undefined
@@ -407,7 +430,11 @@ export class GameModel {
           ? Number(prefs[104])
           : 0;
     const theme = !Number.isNaN(rawTheme) && rawTheme >= 0 && rawTheme <= 10 ? rawTheme : 0;
-    const handSortOrder = prefs?.handSortOrder ?? "rank";
+    const storedSortOrder = getStoredHandSortOrder();
+    const handSortOrder: "rank" | "color" =
+      prefs?.handSortOrder === "color" || prefs?.handSortOrder === "rank"
+        ? prefs.handSortOrder
+        : storedSortOrder;
 
     const stateName = String(gamestate?.name ?? "");
     const activePlayerId = gamestate?.active_player ? String(gamestate.active_player) : "";
@@ -453,6 +480,7 @@ export class GameModel {
       selectedPhoenixValue: null,
       clockwise,
       squareTable,
+      confirmPassWithSelection,
       theme,
       isTiki,
       experimentalReplayOpen: false,
@@ -714,6 +742,13 @@ export class GameModel {
   }
 
   setHandSortOrder(handSortOrder: "rank" | "color"): void {
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("tichu_hand_sort_order", handSortOrder);
+      }
+    } catch (_e) {
+      // ignore storage errors
+    }
     this.update({ handSortOrder });
   }
 
@@ -1066,6 +1101,10 @@ export class GameModel {
 
   setSquareTable(squareTable: boolean): void {
     this.update({ squareTable });
+  }
+
+  setConfirmPassWithSelection(confirmPassWithSelection: boolean): void {
+    this.update({ confirmPassWithSelection: Boolean(confirmPassWithSelection) });
   }
 
   setTheme(theme: number): void {

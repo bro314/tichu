@@ -6,7 +6,7 @@ This repository contains the implementation of the partnership climbing card gam
 
 - **Backend**: PHP 8+ running on the BGA Studio framework (`Table`, `APP_GameAction`, `game_view`, and `Deck` modules) backed by MySQL (`dbmodel.sql`).
 - **Frontend**: TypeScript (`src/`) compiled and bundled via `esbuild` into `tichu.js`. Uses a thin BGA adapter (`src/tichu.ts` extending `ebg.core.gamegui`) backed by **RxJS** (`GameModel` for live play and `Model` for archive replay) and **Lit** Web Components (`src/elements/*`) with full Shadow DOM for the entire game UI.
-- **Styling**: Responsive CSS (`tichu.css` + Shadow DOM component styles in `src/elements/`) featuring 11 color themes, List and Square table layouts, clockwise/counterclockwise play order, and optional Tiki Edition card art.
+- **Styling**: Responsive CSS (`tichu.css` + Shadow DOM component styles in `src/elements/`) featuring 11 color themes, List and Square table layouts, clockwise/counterclockwise play order, and optional Tiki Edition card art. All 5 BGA user preferences (`100`–`104`) and hand sort order (`tichu_hand_sort_order`) sync live in both directions without reloading the page.
 
 ## Prerequisites
 

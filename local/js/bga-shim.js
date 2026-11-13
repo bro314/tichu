@@ -1728,7 +1728,15 @@
       this.instantaneousMode = false;
       this.scoreCtrl = {};
       this.ebgControls = [];
-      this.prefs = {};
+      this.prefs = {
+        100: { value: this.getGameUserPreference(100) },
+        101: { value: this.getGameUserPreference(101) },
+        102: { value: this.getGameUserPreference(102) },
+        103: { value: this.getGameUserPreference(103) },
+        104: { value: this.getGameUserPreference(104) },
+      };
+      this._setPrefCalls = 0;
+      this._simulateMissingPrefControl = false;
       this.devBarPlayers = initPayload.devBarPlayers || [];
       this.localOptions = initPayload.options || { gameLength: 2, playerTeams: 1, turnBased: 0 };
       this.notifqueue = new GameNotifQueue(this);
@@ -1866,6 +1874,9 @@
     }
 
     getGameUserPreference(prefId) {
+      if (this._simulateMissingPrefControl) {
+        throw new Error(`User preference ${prefId} doesn't exists!`);
+      }
       const key = "tichu_pref_" + prefId;
       const stored = localStorage.getItem(key);
       if (stored !== null && stored !== "") {
@@ -1876,13 +1887,26 @@
     }
 
     setGameUserPreference(prefId, value) {
-      const key = "tichu_pref_" + prefId;
-      localStorage.setItem(key, String(value));
-      if (typeof this.onGameUserPreferenceChanged === "function") {
-        this.onGameUserPreferenceChanged(Number(prefId), Number(value));
+      this._setPrefCalls = (this._setPrefCalls || 0) + 1;
+      if (this.isReadOnly()) {
+        throw new Error("Cannot set user preference in read-only/spectator mode");
       }
-      if (typeof this.onPreferenceChange === "function") {
-        this.onPreferenceChange(Number(prefId), Number(value));
+      const id = Number(prefId);
+      const val = Number(value);
+      const key = "tichu_pref_" + id;
+      localStorage.setItem(key, String(val));
+      if (id === 104) {
+        localStorage.setItem("tichu_theme", String(val));
+      }
+      if (!this.prefs) this.prefs = {};
+      this.prefs[id] = { value: val };
+      if (typeof this.onGameUserPreferenceChanged === "function") {
+        this.onGameUserPreferenceChanged(id, val);
+      } else if (typeof this.onPreferenceChange === "function") {
+        this.onPreferenceChange(id, val);
+      }
+      if (typeof this._renderDevBar === "function") {
+        this._renderDevBar();
       }
     }
 
@@ -3110,7 +3134,18 @@
       const isGameEnd = Number(st.id) === 99 || st.name === "gameEnd";
       const autoBotOn = localStorage.getItem("tichu_local_autobot") === "1";
       const autoSwitchOn = localStorage.getItem("tichu_local_autoswitch") === "1";
-      const isTiki = this.getGameUserPreference(103) == 1;
+      let isTiki = false;
+      if (this.isReadOnly()) {
+        isTiki = window.gameModel
+          ? Boolean(window.gameModel.getState().isTiki)
+          : Number(this.prefs?.[103]?.value ?? 2) === 1;
+      } else {
+        try {
+          isTiki = this.getGameUserPreference(103) == 1;
+        } catch (_e) {
+          isTiki = Number(this.prefs?.[103]?.value ?? 2) === 1;
+        }
+      }
       const isTurnBased = Boolean(this.localOptions && this.localOptions.turnBased);
       const isMuted = localStorage.getItem("tichu_local_mute") === "1";
 
@@ -3249,16 +3284,12 @@
       });
       bindClick("devbar_tiki", () => {
         const nextVal = isTiki ? 2 : 1;
-        this.setGameUserPreference(103, nextVal);
-        if (typeof this.onPreferenceChange === "function") {
+        if (!this.isReadOnly()) {
+          this.setGameUserPreference(103, nextVal);
+        } else if (typeof this.onPreferenceChange === "function") {
           this.onPreferenceChange(103, nextVal);
+          this._renderDevBar();
         }
-        if (window.gameModel && typeof window.gameModel.setTiki === "function") {
-          window.gameModel.setTiki(nextVal === 1);
-        }
-        const overall = document.getElementById("overall-content");
-        if (overall) overall.classList.toggle("tiki", nextVal === 1);
-        this._renderDevBar();
       });
       bindClick("devbar_replay", () => this._openReplayViewer());
       bindClick("devbar_mute", () => {
@@ -4674,6 +4705,16 @@
 
       instance._renderDevBar();
       instance._hydrateInitialLogs();
+
+      if (instance.prefs) {
+        for (const prefId of [100, 101, 102, 103, 104]) {
+          try {
+            instance.prefs[prefId] = { value: instance.getGameUserPreference(prefId) };
+          } catch (_e) {
+            // keep constructor default if preference control is unavailable
+          }
+        }
+      }
 
       if (typeof instance.setup === "function") {
         instance.setup(instance.gamedatas);

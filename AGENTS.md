@@ -103,6 +103,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 - **Modals & Pickers**: Mount `<tichu-trick-modal>` on `document.body` outside `#game_play_area_wrap` (`rescale()` clears `transform` when `factor >= 1.0`). `#mahjong` uses a 7x2 (`7+7`) grid and `phoenixAllowedValues` sorts ascending.
 - **`ebg/stock` Moves**: Add to destination stock before removing from source stock (`noupdate = true` in loops, then `updateDisplay()`).
 - **Dark Mode & Translations**: Dark mode uses `html[data-theme="dark"]`. Pass literal strings only to `clienttranslate()` (`&dummyTranslations` tests `_()`).
+- **Zero-Reload Preferences (`100`–`104`) & Two-Way Sync**: All 5 prefs use `"needReload" => false`, are read safely via `safeGetPref(prefId, fallback)` (guarding spectator/archive missing `#preference_control_<id>`), update `GameModel` via `onGameUserPreferenceChanged` -> `onPreferenceChange` (no duplicate `initPreferencesObserver()`), and persist in-hand clicks via `persistUserPreference` (which skips `setGameUserPreference` when `isReadOnly()` is `true`). Hand sort order persists in `localStorage` (`tichu_hand_sort_order`).
 
 ---
 

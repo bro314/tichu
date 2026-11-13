@@ -78,8 +78,8 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
 
 ## 3. CRITICAL Rules for the `browser` Subagent
 
-1. **NEVER pass `page.evaluate(...)` or `waitForFunction(...)` to the `browser` subagent**:
-   - The `browser` subagent's system prompt forbids `page.evaluate` and `waitForFunction`. If you include them in a prompt, the subagent will spend **60–100 seconds of LLM thinking time per step** rewriting your script!
+1. **NEVER pass `page.evaluate(...)`, `waitForFunction(...)`, or unsupported `page.on` listeners (`pageerror`, `console`, `framenavigated`) to the `browser` subagent**:
+   - The `browser` subagent's system prompt forbids `page.evaluate` and `waitForFunction`, and its Playwright facade only supports `dialog`, `popup`, `download`, and `filechooser` for `page.on(...)`. Including unsupported helpers makes the subagent spend **60–100 seconds of LLM thinking time per step** rewriting your script!
    - Instead, use **pure Playwright locators** (`page.goto`, `page.getByText`, `page.locator`, `page.frameLocator('iframe')`) to click the `#studio-test-bar` buttons (`#tt_btn_smoke`, `#tt_btn_round`, `#tt_btn_game`, `#tt_btn_stop`, `#tt_btn_new`) and read `#tt_test_output`.
 2. **Self-Contained Prompts Only (Never Ask the Browser Subagent to `read_file` Workspace Files)**:
    - The `browser` subagent runs in an isolated sandbox and cannot read files from `/Users/brohlfs/git/tichu/`. Always paste the exact Playwright snippet directly in your prompt.

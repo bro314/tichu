@@ -74,7 +74,7 @@ $game_options = [
 $game_preferences = [
   100 => [
     "name" => totranslate("Table Layout"),
-    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "needReload" => false,
     "values" => [
       1 => ["name" => totranslate("List")],
       2 => ["name" => totranslate("Square")],
@@ -82,7 +82,7 @@ $game_preferences = [
   ],
   101 => [
     "name" => totranslate("Order of play"),
-    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "needReload" => false,
     "values" => [
       1 => ["name" => totranslate("counterclockwise")],
       2 => ["name" => totranslate("clockwise")],
@@ -90,7 +90,7 @@ $game_preferences = [
   ],
   102 => [
     "name" => totranslate("Prevent passing when cards are selected"),
-    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "needReload" => false,
     "values" => [
       1 => ["name" => totranslate("enabled")],
       2 => ["name" => totranslate("disabled")],
@@ -98,7 +98,7 @@ $game_preferences = [
   ],
   103 => [
     "name" => totranslate("Tiki Edition Art"),
-    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "needReload" => false,
     "values" => [
       1 => ["name" => totranslate("enabled")],
       2 => ["name" => totranslate("disabled")],
@@ -107,7 +107,7 @@ $game_preferences = [
   ],
   104 => [
     "name" => totranslate("Color Theme"),
-    "needReload" => true, // after user changes this preference game interface would auto-reload
+    "needReload" => false,
     "values" => [
       0 => ["name" => totranslate("wood dark")],
       1 => ["name" => totranslate("blue")],

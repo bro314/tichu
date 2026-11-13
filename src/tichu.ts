@@ -170,39 +170,77 @@ export class Tichu {
     }
   }
 
-  readPrefs(): LiveGamePrefs {
-    let theme = Number(this.getGameUserPreference(104));
-    if (Number.isNaN(theme)) {
-      const stored = localStorage.getItem("tichu_theme");
-      theme = stored !== null ? Number(stored) || 0 : 0;
+  safeGetPref(prefId: number, fallback: number): number {
+    try {
+      if (typeof this.getGameUserPreference === "function") {
+        const v = Number(this.getGameUserPreference(prefId));
+        if (!Number.isNaN(v) && v > 0) return v;
+        if (prefId === 104 && !Number.isNaN(v) && v >= 0) return v;
+      }
+    } catch (_e) {
+      // Spectator / replay mode on BGA may throw when #preference_control_<id> is missing
     }
-    return {
-      100: Number(this.getGameUserPreference(100)),
-      101: Number(this.getGameUserPreference(101)),
-      102: Number(this.getGameUserPreference(102)),
-      103: Number(this.getGameUserPreference(103)),
-      104: theme,
-      squareTable: this.getGameUserPreference(100) == 2,
-      clockwise: this.getGameUserPreference(101) != 1,
-      isTiki: this.getGameUserPreference(103) == 1,
-      theme,
-    };
+    const raw = Number((this as any).prefs?.[prefId]?.value);
+    if (!Number.isNaN(raw) && (raw > 0 || (prefId === 104 && raw >= 0))) {
+      return raw;
+    }
+    return fallback;
   }
 
-  initPreferencesObserver() {
-    document.querySelectorAll(".preference_control").forEach((el) => {
-      el.addEventListener("change", (e: Event) => {
-        const target = e.target as HTMLSelectElement | HTMLInputElement | null;
-        const match = target?.id?.match(/^preference_[cf]ontrol_(\d+)$/);
-        if (!target || !match) return;
-        const pref = Number(match[1]);
-        const newValue = Number(target.value);
-        if (this.prefs && this.prefs[pref]) {
-          this.prefs[pref].value = String(newValue);
+  safeGetHandSortOrder(): "rank" | "color" {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const stored = localStorage.getItem("tichu_hand_sort_order");
+        if (stored === "color" || stored === "rank") return stored;
+      }
+    } catch (_e) {
+      // ignore storage errors
+    }
+    return "rank";
+  }
+
+  persistUserPreference(prefId: number, value: number): void {
+    if (this.isReadOnly()) return;
+    try {
+      if (typeof this.setGameUserPreference === "function") {
+        this.setGameUserPreference(prefId, value);
+      }
+    } catch (_e) {
+      // Ignore if BGA preference control DOM node is unavailable
+    }
+  }
+
+  readPrefs(): LiveGamePrefs {
+    let storedTheme = 0;
+    try {
+      if (typeof localStorage !== "undefined") {
+        const rawTheme = localStorage.getItem("tichu_theme");
+        if (rawTheme !== null && rawTheme !== "") {
+          const parsed = Number(rawTheme);
+          if (!Number.isNaN(parsed)) storedTheme = parsed;
         }
-        this.onPreferenceChange(pref, newValue);
-      });
-    });
+      }
+    } catch (_e) {
+      // ignore storage errors
+    }
+    const pref100 = this.safeGetPref(100, 1);
+    const pref101 = this.safeGetPref(101, 1);
+    const pref102 = this.safeGetPref(102, 1);
+    const pref103 = this.safeGetPref(103, 2);
+    const pref104 = this.safeGetPref(104, storedTheme);
+    return {
+      100: pref100,
+      101: pref101,
+      102: pref102,
+      103: pref103,
+      104: pref104,
+      squareTable: pref100 === 2,
+      clockwise: pref101 === 2,
+      confirmPassWithSelection: pref102 !== 2,
+      isTiki: pref103 === 1,
+      theme: pref104,
+      handSortOrder: this.safeGetHandSortOrder(),
+    };
   }
 
   onGameUserPreferenceChanged(prefId: number, prefValue: number) {
@@ -210,18 +248,26 @@ export class Tichu {
   }
 
   onPreferenceChange(prefId: number, prefValue: number) {
-    switch (Number(prefId)) {
+    const id = Number(prefId);
+    const val = Number(prefValue);
+    if ((this as any).prefs && (this as any).prefs[id]) {
+      (this as any).prefs[id].value = val;
+    }
+    switch (id) {
       case 100:
-        this.onLayoutChange(prefValue == 2);
+        this.onLayoutChange(val === 2);
         break;
       case 101:
-        this.onDirectionChange(prefValue != 1);
+        this.onDirectionChange(val === 2);
+        break;
+      case 102:
+        window.gameModel?.setConfirmPassWithSelection(val !== 2);
         break;
       case 103:
-        window.gameModel?.setTiki(prefValue == 1);
+        this.onTikiChange(val === 1);
         break;
       case 104:
-        this.onThemeChange(Number(prefValue));
+        this.onThemeChange(val);
         break;
     }
   }
@@ -309,7 +355,6 @@ export class Tichu {
       }
     });
 
-    this.initPreferencesObserver();
     this.setupNotifications();
     initStudioTestHelper(this);
   }
@@ -634,15 +679,31 @@ export class Tichu {
   // ===========================================================================
 
   onThemeChange(themeNumber: number) {
-    localStorage.setItem("tichu_theme", String(themeNumber));
-    window.gameModel?.setTheme(Number(themeNumber));
+    const num = Number(themeNumber) || 0;
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("tichu_theme", String(num));
+      }
+    } catch (_e) {
+      // ignore storage errors
+    }
+    window.gameModel?.setTheme(num);
   }
 
   setTheme(themeNumber: number) {
-    this.onThemeChange(themeNumber);
+    const num = Number(themeNumber) || 0;
+    this.onThemeChange(num);
+    this.persistUserPreference(104, num);
   }
 
   onOrderChange(order: "rank" | "color") {
+    try {
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("tichu_hand_sort_order", order);
+      }
+    } catch (_e) {
+      // ignore storage errors
+    }
     window.gameModel?.setHandSortOrder(order);
   }
 
@@ -664,18 +725,33 @@ export class Tichu {
 
   onLayoutChange(square: boolean) {
     window.gameModel?.setSquareTable(Boolean(square));
+    this.rescale();
   }
 
   onReorderTable(square: boolean) {
     this.onLayoutChange(square);
+    this.persistUserPreference(100, square ? 2 : 1);
   }
 
   onDirectionChange(clockwise: boolean) {
     window.gameModel?.setClockwise(Boolean(clockwise));
+    if (this.stateName === "chooseDragonGift") {
+      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args);
+    }
   }
 
   changeOrder(clockwise: boolean) {
     this.onDirectionChange(clockwise);
+    this.persistUserPreference(101, clockwise ? 2 : 1);
+  }
+
+  onTikiChange(isTiki: boolean) {
+    window.gameModel?.setTiki(Boolean(isTiki));
+  }
+
+  changeTiki(isTiki: boolean) {
+    this.onTikiChange(isTiki);
+    this.persistUserPreference(103, isTiki ? 1 : 2);
   }
 
   toggleExperimentalReplay(enable?: boolean) {
@@ -812,7 +888,10 @@ export class Tichu {
 
   onPass(onlyOnce: boolean) {
     const selected = this.playerHand.getSelectedItems();
-    if (selected.length > 0 && this.getGameUserPreference(102) == 1) {
+    const confirmPass = window.gameModel
+      ? window.gameModel.getState().confirmPassWithSelection
+      : this.safeGetPref(102, 1) !== 2;
+    if (selected.length > 0 && confirmPass) {
       this.showMessage(
         _(
           "You have to unselect your cards first. (You can disable this safeguard in the user settings)",

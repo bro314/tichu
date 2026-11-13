@@ -182,7 +182,6 @@ export class TichuHand extends LitElement {
             class="reordercards"
             id="list_table"
             style="display: ${this.squareTable ? "inline" : "none"}"
-            title=${t("You can change this permanently in the user settings")}
             @click=${(e: Event) => this.onTableLayout(e, false)}
             >[${t("List table")}]</a
           >
@@ -191,7 +190,6 @@ export class TichuHand extends LitElement {
             class="reordercards"
             id="square_table"
             style="display: ${this.squareTable ? "none" : "inline"}"
-            title=${t("You can change this permanently in the user settings")}
             @click=${(e: Event) => this.onTableLayout(e, true)}
             >[${t("Square table")}]</a
           >
@@ -201,7 +199,7 @@ export class TichuHand extends LitElement {
             id="clockwise"
             style="display: ${this.clockwise ? "none" : "inline"}"
             title=${t(
-              "This will affect the arrangement of the square table and the order of players when passing the cards. You can change this permanently in the user settings",
+              "This will affect the arrangement of the square table and the order of players when passing the cards.",
             )}
             @click=${(e: Event) => this.onClockwiseChange(e, true)}
             >[${t("Play clockwise")}]</a
@@ -212,10 +210,26 @@ export class TichuHand extends LitElement {
             id="counterClockwise"
             style="display: ${this.clockwise ? "inline" : "none"}"
             title=${t(
-              "This will affect the arrangement of the square table and the order of players when passing the cards. You can change this permanently in the user settings",
+              "This will affect the arrangement of the square table and the order of players when passing the cards.",
             )}
             @click=${(e: Event) => this.onClockwiseChange(e, false)}
             >[${t("Play counterclockwise")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="tiki_art"
+            style="display: ${this.isTiki ? "none" : "inline"}"
+            @click=${(e: Event) => this.onTikiClick(e, true)}
+            >[${t("Tiki cards")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="standard_art"
+            style="display: ${this.isTiki ? "inline" : "none"}"
+            @click=${(e: Event) => this.onTikiClick(e, false)}
+            >[${t("Standard cards")}]</a
           >
           <a
             href="#"
@@ -296,15 +310,24 @@ export class TichuHand extends LitElement {
     }
   }
 
+  private onTikiClick(e: Event, isTiki: boolean) {
+    e.preventDefault();
+    window.gameModel.setTiki(isTiki);
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.changeTiki === "function") {
+      ui.changeTiki(isTiki);
+    }
+  }
+
   private onThemeClick(e: Event, themeNo: number) {
     e.preventDefault();
     window.gameModel.setTheme(themeNo);
     const ui = (window as any).gameui;
     if (ui) {
-      if (typeof ui.onThemeChange === "function") {
-        ui.onThemeChange(themeNo);
-      } else if (typeof ui.setTheme === "function") {
+      if (typeof ui.setTheme === "function") {
         ui.setTheme(themeNo);
+      } else if (typeof ui.onThemeChange === "function") {
+        ui.onThemeChange(themeNo);
       }
     }
   }
