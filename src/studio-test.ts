@@ -1554,11 +1554,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     }
 
     const esc = (s: string) =>
-      s
-        .replace(/&/g, "&amp;")
-        .replace(/"/g, "&quot;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
+      s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
     const tips = {
       smoke: esc(
@@ -1588,9 +1584,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       newTable: esc(
         "Stop the current table, create a new 4-player Tichu table, and express-start it via BGA Studio endpoints (tt.expressStartNew).",
       ),
-      stopTable: esc(
-        "Immediately abort and close the current BGA Studio table (tt.expressStop).",
-      ),
+      stopTable: esc("Immediately abort and close the current BGA Studio table (tt.expressStop)."),
       cmdInput: esc(
         "Type any window.tt method with optional colon argument — e.g. status, hand, assertUI, wish:8, play:S10, pass, step:4, giveDragon:0. Press Enter or click Run.",
       ),
@@ -1686,10 +1680,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       const rect = host.getBoundingClientRect();
       const tipWidth = tipEl.offsetWidth || 260;
       const tipHeight = tipEl.offsetHeight || 36;
-      const left = Math.min(
-        Math.max(8, rect.left),
-        Math.max(8, window.innerWidth - tipWidth - 8),
-      );
+      const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - tipWidth - 8));
       const top =
         rect.bottom + tipHeight + 12 > window.innerHeight
           ? Math.max(8, rect.top - tipHeight - 6)

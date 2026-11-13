@@ -1422,6 +1422,12 @@ namespace Bga\GameFramework {
       $this->gamestate = new \GameState($this);
     }
 
+    public ?int $table_id = 1;
+
+    protected function initTable(): void
+    {
+    }
+
     public static function _($s): string
     {
       return (string) $s;
@@ -1627,6 +1633,7 @@ namespace Bga\GameFramework {
         // incremented lazily (checkAction / first transition / first notification), so that
         // this emulation does not take a write lock before the game code does.
         $this->gamestate->getStateId();
+        $this->initTable();
         return;
       }
       $pdo = self::getPdo();
@@ -1635,6 +1642,7 @@ namespace Bga\GameFramework {
         $this->ownActionTransaction = true;
       }
       $this->inAjaxAction = true;
+      $this->initTable();
       $this->ensureMoveStarted();
     }
 

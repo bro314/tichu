@@ -19,6 +19,8 @@ class Tichu extends Table
    */
   const GLOBAL_LOCK_VERSION = 30;
 
+  /** Whether this request already holds the MySQL advisory lock (see initTable()). */
+  private bool $advisoryLockHeld = false;
   /** Whether this request already holds the table lock (see acquireGameLock()). */
   private bool $gameLockHeld = false;
   /** Whether this request's consistent snapshot / cached game state is outdated. */
@@ -33,6 +35,7 @@ class Tichu extends Table
   {
     parent::__construct();
     self::$instance = $this;
+    $this->bSelectGlobalsForUpdate = true;
     Combo::$noCombo = new Combo([], NO_COMBO);
 
     $this->initGameStateLabels([
@@ -57,27 +60,61 @@ class Tichu extends Table
   //////////// Concurrency control
   ////////////
   //
-  // Every BGA request runs in one MySQL (InnoDB, REPEATABLE READ) transaction. Two requests on
-  // the same table can overlap (two tabs auto-collecting, a bomb or Tichu call arriving while
-  // the active player plays, 4 players betting/passing at the same time). Without explicit
-  // locking this caused deadlocks (Error 1213) and double execution of state actions, because
-  // the later request validated against an outdated snapshot and then continued writing.
+  // BGA runs MySQL (InnoDB) with `@@transaction_isolation = 'SERIALIZABLE'`, where every plain
+  // `SELECT` inside a transaction implicitly acquires `FOR SHARE` (S) locks. In addition, on BGA
+  // Studio (`GamePageAction::performServerAction()`), the platform calls `debugSaveState(4)`
+  // between `initGameTableObjects()` and the game action — which runs `COMMIT`, spawns an
+  // external `mysqldump` subprocess, and runs `BEGIN` to start a second transaction.
+  //
+  // Two requests on the same table can overlap (two tabs auto-collecting, a bomb or Tichu call
+  // arriving while the active player plays, 4 players betting/passing at the same time).
   //
   // Protocol (see AGENTS.md "Concurrency & Locking"):
-  //  1. Every mutating entry point calls acquireGameLock() BEFORE any other DB statement. It
-  //     takes an exclusive row lock on global row 1 (the state id row, which always exists).
-  //     All mutating requests of a table are thereby serialized on one lock that is always
-  //     acquired first, so they can neither interleave nor deadlock each other.
-  //  2. A request that had to wait may still see an outdated snapshot (InnoDB does not refresh
-  //     a transaction's read view when it acquires a lock, and the framework has already read
-  //     the game state). acquireGameLock() detects this by comparing the locked (current)
-  //     state id, active player and version row with the cached/snapshot values.
-  //  3. Stale requests are rejected with a "please try again" UserException (rolled back,
+  //  1. `$this->bSelectGlobalsForUpdate = true` ensures `TableInfos::get()` in
+  //     `initGameTableObjects()` issues `SELECT ... FROM global WHERE 1 FOR UPDATE` as the very
+  //     first query of the request instead of acquiring shared (S) locks under SERIALIZABLE
+  //     (which would otherwise cause an immediate S-to-X lock-upgrade deadlock when two requests
+  //     start concurrently).
+  //  2. `initTable()` (called at the end of `setTable()`, before Studio's `debugSaveState(4)`
+  //     commits the initial transaction and spawns `mysqldump`) acquires a session-level MySQL
+  //     advisory lock (`GET_LOCK('tichu_table_<id>', 20)`) and switches the session isolation
+  //     level to `REPEATABLE-READ`. Because `GET_LOCK` is held across `COMMIT`/`BEGIN` boundaries,
+  //     overlapping requests cannot run `mysqldump` or interleave transactions while another
+  //     request is in flight.
+  //  3. Every mutating entry point calls `acquireGameLock()` BEFORE any other DB statement. It
+  //     takes an exclusive row lock (`FOR UPDATE`) on global rows 1, 2, and 30 (`lockVersion`)
+  //     to read the latest committed state and detect whether the framework's cached state /
+  //     consistent snapshot is stale (e.g. if a request waited behind an earlier request before
+  //     Studio committed and started the second transaction, or in local MVCC tests).
+  //  4. Stale requests are rejected with a "please try again" UserException (rolled back,
   //     nothing changes), except where the action only depends on data that is read freshly
   //     with the lock held (own player row, own cards): Tichu calls, Grand Tichu bets, passing
   //     cards and autopass settings. Duplicate collect requests are silently ignored.
-  //  4. Every request that changes shared game data increments the version row
-  //     (bumpGameVersion()) so that overlapping requests can detect it.
+  //  5. Every request that changes shared game data increments the version row
+  //     (`bumpGameVersion()`) so that overlapping requests can detect it.
+
+  protected function initTable(): void
+  {
+    $this->acquireAdvisoryLock();
+  }
+
+  private function acquireAdvisoryLock(): void
+  {
+    if ($this->advisoryLockHeld) {
+      return;
+    }
+    $this->advisoryLockHeld = true;
+    // Only run MySQL session commands on real BGA servers (where Bga\GameFramework\Old\Db exists).
+    // Local SQLite runner and PHPUnit tests do not define Bga\GameFramework\Old\Db.
+    if (!class_exists(\Bga\GameFramework\Old\Db::class, false)) {
+      return;
+    }
+    $tableId = (int) ($this->table_id ?? 0);
+    if ($tableId > 0) {
+      $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
+    }
+    $this->DbQuery("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
+  }
 
   /**
    * Serializes this request with all other mutating requests of the table.
@@ -88,6 +125,7 @@ class Tichu extends Table
     if ($this->gameLockHeld) {
       return;
     }
+    $this->acquireAdvisoryLock();
     $this->freshStateId = (int) $this->getUniqueValueFromDB(
       "SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE"
     );
@@ -145,6 +183,7 @@ class Tichu extends Table
   /** Called by the local backend at the end of every emulated request. */
   public function onRequestEnd(): void
   {
+    $this->advisoryLockHeld = false;
     $this->gameLockHeld = false;
     $this->gameLockStale = false;
     $this->gameVersionBumped = false;

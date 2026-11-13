@@ -253,8 +253,10 @@ class feException extends Exception {
 
 abstract class Table extends APP_DbObject {
     var $players = array();
+    public $table_id = 1;
     public $gamename;
     public $gamestate = null;
+    public bool $bSelectGlobalsForUpdate = false;
     public bool $not_a_move_notification = false;
 
     public function __construct() {

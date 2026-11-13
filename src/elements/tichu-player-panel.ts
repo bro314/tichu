@@ -82,17 +82,18 @@ export class TichuPlayerPanel extends LitElement {
 
     return html`
       <div class="ha_board">
-        <div class="icon hand" title=${t("Cards in hand")}></div>&#x00D7;<span
-          id="handcount_${id}"
-          class="count handcount ${id}"
-          title=${t("Cards in hand")}
+        <div class="icon hand" title=${t("Cards in hand")}></div>
+        &#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${t("Cards in hand")}
           >${handcount}</span
-        ><div class="icon star" title=${t("Points captured")}></div>&#x00D7;<span
+        >
+        <div class="icon star" title=${t("Points captured")}></div>
+        &#x00D7;<span
           id="pointcount_${id}"
           class="count pointcount ${id}"
           title=${t("Points captured")}
           >${capturedPoints}</span
-        ><div
+        >
+        <div
           id="grandtichublack_${id}"
           class="icon grandtichublack ${id}"
           style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"

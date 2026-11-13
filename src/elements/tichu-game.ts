@@ -95,7 +95,11 @@ export class TichuGame extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.syncExternalClasses();
-    if (typeof document !== "undefined" && document.body && !document.querySelector("tichu-trick-modal")) {
+    if (
+      typeof document !== "undefined" &&
+      document.body &&
+      !document.querySelector("tichu-trick-modal")
+    ) {
       document.body.appendChild(document.createElement("tichu-trick-modal"));
     }
   }
