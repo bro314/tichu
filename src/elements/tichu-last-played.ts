@@ -1,4 +1,4 @@
-import { html, css, LitElement } from "lit";
+import { html, css, LitElement, PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { Card, LastComboState, LivePlayer } from "./game-model";
@@ -6,6 +6,7 @@ import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-status";
 import "./tichu-stock";
+import type { TichuStock } from "./tichu-stock";
 
 const t = (s: string) => (typeof _ === "function" ? _(s) : s);
 
@@ -27,6 +28,9 @@ export class TichuLastPlayed extends LitElement {
   @state() private trick = 0;
   @state() private currentTrickValue = 0;
   @state() private currentTrick: Card[] = [];
+  @state() private winningHighlightPlayerId: string | null = null;
+  @state() private pendingRevealByPlayer: Record<string, string[]> = {};
+  @state() private hideAllForSweep = false;
 
   static override get styles() {
     return [
@@ -126,6 +130,13 @@ export class TichuLastPlayed extends LitElement {
         .last-played-container.active,
         .last-played-container.bomb {
           border: 4px solid var(--bg-color-active);
+        }
+        .last-played-container.winning-linger {
+          box-shadow: 0 0 16px rgba(251, 191, 36, 0.8);
+          border-color: rgba(251, 191, 36, 0.95);
+          transition:
+            box-shadow 120ms ease,
+            border-color 120ms ease;
         }
         .last-played-container.disabled:not(.lastComboPlayer) .disabler {
           display: block;
@@ -360,8 +371,10 @@ export class TichuLastPlayed extends LitElement {
           lastComboPlayer: isLastComboPlayer,
           active: isActive,
           bomb: isBombActive,
+          "winning-linger": this.winningHighlightPlayerId === id,
         })}
         id="playertable_${id}"
+        data-player-id=${id}
         title=${translatedDesc}
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
@@ -393,6 +406,7 @@ export class TichuLastPlayed extends LitElement {
             combo.passed
               ? html`<span class="pass"
                   ><tichu-stock
+                    data-player-id=${id}
                     .cards=${[]}
                     .pass=${true}
                     .scale=${0.75}
@@ -400,16 +414,163 @@ export class TichuLastPlayed extends LitElement {
                   ></tichu-stock
                 ></span>`
               : html`<tichu-stock
+                  data-player-id=${id}
                   .cards=${combo.cards}
                   .scale=${0.75}
                   sortMode="preserve"
                   .tiki=${this.isTiki}
                   .dynamicOverlap=${true}
+                  .externalHiddenIds=${this.pendingRevealByPlayer[id] ?? []}
+                  .hideAllCards=${this.hideAllForSweep}
                 ></tichu-stock>`
           }
         </div>
       </div>
     `;
+  }
+
+  protected override willUpdate(changedProperties: PropertyValues) {
+    super.willUpdate(changedProperties);
+    if (
+      changedProperties.has("stateName") &&
+      (this.stateName === "newTrick" || this.stateName === "newRound")
+    ) {
+      this.hideAllForSweep = false;
+      this.winningHighlightPlayerId = null;
+      this.pendingRevealByPlayer = {};
+    }
+  }
+
+  getPlayerStock(playerId: string | number): TichuStock | null {
+    const id = String(playerId);
+    return (
+      (this.shadowRoot?.querySelector(
+        `tichu-stock[data-player-id="${id}"]`,
+      ) as TichuStock | null) ?? null
+    );
+  }
+
+  getComboCardRects(
+    playerId: string | number,
+    cardIds?: Array<string | number>,
+  ): Map<number, DOMRect> {
+    return this.getPlayerStock(playerId)?.getCardRects(cardIds) ?? new Map();
+  }
+
+  markPendingReveal(playerId: string | number, cardIds: Array<string | number>): void {
+    const id = String(playerId);
+    const existing = new Set(this.pendingRevealByPlayer[id] ?? []);
+    for (const cid of cardIds) {
+      existing.add(String(cid));
+    }
+    this.pendingRevealByPlayer = {
+      ...this.pendingRevealByPlayer,
+      [id]: Array.from(existing),
+    };
+  }
+
+  revealCards(playerId?: string | number, cardIds?: Array<string | number>): void {
+    if (playerId === undefined) {
+      this.hideAllForSweep = false;
+      this.pendingRevealByPlayer = {};
+      return;
+    }
+    const id = String(playerId);
+    if (!cardIds) {
+      const copy = { ...this.pendingRevealByPlayer };
+      delete copy[id];
+      this.pendingRevealByPlayer = copy;
+      return;
+    }
+    const removeSet = new Set(cardIds.map(String));
+    const current = this.pendingRevealByPlayer[id];
+    if (!current || current.length === 0) return;
+    const remaining = current.filter((cid) => !removeSet.has(cid));
+    const copy = { ...this.pendingRevealByPlayer };
+    if (remaining.length > 0) {
+      copy[id] = remaining;
+    } else {
+      delete copy[id];
+    }
+    this.pendingRevealByPlayer = copy;
+  }
+
+  getAllTableComboCards(): Array<{ playerId: string; card: Card; rect: DOMRect }> {
+    const result: Array<{ playerId: string; card: Card; rect: DOMRect }> = [];
+    if (!this.shadowRoot) return result;
+    const stocks = Array.from(
+      this.shadowRoot.querySelectorAll<TichuStock>("tichu-stock[data-player-id]"),
+    );
+    for (const stock of stocks) {
+      if (stock.pass) continue;
+      const pid = stock.getAttribute("data-player-id");
+      if (!pid) continue;
+      const rectMap = stock.getCardRects();
+      for (const card of stock.cards) {
+        const rect = rectMap.get(Number(card.id));
+        if (rect) {
+          result.push({ playerId: pid, card, rect });
+        }
+      }
+    }
+    return result;
+  }
+
+  hideAllComboCards(): void {
+    this.hideAllForSweep = true;
+  }
+
+  setWinningComboHighlight(playerId: string | number | null): void {
+    this.winningHighlightPlayerId = playerId !== null ? String(playerId) : null;
+  }
+
+  private getZoomFactor(): number {
+    const areaWrap = document.getElementById("game_play_area_wrap");
+    if (areaWrap) {
+      const m = areaWrap.style.transform.match(/scale\(([^)]+)\)/);
+      if (m && m[1]) {
+        const parsed = Number(m[1]);
+        if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+      }
+    }
+    return 1;
+  }
+
+  getSeatAnchorRect(playerId: string | number): DOMRect | null {
+    const id = String(playerId);
+    const el =
+      this.shadowRoot?.getElementById(`lastcombo_${id}`) ??
+      this.shadowRoot?.getElementById(`playertable_${id}`);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const zoom = this.getZoomFactor();
+    const w = 75 * zoom;
+    const h = 112.5 * zoom;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
+  }
+
+  getDeckOriginRect(): DOMRect | null {
+    const area =
+      this.shadowRoot?.getElementById("card-last-played-area") ??
+      this.shadowRoot?.querySelector("tichu-status") ??
+      this;
+    const rect = area.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const zoom = this.getZoomFactor();
+    const w = 65 * zoom;
+    const h = 97.5 * zoom;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
   }
 
   private onShowCurrentTrick() {

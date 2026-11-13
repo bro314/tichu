@@ -91,10 +91,10 @@ Modern BGA trick-taking/climbing hits (`Odin`, `The Crew`, `Solo`, `Papayoo`, `t
 
 ### Verification Checklist
 
-- [ ] `npm run build` and `npm test` pass cleanly.
-- [ ] On `npm run local`, playing a combo, playing a bomb, collecting a trick (`confirmTrick` + `dragonGift`), dealing cards, accepting passed cards, and toggling Rank/Suit sort all animate smoothly at 60fps with zero visual flicker or clipping under `rescale()`.
-- [ ] Toggling BGA animations off (`bgaAnimationsActive() === false`), enabling OS `prefers-reduced-motion`, or running `instantaneousMode` / replay scrub skips flights instantaneously (`0ms`) without orphaned ghost elements in `document.body`.
-- [ ] Zero overlapping notifications or lost mouse clicks during flights (`pointer-events: none`).
+- [x] `npm run build` and `npm test` pass cleanly.
+- [x] On `npm run local`, playing a combo, playing a bomb, collecting a trick (`confirmTrick` + `dragonGift`), dealing cards, accepting passed cards, and toggling Rank/Suit sort all animate smoothly at 60fps with zero visual flicker or clipping under `rescale()`.
+- [x] Toggling BGA animations off (`bgaAnimationsActive() === false`), enabling OS `prefers-reduced-motion`, or running `instantaneousMode` / replay scrub skips flights instantaneously (`0ms`) without orphaned ghost elements in `document.body`.
+- [x] Zero overlapping notifications or lost mouse clicks during flights (`pointer-events: none`).
 
 ### Kickoff Prompt for a Fresh Agent
 

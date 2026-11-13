@@ -65,6 +65,32 @@ export class TichuPlayerPanel extends LitElement {
     }
   }
 
+  getBadgeRect(): DOMRect | null {
+    const anchor =
+      this.shadowRoot?.querySelector(".icon.hand") ??
+      this.shadowRoot?.querySelector(".ha_board") ??
+      this;
+    const rect = anchor.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const areaWrap = document.getElementById("game_play_area_wrap");
+    let zoom = 1;
+    if (areaWrap) {
+      const m = areaWrap.style.transform.match(/scale\(([^)]+)\)/);
+      if (m && m[1]) {
+        const parsed = Number(m[1]);
+        if (!Number.isNaN(parsed) && parsed > 0) zoom = parsed;
+      }
+    }
+    const w = 50 * zoom;
+    const h = 75 * zoom;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
+  }
+
   override render() {
     const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
     this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);

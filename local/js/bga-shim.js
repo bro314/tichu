@@ -1476,11 +1476,16 @@
       const m = String(mode || "normal").toLowerCase();
       if (m === "instant" || m === "fast" || m === "normal") {
         this.speedMode = m;
+        window.__tichuSpeed = m;
+        if (m === "instant") {
+          document.querySelector("tichu-animation-layer")?.cancelAll?.();
+        }
       }
       return this.speedMode;
     }
 
     reset(newLastPacketId) {
+      document.querySelector("tichu-animation-layer")?.cancelAll?.();
       if (this._processTimer) {
         clearTimeout(this._processTimer);
         this._processTimer = null;
@@ -1791,9 +1796,7 @@
 
     isReadOnly() {
       return Boolean(
-        this.isSpectator ||
-          typeof window.g_replayFrom !== "undefined" ||
-          window.g_archive_mode,
+        this.isSpectator || typeof window.g_replayFrom !== "undefined" || window.g_archive_mode,
       );
     }
 

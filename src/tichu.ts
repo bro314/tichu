@@ -8,6 +8,7 @@
  * -----
  */
 import type { GameModel, LiveGamePrefs } from "./elements/game-model";
+import type { TichuAnimationLayer } from "./elements/tichu-animation-layer";
 import { initStudioTestHelper } from "./studio-test";
 import { Bet } from "./types/tichu-contracts";
 import type {
@@ -151,8 +152,8 @@ export class Tichu {
   isReadOnly(): boolean {
     return Boolean(
       this.isSpectator ||
-        typeof g_replayFrom !== "undefined" ||
-        (typeof g_archive_mode !== "undefined" && g_archive_mode),
+      typeof g_replayFrom !== "undefined" ||
+      (typeof g_archive_mode !== "undefined" && g_archive_mode),
     );
   }
 
@@ -161,6 +162,32 @@ export class Tichu {
       return Boolean(this.bgaAnimationsActive());
     }
     return !(this as any).instantaneousMode;
+  }
+
+  getAnimationLayer(): TichuAnimationLayer | null {
+    if (typeof document === "undefined") return null;
+    let layer = document.querySelector("tichu-animation-layer") as TichuAnimationLayer | null;
+    if (!layer && document.body) {
+      layer = document.createElement("tichu-animation-layer") as TichuAnimationLayer;
+      document.body.appendChild(layer);
+    }
+    return layer;
+  }
+
+  shouldAnimate(): boolean {
+    if (typeof window === "undefined" || typeof document === "undefined") return false;
+    if (document.hidden || document.visibilityState === "hidden") return false;
+    if ((window as any).__tichuSpeed === "instant") return false;
+    if ((this as any).instantaneousMode) return false;
+    if ((this.notifqueue as any)?.speedMode === "instant") return false;
+    if (!this.areAnimationsActive()) return false;
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return false;
+    }
+    return typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
   }
 
   playLaserSound() {
@@ -296,6 +323,7 @@ export class Tichu {
     if (document.body && !document.querySelector("tichu-trick-modal")) {
       document.body.appendChild(document.createElement("tichu-trick-modal"));
     }
+    this.getAnimationLayer()?.cancelAll?.();
 
     window.gameModel?.hydrateFromGamedatas(
       gamedatas,
@@ -1027,6 +1055,15 @@ export class Tichu {
 
   notif_dealCards(notif: TypedNotif<"dealCards">) {
     const cards = notif.args.cards || [];
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const durMs =
+      layer && typeof layer.prepareDealCards === "function"
+        ? layer.prepareDealCards(cards)
+        : animate
+          ? 100
+          : 1;
+
     const totalCards = cards.length === 8 ? 8 : 14;
     if (this.gamedatas) {
       if (totalCards === 8) {
@@ -1045,6 +1082,10 @@ export class Tichu {
       }
     }
     window.gameModel?.dealCards(cards);
+    this.notifqueue.setSynchronousDuration(durMs);
+    if (layer && typeof layer.runDealCardsFlight === "function") {
+      void layer.runDealCardsFlight(cards);
+    }
   }
 
   notif_passCards(notif: TypedNotif<"passCards">) {
@@ -1061,25 +1102,26 @@ export class Tichu {
     clearTimeout(this.autoAcceptTimeout);
     window.gameModel?.setAcceptingCardsCountdown(false);
     const cards = notif.args.cards || [];
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const prep =
+      layer && typeof layer.prepareAcceptCards === "function"
+        ? layer.prepareAcceptCards(cards)
+        : null;
 
-    const acceptFn = () => {
-      if (this.gamedatas) {
-        if (!this.gamedatas.hand) this.gamedatas.hand = [];
-        const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
-        for (const card of cards) {
-          if (!existingIds.has(String(card.id))) {
-            this.gamedatas.hand.push(card);
-          }
+    if (this.gamedatas) {
+      if (!this.gamedatas.hand) this.gamedatas.hand = [];
+      const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
+      for (const card of cards) {
+        if (!existingIds.has(String(card.id))) {
+          this.gamedatas.hand.push(card);
         }
       }
-      window.gameModel?.finishAcceptCards(cards);
-    };
-
-    if (!this.areAnimationsActive()) {
-      acceptFn();
-    } else {
-      setTimeout(() => window.gameModel?.startAcceptCardsAnimation(), 1500);
-      setTimeout(acceptFn, 2000);
+    }
+    window.gameModel?.finishAcceptCards(cards);
+    this.notifqueue.setSynchronousDuration(prep ? prep.durationMs : animate ? 50 : 1);
+    if (layer && prep && typeof layer.runAcceptCardsFlight === "function") {
+      void layer.runAcceptCardsFlight(cards, prep.fromRects);
     }
   }
 
@@ -1090,6 +1132,13 @@ export class Tichu {
     const points = Number(notif.args.points || 0);
     const comboType = notif.args.type !== undefined ? Number(notif.args.type) : 0;
     const phoenixValue = notif.args.phoenixValue !== undefined ? notif.args.phoenixValue : null;
+
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const prep =
+      layer && typeof layer.preparePlayCombo === "function"
+        ? layer.preparePlayCombo(playerId, cards, comboName, this.stateName === "playBomb")
+        : null;
 
     if (this.gamedatas) {
       this.gamedatas.currentTrick = [...(this.gamedatas.currentTrick || []), ...cards];
@@ -1123,6 +1172,10 @@ export class Tichu {
     }
 
     window.gameModel?.applyPlayCombo(playerId, cards, comboName, points, comboType, phoenixValue);
+    this.notifqueue.setSynchronousDuration(prep ? prep.durationMs : animate ? 100 : 1);
+    if (layer && prep && typeof layer.runPlayComboFlight === "function") {
+      void layer.runPlayComboFlight(playerId, cards, prep);
+    }
   }
 
   notif_pass(notif: TypedNotif<"pass">) {
@@ -1136,6 +1189,12 @@ export class Tichu {
   notif_captureCards(notif: TypedNotif<"captureCards">) {
     const playerId = Number(notif.args.player_id);
     const trickValue = Number(notif.args.trick_value || 0);
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const sweep =
+      layer && typeof layer.runCaptureCardsSweep === "function"
+        ? layer.runCaptureCardsSweep(playerId)
+        : null;
 
     if (this.gamedatas) {
       if (!this.gamedatas.capturedpoints) this.gamedatas.capturedpoints = {};
@@ -1144,6 +1203,7 @@ export class Tichu {
     }
 
     window.gameModel?.applyCaptureCards(playerId, trickValue);
+    this.notifqueue.setSynchronousDuration(sweep ? sweep.durationMs : animate ? 100 : 1);
   }
 
   notif_grandTichuBet(notif: TypedNotif<"grandTichuBet">) {

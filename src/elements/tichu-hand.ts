@@ -6,6 +6,7 @@ import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-action-bar";
 import "./tichu-stock";
+import type { TichuStock } from "./tichu-stock";
 
 const t = (s: string) => (typeof _ === "function" ? _(s) : s);
 
@@ -345,6 +346,45 @@ export class TichuHand extends LitElement {
     if (ui && typeof ui.changeTiki === "function") {
       ui.changeTiki(isTiki);
     }
+  }
+
+  getStock(): TichuStock | null {
+    return (this.shadowRoot?.querySelector("tichu-stock") as TichuStock | null) ?? null;
+  }
+
+  getCardRects(cardIds?: Array<string | number>): Map<number, DOMRect> {
+    return this.getStock()?.getCardRects(cardIds) ?? new Map();
+  }
+
+  markPendingReveal(cardIds: Array<string | number>): void {
+    this.getStock()?.markPendingReveal(cardIds);
+  }
+
+  revealCards(cardIds?: Array<string | number>): void {
+    this.getStock()?.revealCards(cardIds);
+  }
+
+  getHandAnchorRect(): DOMRect | null {
+    const handContainer = this.shadowRoot?.getElementById("myhand") ?? this;
+    const rect = handContainer.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    let zoom = 1;
+    const areaWrap = document.getElementById("game_play_area_wrap");
+    if (areaWrap) {
+      const m = areaWrap.style.transform.match(/scale\(([^)]+)\)/);
+      if (m && m[1]) {
+        const parsed = Number(m[1]);
+        if (!Number.isNaN(parsed) && parsed > 0) zoom = parsed;
+      }
+    }
+    const w = 100 * zoom;
+    const h = 150 * zoom;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
   }
 
   private onThemeClick(e: Event, themeNo: number) {

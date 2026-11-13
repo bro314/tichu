@@ -611,6 +611,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     setSpeed(mode: "normal" | "fast" | "instant" = "instant") {
       const ui = getUi();
       speedMode = mode;
+      (window as any).__tichuSpeed = mode;
+      if (mode === "instant") {
+        (document.querySelector("tichu-animation-layer") as any)?.cancelAll?.();
+      }
       if (ui) {
         ui.instantaneousMode = mode === "instant" || mode === "fast";
         const nq = ui.notifqueue;

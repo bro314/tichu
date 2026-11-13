@@ -5,6 +5,7 @@ import { LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-card";
+import type { TichuCard } from "./tichu-card";
 
 const t = (s: string) => (typeof _ === "function" ? _(s) : s);
 
@@ -250,6 +251,41 @@ export class TichuPassArea extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  getReceivedCardRects(): Map<number, DOMRect> {
+    const result = new Map<number, DOMRect>();
+    if (!this.shadowRoot) return result;
+    const cardEls = Array.from(
+      this.shadowRoot.querySelectorAll<TichuCard>("tichu-card.received-card"),
+    );
+    for (const cardEl of cardEls) {
+      if (!cardEl.card?.id) continue;
+      const numId = Number(cardEl.card.id);
+      if (Number.isNaN(numId)) continue;
+      const innerCard = cardEl.shadowRoot?.getElementById("card");
+      const rect = innerCard ? innerCard.getBoundingClientRect() : cardEl.getBoundingClientRect();
+      result.set(numId, rect);
+    }
+    return result;
+  }
+
+  getSeatAnchorRect(playerId: string | number): DOMRect | null {
+    const id = String(playerId);
+    const slotEl = this.shadowRoot?.querySelector<HTMLElement>(
+      `.playertable[data-player-id="${id}"]`,
+    );
+    if (!slotEl) return null;
+    const rect = slotEl.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const w = Math.max(50, Math.min(rect.width * 0.7, 100));
+    const h = w * 1.5;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
   }
 
   private onSlotClick(index: number) {

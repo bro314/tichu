@@ -1,6 +1,7 @@
 import { GameModel } from "./game-model";
 import "./tichu-card";
 import "./tichu-stock";
+import "./tichu-animation-layer";
 import "./tichu-replay";
 import "./tichu-status";
 import "./tichu-player-panel";
@@ -24,6 +25,13 @@ export { TichuActionBar } from "./tichu-action-bar";
 export { TichuHand } from "./tichu-hand";
 export { TichuPlayedCards } from "./tichu-played-cards";
 export { TichuTrickModal } from "./tichu-trick-modal";
+export {
+  TichuAnimationLayer,
+  shouldAnimate,
+  getAnimationLayer,
+  scaleAnimMs,
+} from "./tichu-animation-layer";
+export type { CardFlight } from "./tichu-animation-layer";
 export { TichuGame } from "./tichu-game";
 
 declare global {
