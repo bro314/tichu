@@ -102,6 +102,7 @@ declare global {
 export class Tichu {
   autoCollectTimeout?: number;
   autoAcceptTimeout?: number;
+  collectSent = false;
   experimentalArchiveModeEnabled = false;
   allLastCombos: Record<number, Combo | undefined> = {};
   stateName = "";
@@ -551,7 +552,7 @@ export class Tichu {
   }
 
   onEnteringStateConfirmTrick(_args?: any) {
-    // Handled in onUpdateActionButtons
+    this.collectSent = false;
   }
 
   onEnteringStateEndRound(_args?: any) {
@@ -637,7 +638,7 @@ export class Tichu {
 
         case "confirmTrick":
           clearTimeout(this.autoCollectTimeout);
-          if (this.bRealtime) {
+          if (this.bRealtime && !this.collectSent) {
             window.gameModel?.setCollectingTrickCountdown(true);
             this.autoCollectTimeout = window.setTimeout(() => this.collect(), 2000);
           }
@@ -928,7 +929,9 @@ export class Tichu {
   collect() {
     clearTimeout(this.autoCollectTimeout);
     window.gameModel?.setCollectingTrickCountdown(false);
+    if (this.collectSent) return;
     if (!this.checkAction("collect")) return;
+    this.collectSent = true;
     this.takeAction("collect");
   }
 

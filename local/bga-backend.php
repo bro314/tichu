@@ -315,6 +315,7 @@ namespace {
       $pdo = self::getPdo();
       // Convert MySQL backslash-escaped single quotes from addslashes() to SQLite ''
       $normalizedSql = str_replace("\\'", "''", $sql);
+      $normalizedSql = preg_replace('/\s+FOR\s+UPDATE\b/i', '', $normalizedSql);
       $stmt = $pdo->query($normalizedSql);
       self::$lastAffectedRows = $stmt ? $stmt->rowCount() : 0;
       return $stmt;

@@ -23,7 +23,6 @@ export class TichuLastPlayed extends LitElement {
   @state() private isTiki = false;
   @state() private clockwise = true;
   @state() private squareTable = false;
-  @state() private firstOutPlayerId = "";
   @state() private round = 0;
   @state() private trick = 0;
   @state() private currentTrickValue = 0;
@@ -112,16 +111,8 @@ export class TichuLastPlayed extends LitElement {
           grid-row: 1 / span 1;
         }
 
-        .player-table {
+        .last-played-container {
           position: relative;
-          border-radius: var(--border-radius);
-          box-shadow: var(--elevation);
-        }
-        .player-table.disabled:not(.lastComboPlayer) .disabler {
-          display: block;
-        }
-
-        .player-table > .whiteblock {
           display: flex;
           line-height: 24px;
           font-size: 20px;
@@ -130,34 +121,26 @@ export class TichuLastPlayed extends LitElement {
           padding: 6px;
           background: var(--bg-color-lighter);
           border-radius: var(--border-radius);
-          min-height: 128px;
+          box-shadow: var(--elevation);
         }
-        .player-table > .whiteblock.active,
-        .player-table > .whiteblock.bomb {
+        .last-played-container.active,
+        .last-played-container.bomb {
           border: 4px solid var(--bg-color-active);
+        }
+        .last-played-container.disabled:not(.lastComboPlayer) .disabler {
+          display: block;
         }
 
         .last-played-player {
           width: 140px;
           padding-right: 10px;
+          box-sizing: content-box;
           flex-shrink: 0;
         }
-        .last-played-player h3.playertablename {
-          font-size: 20px;
+        .playertablename {
           font-weight: bold;
           overflow: hidden;
           text-overflow: ellipsis;
-          margin: 0;
-        }
-        .combo-description {
-          display: block;
-          font-size: 12px;
-          font-weight: normal;
-          color: #444;
-          line-height: 16px;
-        }
-        .combo-description:empty {
-          display: none;
         }
         .last-played-player .last-played-icons {
           top: 2px;
@@ -166,8 +149,9 @@ export class TichuLastPlayed extends LitElement {
           display: inline-block;
           width: 40px;
         }
-        .lastcombo {
+        .last-played-combo {
           width: 300px;
+          min-height: 117.5px;
           flex-grow: 1;
         }
 
@@ -253,11 +237,6 @@ export class TichuLastPlayed extends LitElement {
       this,
       () => window.gameModel.squareTable$,
       (squareTable) => (this.squareTable = squareTable),
-    );
-    subscribe(
-      this,
-      () => window.gameModel.firstOutPlayerId$,
-      (id) => (this.firstOutPlayerId = id),
     );
     subscribe(
       this,
@@ -368,10 +347,7 @@ export class TichuLastPlayed extends LitElement {
       String(this.activePlayerId) === id;
 
     const showGrandTichuColor = player.callGrandTichu === 200;
-    const showGrandTichuBlack = player.callGrandTichu === -1;
     const showTichuColor = player.callTichu === 100;
-    const showTichuBlack = player.callTichu === -1 && !showGrandTichuColor;
-    const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
     const translatedDesc = combo.description ? t(combo.description) : "";
 
     return html`
@@ -389,85 +365,52 @@ export class TichuLastPlayed extends LitElement {
         title=${translatedDesc}
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
-        <div
-          class=${classMap({
-            whiteblock: true,
-            active: isActive,
-            bomb: isBombActive,
-          })}
-        >
-          <div class="last-played-player">
-            <h3 class="playertablename" style="color: #${player.color}">
-              <span class="player-name-text">${player.name}</span>
-              <span id="combo_${id}" class="combo-description">${translatedDesc}</span>
-            </h3>
-            <div class="last-played-icons">
-              <div
-                class="icon hand"
-                id="icon_hand_${id}"
-                title=${t("Number of cards in hand")}
-              ></div>
-              <div class="count handcount ${id}">${player.handcount}</div>
-              <div
-                class="icon star"
-                id="icon_star_${id}"
-                title=${t("Points captured in this round")}
-              ></div>
-              <div class="count pointcount ${id}">${player.capturedPoints}</div>
-            </div>
-            <div class="icons">
-              <div
-                id="grandtichublack_${id}"
-                class="icon grandtichublack ${id}"
-                style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
-                title=${t("Grand Tichu bet")}
-              ></div>
-              <div
-                id="grandtichucolor_${id}"
-                class="icon big grandtichucolor ${id}"
-                style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-                title=${t("Grand Tichu bet")}
-              ></div>
-              <div
-                id="tichublack_${id}"
-                class="icon tichublack ${id}"
-                style="display: ${showTichuBlack ? "inline-block" : "none"}"
-                title=${t("Tichu bet")}
-              ></div>
-              <div
-                id="tichucolor_${id}"
-                class="icon big tichucolor ${id}"
-                style="display: ${showTichuColor ? "inline-block" : "none"}"
-                title=${t("Tichu bet")}
-              ></div>
-              <div
-                id="firstoutcolor_${id}"
-                class="icon firstoutcolor ${id}"
-                style="display: ${isFirstOut ? "inline-block" : "none"}"
-                title=${t("First player to go out")}
-              ></div>
-            </div>
+        <div class="last-played-player">
+          <div class="playertablename" style="color: #${player.color}">${player.name}</div>
+          <div class="last-played-icons">
+            <div class="icon hand" id="icon_hand_${id}" title=${t("Number of cards in hand")}></div>
+            <div class="count handcount ${id}">${player.handcount}</div>
+            <div
+              class="icon star"
+              id="icon_star_${id}"
+              title=${t("Points captured in this round")}
+            ></div>
+            <div class="count pointcount ${id}">${player.capturedPoints}</div>
           </div>
-          <div id="lastcombo_${id}" class="lastcombo last-played-combo">
-            ${
-              combo.passed
-                ? html`<span class="pass"
-                    ><tichu-stock
-                      .cards=${[]}
-                      .pass=${true}
-                      .scale=${0.75}
-                      .tiki=${this.isTiki}
-                    ></tichu-stock
-                  ></span>`
-                : html`<tichu-stock
-                    .cards=${combo.cards}
+          <div>
+            <div
+              id="grandtichucolor_${id}"
+              class="icon big grandtichucolor ${id}"
+              style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
+              title=${t("Grand Tichu bet")}
+            ></div>
+            <div
+              id="tichucolor_${id}"
+              class="icon big tichucolor ${id}"
+              style="display: ${showTichuColor ? "inline-block" : "none"}"
+              title=${t("Tichu bet")}
+            ></div>
+          </div>
+        </div>
+        <div id="lastcombo_${id}" class="lastcombo last-played-combo">
+          ${
+            combo.passed
+              ? html`<span class="pass"
+                  ><tichu-stock
+                    .cards=${[]}
+                    .pass=${true}
                     .scale=${0.75}
-                    sortMode="preserve"
                     .tiki=${this.isTiki}
-                    .dynamicOverlap=${true}
-                  ></tichu-stock>`
-            }
-          </div>
+                  ></tichu-stock
+                ></span>`
+              : html`<tichu-stock
+                  .cards=${combo.cards}
+                  .scale=${0.75}
+                  sortMode="preserve"
+                  .tiki=${this.isTiki}
+                  .dynamicOverlap=${true}
+                ></tichu-stock>`
+          }
         </div>
       </div>
     `;

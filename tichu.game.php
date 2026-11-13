@@ -729,12 +729,20 @@ class Tichu extends Table
 
   function collect($checkAction = true)
   {
+    $stateId = (int) $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE"
+    );
+    if (
+      $stateId !== ST_CONFIRM_TRICK ||
+      $this->gamestate->getCurrentMainState()->name !== "confirmTrick"
+    ) {
+      return;
+    }
     if ($checkAction) {
       $this->checkAction("collect");
     }
     $action = LogManager::getLastAction("confirm");
     if ($action === null) {
-      $this->gamestate->nextState("newTrick");
       return;
     }
     $pId = $action["player"];
@@ -885,6 +893,8 @@ class Tichu extends Table
   function stNewTrick()
   {
     $this->incStat(1, "trick_number");
+    $currentRoundAndTrick = LogManager::getCurrentRoundAndTrick();
+    $isFirstTrickOfRound = (int) ($currentRoundAndTrick["trick"] ?? 0) === 0;
     $lastWinner = LogManager::getLastComboPlayer();
     LogManager::insert(0, "newTrick");
     PlayerManager::setAutopass(0);
@@ -892,7 +902,7 @@ class Tichu extends Table
 
     $deck = CardManager::getDeck();
 
-    if ($lastWinner == 0) {
+    if ($isFirstTrickOfRound) {
       $card = array_values($deck->getCardsOfType(TYPE_MAHJONG, 1))[0];
       $mahjongOwnerId = $card["location_arg"];
       $this->setGameStateValue("mahjongOwner", $mahjongOwnerId);
@@ -901,6 +911,9 @@ class Tichu extends Table
       $notify = 'A new round starts. ${player_name} has the Mahjong';
     } else {
       //this is not the first trick
+      if ($lastWinner == 0) {
+        $lastWinner = $this->getActivePlayerId();
+      }
       $hand_count = $deck->countCardsByLocationArgs("hand");
 
       if (isset($hand_count[$lastWinner])) {

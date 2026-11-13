@@ -39,7 +39,7 @@ export const styles = css`
   }
 
   h3 {
-    margin: 0;
+    margin: 5px 0;
     padding: 0;
     font-size: 20px;
     font-weight: 700;
@@ -116,51 +116,159 @@ export const styles = css`
     padding: 6px 12px;
     font-size: 14px;
     font-weight: 700;
-    line-height: 16px;
     border-radius: 6px;
     cursor: pointer;
     text-decoration: none !important;
-    user-select: none;
-    border: 1px solid rgba(0, 0, 0, 0.25);
-    box-shadow: 0 1px 0 #000;
-    text-shadow: rgba(0, 0, 0, 0.4) 0 1px 0;
+    box-shadow: 0 1px #000;
+    color: #fff;
+    text-shadow: #0006 0 1px 0;
     vertical-align: middle;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition:
-      filter 0.12s ease,
-      transform 0.06s ease;
+    margin-top: 10px;
+    margin-bottom: 10px;
   }
   .bgabutton:hover {
-    filter: brightness(1.07);
     text-decoration: none !important;
-  }
-  .bgabutton:active {
-    transform: translateY(1px);
   }
   .bgabutton_blue,
   .bgabutton_primary {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #4871b6 0%, #3b5f9c 100%);
-    border-color: #2f4d80;
+    background:
+      var(
+        --game-bga-button-primary,
+        linear-gradient(180deg, #0b72b5 0%, #244587 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border,
+        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
+      );
+    color: var(--game-bga-color-white, #fff);
+  }
+  .bgabutton_blue:hover,
+  .bgabutton_primary:hover {
+    background:
+      var(
+        --game-bga-button-primary-hover,
+        linear-gradient(180deg, #0692ea, #244587) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border,
+        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
+      );
+  }
+  .bgabutton_blue:active,
+  .bgabutton_primary:active {
+    background:
+      var(
+        --game-bga-button-primary-active,
+        linear-gradient(180deg, #244587 0%, #0b72b5 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border-active,
+        linear-gradient(180deg, #5b6095, #809ac0) no-repeat border-box
+      );
   }
   .bgabutton_red,
   .bgabutton_alert {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #c92727 0%, #b01e1e 100%);
-    border-color: #8f1616;
+    background:
+      var(--game-bga-button-alert, linear-gradient(180deg, #e42421, #86211f) no-repeat border-box),
+      var(
+        --game-bga-button-alert-border,
+        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
+      );
+    color: var(--game-bga-color-white, #fff);
+  }
+  .bgabutton_red:hover,
+  .bgabutton_alert:hover {
+    background:
+      var(
+        --game-bga-button-alert-hover,
+        linear-gradient(180deg, #ff6247, #86211f) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-alert-border,
+        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
+      );
+  }
+  .bgabutton_red:active,
+  .bgabutton_alert:active {
+    background:
+      var(
+        --game-bga-button-alert-active,
+        linear-gradient(180deg, #86211f, #e42421) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-alert-border-active,
+        linear-gradient(180deg, #863534, #e44e2a) no-repeat border-box
+      );
   }
   .bgabutton_green {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #89a538 0%, #748d2d 100%);
-    border-color: #5d7223;
+    background: linear-gradient(180deg, #799332, #89a538);
+    border: 1px solid #697f2b;
+    color: #fff;
+  }
+  .bgabutton_green:hover {
+    background: #89a538;
+    color: #fff;
+  }
+  .bgabutton_green:active {
+    background: #697f2b;
+    border-top-color: #697f2b;
   }
   .bgabutton_gray,
   .bgabutton_secondary {
-    color: #1f2328 !important;
-    background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
-    border-color: #9ca3af;
+    background:
+      var(
+        --game-bga-button-secondary,
+        linear-gradient(180deg, #f4f4f4 0%, #cacaca 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border,
+        linear-gradient(180deg, #fff, #dedede) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
+    padding: 5px 11px;
+    position: relative;
+    text-shadow: none;
+  }
+  .bgabutton_gray::after,
+  .bgabutton_secondary::after {
+    border: 1px solid var(--game-bga-button-secondary-outline, #ababab);
+    border-radius: 5px;
+    content: " ";
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+  .bgabutton_gray:hover,
+  .bgabutton_secondary:hover {
+    background:
+      var(
+        --game-bga-button-secondary-hover,
+        linear-gradient(180deg, #fefefe, #cacaca) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border-hover,
+        linear-gradient(180deg, #fff, #e8e8e8) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
+  }
+  .bgabutton_gray:active,
+  .bgabutton_secondary:active {
+    background:
+      var(
+        --game-bga-button-secondary-active,
+        linear-gradient(180deg, #cacaca 0%, #f4f4f4 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border-active,
+        linear-gradient(180deg, #e8e8e8, #fff) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
   }
 
   .stockitem {

@@ -1739,6 +1739,7 @@
   var Tichu = (function() {
     function Tichu2() {
       var _this = this;
+      this.collectSent = false;
       this.experimentalArchiveModeEnabled = false;
       this.allLastCombos = {};
       this.stateName = "";
@@ -2189,6 +2190,7 @@
       });
     };
     Tichu2.prototype.onEnteringStateConfirmTrick = function(_args) {
+      this.collectSent = false;
     };
     Tichu2.prototype.onEnteringStateEndRound = function(_args) {
       var _a;
@@ -2258,7 +2260,7 @@
             break;
           case "confirmTrick":
             clearTimeout(this.autoCollectTimeout);
-            if (this.bRealtime) {
+            if (this.bRealtime && !this.collectSent) {
               (_f = window.gameModel) === null || _f === void 0 ? void 0 : _f.setCollectingTrickCountdown(true);
               this.autoCollectTimeout = window.setTimeout(function() {
                 return _this.collect();
@@ -2518,8 +2520,11 @@
       var _a;
       clearTimeout(this.autoCollectTimeout);
       (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.setCollectingTrickCountdown(false);
+      if (this.collectSent)
+        return;
       if (!this.checkAction("collect"))
         return;
+      this.collectSent = true;
       this.takeAction("collect");
     };
     Tichu2.prototype.takeAction = function(action, args) {
@@ -6020,8 +6025,8 @@
           background-size: var(--bg-width) var(--bg-height);
           background-position-x: var(--x-pos);
           background-position-y: var(--y-pos);
-          border-radius: calc(var(--width) / 25);
-          box-shadow: 2px 2px 5px 2px #666;
+          border-radius: var(--border-radius, 6px);
+          box-shadow: 2px 2px 5px 3px #666;
           box-sizing: border-box;
         }
         div#card.selectable {
@@ -6035,6 +6040,8 @@
         div#card.pass {
           background-size: cover;
           background-position: center;
+          opacity: 0.9;
+          box-shadow: 5px 5px 5px 0px #666;
         }
       `
       ];
@@ -7364,7 +7371,7 @@
   }
 
   h3 {
-    margin: 0;
+    margin: 5px 0;
     padding: 0;
     font-size: 20px;
     font-weight: 700;
@@ -7441,51 +7448,159 @@
     padding: 6px 12px;
     font-size: 14px;
     font-weight: 700;
-    line-height: 16px;
     border-radius: 6px;
     cursor: pointer;
     text-decoration: none !important;
-    user-select: none;
-    border: 1px solid rgba(0, 0, 0, 0.25);
-    box-shadow: 0 1px 0 #000;
-    text-shadow: rgba(0, 0, 0, 0.4) 0 1px 0;
+    box-shadow: 0 1px #000;
+    color: #fff;
+    text-shadow: #0006 0 1px 0;
     vertical-align: middle;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    transition:
-      filter 0.12s ease,
-      transform 0.06s ease;
+    margin-top: 10px;
+    margin-bottom: 10px;
   }
   .bgabutton:hover {
-    filter: brightness(1.07);
     text-decoration: none !important;
-  }
-  .bgabutton:active {
-    transform: translateY(1px);
   }
   .bgabutton_blue,
   .bgabutton_primary {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #4871b6 0%, #3b5f9c 100%);
-    border-color: #2f4d80;
+    background:
+      var(
+        --game-bga-button-primary,
+        linear-gradient(180deg, #0b72b5 0%, #244587 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border,
+        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
+      );
+    color: var(--game-bga-color-white, #fff);
+  }
+  .bgabutton_blue:hover,
+  .bgabutton_primary:hover {
+    background:
+      var(
+        --game-bga-button-primary-hover,
+        linear-gradient(180deg, #0692ea, #244587) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border,
+        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
+      );
+  }
+  .bgabutton_blue:active,
+  .bgabutton_primary:active {
+    background:
+      var(
+        --game-bga-button-primary-active,
+        linear-gradient(180deg, #244587 0%, #0b72b5 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-primary-border-active,
+        linear-gradient(180deg, #5b6095, #809ac0) no-repeat border-box
+      );
   }
   .bgabutton_red,
   .bgabutton_alert {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #c92727 0%, #b01e1e 100%);
-    border-color: #8f1616;
+    background:
+      var(--game-bga-button-alert, linear-gradient(180deg, #e42421, #86211f) no-repeat border-box),
+      var(
+        --game-bga-button-alert-border,
+        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
+      );
+    color: var(--game-bga-color-white, #fff);
+  }
+  .bgabutton_red:hover,
+  .bgabutton_alert:hover {
+    background:
+      var(
+        --game-bga-button-alert-hover,
+        linear-gradient(180deg, #ff6247, #86211f) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-alert-border,
+        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
+      );
+  }
+  .bgabutton_red:active,
+  .bgabutton_alert:active {
+    background:
+      var(
+        --game-bga-button-alert-active,
+        linear-gradient(180deg, #86211f, #e42421) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-alert-border-active,
+        linear-gradient(180deg, #863534, #e44e2a) no-repeat border-box
+      );
   }
   .bgabutton_green {
-    color: #ffffff !important;
-    background: linear-gradient(180deg, #89a538 0%, #748d2d 100%);
-    border-color: #5d7223;
+    background: linear-gradient(180deg, #799332, #89a538);
+    border: 1px solid #697f2b;
+    color: #fff;
+  }
+  .bgabutton_green:hover {
+    background: #89a538;
+    color: #fff;
+  }
+  .bgabutton_green:active {
+    background: #697f2b;
+    border-top-color: #697f2b;
   }
   .bgabutton_gray,
   .bgabutton_secondary {
-    color: #1f2328 !important;
-    background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
-    border-color: #9ca3af;
+    background:
+      var(
+        --game-bga-button-secondary,
+        linear-gradient(180deg, #f4f4f4 0%, #cacaca 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border,
+        linear-gradient(180deg, #fff, #dedede) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
+    padding: 5px 11px;
+    position: relative;
+    text-shadow: none;
+  }
+  .bgabutton_gray::after,
+  .bgabutton_secondary::after {
+    border: 1px solid var(--game-bga-button-secondary-outline, #ababab);
+    border-radius: 5px;
+    content: " ";
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+  .bgabutton_gray:hover,
+  .bgabutton_secondary:hover {
+    background:
+      var(
+        --game-bga-button-secondary-hover,
+        linear-gradient(180deg, #fefefe, #cacaca) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border-hover,
+        linear-gradient(180deg, #fff, #e8e8e8) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
+  }
+  .bgabutton_gray:active,
+  .bgabutton_secondary:active {
+    background:
+      var(
+        --game-bga-button-secondary-active,
+        linear-gradient(180deg, #cacaca 0%, #f4f4f4 100%) no-repeat border-box
+      ),
+      var(
+        --game-bga-button-secondary-border-active,
+        linear-gradient(180deg, #e8e8e8, #fff) no-repeat border-box
+      );
+    color: var(--game-bga-button-secondary-text, #014090);
   }
 
   .stockitem {
@@ -8002,7 +8117,6 @@
       this.isTiki = false;
       this.clockwise = true;
       this.squareTable = false;
-      this.firstOutPlayerId = "";
       this.round = 0;
       this.trick = 0;
       this.currentTrickValue = 0;
@@ -8061,11 +8175,6 @@
         this,
         () => window.gameModel.squareTable$,
         (squareTable) => this.squareTable = squareTable
-      );
-      subscribe(
-        this,
-        () => window.gameModel.firstOutPlayerId$,
-        (id) => this.firstOutPlayerId = id
       );
       subscribe(
         this,
@@ -8171,16 +8280,8 @@
           grid-row: 1 / span 1;
         }
 
-        .player-table {
+        .last-played-container {
           position: relative;
-          border-radius: var(--border-radius);
-          box-shadow: var(--elevation);
-        }
-        .player-table.disabled:not(.lastComboPlayer) .disabler {
-          display: block;
-        }
-
-        .player-table > .whiteblock {
           display: flex;
           line-height: 24px;
           font-size: 20px;
@@ -8189,34 +8290,26 @@
           padding: 6px;
           background: var(--bg-color-lighter);
           border-radius: var(--border-radius);
-          min-height: 128px;
+          box-shadow: var(--elevation);
         }
-        .player-table > .whiteblock.active,
-        .player-table > .whiteblock.bomb {
+        .last-played-container.active,
+        .last-played-container.bomb {
           border: 4px solid var(--bg-color-active);
+        }
+        .last-played-container.disabled:not(.lastComboPlayer) .disabler {
+          display: block;
         }
 
         .last-played-player {
           width: 140px;
           padding-right: 10px;
+          box-sizing: content-box;
           flex-shrink: 0;
         }
-        .last-played-player h3.playertablename {
-          font-size: 20px;
+        .playertablename {
           font-weight: bold;
           overflow: hidden;
           text-overflow: ellipsis;
-          margin: 0;
-        }
-        .combo-description {
-          display: block;
-          font-size: 12px;
-          font-weight: normal;
-          color: #444;
-          line-height: 16px;
-        }
-        .combo-description:empty {
-          display: none;
         }
         .last-played-player .last-played-icons {
           top: 2px;
@@ -8225,8 +8318,9 @@
           display: inline-block;
           width: 40px;
         }
-        .lastcombo {
+        .last-played-combo {
           width: 300px;
+          min-height: 117.5px;
           flex-grow: 1;
         }
 
@@ -8317,10 +8411,7 @@
       const isBombActive = this.stateName === "playBomb" && Boolean(bombTargetId) && String(bombTargetId) === id;
       const isActive = !isBombActive && (this.stateName === "playComboOpen" || this.stateName === "playCombo" || this.stateName === "confirmTrick") && Boolean(this.activePlayerId) && String(this.activePlayerId) === id;
       const showGrandTichuColor = player.callGrandTichu === 200;
-      const showGrandTichuBlack = player.callGrandTichu === -1;
       const showTichuColor = player.callTichu === 100;
-      const showTichuBlack = player.callTichu === -1 && !showGrandTichuColor;
-      const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
       const translatedDesc = combo.description ? t6(combo.description) : "";
       return x`
       <div
@@ -8337,81 +8428,48 @@
         title=${translatedDesc}
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
-        <div
-          class=${e6({
-        whiteblock: true,
-        active: isActive,
-        bomb: isBombActive
-      })}
-        >
-          <div class="last-played-player">
-            <h3 class="playertablename" style="color: #${player.color}">
-              <span class="player-name-text">${player.name}</span>
-              <span id="combo_${id}" class="combo-description">${translatedDesc}</span>
-            </h3>
-            <div class="last-played-icons">
-              <div
-                class="icon hand"
-                id="icon_hand_${id}"
-                title=${t6("Number of cards in hand")}
-              ></div>
-              <div class="count handcount ${id}">${player.handcount}</div>
-              <div
-                class="icon star"
-                id="icon_star_${id}"
-                title=${t6("Points captured in this round")}
-              ></div>
-              <div class="count pointcount ${id}">${player.capturedPoints}</div>
-            </div>
-            <div class="icons">
-              <div
-                id="grandtichublack_${id}"
-                class="icon grandtichublack ${id}"
-                style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
-                title=${t6("Grand Tichu bet")}
-              ></div>
-              <div
-                id="grandtichucolor_${id}"
-                class="icon big grandtichucolor ${id}"
-                style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-                title=${t6("Grand Tichu bet")}
-              ></div>
-              <div
-                id="tichublack_${id}"
-                class="icon tichublack ${id}"
-                style="display: ${showTichuBlack ? "inline-block" : "none"}"
-                title=${t6("Tichu bet")}
-              ></div>
-              <div
-                id="tichucolor_${id}"
-                class="icon big tichucolor ${id}"
-                style="display: ${showTichuColor ? "inline-block" : "none"}"
-                title=${t6("Tichu bet")}
-              ></div>
-              <div
-                id="firstoutcolor_${id}"
-                class="icon firstoutcolor ${id}"
-                style="display: ${isFirstOut ? "inline-block" : "none"}"
-                title=${t6("First player to go out")}
-              ></div>
-            </div>
+        <div class="last-played-player">
+          <div class="playertablename" style="color: #${player.color}">${player.name}</div>
+          <div class="last-played-icons">
+            <div class="icon hand" id="icon_hand_${id}" title=${t6("Number of cards in hand")}></div>
+            <div class="count handcount ${id}">${player.handcount}</div>
+            <div
+              class="icon star"
+              id="icon_star_${id}"
+              title=${t6("Points captured in this round")}
+            ></div>
+            <div class="count pointcount ${id}">${player.capturedPoints}</div>
           </div>
-          <div id="lastcombo_${id}" class="lastcombo last-played-combo">
-            ${combo.passed ? x`<span class="pass"
-                    ><tichu-stock
-                      .cards=${[]}
-                      .pass=${true}
-                      .scale=${0.75}
-                      .tiki=${this.isTiki}
-                    ></tichu-stock
-                  ></span>` : x`<tichu-stock
-                    .cards=${combo.cards}
+          <div>
+            <div
+              id="grandtichucolor_${id}"
+              class="icon big grandtichucolor ${id}"
+              style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
+              title=${t6("Grand Tichu bet")}
+            ></div>
+            <div
+              id="tichucolor_${id}"
+              class="icon big tichucolor ${id}"
+              style="display: ${showTichuColor ? "inline-block" : "none"}"
+              title=${t6("Tichu bet")}
+            ></div>
+          </div>
+        </div>
+        <div id="lastcombo_${id}" class="lastcombo last-played-combo">
+          ${combo.passed ? x`<span class="pass"
+                  ><tichu-stock
+                    .cards=${[]}
+                    .pass=${true}
                     .scale=${0.75}
-                    sortMode="preserve"
                     .tiki=${this.isTiki}
-                    .dynamicOverlap=${true}
-                  ></tichu-stock>`}
-          </div>
+                  ></tichu-stock
+                ></span>` : x`<tichu-stock
+                  .cards=${combo.cards}
+                  .scale=${0.75}
+                  sortMode="preserve"
+                  .tiki=${this.isTiki}
+                  .dynamicOverlap=${true}
+                ></tichu-stock>`}
         </div>
       </div>
     `;
@@ -8453,9 +8511,6 @@
   __decorateClass([
     r5()
   ], TichuLastPlayed.prototype, "squareTable", 2);
-  __decorateClass([
-    r5()
-  ], TichuLastPlayed.prototype, "firstOutPlayerId", 2);
   __decorateClass([
     r5()
   ], TichuLastPlayed.prototype, "round", 2);
@@ -8818,21 +8873,22 @@
         #buttons {
           padding: 10px 5px 10px 5px;
           min-height: 30px;
+          box-sizing: content-box;
           display: flex;
-          align-items: center;
           background-color: var(--bg-color-lighter);
           box-shadow: var(--elevation);
         }
         #buttons h3 {
           line-height: 20px;
-          font-size: 20px;
-          margin: 0;
         }
         #buttons .space1 {
           flex-grow: 1;
         }
         #buttons .space2 {
           flex-grow: 1.6;
+        }
+        :host-context(.lockedInterface) #buttons .bgabutton {
+          visibility: hidden;
         }
         #buttons .bgabutton {
           text-align: center;
@@ -8849,9 +8905,6 @@
         #buttons #play_button {
           min-width: 150px;
           margin-left: 10px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
         }
         #buttons #pass_button {
           min-width: 150px;
@@ -8870,41 +8923,31 @@
       ];
     }
     render() {
-      const showBomb = !this.isSpectator && (this.stateName === "playCombo" || this.stateName === "confirmTrick" || this.stateName === "mahjongPlay" || this.stateName === "phoenixPlay") && this.hand.length > 0;
-      const showTichu = !this.isSpectator && this.currentPlayer !== null && this.currentPlayer.callTichu === -1 && this.currentPlayer.callGrandTichu !== 200 && !this.firstOutPlayerId && (this.hand.length === 14 || this.stateName === "grandTichuBets");
+      const showBomb = !this.isSpectator && (this.isCurrentPlayerActive && this.stateName === "confirmTrick" || !this.isCurrentPlayerActive && (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0);
+      const showTichu = !this.isSpectator && this.currentPlayer !== null && this.currentPlayer.callTichu === -1 && this.currentPlayer.callGrandTichu !== 200 && !this.firstOutPlayerId;
       return x`
       <div id="buttons">
         <div id="play_button">${this.renderPlayButtonContent()}</div>
-        <div
-          id="pass_button"
-          style="display: ${this.hasPassButtonContent() ? "inline-block" : "none"}"
-        >
-          ${this.renderPassButtonContent()}
-        </div>
-        <div
-          id="pass_trick_button"
-          style="display: ${this.hasPassTrickButtonContent() ? "inline-block" : "none"}"
-        >
-          ${this.renderPassTrickButtonContent()}
-        </div>
+        <div id="pass_button">${this.renderPassButtonContent()}</div>
+        <div id="pass_trick_button">${this.renderPassTrickButtonContent()}</div>
         <div class="space1"></div>
-        <div id="bomb_button" style="display: ${showBomb ? "inline-block" : "none"}">
+        <div id="bomb_button">
           ${showBomb ? x`<a
                   href="#"
                   id="myPlayBomb"
                   class="action-button bgabutton bgabutton_gray"
                   @click=${this.onPlayBomb}
-                  ><span>${t8("Play a Bomb")}</span></a
+                  >${t8("Play a Bomb")}</a
                 >` : ""}
         </div>
-        <div id="tichu_button" style="display: ${showTichu ? "inline-block" : "none"}">
+        <div id="tichu_button">
           ${showTichu ? x`<a
                   href="#"
                   id="myMakeTichuBet"
                   class="action-button bgabutton bgabutton_green"
                   title=${t8("Bet 100 Points, tha you will finish first")}
                   @click=${this.onTichuBet}
-                  ><span>${t8("Tichu")}</span></a
+                  >${t8("Tichu")}</a
                 >` : ""}
         </div>
         <div class="space2"></div>
@@ -8919,32 +8962,26 @@
         return x`<h3>${t8("Auto collecting in 2 seconds ...")}</h3>`;
       }
       const canPlayCombo = !this.isSpectator && this.isCurrentPlayerActive && (this.stateName === "playComboOpen" || this.stateName === "playCombo" || this.stateName === "playBomb");
-      const canCollect = !this.isSpectator && this.isCurrentPlayerActive && this.stateName === "confirmTrick" && !this.isRealtime && !this.collectingTrickCountdown;
-      return x`
-      <h3>${t8("My hand")}</h3>
-      ${canPlayCombo ? x`<a
-              href="#"
-              id="myPlayCombo"
-              class="action-button bgabutton bgabutton_blue"
-              @click=${this.onPlayCombo}
-              ><span>${t8("Play selected cards")}</span></a
-            >` : ""}
-      ${canCollect ? x`<a
-              href="#"
-              id="myConfirmTrick"
-              class="action-button bgabutton bgabutton_blue"
-              @click=${this.onCollect}
-              ><span>${t8("Collect")}</span></a
-            >` : ""}
-    `;
-    }
-    hasPassButtonContent() {
-      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
-      if (this.isSpectator) return false;
-      if (this.isCurrentPlayerActive) {
-        return this.stateName === "playCombo" || this.stateName === "playBomb";
+      if (canPlayCombo) {
+        return x`<a
+        href="#"
+        id="myPlayCombo"
+        class="action-button bgabutton bgabutton_blue"
+        @click=${this.onPlayCombo}
+        >${t8("Play selected cards")}</a
+      >`;
       }
-      return (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0;
+      const canCollect = !this.isSpectator && this.isCurrentPlayerActive && this.stateName === "confirmTrick" && !this.isRealtime && !this.collectingTrickCountdown;
+      if (canCollect) {
+        return x`<a
+        href="#"
+        id="myConfirmTrick"
+        class="action-button bgabutton bgabutton_blue"
+        @click=${this.onCollect}
+        >${t8("Collect")}</a
+      >`;
+      }
+      return x`<h3>${t8("My hand")}</h3>`;
     }
     renderPassButtonContent() {
       if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
@@ -8958,7 +8995,7 @@
           id="myPass"
           class="action-button bgabutton bgabutton_red"
           @click=${(e7) => this.onPass(e7, true)}
-          ><span>${t8("Pass")}</span></a
+          >${t8("Pass")}</a
         >`;
         }
         if (this.stateName === "playBomb") {
@@ -8967,7 +9004,7 @@
           id="myCancel"
           class="action-button bgabutton bgabutton_red"
           @click=${this.onCancelBomb}
-          ><span>${t8("Cancel")}</span></a
+          >${t8("Cancel")}</a
         >`;
         }
         return "";
@@ -8981,7 +9018,7 @@
           class="action-button bgabutton bgabutton_red"
           title=${t8("Automatically pass next time(unless a new trick starts)")}
           @click=${(e7) => this.onPass(e7, true)}
-          ><span>${t8("Auto-Pass once")}</span></a
+          >${t8("Auto-Pass once")}</a
         >`;
         }
         return x`<a
@@ -8990,19 +9027,10 @@
         class="action-button bgabutton bgabutton_red"
         title=${t8("You have chosen to automatically pass during this trick. Click to cancel")}
         @click=${this.onCancelAutopass}
-        ><span>${t8("Cancel Auto-Pass")}</span></a
+        >${t8("Cancel Auto-Pass")}</a
       >`;
       }
       return "";
-    }
-    hasPassTrickButtonContent() {
-      if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
-      if (this.isSpectator) return false;
-      if (this.isCurrentPlayerActive) {
-        return this.stateName === "playCombo";
-      }
-      const passMode = this.currentPlayer?.pass ?? 0;
-      return (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0 && passMode < 2;
     }
     renderPassTrickButtonContent() {
       if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
@@ -9018,7 +9046,7 @@
         class="action-button bgabutton bgabutton_gray"
         title=${t8("Automatically pass until the end of this trick.")}
         @click=${(e7) => this.onPass(e7, false)}
-        ><span>${t8("Auto-Pass this Trick")}</span></a
+        >${t8("Auto-Pass this Trick")}</a
       >`;
       }
       return "";
@@ -9285,12 +9313,12 @@
       const selectionMode = this.getSelectionMode();
       const isArchiveMode = Boolean(window.g_archive_mode);
       return x`
+      <tichu-action-bar></tichu-action-bar>
       <div
         id="myhandwrap"
         class="whiteblock"
         style="display: ${this.isSpectator ? "none" : "block"}"
       >
-        <tichu-action-bar></tichu-action-bar>
         <div id="myhand">
           <tichu-stock
             .cards=${this.hand}

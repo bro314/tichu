@@ -27,21 +27,22 @@ export class TichuActionBar extends LitElement {
         #buttons {
           padding: 10px 5px 10px 5px;
           min-height: 30px;
+          box-sizing: content-box;
           display: flex;
-          align-items: center;
           background-color: var(--bg-color-lighter);
           box-shadow: var(--elevation);
         }
         #buttons h3 {
           line-height: 20px;
-          font-size: 20px;
-          margin: 0;
         }
         #buttons .space1 {
           flex-grow: 1;
         }
         #buttons .space2 {
           flex-grow: 1.6;
+        }
+        :host-context(.lockedInterface) #buttons .bgabutton {
+          visibility: hidden;
         }
         #buttons .bgabutton {
           text-align: center;
@@ -58,9 +59,6 @@ export class TichuActionBar extends LitElement {
         #buttons #play_button {
           min-width: 150px;
           margin-left: 10px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
         }
         #buttons #pass_button {
           min-width: 150px;
@@ -131,37 +129,25 @@ export class TichuActionBar extends LitElement {
   override render() {
     const showBomb =
       !this.isSpectator &&
-      (this.stateName === "playCombo" ||
-        this.stateName === "confirmTrick" ||
-        this.stateName === "mahjongPlay" ||
-        this.stateName === "phoenixPlay") &&
-      this.hand.length > 0;
+      ((this.isCurrentPlayerActive && this.stateName === "confirmTrick") ||
+        (!this.isCurrentPlayerActive &&
+          (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
+          this.hand.length > 0));
 
     const showTichu =
       !this.isSpectator &&
       this.currentPlayer !== null &&
       this.currentPlayer.callTichu === -1 &&
       this.currentPlayer.callGrandTichu !== 200 &&
-      !this.firstOutPlayerId &&
-      (this.hand.length === 14 || this.stateName === "grandTichuBets");
+      !this.firstOutPlayerId;
 
     return html`
       <div id="buttons">
         <div id="play_button">${this.renderPlayButtonContent()}</div>
-        <div
-          id="pass_button"
-          style="display: ${this.hasPassButtonContent() ? "inline-block" : "none"}"
-        >
-          ${this.renderPassButtonContent()}
-        </div>
-        <div
-          id="pass_trick_button"
-          style="display: ${this.hasPassTrickButtonContent() ? "inline-block" : "none"}"
-        >
-          ${this.renderPassTrickButtonContent()}
-        </div>
+        <div id="pass_button">${this.renderPassButtonContent()}</div>
+        <div id="pass_trick_button">${this.renderPassTrickButtonContent()}</div>
         <div class="space1"></div>
-        <div id="bomb_button" style="display: ${showBomb ? "inline-block" : "none"}">
+        <div id="bomb_button">
           ${
             showBomb
               ? html`<a
@@ -169,12 +155,12 @@ export class TichuActionBar extends LitElement {
                   id="myPlayBomb"
                   class="action-button bgabutton bgabutton_gray"
                   @click=${this.onPlayBomb}
-                  ><span>${t("Play a Bomb")}</span></a
+                  >${t("Play a Bomb")}</a
                 >`
               : ""
           }
         </div>
-        <div id="tichu_button" style="display: ${showTichu ? "inline-block" : "none"}">
+        <div id="tichu_button">
           ${
             showTichu
               ? html`<a
@@ -183,7 +169,7 @@ export class TichuActionBar extends LitElement {
                   class="action-button bgabutton bgabutton_green"
                   title=${t("Bet 100 Points, tha you will finish first")}
                   @click=${this.onTichuBet}
-                  ><span>${t("Tichu")}</span></a
+                  >${t("Tichu")}</a
                 >`
               : ""
           }
@@ -208,6 +194,16 @@ export class TichuActionBar extends LitElement {
         this.stateName === "playCombo" ||
         this.stateName === "playBomb");
 
+    if (canPlayCombo) {
+      return html`<a
+        href="#"
+        id="myPlayCombo"
+        class="action-button bgabutton bgabutton_blue"
+        @click=${this.onPlayCombo}
+        >${t("Play selected cards")}</a
+      >`;
+    }
+
     const canCollect =
       !this.isSpectator &&
       this.isCurrentPlayerActive &&
@@ -215,42 +211,17 @@ export class TichuActionBar extends LitElement {
       !this.isRealtime &&
       !this.collectingTrickCountdown;
 
-    return html`
-      <h3>${t("My hand")}</h3>
-      ${
-        canPlayCombo
-          ? html`<a
-              href="#"
-              id="myPlayCombo"
-              class="action-button bgabutton bgabutton_blue"
-              @click=${this.onPlayCombo}
-              ><span>${t("Play selected cards")}</span></a
-            >`
-          : ""
-      }
-      ${
-        canCollect
-          ? html`<a
-              href="#"
-              id="myConfirmTrick"
-              class="action-button bgabutton bgabutton_blue"
-              @click=${this.onCollect}
-              ><span>${t("Collect")}</span></a
-            >`
-          : ""
-      }
-    `;
-  }
-
-  private hasPassButtonContent(): boolean {
-    if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
-    if (this.isSpectator) return false;
-    if (this.isCurrentPlayerActive) {
-      return this.stateName === "playCombo" || this.stateName === "playBomb";
+    if (canCollect) {
+      return html`<a
+        href="#"
+        id="myConfirmTrick"
+        class="action-button bgabutton bgabutton_blue"
+        @click=${this.onCollect}
+        >${t("Collect")}</a
+      >`;
     }
-    return (
-      (this.stateName === "playCombo" || this.stateName === "confirmTrick") && this.hand.length > 0
-    );
+
+    return html`<h3>${t("My hand")}</h3>`;
   }
 
   private renderPassButtonContent() {
@@ -266,7 +237,7 @@ export class TichuActionBar extends LitElement {
           id="myPass"
           class="action-button bgabutton bgabutton_red"
           @click=${(e: Event) => this.onPass(e, true)}
-          ><span>${t("Pass")}</span></a
+          >${t("Pass")}</a
         >`;
       }
       if (this.stateName === "playBomb") {
@@ -275,7 +246,7 @@ export class TichuActionBar extends LitElement {
           id="myCancel"
           class="action-button bgabutton bgabutton_red"
           @click=${this.onCancelBomb}
-          ><span>${t("Cancel")}</span></a
+          >${t("Cancel")}</a
         >`;
       }
       return "";
@@ -293,7 +264,7 @@ export class TichuActionBar extends LitElement {
           class="action-button bgabutton bgabutton_red"
           title=${t("Automatically pass next time(unless a new trick starts)")}
           @click=${(e: Event) => this.onPass(e, true)}
-          ><span>${t("Auto-Pass once")}</span></a
+          >${t("Auto-Pass once")}</a
         >`;
       }
       return html`<a
@@ -302,25 +273,11 @@ export class TichuActionBar extends LitElement {
         class="action-button bgabutton bgabutton_red"
         title=${t("You have chosen to automatically pass during this trick. Click to cancel")}
         @click=${this.onCancelAutopass}
-        ><span>${t("Cancel Auto-Pass")}</span></a
+        >${t("Cancel Auto-Pass")}</a
       >`;
     }
 
     return "";
-  }
-
-  private hasPassTrickButtonContent(): boolean {
-    if (this.acceptingCardsCountdown || this.collectingTrickCountdown) return false;
-    if (this.isSpectator) return false;
-    if (this.isCurrentPlayerActive) {
-      return this.stateName === "playCombo";
-    }
-    const passMode = this.currentPlayer?.pass ?? 0;
-    return (
-      (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
-      this.hand.length > 0 &&
-      passMode < 2
-    );
   }
 
   private renderPassTrickButtonContent() {
@@ -344,7 +301,7 @@ export class TichuActionBar extends LitElement {
         class="action-button bgabutton bgabutton_gray"
         title=${t("Automatically pass until the end of this trick.")}
         @click=${(e: Event) => this.onPass(e, false)}
-        ><span>${t("Auto-Pass this Trick")}</span></a
+        >${t("Auto-Pass this Trick")}</a
       >`;
     }
     return "";

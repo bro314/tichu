@@ -65,8 +65,8 @@ export class TichuCard extends LitElement {
           background-size: var(--bg-width) var(--bg-height);
           background-position-x: var(--x-pos);
           background-position-y: var(--y-pos);
-          border-radius: calc(var(--width) / 25);
-          box-shadow: 2px 2px 5px 2px #666;
+          border-radius: var(--border-radius, 6px);
+          box-shadow: 2px 2px 5px 3px #666;
           box-sizing: border-box;
         }
         div#card.selectable {
@@ -80,6 +80,8 @@ export class TichuCard extends LitElement {
         div#card.pass {
           background-size: cover;
           background-position: center;
+          opacity: 0.9;
+          box-shadow: 5px 5px 5px 0px #666;
         }
       `,
     ];

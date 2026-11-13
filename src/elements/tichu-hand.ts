@@ -140,12 +140,12 @@ export class TichuHand extends LitElement {
     const isArchiveMode = Boolean((window as any).g_archive_mode);
 
     return html`
+      <tichu-action-bar></tichu-action-bar>
       <div
         id="myhandwrap"
         class="whiteblock"
         style="display: ${this.isSpectator ? "none" : "block"}"
       >
-        <tichu-action-bar></tichu-action-bar>
         <div id="myhand">
           <tichu-stock
             .cards=${this.hand}

@@ -1273,6 +1273,33 @@ function test_zombie_turns_across_all_states(): void
   assertSameVal((string) P0, $game->getActivePlayerId(), 'P0 should lead the new trick');
   assertSameVal($beforeConfirmTricksWin + 1.0, (float) $game->getStat('tricks_win', P0), 'P0 tricks_win should increment by 1');
 
+  // 8b. First round, first trick: Mahjong owner (P1) does a zombie turn in playComboOpen
+  // (keeping Mahjong in hand), P0 wins the trick with Ace, and collects (including duplicate collect guard).
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 14], [1, 2]],
+    P1 => [[4, 1], [3, 13]], // Mahjong + King
+    P2 => [[2, 3], [2, 4]],
+    P3 => [[4, 3], [4, 4]],
+  ], 'captured_p0');
+  $game->setGameStateValue('mahjongOwner', P1);
+  $game->gamestate->changeActivePlayer(P1);
+  $game->zombieTurn($game->gamestate->state(), P1); // P1 plays King, keeps Mahjong
+  $game->zombieTurn($game->gamestate->state(), P2); // P2 passes
+  $game->zombieTurn($game->gamestate->state(), P3); // P3 passes
+  $aceId = (string) \LocalTichuScenarios::getCardId(1, 14);
+  callAction($game, P0, 'playCombo', ['cards' => $aceId]);
+  $game->zombieTurn($game->gamestate->state(), P1); // P1 passes
+  $game->zombieTurn($game->gamestate->state(), P2); // P2 passes
+  $game->zombieTurn($game->gamestate->state(), P3); // P3 passes
+  assertSameVal('confirmTrick', $game->gamestate->state()['name']);
+  callAction($game, P0, 'collect');
+  // Simulate a duplicate/concurrent collect call (e.g., from a second open browser tab)
+  $game->collect(false);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'After Trick 1 collection, state must remain playComboOpen');
+  assertSameVal((string) P0, $game->getActivePlayerId(), 'Trick 1 winner P0 (not Mahjong holder P1) must lead Trick 2');
+  assertSameVal(2, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Trick counter must be 2, not incremented twice');
+
   // 9. chooseDragonGift (activeplayer)
   \LocalTichuScenarios::setupScenario($game, 'dragon_gift', P0);
   callAction($game, P3, 'pass', ['onlyOnce' => true]);
