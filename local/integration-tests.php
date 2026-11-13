@@ -1417,6 +1417,41 @@ function test_action_and_parameter_validation_and_card_to_str(): void
 // ============================================================================
 // Runner Execution
 // ============================================================================
+// ============================================================================
+// Test 14: test_table_lock_version_and_duplicate_requests
+// (Concurrency itself is covered by `npm run test:race`; this checks the sequential contract.)
+// ============================================================================
+function test_table_lock_version_and_duplicate_requests(): void
+{
+  $game = new \Tichu();
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  $version = fn() => (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT global_value FROM global WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION
+  );
+  assertSameVal(0, $version(), 'lockVersion must be initialized to 0 by setupNewGame');
+
+  callAction($game, P0, 'grandTichuBet', ['bet' => '0']);
+  assertSameVal(1, $version(), 'A Grand Tichu bet must bump the lock version');
+
+  // Own-row-only actions do not bump the version (stNextPlayer reads autopass flags freshly).
+  callAction($game, P1, 'cancelAutopass');
+  assertSameVal(1, $version(), 'cancelAutopass must not bump the lock version');
+
+  // A duplicate bet is rejected and rolled back (no version bump).
+  assertThrowsUserException(fn() => callAction($game, P0, 'grandTichuBet', ['bet' => '0']));
+  assertSameVal(1, $version(), 'A rejected request must not bump the lock version');
+
+  // Duplicate / late collect requests are silent no-ops.
+  callAction($game, P1, 'collect');
+  assertSameVal('grandTichuBets', $game->gamestate->state()['name'], 'collect outside confirmTrick is a no-op');
+  assertSameVal(1, $version(), 'A no-op collect must not bump the lock version');
+
+  // Games started before the version row existed get it on their first change.
+  \APP_DbObject::DbQuery('DELETE FROM global WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION);
+  callAction($game, P1, 'grandTichuBet', ['bet' => '0']);
+  assertSameVal(1, $version(), 'The lock version row must be re-created for running games');
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -1431,6 +1466,7 @@ $tests = [
   'test_full_multi_round_game_to_completion',
   'test_zombie_turns_across_all_states',
   'test_action_and_parameter_validation_and_card_to_str',
+  'test_table_lock_version_and_duplicate_requests',
 ];
 
 echo "====================================================================\n";

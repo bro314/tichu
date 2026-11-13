@@ -126,6 +126,7 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── bot.php                  # Rule-compliant `LocalTichuBot` (`actForOtherPlayers`, `stepSingleBotTurn`, `autoPlayUntilPlayer`)
 │   ├── scenarios.php            # Deterministic test scenarios (`grand_tichu`, `give_cards`, `mahjong_wish`, `phoenix_ambiguous`, `bomb_interrupt`, `dragon_gift`, `double_victory`)
 │   ├── integration-tests.php    # Fast in-memory SQLite backend integration test suite (`npm run test:integration`)
+│   ├── race-tests.php           # Parallel-worker concurrency/race stress test (`npm run test:race`, NOT part of `npm test`)
 │   ├── schema.sql               # SQLite schema for `player`, `global`, `stats`, `card`, `actionlog`, and `notifications`
 │   ├── view/common/game.view.php # Stub included by `tichu.view.php`
 │   ├── js/bga-shim.js           # Lean frontend shim (`dojo`, `declare`, `ebg.stock`, `ebg.counter`, `ebg.popindialog`, `GameGui`), dev bar, console announcer, and `window.tt` test runner
@@ -214,6 +215,28 @@ Instead of relying solely on global variables for complex trick history, `LogMan
      - When a notification argument is used both for client logic/CSS and for log display, pass two separate keys (raw value + `clienttranslate()` label listed in `'i18n' => [...]`).
      - Append `&dummyTranslations` to a Studio table URL to wrap all translated client `_()` strings in `«»` (any bare English text indicates a missing `_()` wrapper).
 
+### Concurrency & Locking (Race Conditions, Deadlocks)
+
+Every BGA request runs inside one MySQL/InnoDB transaction (REPEATABLE READ; the framework commits on success and rolls back on any exception). Requests of the same table **can run in parallel**: several tabs/devices of one player auto-collecting a trick, a Tichu call / bomb / autopass of another player arriving while the active player plays, or all 4 players betting Grand Tichu / passing cards within milliseconds. Production symptoms before the fix: `mysql_deadlock_restart_transaction` (Error 1213) on two `collect.html` requests 1ms apart, and `stNewTrick()` running twice because the second request validated against an outdated snapshot and then kept writing.
+
+The protocol implemented in `tichu.game.php` (section "Concurrency control"):
+
+1. **One table lock, always acquired first**: every mutating entry point (all actions in `tichu.action.php`, `zombieTurn`) calls `acquireGameLock()` / `acquireGameLockOrFail()` **before any other DB statement**. It runs `SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE` (state row, always exists, PK lookup = record lock only). All mutating requests are thereby serialized on a single lock acquired in the same order, so they can neither interleave nor deadlock each other. The lock is re-entrant within a request and released at commit/rollback. `getAllDatas()`/`arg*()` never lock (plain InnoDB reads don't block).
+2. **Stale-snapshot detection**: InnoDB does not refresh a transaction's read view when it acquires a lock, and the framework has already read the game state, so a request that waited may still see outdated data. `acquireGameLock()` compares the locked (current) state id, active player and the version row `global_id = 30` (`Tichu::GLOBAL_LOCK_VERSION`, label `lockVersion`) with the cached/snapshot values (`isGameLockStale()`).
+3. **Stale policy**: stale requests throw `UserException("The game changed while your action was being processed...")` (rolled back, nothing happens), except where the decision only uses data read freshly with the lock held:
+   - `collect`: duplicates/late requests (state no longer `confirmTrick`) are **silent no-ops** (clients auto-collect from every tab).
+   - `grandTichuBet`, `giveTheCards`, legacy `acceptCards`: validated with a fresh `player_is_multiactive` read (`checkMultiactiveActionFresh`) and accepted even if stale; `setPlayerNonMultiactiveSafe()` replaces the framework's possibly stale "anyone still active?" check. Only the **last** passer of `giveTheCards`/`acceptCards` must retry when stale (the transition accepts everybody's cards); the last Grand Tichu bettor may transition on a stale snapshot because `stDealLastCards` only touches the deck.
+   - `tichuBet`: own player row, own card counts and `firstOutPlayer` are read `FOR UPDATE`, so a Tichu call is never lost because others acted concurrently.
+   - `pass` out of turn (autopass) and `cancelAutopass`: decided on fresh state/active player/hand count; they don't bump the version because `stNextPlayer()` reads `player_pass` with `FOR UPDATE`. A stale _turn_ pass (e.g. duplicate from a second tab) is rejected instead of silently becoming an autopass.
+4. **Version bump**: every request that changes shared game data calls `bumpGameVersion()` (once per request; re-creates row 30 for games started before it existed).
+
+Rules for new code:
+
+- New action endpoints: call `$this->acquireGameLockOrFail()` as the **first** statement (or design a fresh-read exception like above and document it here). Never take any other row lock (`FOR UPDATE`, `UPDATE`, `INSERT`) before the table lock.
+- Never rely on plain `SELECT`s after waiting for a lock to see other requests' changes; use `FOR UPDATE` for current reads.
+- Don't enable `$this->bIndependantMultiactiveTable`: the code reads/writes `player_is_multiactive` directly.
+- Verify with `npm run test:race` (see below) after touching any action, state action or manager.
+
 ---
 
 ## 4. Building, Testing, and Deployment Workflow
@@ -235,14 +258,14 @@ Instead of relying solely on global variables for complex trick history, `LogMan
 
 ### Local Testing & Local BGA Runner (`tests/` & `local/`)
 
-Tichu has three fast local testing tiers that run without needing a BGA Studio connection:
+Tichu has three fast local testing tiers that run without needing a BGA Studio connection (plus the opt-in race stress test below):
 
 1. **Unit Tests (`npm run test:unit` / `./vendor/bin/phpunit tests`, ~40ms)**:
    - Tests pure card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` using `tests/stubs.php` and `tests/TestUtils.php`.
    - When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
 
 2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~180ms)**:
-   - Runs 13 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
+   - Runs 14 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
      - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `TEAM_RANDOM` & team color assignment, `grandTichuBet`, 6-card deal)
      - Out-of-turn Tichu bet (`tichuBet` before playing first card, `tichuCall` confirmation across trick boundaries, rejection after playing a card or duplicate bets)
      - Passing 3 cards (`giveTheCards`, invalid card rejection & rollback, `stAcceptPassedCards`, `bombs_completed_by_partner` stat, Mahjong leader)
@@ -256,7 +279,15 @@ Tichu has three fast local testing tiers that run without needing a BGA Studio c
      - Full multi-round game end-to-end via `LocalTichuBot` to 1000 points (`ST_GAME_END` = 99)
      - Zombie turns (`zombieTurn` across all 9 `activeplayer` and `multipleactiveplayer` states with session isolation)
      - Action & parameter validation (`cancel`, `makeAWish`, `chooseDragonGift`, `playCombo`, `playBomb`, `CardManager::cardToStr`)
+     - Table lock contract (`lockVersion` init/bump, no bump for rejected/no-op/autopass requests, silent duplicate `collect`)
    - Run both unit and backend integration tests together via **`npm test`**.
+
+   **Race / Concurrency Stress Test (`npm run test:race` / `php local/race-tests.php`, ~60s + ~10s, NOT part of `npm test`/`npm run build`)**:
+
+   - Spawns persistent PHP worker processes that execute emulated BGA requests (`action_tichu` -> `Tichu`) truly in parallel against one file-backed SQLite DB, with `local/bga-backend.php` in **MVCC mode** (`TICHU_DB_MVCC=1`): plain reads see the request's snapshot (taken when the "framework" loads the state in `beginPlayerAction`), writes and `SELECT ... FOR UPDATE` run in `BEGIN IMMEDIATE` on a second connection and wait for other writers — modelling InnoDB REPEATABLE READ.
+   - Phase 1: targeted scenarios repeated `--reps` times with exact expectations (4x concurrent `collect` + autopass, 4 players' `grandTichuBet` + duplicate tabs, 4 players' `giveTheCards`, 3 Tichu calls vs. a pass, 2 competing bombs vs. a pass).
+   - Phase 2: `--duration` seconds of randomized bursts over whole games (legal moves duplicated from "other tabs", out-of-turn Tichu/autopass/bombs/confirmTichu, `getAllDatas` page loads, zombie turns, garbage requests), checking invariants after every burst: 56 unique cards in valid locations, per-state card distribution and multiactive sets, table cards == logged trick cards, `newRound`/`newTrick` counted exactly once (`trick_number`/`round_number`/`tichu_number` stats match the action log), valid bets/scores, monotonic lock version, no stuck game, and **no exception other than `UserException`** (PHP warnings are fatal).
+   - Options: `--duration=60 --workers=8 --seed=N --reps=25 --skip-scenarios --verbose`. `--baseline` ignores all `FOR UPDATE` locks to demonstrate the detected races (expected to FAIL). `RACE_DEBUG=1` prints every scenario request result.
 
 3. **Local Browser Server & Frontend + Backend JS Console Integration Tests (`npm run local`)**:
    - **Start the local server**:

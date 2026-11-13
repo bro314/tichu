@@ -52,8 +52,11 @@ npm test
 # Run only PHPUnit unit tests (Combo & Hand logic)
 npm run test:unit
 
-# Run only in-memory SQLite backend integration tests (13 end-to-end suites)
+# Run only in-memory SQLite backend integration tests (14 end-to-end suites)
 npm run test:integration
+
+# Run the standalone multi-worker concurrency & race-condition stress test (~70s)
+npm run test:race
 
 # Start the local interactive BGA runner at http://127.0.0.1:8080
 npm run local
@@ -87,7 +90,7 @@ tt.help(); // List all console test runner commands
 | `src/elements/`                      | Lit + RxJS web components for live gameplay and archive replay (`<tichu-game>`, `<tichu-player-panel>`, `<tichu-last-played>`, `<tichu-pass-area>`, `<tichu-action-bar>`, `<tichu-hand>`, `<tichu-value-choice>`, `<tichu-played-cards>`, `<tichu-trick-modal>`, `<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`) |
 | `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                                                                                                                                                                                   |
 | `tests/`                             | PHPUnit test suite (`ComboTest.php`, `HandTest.php`) and BGA stubs                                                                                                                                                                                                                                                                                                             |
-| `local/`                             | Self-contained local BGA runner (`router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), backend integration tests (`integration-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`)                                                                                                                                |
+| `local/`                             | Self-contained local BGA runner (`router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), backend integration & race stress tests (`integration-tests.php`, `race-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`)                                                                                                |
 
 ## Syncing & Deploying to BGA Studio
 

@@ -13,10 +13,25 @@ class Tichu extends Table
   public array $specials_label;
   public array $play_type;
 
+  /**
+   * Global row used as a table-wide change counter ("version") by acquireGameLock().
+   * Every request that changes game data shared between players increments it.
+   */
+  const GLOBAL_LOCK_VERSION = 30;
+
+  /** Whether this request already holds the table lock (see acquireGameLock()). */
+  private bool $gameLockHeld = false;
+  /** Whether this request's consistent snapshot / cached game state is outdated. */
+  private bool $gameLockStale = false;
+  /** Whether this request already incremented the version row. */
+  private bool $gameVersionBumped = false;
+  /** State id and active player as read with the lock held (latest committed values). */
+  private int $freshStateId = 0;
+  private int $freshActivePlayerId = 0;
+
   function __construct()
   {
     parent::__construct();
-    $this->bSelectGlobalsForUpdate = true;
     self::$instance = $this;
     Combo::$noCombo = new Combo([], NO_COMBO);
 
@@ -28,12 +43,179 @@ class Tichu extends Table
       "mahjongWish" => 26, // value wished by Mahjong Owner
       "mahjongOwner" => 27, // Mahjong Owner, 0 when wish is granted
       "isAllInfoExposed" => 28, // Should the played card be shown and players smartly skipped? 0=FALSE, 1=TRUE
+      // 29 was used by a legacy version for the phoenix value (see upgradeTableDb).
+      "lockVersion" => self::GLOBAL_LOCK_VERSION, // table-wide change counter, see acquireGameLock()
 
       //options
       "gameLength" => 100, // 1 = 500pts, 2 = 1000pts, 3 = 2000pts
       "playerTeams" => 101, // 1 = 13 vs 24, 2 = 12 vs 34, 3 = 14 vs 23, 4 = random
       "gameVariant" => 102, // 1 = tichu standard
     ]);
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////// Concurrency control
+  ////////////
+  //
+  // Every BGA request runs in one MySQL (InnoDB, REPEATABLE READ) transaction. Two requests on
+  // the same table can overlap (two tabs auto-collecting, a bomb or Tichu call arriving while
+  // the active player plays, 4 players betting/passing at the same time). Without explicit
+  // locking this caused deadlocks (Error 1213) and double execution of state actions, because
+  // the later request validated against an outdated snapshot and then continued writing.
+  //
+  // Protocol (see AGENTS.md "Concurrency & Locking"):
+  //  1. Every mutating entry point calls acquireGameLock() BEFORE any other DB statement. It
+  //     takes an exclusive row lock on global row 1 (the state id row, which always exists).
+  //     All mutating requests of a table are thereby serialized on one lock that is always
+  //     acquired first, so they can neither interleave nor deadlock each other.
+  //  2. A request that had to wait may still see an outdated snapshot (InnoDB does not refresh
+  //     a transaction's read view when it acquires a lock, and the framework has already read
+  //     the game state). acquireGameLock() detects this by comparing the locked (current)
+  //     state id, active player and version row with the cached/snapshot values.
+  //  3. Stale requests are rejected with a "please try again" UserException (rolled back,
+  //     nothing changes), except where the action only depends on data that is read freshly
+  //     with the lock held (own player row, own cards): Tichu calls, Grand Tichu bets, passing
+  //     cards and autopass settings. Duplicate collect requests are silently ignored.
+  //  4. Every request that changes shared game data increments the version row
+  //     (bumpGameVersion()) so that overlapping requests can detect it.
+
+  /**
+   * Serializes this request with all other mutating requests of the table.
+   * Must be called before any other DB statement of a mutating entry point. Re-entrant.
+   */
+  public function acquireGameLock(): void
+  {
+    if ($this->gameLockHeld) {
+      return;
+    }
+    $this->freshStateId = (int) $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE"
+    );
+    $this->gameLockHeld = true;
+    $this->freshActivePlayerId = (int) $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = 2 FOR UPDATE"
+    );
+    $versionId = self::GLOBAL_LOCK_VERSION;
+    $currentVersion = $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = $versionId FOR UPDATE"
+    );
+    $snapshotVersion = $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = $versionId"
+    );
+    $this->gameLockStale =
+      $this->freshStateId !== (int) $this->gamestate->getCurrentMainStateId() ||
+      $this->freshActivePlayerId !== (int) $this->getActivePlayerId() ||
+      $currentVersion !== $snapshotVersion;
+  }
+
+  /**
+   * Like acquireGameLock(), but rejects the request if it was processed against an outdated
+   * view of the game, and marks the game as changed.
+   */
+  public function acquireGameLockOrFail(): void
+  {
+    $this->acquireGameLock();
+    if ($this->gameLockStale) {
+      $this->throwGameStateChanged();
+    }
+    $this->bumpGameVersion();
+  }
+
+  /** Increments the table-wide version row (at most once per request). */
+  public function bumpGameVersion(): void
+  {
+    $this->acquireGameLock();
+    if ($this->gameVersionBumped) {
+      return;
+    }
+    $versionId = self::GLOBAL_LOCK_VERSION;
+    $this->DbQuery("UPDATE global SET global_value = global_value + 1 WHERE global_id = $versionId");
+    if ($this->DbAffectedRow() == 0) {
+      // Games started before the version row existed. Safe: we hold the table lock.
+      $this->DbQuery("INSERT INTO global (global_id, global_value) VALUES ($versionId, 1)");
+    }
+    $this->gameVersionBumped = true;
+  }
+
+  public function isGameLockStale(): bool
+  {
+    return $this->gameLockStale;
+  }
+
+  /** Called by the local backend at the end of every emulated request. */
+  public function onRequestEnd(): void
+  {
+    $this->gameLockHeld = false;
+    $this->gameLockStale = false;
+    $this->gameVersionBumped = false;
+  }
+
+  private function throwGameStateChanged(): void
+  {
+    throw new UserException(
+      clienttranslate(
+        "The game changed while your action was being processed. Please check and try again."
+      )
+    );
+  }
+
+  /** Reads whether a player is (still) multiactive, with the table lock held. */
+  private function isPlayerMultiactiveFresh(int $playerId): bool
+  {
+    return (int) $this->getUniqueValueFromDB(
+      "SELECT player_is_multiactive FROM player WHERE player_id = $playerId FOR UPDATE"
+    ) === 1;
+  }
+
+  /**
+   * Validates a multiactive action (Grand Tichu bet, passing cards, legacy accept) against
+   * the latest committed data. Other players acting at the same time only change their own
+   * rows, so a stale snapshot is acceptable here, as long as the player is still active.
+   */
+  private function checkMultiactiveActionFresh(int $playerId, int $stateId, string $action): void
+  {
+    $this->acquireGameLock();
+    if (!$this->gameLockStale) {
+      $this->checkAction($action); // regular framework validation (snapshot is current)
+    } elseif ($this->freshStateId !== $stateId) {
+      $this->throwGameStateChanged();
+    }
+    if (!$this->isPlayerMultiactiveFresh($playerId)) {
+      throw new UserException(clienttranslate("You have already made your choice"));
+    }
+    $this->bumpGameVersion();
+  }
+
+  /**
+   * setPlayerNonMultiactive() that is safe when this request's snapshot is stale: the
+   * framework's "is anybody still active?" check might then see players as active who already
+   * acted in a concurrent request, and the game would never leave the multiactive state.
+   *
+   * @param bool $staleTransitionSafe whether the next state's actions may run on a stale
+   *   snapshot (true only if they do not read data written by the other players in this state)
+   */
+  private function setPlayerNonMultiactiveSafe(
+    int $playerId,
+    string $transition,
+    bool $staleTransitionSafe
+  ): void {
+    if (!$this->gameLockStale) {
+      $this->gamestate->setPlayerNonMultiactive($playerId, $transition);
+      return;
+    }
+    $othersActive = (int) $this->getUniqueValueFromDB(
+      "SELECT COUNT(*) FROM player WHERE player_is_multiactive = 1 AND player_id <> $playerId FOR UPDATE"
+    );
+    if ($othersActive > 0) {
+      // A stale view can only contain *more* active players, so the framework won't transition.
+      $this->gamestate->setPlayerNonMultiactive($playerId, $transition);
+      return;
+    }
+    if (!$staleTransitionSafe) {
+      $this->throwGameStateChanged();
+    }
+    $this->DbQuery("UPDATE player SET player_is_multiactive = 0 WHERE player_id = $playerId");
+    $this->gamestate->nextState($transition);
   }
 
   /*
@@ -59,6 +241,7 @@ class Tichu extends Table
     $this->setGameStateInitialValue("mahjongWish", 0);
     $this->setGameStateInitialValue("mahjongOwner", 0);
     $this->setGameStateInitialValue("isAllInfoExposed", $this->bga->tableOptions->isTurnBased() ? 1 : 0);
+    $this->setGameStateInitialValue("lockVersion", 0);
 
     // Init statistics
     $this->initStat("table", "round_number", 0);
@@ -251,6 +434,7 @@ class Tichu extends Table
 
   function chooseDragonGift($playertogive, $checkAction = true)
   {
+    $this->acquireGameLockOrFail();
     if ($checkAction) {
       $this->checkAction("chooseDragonGift");
     }
@@ -305,8 +489,10 @@ class Tichu extends Table
   function giveTheCards($card_ids, $player_id = null)
   {
     if ($player_id === null) {
-      $this->checkAction("giveCards");
-      $player_id = $this->getCurrentPlayerId();
+      $player_id = (int) $this->getCurrentPlayerId();
+      $this->checkMultiactiveActionFresh($player_id, ST_GIVE_CARDS, "giveCards");
+    } else {
+      $this->acquireGameLockOrFail();
     }
 
     if (count($card_ids) != 3) {
@@ -328,11 +514,14 @@ class Tichu extends Table
     NotificationManager::passCards($player_id, $card_ids);
 
     // legacy: $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
-    $this->gamestate->setPlayerNonMultiactive($player_id, "acceptPassedCards");
+    // The last player's request accepts the passed cards of everybody (stAcceptPassedCards),
+    // which must not run on a stale snapshot.
+    $this->setPlayerNonMultiactiveSafe((int) $player_id, "acceptPassedCards", false);
   }
 
   function playBomb($cards_ids)
   {
+    $this->acquireGameLockOrFail();
     $name = $this->gamestate->getCurrentMainState()->name;
     if ($name != "playCombo" && $name != "confirmTrick") {
       throw new UserException(clienttranslate("You can't play a bomb right now"));
@@ -370,6 +559,7 @@ class Tichu extends Table
 
   function choosePhoenix($phoenixValue, $checkAction = true)
   {
+    $this->acquireGameLockOrFail();
     if ($checkAction) {
       $this->checkAction("phoenixPlay");
     }
@@ -385,6 +575,7 @@ class Tichu extends Table
 
   function playCombo($cards_ids)
   {
+    $this->acquireGameLockOrFail();
     $this->checkAction("playCombo");
     $playerId = $this->getCurrentPlayerId();
     if (empty($cards_ids)) {
@@ -419,13 +610,21 @@ class Tichu extends Table
 
   function pass($onlyOnce)
   {
-    $name = $this->gamestate->getCurrentMainState()->name;
-    $player_id = $this->getCurrentPlayerId();
-    if ($player_id != $this->getActivePlayerId()) {
-      if (
-        !in_array($name, ["playCombo", "confirmTrick"]) ||
-        CardManager::getDeck()->countCardInLocation("hand", $player_id) == 0
-      ) {
+    $this->acquireGameLock();
+    $player_id = (int) $this->getCurrentPlayerId();
+    if ($player_id != $this->freshActivePlayerId) {
+      if ($this->gameLockStale && $player_id == (int) $this->getActivePlayerId()) {
+        // The player passed on their turn, but a concurrent request (e.g. the same pass from
+        // another tab) already moved the game on. Don't turn this into an autopass setting.
+        $this->throwGameStateChanged();
+      }
+      // Autopass (out of turn): decided on data read with the lock held, so it is safe even if
+      // this request's snapshot is stale. It only changes the player's own autopass flag, which
+      // stNextPlayer() reads freshly, so it does not bump the version either.
+      $handCount = (int) $this->getUniqueValueFromDB(
+        "SELECT COUNT(*) FROM card WHERE card_location = 'hand' AND card_location_arg = $player_id FOR UPDATE"
+      );
+      if (!in_array($this->freshStateId, [ST_PLAY_COMBO, ST_CONFIRM_TRICK]) || $handCount == 0) {
         throw new UserException(clienttranslate("You cannot pass now"));
       }
       PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
@@ -433,6 +632,8 @@ class Tichu extends Table
       return;
     }
 
+    $this->acquireGameLockOrFail();
+    $name = $this->gamestate->getCurrentMainState()->name;
     if ($name != "playCombo") {
       throw new UserException(clienttranslate("You cannot pass now"));
     }
@@ -462,12 +663,16 @@ class Tichu extends Table
 
   function cancelAutopass()
   {
+    // Only changes the player's own autopass flag (read freshly by stNextPlayer()), so neither
+    // a stale snapshot nor a version bump matters. The lock still orders it with other requests.
+    $this->acquireGameLock();
     PlayerManager::setAutopass(0, $this->getCurrentPlayerId());
     NotificationManager::autopass(0, $this->getCurrentPlayerId());
   }
 
   function cancel()
   {
+    $this->acquireGameLockOrFail();
     $this->checkAction("cancel");
     $action = LogManager::getLastAction("changePlayer");
     LogManager::insert($action["arg"]["active"], "changePlayer", [
@@ -479,9 +684,13 @@ class Tichu extends Table
   function grandTichuBet($bet, $confirmed = false, $player_id = null)
   {
     if ($player_id === null) {
-      $this->checkAction("grandTichuBet");
-      $player_id = $this->getCurrentPlayerId();
+      $player_id = (int) $this->getCurrentPlayerId();
+      $this->checkMultiactiveActionFresh($player_id, ST_GRAND_TICHU_BETS, "grandTichuBet");
+    } else {
+      $this->acquireGameLockOrFail();
     }
+    // Own row: can only be changed by this player's own requests, which are excluded by the
+    // fresh multiactive check above (both bets and Tichu calls end the player's turn here).
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_tichu"] != -1) {
       return;
@@ -510,49 +719,55 @@ class Tichu extends Table
     }
     PlayerManager::grandTichuBet($player_id, $bet);
     NotificationManager::grandTichuBet($player_id, $player["name"], $bet);
-    $this->gamestate->setPlayerNonMultiactive($player_id, "dealLastCards");
+    // stDealLastCards() only deals from the deck, which nobody else touches in this state.
+    $this->setPlayerNonMultiactiveSafe((int) $player_id, "dealLastCards", true);
   }
 
   function tichuBet($confirmed = false)
   {
-    $player_id = $this->getCurrentPlayerId();
-    $player = PlayerManager::getPlayer($player_id);
+    // A Tichu call only depends on the caller's own row and cards, which are read with the lock
+    // held below, so it is accepted even if other players acted concurrently (stale snapshot).
+    $this->acquireGameLock();
+    $player_id = (int) $this->getCurrentPlayerId();
+    $player = $this->getObjectFromDB(
+      "SELECT player_name name, player_call_tichu call_tichu, player_call_grand_tichu call_grand_tichu FROM player WHERE player_id = $player_id FOR UPDATE"
+    );
     if ($player["call_grand_tichu"] == 200) {
       throw new UserException(clienttranslate("You already made a grand tichu bet."));
     }
     if ($player["call_tichu"] == 100) {
       throw new UserException(clienttranslate("You cannot call Tichu anymore"));
     }
-    $stateName = $this->gamestate->getCurrentMainState()->name;
+    $stateId = $this->freshStateId;
     if (
-      !in_array($stateName, [
-        "grandTichuBets",
-        "giveCards",
-        "showPassedCards",
-        "acceptPassedCards",
-        "newTrick",
-        "playComboOpen",
-        "playCombo",
-        "mahjongPlay",
-        "phoenixPlay",
-        "playBomb",
-        "confirmTrick",
-        "chooseDragonGift",
+      !in_array($stateId, [
+        ST_GRAND_TICHU_BETS,
+        ST_GIVE_CARDS,
+        ST_SHOW_PASSED_CARDS,
+        ST_ACCEPT_PASSED_CARDS,
+        ST_NEW_TRICK,
+        ST_PLAY_COMBO_OPEN,
+        ST_PLAY_COMBO,
+        ST_MAHJONG_PLAY,
+        ST_PHOENIX_PLAY,
+        ST_PLAY_BOMB,
+        ST_CONFIRM_TRICK,
+        ST_CHOOSE_DRAGON_GIFT,
       ])
     ) {
       throw new UserException(clienttranslate("You cannot call Tichu anymore"));
     }
-    $deck = CardManager::getDeck();
-    if ($stateName == "grandTichuBets") {
-      if ($deck->countCardInLocation("hand", $player_id) != 8) {
+    $countCards = function ($location) use ($player_id) {
+      return (int) $this->getUniqueValueFromDB(
+        "SELECT COUNT(*) FROM card WHERE card_location = '$location' AND card_location_arg = $player_id FOR UPDATE"
+      );
+    };
+    if ($stateId == ST_GRAND_TICHU_BETS) {
+      if ($countCards("hand") != 8) {
         throw new UserException(clienttranslate("You cannot call Tichu after playing a card"));
       }
-    } elseif ($stateName != "giveCards") {
-      if (
-        $deck->countCardInLocation("hand", $player_id) +
-          $deck->countCardInLocation("temporary", $player_id) !=
-        14
-      ) {
+    } elseif ($stateId != ST_GIVE_CARDS) {
+      if ($countCards("hand") + $countCards("temporary") != 14) {
         throw new UserException(clienttranslate("You cannot call Tichu after playing a card"));
       }
     }
@@ -569,7 +784,10 @@ class Tichu extends Table
       NotificationManager::confirmTichu($player_id, false);
       return;
     }
-    if (!$confirmed && $this->getGameStateValue("firstOutPlayer") != 0) {
+    $firstOutPlayer = (int) $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = 21 FOR UPDATE"
+    );
+    if (!$confirmed && $firstOutPlayer != 0) {
       NotificationManager::confirmTichu(
         $player_id,
         false,
@@ -577,12 +795,13 @@ class Tichu extends Table
       );
       return;
     }
+    $this->bumpGameVersion();
     LogManager::insert($player_id, "tichuCall", $now);
     $this->incStat(1, "tichu_number", $player_id);
     PlayerManager::tichuBet($player_id, 100);
-    NotificationManager::tichuBet($player_id, $this->getCurrentPlayerName(), 100);
-    if ($stateName == "grandTichuBets") {
-      $this->gamestate->setPlayerNonMultiactive($player_id, "dealLastCards");
+    NotificationManager::tichuBet($player_id, $player["name"], 100);
+    if ($stateId == ST_GRAND_TICHU_BETS) {
+      $this->setPlayerNonMultiactiveSafe($player_id, "dealLastCards", true);
     }
   }
 
@@ -678,11 +897,13 @@ class Tichu extends Table
   function acceptCards($player_id = null)
   {
     if ($player_id === null) {
-      $this->checkAction("acceptCards");
-      $player_id = $this->getCurrentPlayerId();
+      $player_id = (int) $this->getCurrentPlayerId();
+      $this->checkMultiactiveActionFresh($player_id, ST_SHOW_PASSED_CARDS, "acceptCards");
+    } else {
+      $this->acquireGameLockOrFail();
     }
     $this->acceptCardsForPlayer($player_id);
-    $this->gamestate->setPlayerNonMultiactive($player_id, "acceptCards");
+    $this->setPlayerNonMultiactiveSafe((int) $player_id, "acceptCards", false);
   }
 
   /**
@@ -701,6 +922,7 @@ class Tichu extends Table
 
   function makeAWish($wish, $checkAction = true)
   {
+    $this->acquireGameLockOrFail();
     if ($checkAction) {
       $this->checkAction("makeAWish");
     }
@@ -729,15 +951,13 @@ class Tichu extends Table
 
   function collect($checkAction = true)
   {
-    $stateId = (int) $this->getUniqueValueFromDB(
-      "SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE"
-    );
-    if (
-      $stateId !== ST_CONFIRM_TRICK ||
-      $this->gamestate->getCurrentMainState()->name !== "confirmTrick"
-    ) {
+    // Clients auto-collect, so every open tab/device of the trick winner may send this.
+    // Duplicates (the trick was already collected) are silently ignored.
+    $this->acquireGameLock();
+    if ($this->freshStateId !== ST_CONFIRM_TRICK) {
       return;
     }
+    $this->acquireGameLockOrFail();
     if ($checkAction) {
       $this->checkAction("collect");
     }
@@ -766,6 +986,7 @@ class Tichu extends Table
 
   function cancelPhoenix()
   {
+    $this->acquireGameLockOrFail();
     $this->checkAction("cancelPhoenix");
     $last = LogManager::getLastCombo();
     if (in_array($last->type, [NO_COMBO, DOG_COMBO])) {
@@ -1051,6 +1272,12 @@ class Tichu extends Table
       $amount = 4;
     }
     $wish = $this->getGameStateValue("mahjongWish");
+    // Autopass flags are changed by out-of-turn requests that do not bump the lock version
+    // (see pass() / cancelAutopass()), so read their latest committed values.
+    $autopassFlags = $this->getCollectionFromDB(
+      "SELECT player_id, player_pass FROM player FOR UPDATE",
+      true
+    );
     foreach ($next_players as $player) {
       $pId = $player["id"];
       if ($lastComboPlayer == $pId) {
@@ -1060,10 +1287,11 @@ class Tichu extends Table
       if (!isset($handCounts[$pId])) {
         continue;
       }
-      $autoPass = $player["pass"] > 0 && CardManager::canPass($pId, $wish, $lastCombo);
+      $pass = (int) ($autopassFlags[$pId] ?? AUTOPASS_NONE);
+      $autoPass = $pass > 0 && CardManager::canPass($pId, $wish, $lastCombo);
       $cantBeat = $handCounts[$pId] < $amount || ($this->isAllInfoExposed() && $impossibleToBeat);
       if ($autoPass || $cantBeat) {
-        $autoPassOnlyOnce = $player["pass"] == 1;
+        $autoPassOnlyOnce = $pass == AUTOPASS_ONCE;
         if ($autoPassOnlyOnce) {
           PlayerManager::setAutopass(0, $pId);
           NotificationManager::autopass(0, $pId);
@@ -1072,7 +1300,7 @@ class Tichu extends Table
         NotificationManager::pass($pId, $player["name"]);
         continue;
       }
-      if ($player["pass"] == AUTOPASS_ONCE) {
+      if ($pass == AUTOPASS_ONCE) {
         PlayerManager::setAutopass(AUTOPASS_NONE, $pId);
         NotificationManager::autopass(AUTOPASS_NONE, $pId);
       }
@@ -1293,6 +1521,7 @@ class Tichu extends Table
 	*/
   function zombieTurn($state, $active_player)
   {
+    $this->acquireGameLockOrFail();
     $statename = $state["name"];
     $player = PlayerManager::getPlayer($active_player);
     $player_name = $player["name"] ?? $this->getActivePlayerName();

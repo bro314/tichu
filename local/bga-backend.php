@@ -259,6 +259,7 @@ namespace {
     {
       if (self::$dbPath !== $path) {
         self::$pdo = null;
+        self::$snapshotPdo = null;
         self::$dbPath = $path;
       }
     }
@@ -280,22 +281,17 @@ namespace {
       self::$pdo = $pdo;
     }
 
+    /**
+     * Returns the primary connection. Inside an MVCC request this is the "current"
+     * connection and the writer lock is acquired first (callers use it to write directly).
+     */
     public static function getPdo(): \PDO
     {
       if (self::$pdo === null) {
-        $path = self::getDbPath();
-        $dsn = $path === ':memory:' ? 'sqlite::memory:' : 'sqlite:' . $path;
-        $pdo = new \PDO($dsn);
-        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-        $pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
-        // Match BGA mysqli behavior where fetched scalar columns are strings (while NULL stays null)
-        $pdo->setAttribute(\PDO::ATTR_STRINGIFY_FETCHES, true);
-        if ($path !== ':memory:') {
-          $pdo->exec('PRAGMA journal_mode = WAL;');
-          $pdo->exec('PRAGMA synchronous = NORMAL;');
-          $pdo->exec('PRAGMA busy_timeout = 5000;');
-        }
-        self::$pdo = $pdo;
+        self::$pdo = self::createPdo(self::getDbPath());
+      }
+      if (self::$mvccRequestActive) {
+        return self::ensureMvccWriteTx();
       }
       return self::$pdo;
     }
@@ -310,12 +306,186 @@ namespace {
       self::getPdo()->exec($sql);
     }
 
+    // ------------------------------------------------------------------------------------------
+    // MySQL/InnoDB REPEATABLE READ emulation ("MVCC mode", opt-in via TICHU_DB_MVCC=1 or
+    // APP_DbObject::setMvccEmulation(true), file-backed databases only).
+    //
+    // Used by local/race-tests.php so that parallel PHP worker processes sharing one SQLite
+    // file hit the same races as concurrent BGA requests hitting MySQL:
+    //  * Plain SELECTs read a consistent snapshot that is established by the first read of the
+    //    request (on BGA the framework loads the game state before any game code runs). Holding
+    //    a lock does NOT refresh that snapshot -- exactly like InnoDB.
+    //  * Writes and `SELECT ... FOR UPDATE` are "current" reads/writes. They run on a second
+    //    connection inside `BEGIN IMMEDIATE`, i.e. they wait for any other writer to commit.
+    //    (SQLite has one writer lock per database, so this is coarser than InnoDB row locks.)
+    //  * Once a request has made its first *game* write, plain reads see current data including
+    //    its own writes (InnoDB would keep serving the old snapshot plus own writes; this is the
+    //    one place where the emulation is less strict than MySQL).
+    //  * Framework bookkeeping writes (move id, notifications) take the writer lock but do not
+    //    switch plain reads to current data.
+    // ------------------------------------------------------------------------------------------
+    protected static ?bool $mvccEmulation = null;
+    protected static ?\PDO $snapshotPdo = null;
+    protected static bool $mvccRequestActive = false;
+    protected static bool $mvccWriteTxActive = false;
+    protected static bool $mvccHasWritten = false;
+    protected static bool $mvccFrameworkWrite = false;
+
+    public static function setMvccEmulation(?bool $enabled): void
+    {
+      self::$mvccEmulation = $enabled;
+    }
+
+    public static function isMvccEmulation(): bool
+    {
+      if (self::getDbPath() === ':memory:') {
+        return false;
+      }
+      if (self::$mvccEmulation === null) {
+        $env = getenv('TICHU_DB_MVCC');
+        self::$mvccEmulation = $env !== false && $env !== '' && $env !== '0';
+      }
+      return self::$mvccEmulation;
+    }
+
+    protected static ?bool $ignoreLocks = null;
+
+    private static function ignoreLocks(): bool
+    {
+      if (self::$ignoreLocks === null) {
+        $env = getenv('TICHU_DB_IGNORE_LOCKS');
+        self::$ignoreLocks = $env !== false && $env !== '' && $env !== '0';
+      }
+      return self::$ignoreLocks;
+    }
+
+    public static function isMvccRequestActive(): bool
+    {
+      return self::$mvccRequestActive;
+    }
+
+    private static function createPdo(string $path): \PDO
+    {
+      $dsn = $path === ':memory:' ? 'sqlite::memory:' : 'sqlite:' . $path;
+      $pdo = new \PDO($dsn);
+      $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+      $pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
+      // Match BGA mysqli behavior where fetched scalar columns are strings (while NULL stays null)
+      $pdo->setAttribute(\PDO::ATTR_STRINGIFY_FETCHES, true);
+      if ($path !== ':memory:') {
+        $pdo->exec('PRAGMA journal_mode = WAL;');
+        $pdo->exec('PRAGMA synchronous = NORMAL;');
+        // Comparable to innodb_lock_wait_timeout: a writer waits this long for the write lock.
+        $pdo->exec('PRAGMA busy_timeout = 20000;');
+      }
+      return $pdo;
+    }
+
+    private static function getSnapshotPdo(): \PDO
+    {
+      if (self::$snapshotPdo === null) {
+        self::$snapshotPdo = self::createPdo(self::getDbPath());
+      }
+      return self::$snapshotPdo;
+    }
+
+    /** Starts a request transaction in MVCC mode (snapshot is taken lazily by the first read). */
+    public static function beginMvccRequest(): void
+    {
+      self::getPdo();
+      self::getSnapshotPdo()->exec('BEGIN DEFERRED');
+      self::$mvccRequestActive = true;
+      self::$mvccWriteTxActive = false;
+      self::$mvccHasWritten = false;
+    }
+
+    /** Commits (or rolls back) the request transaction in MVCC mode. */
+    public static function endMvccRequest(bool $rollback): void
+    {
+      if (!self::$mvccRequestActive) {
+        return;
+      }
+      self::$mvccRequestActive = false;
+      try {
+        if (self::$mvccWriteTxActive && self::$pdo !== null && self::$pdo->inTransaction()) {
+          self::$pdo->exec($rollback ? 'ROLLBACK' : 'COMMIT');
+        }
+      } finally {
+        self::$mvccWriteTxActive = false;
+        self::$mvccHasWritten = false;
+        if (self::$snapshotPdo !== null && self::$snapshotPdo->inTransaction()) {
+          self::$snapshotPdo->exec('ROLLBACK');
+        }
+      }
+    }
+
+    /** Acquires the (database-wide) writer lock for the current MVCC request. */
+    private static function ensureMvccWriteTx(): \PDO
+    {
+      $pdo = self::$pdo;
+      if (!self::$mvccWriteTxActive) {
+        $pdo->exec('BEGIN IMMEDIATE');
+        self::$mvccWriteTxActive = true;
+      }
+      return $pdo;
+    }
+
+    /** Records a game write that bypassed DbQuery() (direct PDO use, e.g. Deck::shuffle). */
+    public static function noteGameWrite(): void
+    {
+      if (self::$mvccRequestActive) {
+        self::$mvccHasWritten = true;
+      }
+    }
+
+    /** Runs a framework bookkeeping write that must not switch plain reads to current data. */
+    public static function frameworkWrite(callable $fn)
+    {
+      $prev = self::$mvccFrameworkWrite;
+      self::$mvccFrameworkWrite = true;
+      try {
+        return $fn();
+      } finally {
+        self::$mvccFrameworkWrite = $prev;
+      }
+    }
+
     public static function DbQuery($sql)
     {
-      $pdo = self::getPdo();
       // Convert MySQL backslash-escaped single quotes from addslashes() to SQLite ''
       $normalizedSql = str_replace("\\'", "''", $sql);
-      $normalizedSql = preg_replace('/\s+FOR\s+UPDATE\b/i', '', $normalizedSql);
+      $lockingRead = (bool) preg_match(
+        '/\s+(FOR\s+UPDATE|FOR\s+SHARE|LOCK\s+IN\s+SHARE\s+MODE)\b/i',
+        $normalizedSql
+      );
+      $normalizedSql = preg_replace(
+        '/\s+(FOR\s+UPDATE|FOR\s+SHARE|LOCK\s+IN\s+SHARE\s+MODE)\b/i',
+        '',
+        $normalizedSql
+      );
+
+      if (self::$mvccRequestActive) {
+        $isWrite = (bool) preg_match(
+          '/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i',
+          $normalizedSql
+        );
+        if ($lockingRead && self::ignoreLocks()) {
+          // Baseline mode (TICHU_DB_IGNORE_LOCKS=1): behave as if the game code had no
+          // `FOR UPDATE` at all, to demonstrate the races local/race-tests.php detects.
+          $lockingRead = false;
+        }
+        if ($isWrite || $lockingRead) {
+          $pdo = self::ensureMvccWriteTx();
+          if ($isWrite && !self::$mvccFrameworkWrite) {
+            self::$mvccHasWritten = true;
+          }
+        } else {
+          $pdo = self::$mvccHasWritten ? self::$pdo : self::getSnapshotPdo();
+        }
+      } else {
+        $pdo = self::getPdo();
+      }
+
       $stmt = $pdo->query($normalizedSql);
       self::$lastAffectedRows = $stmt ? $stmt->rowCount() : 0;
       return $stmt;
@@ -395,7 +565,11 @@ namespace {
 
     public static function DbGetLastId()
     {
-      return self::getPdo()->lastInsertId();
+      // Writes always run on the primary connection (also in MVCC mode).
+      if (self::$pdo === null) {
+        self::getPdo();
+      }
+      return self::$pdo->lastInsertId();
     }
 
     public static function DbAffectedRow()
@@ -547,6 +721,7 @@ namespace {
     public function createCards(array $cards, string $location = 'deck', int $location_arg = 0): void
     {
       $pdo = APP_DbObject::getPdo();
+      APP_DbObject::noteGameWrite();
       $ownTx = !$pdo->inTransaction();
       if ($ownTx) {
         $pdo->beginTransaction();
@@ -586,6 +761,7 @@ namespace {
       }
       shuffle($ids);
       $pdo = APP_DbObject::getPdo();
+      APP_DbObject::noteGameWrite();
       $ownTx = !$pdo->inTransaction();
       if ($ownTx) {
         $pdo->beginTransaction();
@@ -1440,6 +1616,19 @@ namespace Bga\GameFramework {
 
     public function beginPlayerAction(): void
     {
+      if (self::isMvccEmulation()) {
+        if (!self::isMvccRequestActive()) {
+          self::beginMvccRequest();
+          $this->ownActionTransaction = true;
+        }
+        $this->inAjaxAction = true;
+        // Model the BGA framework loading the game state before any game code runs: this
+        // plain read establishes the request's consistent snapshot. The move id is only
+        // incremented lazily (checkAction / first transition / first notification), so that
+        // this emulation does not take a write lock before the game code does.
+        $this->gamestate->getStateId();
+        return;
+      }
       $pdo = self::getPdo();
       if (!$pdo->inTransaction()) {
         $pdo->beginTransaction();
@@ -1451,17 +1640,28 @@ namespace Bga\GameFramework {
 
     public function endPlayerAction(bool $rollback = false): void
     {
-      $pdo = self::getPdo();
-      if ($this->ownActionTransaction && $pdo->inTransaction()) {
-        if ($rollback) {
-          $pdo->rollBack();
-        } else {
-          $pdo->commit();
+      if (self::isMvccRequestActive()) {
+        if ($this->ownActionTransaction) {
+          self::endMvccRequest($rollback);
+        }
+      } else {
+        $pdo = self::getPdo();
+        if ($this->ownActionTransaction && $pdo->inTransaction()) {
+          if ($rollback) {
+            $pdo->rollBack();
+          } else {
+            $pdo->commit();
+          }
         }
       }
       $this->ownActionTransaction = false;
       $this->inAjaxAction = false;
       $this->moveInProgress = false;
+      // Each BGA request runs in a fresh PHP process. Let the game reset any per-request
+      // state (e.g. the table lock flag of Tichu::acquireGameLock()).
+      if (method_exists($this, 'onRequestEnd')) {
+        $this->onRequestEnd();
+      }
     }
 
     public function rollbackPlayerAction(): void
@@ -1538,14 +1738,20 @@ namespace Bga\GameFramework {
 
     public function getMoveId(): int
     {
-      $val = self::getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id = 3");
+      // Current read (FOR UPDATE): in MVCC mode a snapshot read could hand out a stale move id.
+      $val = self::getUniqueValueFromDB(
+        "SELECT global_value FROM global WHERE global_id = 3" .
+          (self::isMvccRequestActive() ? " FOR UPDATE" : "")
+      );
       return $val !== null ? (int) $val : 1;
     }
 
     public function incrementMoveId(): int
     {
       $next = $this->getMoveId() + 1;
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (3, $next)");
+      self::frameworkWrite(function () use ($next) {
+        self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (3, $next)");
+      });
       return $next;
     }
 
