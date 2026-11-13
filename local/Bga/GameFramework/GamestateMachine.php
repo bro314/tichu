@@ -46,8 +46,11 @@ class GamestateMachine extends Old\APP_DbObject
 
         if (count($this->states) == 0) {
             // Load state machine from a game configuration file
-            if (file_exists(APP_GAMES_PATH . $game . '/current/states.inc.php')) {
-                require APP_GAMES_PATH . $game . '/current/states.inc.php';
+            $statesFile = file_exists(APP_GAMES_PATH . $game . '/current/states.inc.php')
+                ? APP_GAMES_PATH . $game . '/current/states.inc.php'
+                : APP_GAMEMODULE_PATH . '/states.inc.php';
+            if (file_exists($statesFile)) {
+                require $statesFile;
                 foreach ($machinestates as $stateId => $machinestate) {
                     $this->states[$stateId] = gettype($machinestate) === 'array' ?
                         GameState::fromArray($machinestate) : // state described as array
@@ -186,11 +189,19 @@ class GamestateMachine extends Old\APP_DbObject
      * @return array the current state information
      */
     public function state(
-        /*bool*/ $bSkipStateArgs = false,
+        /*bool|int|null*/ $bSkipStateArgs = false,
         /*bool*/ $bOnlyVariableContent = false,
         /*bool*/ $bSkipReflexionTimeLoad = false,
     ) {
         /*: ?array*/
+        $viewerPlayerId = null;
+        if (is_int($bSkipStateArgs) && $bSkipStateArgs > 1) {
+            $viewerPlayerId = $bSkipStateArgs;
+            $bSkipStateArgs = false;
+        } else {
+            $bSkipStateArgs = (bool) $bSkipStateArgs;
+        }
+
         if ($this->currentStateId) {
             $currentState = $this->getCurrentMainState();
             if ($currentState === null) {
@@ -198,15 +209,29 @@ class GamestateMachine extends Old\APP_DbObject
             }
 
             $gamestate = $currentState->toArray();
-            $gamestate['active_player'] = $this->active_player;
+            $gamestate['id'] = (string) $this->currentStateId;
+            $gamestate['active_player'] = (string) $this->active_player;
 
             if ($bSkipStateArgs) {
                 $gamestate['args'] = null;
             } else {
+                if (!$this->lock_state_args && $this->nested_jumptostate === 0) {
+                    $this->state_args = null;
+                }
                 if ($this->state_args == null) {
                     self::loadStateArgs();
                 }
                 $gamestate['args'] = $this->state_args;
+                if ($viewerPlayerId !== null && isset($gamestate['args']['_private']) && is_array($gamestate['args']['_private'])) {
+                    $privateForViewer =
+                        $gamestate['args']['_private'][$viewerPlayerId]
+                        ?? $gamestate['args']['_private'][(string) $viewerPlayerId]
+                        ?? null;
+                    if ($privateForViewer === null && isset($gamestate['args']['_private']['active']) && $this->isPlayerActive($viewerPlayerId)) {
+                        $privateForViewer = $gamestate['args']['_private']['active'];
+                    }
+                    $gamestate['args']['_private'] = $privateForViewer;
+                }
             }
 
             if ($bSkipReflexionTimeLoad) {
@@ -220,7 +245,7 @@ class GamestateMachine extends Old\APP_DbObject
             $gamestate['reflexion'] = $this->reflexion_time;
 
             if ($currentState->type === StateType::MULTIPLE_ACTIVE_PLAYER) {
-                if ($this->multiple_active == null) {
+                if ($this->multiple_active == null || $this->nested_jumptostate === 0) {
                     self::loadMultipleActive(false);
                 }
 
@@ -242,7 +267,13 @@ class GamestateMachine extends Old\APP_DbObject
             if ($bOnlyVariableContent) {
                 // Return only variable content
                 $res = [
-                    'id' => $this->currentStateId,
+                    'id' => (string) $this->currentStateId,
+                    'name' => $gamestate['name'],
+                    'type' => $gamestate['type'],
+                    'description' => $gamestate['description'],
+                    'descriptionmyturn' => $gamestate['descriptionmyturn'],
+                    'possibleactions' => $gamestate['possibleactions'] ?? [],
+                    'transitions' => $gamestate['transitions'] ?? [],
                     'active_player' => $gamestate['active_player'],
                     'args' => $gamestate['args'],
                     'reflexion' => $gamestate['reflexion'],
@@ -294,13 +325,11 @@ class GamestateMachine extends Old\APP_DbObject
                 $this->trace("This is not turn of player ".$g_user->get_id()." (this is turn of player {$activePlayerId})");
                 if ($bThrowException) {
                     if ($g_user->is_visitor()) {
-                        throw new \feException(
+                        throw new UserException(
                             clienttranslate('You are disconnected from Board Game Arena, please login'),
-                            true,
-                            true,
                         );
                     } else {
-                        throw new \feException(clienttranslate('This is not your turn'), true, true, \FEX_this_is_not_your_turn);
+                        throw new UserException(clienttranslate('This is not your turn'));
                     }
                 } else {
                     return false;
@@ -324,13 +353,11 @@ class GamestateMachine extends Old\APP_DbObject
             if (!$row) {
                 if ($bThrowException) {
                     if ($g_user->is_visitor()) {
-                        throw new \feException(
+                        throw new UserException(
                             clienttranslate('You are disconnected from Board Game Arena, please login'),
-                            true,
-                            true,
                         );
                     } else {
-                        throw new \feException(clienttranslate('This is not your turn'), true, true, \FEX_this_is_not_your_turn);
+                        throw new UserException(clienttranslate('This is not your turn'));
                     }
                 } else {
                     return false;
@@ -346,14 +373,14 @@ class GamestateMachine extends Old\APP_DbObject
                         ')',
                 );
                 if ($bThrowException) {
-                    throw new \feException(clienttranslate('This is not your turn'), true, true, \FEX_this_is_not_your_turn);
+                    throw new UserException(clienttranslate('This is not your turn'));
                 } else {
                     return false;
                 }
             }
         } else {
             if ($bThrowException) {
-                throw new \feException('Game state type does not allow player actions '.$currentState->type->value);
+                throw new UserException('Game state type does not allow player actions '.$currentState->type->value);
             } else {
                 return false;
             }
@@ -387,11 +414,8 @@ class GamestateMachine extends Old\APP_DbObject
 
         $this->trace("Game action impossible: {$action_name} for state {$currentState->name}");
         if ($bThrowException) {
-            throw new \feException(
+            throw new UserException(
                 clienttranslate('This game action is impossible right now'),
-                true,
-                true,
-                \FEX_game_action_no_allowed,
             );
         } else {
             return false;
@@ -502,7 +526,12 @@ class GamestateMachine extends Old\APP_DbObject
 
         // Removing unnecessary informations from game state (to save space in network/BDD)
         $state_light = [
-            'id' => $this->currentStateId,
+            'id' => (string) $this->currentStateId,
+            'name' => $state['name'] ?? '',
+            'description' => $state['description'] ?? '',
+            'descriptionmyturn' => $state['descriptionmyturn'] ?? '',
+            'possibleactions' => $state['possibleactions'] ?? [],
+            'transitions' => $state['transitions'] ?? [],
             'active_player' => $state['active_player'],
             'args' => $state['args'],
             'type' => $state['type'], // Note: type is mandatory to update turn based counters on MS
@@ -585,6 +614,10 @@ class GamestateMachine extends Old\APP_DbObject
                     }
                 } else {
                     $this->o_game->checkZombieTurn();
+                }
+
+                if (!$this->o_game->inPlayerAction && !$this->bGameCreationRequest) {
+                    $this->o_game->sendNotifications();
                 }
             }
         }
@@ -782,7 +815,7 @@ class GamestateMachine extends Old\APP_DbObject
             throw new \feException('Try to active a player that is not part of the game: ' . $player_id);
         }
 
-        $this->active_player = $player_id;
+        $this->active_player = (string) $player_id;
         $this->o_tableinfos->setGlobal(GAMESTATE_ACTIVE_PLAYER, $player_id);
 
         $this->o_tableinfos->incGlobal(GAMESTATE_PLAYERTURN_NBR, 1);
@@ -1167,7 +1200,7 @@ class GamestateMachine extends Old\APP_DbObject
      */
     private function deltaBetweenTimestamp(int $start, int $end, int $night_profile): int
     {
-        return (new \Bga\GameFramework\Utils\PlayingHours())->elapsedSeconds($start, $end, $night_profile);
+        return max(0, $end - $start);
     }
 
     /**
@@ -1180,7 +1213,7 @@ class GamestateMachine extends Old\APP_DbObject
      */
     private function addTimeDeltaToTimestamp(int $start, ?int $diff, int $night_profile): int
     {
-        return (new \Bga\GameFramework\Utils\PlayingHours())->addSeconds($start, $diff, $night_profile);
+        return $start + (int) $diff;
     }
 
     /**
@@ -2198,5 +2231,20 @@ class GamestateMachine extends Old\APP_DbObject
             }
         }
         return null;
+    }
+
+    public function getTransitionDepth(): int
+    {
+        return $this->nested_jumptostate;
+    }
+
+    public function getStateId(): int
+    {
+        return (int) $this->currentStateId;
+    }
+
+    public function getAllStatesForClient(): array
+    {
+        return $this->getStatesAsArray();
     }
 }

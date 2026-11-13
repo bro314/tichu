@@ -3,12 +3,6 @@
 
 namespace Bga\GameFramework;
 
-use Bga\GameFramework\GameResult\Outcome;
-use Bga\GameFramework\GameResult\AbandonReason;
-use Bga\GameFramework\GameResult\GameResult;
-use Bga\GameFramework\GameResult\Player;
-use Bga\Notification\FirebaseNotificationChannel;
-use \ebgWebPush;
 use \Locale;
 use Bga\GameFramework\Actions\Types\JsonParam;
 
@@ -35,7 +29,7 @@ abstract class Table extends Old\APP_GameClass
     public ?\Bga\GameFramework\GamestateMachine $gamestate = null;
     var ?TableInfos $o_tableinfos = null;
     var $bGameAbandonForced = false;
-    private ?GameResult $gameResult = null;
+    private mixed $gameResult = null;
     /**
      *  Possible values :
      *  'synchro_error_corrupted' => For technical reasons your table has been terminated. We apologize for the inconvenience and appreciate your understanding.
@@ -125,9 +119,6 @@ abstract class Table extends Old\APP_GameClass
     public \Bga\GameFramework\TableStats $tableStats;
     public \Bga\GameFramework\PlayerStats $playerStats;
     public \Bga\GameFramework\Components\DeckFactory $deckFactory;
-    public \Bga\GameFramework\Components\Counters\CounterFactory $counterFactory;
-    public \Bga\GameFramework\Components\Counters\PlayerCounter $playerScore;
-    public \Bga\GameFramework\Components\Counters\PlayerCounter $playerScoreAux;
     public \Bga\GameFramework\Debug $debug;
 
     /**
@@ -167,48 +158,7 @@ abstract class Table extends Old\APP_GameClass
      * Run game code, setting the Sentry context and activating exceptionOnWarning if set in gameinfos.
      */
     final public static function runGameCode(string $gameName, $function) {
-        global $bgaContainer;
-
-        // make sure the autoloader for `\Bga\Games\...` will only allow to load classes for $gameName
-        return BgaGameAutoloader::runWithGameRestriction(
-            $gameName,
-            function () use ($bgaContainer, $function, $gameName) {
-                $exceptionOnWarning = false;
-                $sentry = null;
-                try {
-                    $sentry = $bgaContainer->get(\Bga\Services\Sentry::class);
-                    $sentry->setGameContext($gameName);
-
-                    $exceptionOnWarning = $bgaContainer->get(\Bga\Tables\GameInfosManager::class)->getExceptionOnWarning($gameName);
-                    if ($exceptionOnWarning) {
-                        set_error_handler(
-                            static function (int $severity, string $message, string $file, int $line): bool {
-                                if (($severity & (E_WARNING | E_USER_WARNING)) === 0) {
-                                    return false;
-                                }
-
-                                throw new \ErrorException($message, 0, $severity, $file, $line);
-                            }
-                        );
-                    }
-
-                    try {
-                        return $function();
-                    } catch (\Throwable $exception) {
-                        $bgaContainer->get(\Bga\Services\Sentry::class)->rememberGameException($exception, $gameName);
-                        throw $exception;
-                    }
-
-                } finally {
-                    if ($exceptionOnWarning) {
-                        restore_error_handler();
-                    }
-                    if ($sentry !== null) {
-                        $sentry->unsetGameContext();
-                    }
-                }
-            }
-        );
+        return $function();
     }
 
     /**
@@ -298,6 +248,8 @@ abstract class Table extends Old\APP_GameClass
             require APP_GAMES_PATH . $this->getGameName() . '/current/material.inc.php';
         } elseif (file_exists(APP_GAMEMODULE_PATH . 'module/' . $this->getGameName() . '/material.inc.php')) {
             require APP_GAMEMODULE_PATH . 'module/' . $this->getGameName() . '/material.inc.php';
+        } elseif (file_exists(APP_GAMEMODULE_PATH . '/material.inc.php')) {
+            require APP_GAMEMODULE_PATH . '/material.inc.php';
         }
 
         $this->bga = new \Bga\GameFramework\Bga(
@@ -312,11 +264,7 @@ abstract class Table extends Old\APP_GameClass
         $this->tableStats = $this->bga->tableStats;
         $this->playerStats = $this->bga->playerStats;
         $this->deckFactory = $this->bga->deckFactory;
-        $this->counterFactory = $this->bga->counterFactory;
         $this->debug = $this->bga->debug;
-        
-        $this->playerScore = $this->bga->playerScore;
-        $this->playerScoreAux = $this->bga->playerScoreAux;
 
         // Ensure framework globals are always available, even if the game never calls initGameStateLabels().
         $this->initGameStateLabels();
@@ -771,6 +719,7 @@ abstract class Table extends Old\APP_GameClass
 
         // Then, send notifications created during the startup process
         self::sendNotifications();
+        $this->gamestate->bGameCreationRequest = false;
     }
 
     private function getInitialStateId(mixed $setupResult): int|null {
@@ -1322,6 +1271,17 @@ abstract class Table extends Old\APP_GameClass
         $this->gamestate_labels['is_tournament'] = GAMESTATE_IS_TOURNAMENT;
 
         $this->gamestate_labels['lock_screen_timestamp'] = GAMESTATE_LOCK_TIMESTAMP;
+
+        if (!empty($labels) && $this->table_id === null) {
+            self::ensureLocalSchemaInitialized(false);
+            $this->table_id = 1;
+            $this->gamename = $this->getGameName();
+            $this->gameid = 1237;
+            $this->o_tableinfos = new TableInfos();
+            $this->o_tableinfos->setTable(1);
+            $this->gamestate = new GamestateMachine();
+            $this->gamestate->loadStateMachine($this, $this->gamename, 1);
+        }
     }
 
     /**
@@ -2021,13 +1981,6 @@ abstract class Table extends Old\APP_GameClass
         try {
             self::trace('checkZombieTurn');
 
-            // Protection against infinite loop (could happend in some cases)
-            $this->nbrZombieTurnCycle++;
-            $maximumZombieTurns = $this->bga->debug->isExecutingDebugAction() ? 10000 : 100;
-            if ($this->nbrZombieTurnCycle > $maximumZombieTurns) {
-                throw new \feException('Zombie infinite loop');
-            }
-
             $state = $this->gamestate->state();
             $active_player_list = $this->gamestate->getActivePlayerList();
 
@@ -2038,6 +1991,12 @@ abstract class Table extends Old\APP_GameClass
                         $players[$active_player]['player_zombie'] == 1 ||
                         $players[$active_player]['player_eliminated'] == 1
                     ) {
+                        // Protection against infinite loop (could happend in some cases)
+                        $this->nbrZombieTurnCycle++;
+                        $maximumZombieTurns = $this->bga->debug->isExecutingDebugAction() ? 10000 : 100;
+                        if ($this->nbrZombieTurnCycle > $maximumZombieTurns) {
+                            throw new \feException('Zombie infinite loop');
+                        }
                         self::trace('Zombie turn, player ' . $active_player);
 
                         global $g_user;
@@ -3238,168 +3197,16 @@ abstract class Table extends Old\APP_GameClass
     }
 
     private function setDefaultGameResultToIndividualRanking(): void {
-        $this->gameResult = GameResult::individualRanking(null);
+        $this->gameResult = null;
     }
-    
-    public function bgaSetGameResult(\Bga\GameFramework\GameResult\GameResult $gameResult) {
+
+    public function bgaSetGameResult(mixed $gameResult) {
         $this->gameResult = $gameResult;
-    } 
-
-    private function completeGameResult() {
-        $playersDb = $this->getCollectionFromDb("SELECT
-                `player_id`, `player_name`, `player_color`, `player_score`, `player_score_aux`, `player_zombie` `zombie`
-            FROM `player`");
-        $playersById = [];
-        foreach ($playersDb as $playerDb) {
-            $playersById[(int)$playerDb['player_id']] = Player::fromPlayerDb($playerDb);
-        }
-        $teams = $this->gameResult->getAllTeams();
-        $namedPlayerIds = [];
-        $teamsWithMissingPlayers = [];
-        foreach ($teams as $team) {
-            if ($team->players === null || in_array(null, $team->players, true)) {
-                $teamsWithMissingPlayers[] = $team;
-            }
-            foreach ($team->players ?? [] as $player) {
-                if ($player !== null) {
-                    $playerId = $player instanceof Player ? $player->id : $player;
-                    $namedPlayerIds[$playerId] = true;
-                }
-            }
-        }
-        if (count($teamsWithMissingPlayers) > 1) {
-            throw new \BgaSystemException('Missing players cannot be assigned to multiple teams');
-        }
-
-        $unnamedPlayers = array_values(array_diff_key($playersById, $namedPlayerIds));
-        foreach ($teams as $team) {
-            if ($team->players === null) {
-                $team->players = $unnamedPlayers;
-                continue;
-            }
-
-            $missingPlayerCount = count(array_filter($team->players, static fn($player): bool => $player === null));
-            if ($missingPlayerCount > 0 && $missingPlayerCount !== count($unnamedPlayers)) {
-                throw new \BgaSystemException('Missing player count does not match unnamed table players');
-            }
-            foreach ($team->players as &$player) {
-                if ($player === null) {
-                    $player = array_shift($unnamedPlayers);
-                } elseif (is_int($player)) {
-                    $player = $playersById[$player] ?? throw new \BgaSystemException("Player $player not found");
-                }
-            }
-            unset($player);
-        }
-        $this->gameResult->rankResolvedIndividualPlayers($playersById);
-
-        $conceders = array_values(array_filter($playersDb, fn($playerDb) => intval($playerDb['zombie']) < 0));
-        $leavers = array_values(array_filter($playersDb, fn($player) => intval($player['zombie']) > 0));
-        $gameResultNeutralized = intval($this->getGameStateValue('game_result_neutralized'));
-        if ($gameResultNeutralized > 0) {
-            $neutralizedPlayerId = (int)self::getGameStateValue('neutralized_player_id');
-            $leavers = array_values(array_filter($playersDb, fn($player) => intval($player['player_id']) == $neutralizedPlayerId));
-            $this->gameResult->neutralizedProgression = $gameResultNeutralized;
-        }
-
-        if (count($conceders) > 0) {
-            $concederPlayerIds = array_map(fn($playerDb) => intval($playerDb['player_id']), $conceders);
-            $concederTeamIndexes = array_map(fn($playerId) => array_find_key($this->gameResult->rankedTeams, fn($team) => array_any($team->players, fn($player) => $player->id === $playerId)), $concederPlayerIds);
-            if (array_any($concederTeamIndexes, fn($teamIndex) => $teamIndex === null)) {
-                throw new \BgaSystemException('Conceder team not found');
-            }
-            if (count(array_unique($concederTeamIndexes)) > 1) {
-                throw new \BgaSystemException('Multiple conceder team found');
-            }
-            $this->gameResult->outcome = Outcome::CONCEDE;
-            $concederTeamIndex = $concederTeamIndexes[0];
-            $concederTeam = $this->gameResult->rankedTeams[$concederTeamIndex];
-            $otherTeams = array_filter($this->gameResult->rankedTeams, fn($team) => $team !== $concederTeam);
-            $concederTeam->rank = empty($otherTeams) ? 1 : (max(array_map(fn($team) => $team->rank, $otherTeams)) + 1);
-            $concederTeam->conceded = true;
-        }
-
-        $keepRankingOnPlayerQuit = boolval($this->getGameStateValue('keep_ranking_on_quit'));        
-        $this->gameResult->neutralizedPlayerIds = array_map(fn($player) => (int)$player['player_id'], $leavers);
-
-        if (count($leavers) > 0) {
-            if (!$keepRankingOnPlayerQuit) {
-                $this->gameResult->outcome = Outcome::NEUTRALIZED;
-            }
-
-            $leaverPlayerIds = array_map(fn($playerDb) => intval($playerDb['player_id']), $leavers);
-            $teamsWithLeavers = [];
-            $teamsWithoutLeavers = [];
-
-            foreach ($this->gameResult->rankedTeams as &$team) {
-                $teamHasLeaver = array_any($team->players, fn($player) => in_array($player->id, $leaverPlayerIds));
-                if ($teamHasLeaver) {
-                    $teamsWithLeavers[] = $team;
-                } else {
-                    $teamsWithoutLeavers[] = $team;
-                }
-            }
-            unset($team);
-
-            if (!$keepRankingOnPlayerQuit) {
-                foreach ($teamsWithoutLeavers as &$team) {
-                    $team->score = 1;
-                    $team->scoreAux = 0;
-                    $team->rank = 1;
-
-                    foreach ($team->players as &$player) {
-                        $player->score = 1;
-                        $player->scoreAux = 0;
-                    }
-                }
-                unset($team);
-            }
-
-            $worstRank = empty($teamsWithoutLeavers)
-                ? 1
-                : max(array_map(fn($team) => $team->rank ?? 0, $teamsWithoutLeavers)) + 1;
-            foreach ($teamsWithLeavers as &$team) {
-                $team->score = 0;
-                $team->scoreAux = 0;
-                $team->rank = $worstRank;
-
-                foreach ($team->players as &$player) {
-                    $player->score = 0;
-                    $player->scoreAux = 0;
-                }
-                unset($player);
-            }
-            unset($team);
-        }
-
-        if ($this->bGameAbandonByTournamentTimeout) {
-            $this->gameResult->abandonReason = AbandonReason::ABANDON_BY_TOURNAMENT_TIMEOUT;
-        } else if (isset($this->GameAbandonReason)) {
-            $this->gameResult->abandonReason = AbandonReason::from($this->GameAbandonReason);
-        }
-        if ($this->gameResult->abandonReason !== null) {
-            $this->gameResult->outcome = Outcome::ABANDON;
-        }
     }
 
-    /**
-     * Check if the GameResult is valid.
-     * 
-     * @throws SystemException
-     */
-    private function checkGameResultValidity() {
-        foreach ($this->gameResult->rankedTeams as $team) {
-            if ($team->conceded) {
-                continue;
-            }
-            if (empty($team->players)) {
-                throw new SystemException('Team must have at least one player');
-            }
-            if ($team->rank < 0 || ($team->rank > 100 && !in_array($team->rank, [GameResult::$FORCED_WIN, GameResult::$FORCED_LOSS]))) {
-                throw new SystemException('Team rank must be positive and no more than 100');
-            }
-        }
-    }
+    private function completeGameResult() {}
+
+    private function checkGameResultValidity() {}
 
     /**
      * Notify all players about concede.
@@ -3443,252 +3250,8 @@ abstract class Table extends Old\APP_GameClass
         }
 
         $this->setReflexionTimeStandardDeviation();
-
-        global $g_config, $g_trace;
-
-        // if the game doesn't define a GameResult, consider the game is individual ranking
-        if ($this->gameResult === null) {
-            $this->setDefaultGameResultToIndividualRanking();
-        }
-        // update the game result based on conceders/leavers
-        $this->completeGameResult();
-        $this->checkGameResultValidity();
-
-        // call the onConcede callback if defined in the Game class
-        $concederTeam = array_find($this->gameResult->rankedTeams, static fn($team) => $team->conceded);
-        if ($concederTeam !== null) {
-            $functionName = 'onConcede';
-
-            $reflection = new \ReflectionClass($this);
-            if ($reflection->hasMethod($functionName)) {
-                try {
-                    \Bga\GameFramework\Table::runGameCode($this->getGameName(), fn() => $this->$functionName($concederTeam));
-                } catch (\Throwable $e) {
-                    // no matter when happens, we don't want the callback to prevent the end of the game if it throws an exception
-                    $g_trace->log(\Monolog\Level::Error, "error during $functionName: ".$e->getMessage());
-                }
-            }
-        }
-
         $this->notify->all('simpleNode', clienttranslate('End of game'), []);
-
-        $stats_types = $this->getStatTypes();
-        $statsDb = $this->getObjectListFromDb('SELECT `stats_type`, `stats_player_id`, `stats_value` FROM `stats`');
-        $stats = [
-            'table' => $this->getTableStatsForGameResult($stats_types, $statsDb),
-            'players' => $this->getPlayersStatsForGameResult($stats_types, $statsDb),
-        ];
-
-        // Write this result on GS central database
         $this->bGameResultSendToMS = true;
-        $this->recordTableResult($this->gameResult, $stats);
-
-        // Note: we do not have to trigger checkActivePlayersChange this turn because:
-        // _ it cause GS => MS request
-        // _ it will come AFTER the gameResult, so after the game has ended => there is no use for this, and it causes some deadlocks on MS during gameResult => disable it
-        $this->bDoNotTriggercheckActivePlayersChange = true;
-
-        if (
-            (isset($g_config['webpush_enabled']) && $g_config['webpush_enabled']) ||
-            (isset($g_config['androidpush_enabled']) && $g_config['androidpush_enabled'])
-        ) {
-            // Web push notification for the end of the game
-            $o_webpush = new ebgWebPush();
-            $o_androidpush = new FirebaseNotificationChannel();
-
-            // Get gameserver number
-            $fragmented_domain = explode('.', $g_config['app_domain']);
-            $gameserver = array_shift($fragmented_domain);
-
-            // Get current locale to restore it later
-            $locale_to_restore = Locale::GetLocalization();
-
-            // Get players infos
-            $players_infos = apcu_fetch('players_infos_table_' . $this->table_id); // Can come from createGame or from a previous call to getGenericGameinfos // APCUREF:keep, only on game server
-
-            if ($players_infos === false) {
-                $players = $this->loadPlayersBasicInfos();
-
-                $gamePageInfos = self::masterNodeRequest('getGenericGameinfos', [
-                    'table_id' => $this->table_id,
-                    'player_ids' => array_keys($players),
-                    'playersInfosOnly' => true,
-                ]);
-
-                // Cache players infos
-                apcu_store('players_infos_table_' . $this->table_id, $gamePageInfos['players'], 24 * 3600); // APCUREF:keep, only on game server
-
-                $players_infos = $gamePageInfos['players'];
-            }
-
-            $table_players = array_keys($players_infos);
-
-            if (count($table_players) > 1) {
-                // No notifications for solo games: the player knows!
-                foreach ($table_players as $table_player_id) {
-                    // Set proper locale for the player to be notified into the correct language
-                    if (isset($players_infos[$table_player_id]['language'])) {
-                        Locale::SetLocalizationFromShortCode($players_infos[$table_player_id]['language']);
-                    }
-
-                    $url = self::getMasterNodeUrl() . '/tableview?table=' . $this->table_id;
-
-                    // Opponents
-                    $against = '';
-                    $first_opponent = '';
-                    foreach ($players_infos as $player_info_id => $player_info) {
-                        if ($player_info_id == $table_player_id) {
-                            continue;
-                        }
-
-                        if ($first_opponent == '') {
-                            $first_opponent = $player_info['player_name'];
-                        } else {
-                            $second_opponent = $player_info['player_name'];
-                            break;
-                        }
-                    }
-                    if (count($players_infos) == 2) {
-                        $against = ' ' . str_replace('${opponent}', $first_opponent, _('(against ${opponent})'));
-                    }
-                    if (count($players_infos) == 3) {
-                        $against =
-                            ' ' .
-                            str_replace(
-                                ['${first_opponent}', '${second_opponent}'],
-                                [$first_opponent, $second_opponent],
-                                _('(against ${first_opponent} and ${second_opponent})')
-                            );
-                    }
-                    if (count($players_infos) > 3) {
-                        $against =
-                            ' ' .
-                            str_replace(
-                                ['${first_opponent}', '${number}'],
-                                [$first_opponent, count($players_infos) - 2],
-                                _('(against ${first_opponent} and ${number} other players)')
-                            );
-                    }
-
-                    // Notify
-                    if (
-                        isset($g_config['webpush_enabled']) &&
-                        $g_config['webpush_enabled'] &&
-                        isset($players_infos[$table_player_id]['browserSubscriptions']) &&
-                        count($players_infos[$table_player_id]['browserSubscriptions']) > 0 &&
-                        $players_infos[$table_player_id]['tableNotifications'] == 1
-                    ) {
-                        $notifContent = [
-                            'title' => _('Game ends!'),
-                            'options' => [
-                                'body' =>
-                                    "\n" .
-                                    str_replace(
-                                        ['${table_id}', '${game_name}'],
-                                        [$this->table_id . $against, _($this->gamename . '_displayed')],
-                                        _('Your "${game_name}" table #${table_id} has ended. Thanks for playing!')
-                                    ) .
-                                    "\n\n",
-                                'tag' => 'bgaTableNotification',
-                                'requireInteraction' =>
-                                    isset($players_infos[$table_player_id]['stickyNotifications']) &&
-                                    $players_infos[$table_player_id]['stickyNotifications'],
-                                'data' => [
-                                    'url' => $url, // Will bring back the user to the appropriate tab or reopen it if needed
-                                    'type' => 'notification-table-end', // Analytics category
-                                ],
-                            ],
-                        ];
-
-                        //NB: this call makes a self::CommitAllAndRestart(); so that the cron webpush process can see the notifications to send
-                        $o_webpush->pushNotificationToBrowsers(
-                            $players_infos[$table_player_id]['browserSubscriptions'],
-                            $notifContent
-                        );
-                    }
-                    if (
-                        isset($g_config['androidpush_enabled']) &&
-                        $g_config['androidpush_enabled'] &&
-                        isset($players_infos[$table_player_id]['androidSubscriptions']) &&
-                        isset($players_infos[$table_player_id]['androidSubscriptions'][$this->gamename]) &&
-                        count($players_infos[$table_player_id]['androidSubscriptions'][$this->gamename]) > 0 &&
-                        isset($g_config['androidpush_authkey_' . $this->gamename])
-                    ) {
-                        $notifContent = [
-                            'notification' => [
-                                'title' => _('Game ends!'),
-                                'body' =>
-                                    "\n" .
-                                    str_replace(
-                                        ['${table_id}', '${game_name}'],
-                                        [$this->table_id . $against, _($this->gamename . '_displayed')],
-                                        _('Your "${game_name}" table #${table_id} has ended. Thanks for playing!')
-                                    ) .
-                                    "\n\n",
-                                'tag' => 'bgaTableNotification',
-                            ],
-                            'data' => [
-                                'url' => $url, // Will bring back the user to the appropriate tab or reopen it if needed
-                                'type' => 'notification-table-end', // Analytics category
-                                'table' => $this->table_id,
-                            ],
-                        ];
-
-                        //NB: this call makes a self::CommitAllAndRestart(); so that the cron androidpush process can see the notifications to send
-                        $o_androidpush->pushNotificationToDevices(
-                            $players_infos[$table_player_id]['androidSubscriptions'][$this->gamename],
-                            $notifContent
-                        );
-                    }
-                }
-            }
-
-            // Restore previous locale
-            Locale::SetLocalization($locale_to_restore);
-        }
-    }
-
-    /**
-     * Save table results on the DB.
-     */
-    private function recordTableResult(GameResult $gameResult, array $stats): void
-    {
-        global $g_config;
-        $playerturn_nbr = $this->getGameStateValue(GAME_GLOBAL_PLAYER_TURN_NUMBER);
-
-        $result = [
-            'gameResult' => $gameResult,
-            'stats' => $stats,
-        ];
-        $json_result = json_encode($result);
-
-        if ($g_config['asynchronous_results_upload']) {
-            $sql =
-                'REPLACE INTO `' .
-                $g_config['gameserver_global_database'] .
-                "`.`results` (`results_table_id`, `results_game_id`, `results_turn_nbr`, `result`, `result_date`)
-                        VALUES
-                        ('" .
-                $this->table_id .
-                "','" .
-                $this->gameid .
-                "','$playerturn_nbr', '" .
-                $this->escapeStringForDB($json_result) .
-                "',NOW())";
-            $this->DbQuery($sql);
-
-            $this->CommitAllAndRestart(); // So the cron GS posting result process can see the result
-            apcu_delete('crongs_nothing_to_check'); // So the cron GS know that there is something to check // APCUREF:keep, to be reworked as another message queue system
-        } else {
-            $this->masterNodeRequest('gameResult', [
-                'result_json' => $json_result,
-                'table_id' => $this->table_id,
-                'game_id' => $this->gameid,
-                'turn_nbr' => $playerturn_nbr,
-            ]);
-
-            $this->notifyNow('/table/t' . $this->table_id, 'resultsAvailable', '', []);
-        }
     }
 
     /**
@@ -3800,6 +3363,13 @@ abstract class Table extends Old\APP_GameClass
 
         $this->notifications[$packet_id][] = $notification;
 
+        if (
+            !$this->inPlayerAction &&
+            ($this->gamestate === null || $this->gamestate->getTransitionDepth() === 0) &&
+            in_array($notification_type, ['autopass', 'confirmTichu'], true)
+        ) {
+            $this->sendNotifications();
+        }
     }
 
     /**
@@ -3935,6 +3505,10 @@ abstract class Table extends Old\APP_GameClass
 
             // Empty notifications
             $this->notifications = [];
+            $this->target_to_notification_packet = [];
+            $this->notification_packet_to_target = [];
+            $this->chatmessage_notification = false;
+            $this->not_a_move_notification = false;
 
             if ($this->undoSaveOnMoveEnd) {
                 $this->doUndoSavePoint();
@@ -5452,16 +5026,392 @@ abstract class Table extends Old\APP_GameClass
         $this->bga->debug->playUntil(fn(int $count) => $count >= $moves);
     }
 
-    final function debug_updateBgaTableCounter(string $name, int $value) {
-        $counter = $this->counterFactory->getRegisteredTableCounters()[$name];
-        $counter->set($value);
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    //// Local Runner Integration Helpers
+
+    public bool $inPlayerAction = false;
+    private static bool $localSchemaEnsured = false;
+
+    public static function ensureLocalSchemaInitialized(bool $clearData = false): void
+    {
+        global $bgaContainer;
+        /** @var \Bga\GameFramework\Old\Db $db */
+        $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+
+        $needsCreate = false;
+        if (!self::$localSchemaEnsured) {
+            $tables = $db->getObjectList("SHOW TABLES LIKE 'card'", true);
+            $cols = empty($tables) ? [] : $db->getObjectList("SHOW COLUMNS FROM `player` LIKE 'player_team'", true);
+            if (empty($tables) || empty($cols)) {
+                $needsCreate = true;
+            } else {
+                self::$localSchemaEnsured = true;
+            }
+        }
+
+        if ($needsCreate) {
+            $stdSchemaFile = dirname(__DIR__, 2) . '/bga-std-schema.sql';
+            $gameSchemaFile = dirname(__DIR__, 3) . '/dbmodel.sql';
+
+            $dropTables = [
+                'global',
+                'player',
+                'stats',
+                'gamelog',
+                'replaysavepoint',
+                'bga_user_preferences',
+                'playermultiactive',
+                'bga_globals',
+                'card',
+                'actionlog',
+            ];
+            foreach ($dropTables as $tbl) {
+                $db->query("DROP TABLE IF EXISTS `$tbl`");
+            }
+
+            foreach ([$stdSchemaFile, $gameSchemaFile] as $file) {
+                $sql = file_get_contents($file);
+                if ($sql === false) {
+                    throw new \RuntimeException("Unable to read schema file: $file");
+                }
+                $cleanSql = preg_replace('!/\*.*?\*/!s', '', $sql) ?? $sql;
+                $cleanSql = preg_replace('/^\s*--.*$/m', '', $cleanSql) ?? $cleanSql;
+                foreach (explode(';', $cleanSql) as $stmt) {
+                    $stmt = trim($stmt);
+                    if ($stmt !== '') {
+                        $db->query($stmt);
+                    }
+                }
+            }
+            self::$localSchemaEnsured = true;
+            return;
+        }
+
+        if ($clearData) {
+            $clearTables = [
+                'global',
+                'player',
+                'stats',
+                'gamelog',
+                'replaysavepoint',
+                'bga_user_preferences',
+                'playermultiactive',
+                'card',
+                'actionlog',
+            ];
+            foreach ($clearTables as $tbl) {
+                $db->query("DELETE FROM `$tbl`");
+            }
+            foreach (['gamelog', 'card', 'actionlog'] as $autoIncTbl) {
+                $db->query("ALTER TABLE `$autoIncTbl` AUTO_INCREMENT = 1");
+            }
+        }
     }
 
-    final function debug_updateBgaPlayerCounter(string $name, #[JsonParam] array $values) {
-        $counter = $this->counterFactory->getRegisteredPlayerCounters()[$name];
-        foreach ($values as $playerId => $value) {
-            $playerIdOrNo = $counter->isUseNo() ? $this->getPlayerNoById($playerId) : $playerId;
-            $counter->set($playerIdOrNo, $value);
+    public function setCurrentPlayerId(int $playerId): void
+    {
+        global $g_user;
+        $g_user->id = $playerId;
+        $g_user->isSpectator = false;
+    }
+
+    public function setSpectatorMode(bool $isSpectator): void
+    {
+        global $g_user;
+        $g_user->isSpectator = $isSpectator;
+    }
+
+    public function beginPlayerAction(): void
+    {
+        if (!empty($this->notifications)) {
+            $this->sendNotifications();
         }
+        $this->nbrZombieTurnCycle = 0;
+        global $bgaContainer;
+        /** @var \Bga\GameFramework\Old\Db $db */
+        $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+
+        $db->query("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
+        $db->query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
+        $this->inPlayerAction = true;
+
+        TableInfos::$tables_infos = [];
+        $this->players = [];
+        if ($this->o_tableinfos !== null) {
+            $this->o_tableinfos->reload();
+        }
+        if ($this->gamestate !== null) {
+            $this->gamestate->loadStateMachine($this, $this->gamename, (int) ($this->table_id ?? 1));
+        }
+    }
+
+    public function endPlayerAction(bool $rollback = false): void
+    {
+        global $bgaContainer;
+        /** @var \Bga\GameFramework\Old\Db $db */
+        $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+
+        try {
+            if ($rollback) {
+                $this->notifications = [];
+                $this->target_to_notification_packet = [];
+                $this->notification_packet_to_target = [];
+                $this->chatmessage_notification = false;
+                $this->not_a_move_notification = false;
+                $db->rollback();
+            } else {
+                if (!empty($this->notifications)) {
+                    $this->sendNotifications();
+                }
+                $db->commit();
+            }
+        } finally {
+            $this->inPlayerAction = false;
+            try {
+                $db->query('DO RELEASE_ALL_LOCKS()');
+            } catch (\Throwable $e) {
+            }
+            if (method_exists($this, 'onRequestEnd')) {
+                $this->onRequestEnd();
+            }
+        }
+    }
+
+    public function rollbackPlayerAction(): void
+    {
+        $this->endPlayerAction(true);
+    }
+
+    public function createNewGame(array $options = [], ?array $customPlayers = null): void
+    {
+        if ($this->inPlayerAction) {
+            $this->endPlayerAction(true);
+        }
+
+        self::ensureLocalSchemaInitialized(true);
+
+        TableInfos::$tables_infos = [];
+        $this->players = [];
+        $this->notifications = [];
+        $this->target_to_notification_packet = [];
+        $this->notification_packet_to_target = [];
+        $this->chatmessage_notification = false;
+        $this->not_a_move_notification = false;
+        if (method_exists($this, 'onRequestEnd')) {
+            $this->onRequestEnd();
+        }
+
+        $gameLength = (int) ($options[100] ?? $options['gameLength'] ?? 2);
+        $playerTeams = (int) ($options[101] ?? $options['playerTeams'] ?? 1);
+        $gameVariant = (int) ($options[102] ?? $options['gameVariant'] ?? 1);
+        $turnBased = !empty($options['turnBased']) || ((int) ($options[200] ?? 0) >= 10);
+
+        $globalOptions = [
+            8 => 300,
+            9 => 30,
+            100 => $gameLength,
+            101 => $playerTeams,
+            102 => $gameVariant,
+            200 => $turnBased ? 20 : 1,
+            201 => 0,
+            207 => 0,
+        ];
+
+        $players = $customPlayers ?? [
+            2385074 => [
+                'player_name' => 'dashwood0',
+                'player_canal' => 'canal_2385074',
+                'player_avatar' => '000000',
+                'player_table_order' => 1,
+            ],
+            2385075 => [
+                'player_name' => 'dashwood1',
+                'player_canal' => 'canal_2385075',
+                'player_avatar' => '000000',
+                'player_table_order' => 2,
+            ],
+            2385076 => [
+                'player_name' => 'dashwood2',
+                'player_canal' => 'canal_2385076',
+                'player_avatar' => '000000',
+                'player_table_order' => 3,
+            ],
+            2385077 => [
+                'player_name' => 'dashwood3',
+                'player_canal' => 'canal_2385077',
+                'player_avatar' => '000000',
+                'player_table_order' => 4,
+            ],
+        ];
+
+        $idx = 0;
+        foreach ($players as $pId => &$pInfo) {
+            $pInfo['player_id'] = (int) $pId;
+            $pInfo['player_is_admin'] = $pInfo['player_is_admin'] ?? ($idx === 0 ? 1 : 0);
+            $pInfo['player_is_ai'] = $pInfo['player_is_ai'] ?? 0;
+            $pInfo['beginner'] = $pInfo['beginner'] ?? 0;
+            $idx++;
+        }
+        unset($pInfo);
+
+        $this->setCurrentPlayerId((int) array_key_first($players));
+        $this->setTable(1, $this->getGameName(), 1237, true);
+        $this->setupNewGameTable(
+            1237,
+            $players,
+            $globalOptions,
+            false,
+            [],
+            [
+                'keep_ranking_on_quit' => false,
+                'defer_initial_ai_turn' => false,
+            ],
+            [
+                'is_tournament' => false,
+            ]
+        );
+        $this->endPlayerAction(false);
+    }
+
+    public function getMoveId(): int
+    {
+        $val = self::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 3');
+        return $val !== null ? max(1, (int) $val - 1) : 1;
+    }
+
+    public function getFullClientPayload(int $viewerPlayerId): array
+    {
+        if (!empty($this->notifications)) {
+            $this->sendNotifications();
+        }
+
+        global $g_user;
+        if (!$g_user->isSpectator) {
+            $this->setCurrentPlayerId($viewerPlayerId);
+        }
+
+        TableInfos::$tables_infos = [];
+        $this->players = [];
+        if ($this->o_tableinfos !== null) {
+            $this->o_tableinfos->reload();
+        }
+        if ($this->gamestate !== null) {
+            $this->gamestate->loadStateMachine($this, $this->gamename, (int) ($this->table_id ?? 1));
+        }
+
+        $datas = $this->getAllTableDatas();
+        $basic = $this->bgaInternalLoadPlayersBasicInfos();
+        $scores = self::getCollectionFromDB('SELECT player_id, player_score, player_score_aux FROM player');
+
+        foreach ($datas['players'] as $pId => &$pRow) {
+            $bRow = $basic[$pId] ?? [];
+            $sRow = $scores[$pId] ?? [];
+            $pRow['id'] = (int) $pId;
+            $pRow['no'] = (int) ($pRow['no'] ?? $bRow['player_no'] ?? 0);
+            $pRow['name'] = $pRow['name'] ?? $bRow['player_name'] ?? '';
+            $pRow['color'] = $bRow['player_color'] ?? '000000';
+            $pRow['color_back'] = null;
+            $pRow['score'] = (string) ($pRow['score'] ?? $sRow['player_score'] ?? '0');
+            $pRow['score_aux'] = (string) ($sRow['player_score_aux'] ?? '0');
+            $pRow['zombie'] = (int) ($bRow['player_zombie'] ?? 0);
+            $pRow['eliminated'] = (int) ($bRow['player_eliminated'] ?? 0);
+            $pRow['is_ai'] = '0';
+            $pRow['beginner'] = false;
+            $pRow['avatar'] = '000000';
+        }
+        unset($pRow);
+
+        $lastPacketId = (int) (self::getUniqueValueFromDB(
+            'SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog'
+        ) ?? 0);
+
+        $datas['notifications'] = [
+            'last_packet_id' => $lastPacketId,
+            'move_nbr' => $this->getMoveId(),
+        ];
+
+        return $datas;
+    }
+
+    public function getNotificationsSince(
+        int $lastPacketId = 0,
+        ?int $viewerPlayerId = null,
+        bool $allChannels = false
+    ): array {
+        if (!empty($this->notifications)) {
+            $this->sendNotifications();
+        }
+
+        $sql = 'SELECT gamelog_packet_id, gamelog_move_id, gamelog_player, UNIX_TIMESTAMP(gamelog_time) AS created_at, gamelog_notification FROM gamelog WHERE gamelog_packet_id > ' . (int) $lastPacketId;
+        if (!$allChannels && $viewerPlayerId !== null) {
+            $sql .= ' AND (gamelog_player IS NULL OR gamelog_player = ' . (int) $viewerPlayerId . ')';
+        }
+        $sql .= ' ORDER BY gamelog_packet_id ASC';
+
+        $rows = self::getObjectListFromDB($sql);
+        $packets = [];
+        $lastMoveId = '1';
+
+        foreach ($rows as $row) {
+            $packetId = (string) $row['gamelog_packet_id'];
+            if ($row['gamelog_move_id'] !== null) {
+                $lastMoveId = (string) $row['gamelog_move_id'];
+            }
+            $moveId = $row['gamelog_move_id'] !== null ? (string) $row['gamelog_move_id'] : $lastMoveId;
+            $channel = $row['gamelog_player'] === null
+                ? '/table/t' . ($this->table_id ?? 1)
+                : '/player/p' . (int) $row['gamelog_player'];
+            $time = (string) ($row['created_at'] ?? time());
+
+            $notifs = json_decode((string) $row['gamelog_notification'], true);
+            if (!is_array($notifs)) {
+                continue;
+            }
+
+            foreach ($notifs as $notif) {
+                if (!is_array($notif)) {
+                    continue;
+                }
+                $type = (string) ($notif['type'] ?? '');
+                $args = is_array($notif['args'] ?? null) ? $notif['args'] : [];
+
+                if (!$allChannels && $viewerPlayerId !== null && $row['gamelog_player'] === null) {
+                    if (
+                        $type === 'gameStateChange' &&
+                        !empty($args['_notified_privately']) &&
+                        in_array((int) $viewerPlayerId, array_map('intval', (array) $args['_notified_privately']), true)
+                    ) {
+                        continue;
+                    }
+                }
+
+                if ($allChannels && $row['gamelog_player'] !== null && $type === 'gameStateChange') {
+                    continue;
+                }
+
+                unset($args['_notified_privately']);
+                $notif['args'] = $args;
+                if (!isset($notif['h'])) {
+                    $notif['h'] = substr(md5((string) ($notif['uid'] ?? $packetId)), 0, 6);
+                }
+
+                $packets[] = [
+                    'packet_id' => $packetId,
+                    'packet_type' => 'single',
+                    'move_id' => $moveId,
+                    'channel' => $channel,
+                    'table_id' => (int) ($this->table_id ?? 1),
+                    'time' => $time,
+                    'data' => [$notif],
+                ];
+            }
+        }
+
+        return $packets;
+    }
+
+    public function getAllGamelogsForReplay(): array
+    {
+        return $this->getNotificationsSince(0, null, true);
     }
 }

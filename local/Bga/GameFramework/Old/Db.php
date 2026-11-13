@@ -89,6 +89,7 @@ class Db
             $g_config['db_password'],
             null,
             $g_config['db_port'] ?? null,
+            $g_config['db_socket'] ?? null,
         );
 
         if ($this->db->connect_error) {
@@ -166,13 +167,24 @@ class Db
         }
 
         // max 10s PHP (Note: this is each job responsibility to increase this if not enough)
-        set_time_limit($maxExecutionTimePhp ?: 10);
+        if (PHP_SAPI !== 'cli') {
+            set_time_limit($maxExecutionTimePhp ?: 10);
+        }
 
         if ($maxExecutionTime !== null) {
             $sessionVars[] = 'max_execution_time = ' . ((int) $maxExecutionTime) * 1000;
         }
 
         $this->query('SET SESSION ' . join(', ', $sessionVars));
+        $this->query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    }
+
+    public function disconnect(): void
+    {
+        if ($this->db) {
+            @$this->db->close();
+            $this->db = null;
+        }
     }
 
     /**
@@ -226,6 +238,12 @@ class Db
         global $g_trace;
 
         $this->traceTimeStart();
+
+        if (getenv('TICHU_DB_IGNORE_LOCKS') === '1') {
+            $sql = preg_replace('/\bGET_LOCK\s*\([^)]*\)/i', '1', $sql);
+            $sql = preg_replace('/\s+FOR\s+UPDATE(\s+NOWAIT|\s+SKIP\s+LOCKED)?/i', '', $sql);
+            $sql = preg_replace('/\s+LOCK\s+IN\s+SHARE\s+MODE/i', '', $sql);
+        }
 
         $db = $this->connect();
 

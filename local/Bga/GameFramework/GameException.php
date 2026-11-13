@@ -6,7 +6,7 @@ namespace Bga\GameFramework;
 /**
  * Base exception shared by exceptions triggered by games.
  */
-abstract class GameException extends \Exception
+abstract class GameException extends \feException
 {
     /**
      * Parameters to format the message.
@@ -20,9 +20,14 @@ abstract class GameException extends \Exception
      * @param bool                       $expected   if the exception is expected, we don't log them.
      * @param bool                       $visibility if the exception message should be visible to players.
      */
-    public function __construct(string|NotificationMessage $message, public bool $expected = false, private bool $visibility = true)
+    public function __construct(string|NotificationMessage $message, bool $expected = false, bool $visibility = true)
     {
-        parent::__construct($message instanceof NotificationMessage ? $message->message : $message, FEX_NOCODE);
+        parent::__construct(
+            $message instanceof NotificationMessage ? $message->message : $message,
+            $expected,
+            $visibility,
+            FEX_NOCODE
+        );
         if ($message instanceof NotificationMessage) {
             $this->args = $message->args;
         }

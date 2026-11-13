@@ -87,15 +87,12 @@ ob_end_clean();
 
 $game = new \Tichu();
 
-// Auto-initialize SQLite database if missing or empty
-$dbPath = \APP_DbObject::getDbPath();
-$needsInit = $dbPath !== ':memory:' && !file_exists($dbPath);
-if (!$needsInit) {
-  try {
-    $needsInit = $game->getPlayersNumber() === 0;
-  } catch (\Throwable $e) {
-    $needsInit = true;
-  }
+// Auto-initialize MySQL database if missing or empty
+$needsInit = false;
+try {
+  $needsInit = $game->getPlayersNumber() === 0;
+} catch (\Throwable $e) {
+  $needsInit = true;
 }
 if ($needsInit) {
   $game->createNewGame();
@@ -181,13 +178,13 @@ if (!function_exists('buildDevBarPlayers')) {
 }
 
 /**
- * Helper: Get current max packet_id from notifications table.
+ * Helper: Get current max gamelog_packet_id from gamelog table.
  */
 if (!function_exists('getCurrentMaxPacketId')) {
   function getCurrentMaxPacketId(): int
   {
     return (int) (\APP_DbObject::getUniqueValueFromDB(
-      'SELECT IFNULL(MAX(packet_id), 0) FROM notifications'
+      'SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog'
     ) ?? 0);
   }
 }

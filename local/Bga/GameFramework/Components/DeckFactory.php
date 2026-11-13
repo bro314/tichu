@@ -24,9 +24,6 @@ final class DeckFactory {
      * @return Deck a new Deck object
      */
     public function createDeck(string $tableName): Deck {
-        // needed because the Deck inherits fake \Deck for compatibility issue
-        require_once(APP_BASE_PATH.'game/module/common/deck.game.php');
-
         $deck = new Deck();
         $deck->init($tableName);
         return $deck;

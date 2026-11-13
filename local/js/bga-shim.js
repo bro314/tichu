@@ -2606,6 +2606,8 @@
         this.onLeavingState(prevState.name);
       }
 
+      const stateDef = (this.gamedatas.gamestates && this.gamedatas.gamestates[newState.id]) || {};
+      newState = Object.assign({}, stateDef, newState);
       this.gamedatas.gamestate = newState;
 
       const isEnded = Number(newState.id) === 99 || newState.name === "gameEnd";

@@ -20,9 +20,6 @@ abstract class APP_GameClass extends APP_DbObject {
    */
   protected final function getNew($objectName) {
     if ($objectName === "module.common.deck") {
-      // needed because the Deck inherits fake \Deck for compatibility issue
-      require_once(APP_BASE_PATH.'game/module/common/deck.game.php');
-
       return new \Bga\GameFramework\Components\Deck();
     }
     throw new \BgaSystemException("Unknown game module (getNew): ".$objectName);

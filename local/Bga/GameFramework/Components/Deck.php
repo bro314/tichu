@@ -24,7 +24,7 @@ namespace Bga\GameFramework\Components;
 */  
 
 
-class Deck extends \Deck
+class Deck extends \Bga\GameFramework\Old\APP_DbObject
 {
     var $table;
     var $autoreshuffle = false; // If true, a new deck is automatically formed with a reshuffled discard as soon at is needed

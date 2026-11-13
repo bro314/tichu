@@ -535,10 +535,14 @@ class Tichu extends Table
     }
 
     if (count($card_ids) != 3) {
-      throw new UserException(clienttranslate("You must give exactly 3 cards"));
+      throw new UserException(clienttranslate("You must give" . " " . "exactly 3 cards"));
     }
 
-    $cards = CardManager::getDeck()->getCards($card_ids);
+    try {
+      $cards = CardManager::getDeck()->getCards($card_ids);
+    } catch (\feException $e) {
+      throw new UserException(clienttranslate("Some of these cards don't exist"));
+    }
     if (count($cards) != 3) {
       throw new UserException(clienttranslate("Some of these cards don't exist"));
     }
@@ -620,7 +624,14 @@ class Tichu extends Table
     if (empty($cards_ids)) {
       throw new UserException(clienttranslate("You must select at least one card"));
     }
-    $cards = array_values(CardManager::getDeck()->getCards($cards_ids));
+    if (count($cards_ids) != count(array_unique($cards_ids))) {
+      throw new UserException(clienttranslate("You don't have all these cards in your hand"));
+    }
+    try {
+      $cards = array_values(CardManager::getDeck()->getCards($cards_ids));
+    } catch (\feException $e) {
+      throw new UserException(clienttranslate("You don't have all these cards in your hand"));
+    }
     if (count($cards) != count(array_unique($cards_ids))) {
       throw new UserException(clienttranslate("You don't have all these cards in your hand"));
     }

@@ -42,7 +42,7 @@ class Combo
       $values = array_column($cards, "type_arg");
       array_multisort($values, SORT_ASC, $colors, SORT_ASC, $cards);
       foreach (self::$comboNames as $type => $name) {
-        $res = call_user_func("self::check$name", $cards);
+        $res = call_user_func([self::class, "check$name"], $cards);
         if (!is_null($res)) {
           //combo is of that type
           $this->cards = $res["cards"];
@@ -68,7 +68,7 @@ class Combo
     $colors = array_column($this->cards, "type");
     $values = array_column($this->cards, "type_arg");
     array_multisort($values, SORT_ASC, $colors, SORT_ASC, $this->cards);
-    $res = call_user_func("self::check$typeName", $this->cards);
+    $res = call_user_func([self::class, "check$typeName"], $this->cards);
     if (is_null($res)) {
       $this->type = INVALID_COMBO;
       return false;

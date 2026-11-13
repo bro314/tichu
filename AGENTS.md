@@ -120,16 +120,17 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── ComboTest.php            # Unit tests for `Combo` validation and descriptions
 │   └── HandTest.php             # Comprehensive unit tests for `Hand` (bombs, highest combos, `canBeat`, `canFulFillWish`)
 ├── local/                       # Self-contained local BGA runner, SFTP sync & integration test suite (not uploaded to BGA Studio)
-│   ├── Bga/GameFramework/       # Reference snapshot of the 71 PHP files in BGA's server-side `Bga\GameFramework` namespace
+│   ├── Bga/GameFramework/       # 41 runtime PHP files of BGA's server-side `Bga\GameFramework` (`Table`, `GamestateMachine`, `Deck`, `Old\Db`, etc.) executed by the local server
+│   ├── mysql-ctl.sh             # Project-local MySQL 8.0 InnoDB daemon controller (`local/.mysql/mysql.sock`, `--transaction-isolation=SERIALIZABLE`, db `ebd_tichu_1`)
+│   ├── bga-std-schema.sql       # Standard BGA MySQL platform tables (`global`, `player`, `stats`, `gamelog`, `replaysavepoint`, `bga_user_preferences`, `playermultiactive`)
 │   ├── sftp-sync.sh             # Fast non-interactive SFTP uploader (`npm run deploy:sftp` / `npm run deploy:sftp:all`)
 │   ├── router.php               # Built-in PHP server router (`php -S 127.0.0.1:8080 local/router.php`)
-│   ├── bga-backend.php          # SQLite-backed implementation of BGA `Table`, `Deck`, `GameState`, `APP_GameAction`, `game_view`
+│   ├── bga-backend.php          # Thin local BGA container/bootstrap wiring `local/Bga/GameFramework/` to MySQL 8.0 (`Old\Db`), `$bgaContainer`, `$g_user`, and `$g_config`
 │   ├── bot.php                  # Rule-compliant `LocalTichuBot` (`actForOtherPlayers`, `stepSingleBotTurn`, `autoPlayUntilPlayer`)
 │   ├── scenarios.php            # Deterministic test scenarios (`grand_tichu`, `give_cards`, `mahjong_wish`, `phoenix_ambiguous`, `bomb_interrupt`, `dragon_gift`, `double_victory`)
-│   ├── integration-tests.php    # Fast in-memory SQLite backend integration test suite (`npm run test:integration`)
-│   ├── race-tests.php           # Parallel-worker concurrency/race stress test (`npm run test:race`, NOT part of `npm test`)
-│   ├── schema.sql               # SQLite schema for `player`, `global`, `stats`, `card`, `actionlog`, and `notifications`
-│   ├── view/common/game.view.php # Stub included by `tichu.view.php`
+│   ├── integration-tests.php    # MySQL 8.0 + real `Bga\GameFramework` backend integration test suite (`npm run test:integration`)
+│   ├── race-tests.php           # Parallel-worker MySQL 8.0 InnoDB concurrency/race stress test (`npm run test:race`, NOT part of `npm test`)
+│   ├── view/common/game.view.php # View base class included by `tichu.view.php`
 │   ├── js/bga-shim.js           # Lean frontend shim (`dojo`, `declare`, `ebg.stock`, `ebg.counter`, `ebg.popindialog`, `GameGui`), dev bar, console announcer, and `window.tt` test runner
 │   └── css/bga-shim.css         # BGA base layout, `.stockitem`, `.bgabutton`, `.whiteblock`, and `#local-dev-bar` styles
 └── img/                         # Game assets
@@ -209,7 +210,7 @@ Instead of relying solely on global variables for complex trick history, `LogMan
    - **Never use `TRUNCATE` or `DROP` in runtime game logic**: They trigger an implicit MySQL commit and break BGA's automatic transaction rollback on exceptions.
    - **PHP 8.4 Warnings Corrupt AJAX JSON**: Action endpoints return raw JSON; any PHP warning or deprecation notice prints ahead of the JSON and triggers `JSON_ERROR_SYNTAX` on the client. Always use `{$var}` (never `${var}`) in strings and `$this->` (never `self::`/`static::`) for non-static framework instance methods.
    - **`getCurrentPlayerId()` Context Restrictions**: `getCurrentPlayerId()` reads the HTTP session and throws `"Not logged"` if called inside `setupNewGame()`, `zombieTurn()`, or `arg*()` state methods. Only call it inside player actions and `getAllDatas()`.
-   - **`Deck` Return Values**: `Deck::getCardsInLocation(...)` returns an associative map keyed by `card_id` (unless `$order_by` is set) with string-typed numeric fields; wrap in `array_values(...)` when sending to JS if array ordering matters, and cast numeric fields (`(int)`).
+   - **`Deck` Return Values & `getCards()` Exception**: `Deck::getCardsInLocation(...)` returns an associative map keyed by `card_id` (unless `$order_by` is set) with string-typed numeric fields; wrap in `array_values(...)` when sending to JS if array ordering matters, and cast numeric fields (`(int)`). Also note that `Deck::getCards($cards_array)` throws `new \feException("getCards: Some cards have not been found !")` if `count($result) != count($cards_array)` (e.g., non-existent card ID or duplicate card IDs in input), and `Deck::createCards()` calls `shuffle($values)` before `INSERT INTO card`, so `card_id` (`1..56`) is randomized per game.
 2. **Client (`ebg/stock`), Dark Mode & Translations**:
    - **`ebg/stock` Movement & Batch Updates**: When moving a card between two `Stock` instances, add to the destination stock **first** (`dest.addToStockWithId(type, id, src.getItemDivId(id))`) and remove from the source stock **second** (`src.removeFromStockById(id)`). For loop removals, pass `noupdate = true` and call `updateDisplay()` once afterward.
    - **BGA Dark Mode (`html[data-theme="dark"]`)**: BGA toggles dark mode via the `html[data-theme="dark"]` attribute (not `@media (prefers-color-scheme: dark)`). Any custom UI container with a fixed light background must specify an explicit dark text `color`.
@@ -273,15 +274,15 @@ Rules for new code:
 
 Tichu has three fast local testing tiers that run without needing a BGA Studio connection (plus the opt-in race stress test below):
 
-1. **Unit Tests (`npm run test:unit` / `./vendor/bin/phpunit tests`, ~40ms)**:
+1. **Unit Tests (`npm run test:unit` / `./vendor/bin/phpunit tests`, ~15ms)**:
    - Tests pure card/combo/hand logic in `modules/Combo.php` and `modules/Hand.php` using `tests/stubs.php` and `tests/TestUtils.php`.
    - When modifying `Combo.php` or `Hand.php`, add corresponding test cases in `tests/ComboTest.php` or `tests/HandTest.php`.
 
-2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~180ms)**:
-   - Runs 14 full-stack PHP + in-memory SQLite (`:memory:`) test suites directly against `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
+2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~2.7s)**:
+   - Runs 14 full-stack PHP + MySQL 8.0 InnoDB (`ebd_tichu_1` via `local/mysql-ctl.sh`) test suites directly against the real `local/Bga/GameFramework/` classes (`Table`, `GamestateMachine`, `Deck`, `Old\Db`, `Stats`, `Notify`, `Logs`) and `Tichu` (`tichu.game.php`), `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
      - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `TEAM_RANDOM` & team color assignment, `grandTichuBet`, 6-card deal)
      - Out-of-turn Tichu bet (`tichuBet` before playing first card, `tichuCall` confirmation across trick boundaries, rejection after playing a card or duplicate bets)
-     - Passing 3 cards (`giveTheCards`, invalid card rejection & rollback, `stAcceptPassedCards`, `bombs_completed_by_partner` stat, Mahjong leader)
+     - Passing 3 cards (`giveTheCards`, invalid/duplicate card rejection & rollback via real `Deck::getCards`, `stAcceptPassedCards`, `bombs_completed_by_partner` stat, Mahjong leader)
      - Mahjong wish enforcement (`makeAWish`, `UserException` rollback when ignoring a wish that can be fulfilled including via non-wished bombs, straight-flush bomb wish detection)
      - Dog lead transfer & restrictions (`DOG_COMBO` partner/next-player transfer, 3rd-player-out Dog round termination)
      - Single & ambiguous Phoenix resolution (`ST_PHOENIX_PLAY`, `Combo::recheckPhoenix` straight/full-house auto-resolution, pre-`ST_PHOENIX_PLAY` Mahjong wish validation, `choosePhoenix`, `cancelPhoenix` after open/Dog leads)
@@ -297,18 +298,18 @@ Tichu has three fast local testing tiers that run without needing a BGA Studio c
 
    **Race / Concurrency Stress Test (`npm run test:race` / `php local/race-tests.php`, ~60s + ~10s, NOT part of `npm test`/`npm run build`)**:
 
-   - Spawns persistent PHP worker processes that execute emulated BGA requests (`action_tichu` -> `Tichu`) truly in parallel against one file-backed SQLite DB, with `local/bga-backend.php` in **MVCC mode** (`TICHU_DB_MVCC=1`): plain reads see the request's snapshot (taken when the "framework" loads the state in `beginPlayerAction`), writes and `SELECT ... FOR UPDATE` run in `BEGIN IMMEDIATE` on a second connection and wait for other writers — modelling InnoDB REPEATABLE READ.
+   - Spawns persistent PHP worker processes that execute emulated BGA requests (`action_tichu` -> `Tichu`) truly in parallel against the local MySQL 8.0 InnoDB server (`ebd_tichu_1` over `local/.mysql/mysql.sock`), running with BGA's default `--transaction-isolation=SERIALIZABLE` and `Tichu::initTable()`'s `GET_LOCK('tichu_table_1', 20)` + `SET SESSION transaction_isolation = 'REPEATABLE-READ'` and `SELECT ... FOR UPDATE` row locks.
    - Phase 1: targeted scenarios repeated `--reps` times with exact expectations (4x concurrent `collect` + autopass, 4 players' `grandTichuBet` + duplicate tabs, 4 players' `giveTheCards`, 3 Tichu calls vs. a pass, 2 competing bombs vs. a pass).
    - Phase 2: `--duration` seconds of randomized bursts over whole games (legal moves duplicated from "other tabs", out-of-turn Tichu/autopass/bombs/confirmTichu, `getAllDatas` page loads, zombie turns, garbage requests), checking invariants after every burst: 56 unique cards in valid locations, per-state card distribution and multiactive sets, table cards == logged trick cards, `newRound`/`newTrick` counted exactly once (`trick_number`/`round_number`/`tichu_number` stats match the action log), valid bets/scores, monotonic lock version, no stuck game, and **no exception other than `UserException`** (PHP warnings are fatal).
-   - Options: `--duration=60 --workers=8 --seed=N --reps=25 --skip-scenarios --verbose`. `--baseline` ignores all `FOR UPDATE` locks to demonstrate the detected races (expected to FAIL). `RACE_DEBUG=1` prints every scenario request result.
+   - Options: `--duration=60 --workers=8 --seed=N --reps=25 --skip-scenarios --verbose`. `--baseline` sets `TICHU_DB_IGNORE_LOCKS=1` (stripping `GET_LOCK`, `SET SESSION transaction_isolation`, and `FOR UPDATE`) so concurrent workers collide under raw MySQL 8.0 `SERIALIZABLE` to demonstrate the detected races and deadlocks (expected to FAIL). `RACE_DEBUG=1` prints every scenario request result.
 
 3. **Local Browser Server & Frontend + Backend JS Console Integration Tests (`npm run local`)**:
    - **Start the local server**:
      ```bash
      npm run local
-     # Or: /opt/homebrew/bin/php -S 127.0.0.1:8080 local/router.php
+     # Starts MySQL 8.0 via local/mysql-ctl.sh and runs php -S 127.0.0.1:8080 local/router.php
      ```
-     Then open `http://127.0.0.1:8080` in the browser (`local/tichu.db` is created and seeded automatically, and is gitignored).
+     Then open `http://127.0.0.1:8080` in the browser (`local/.mysql/` is initialized and `ebd_tichu_1` is seeded automatically, and is gitignored).
    - **Interactive Dev Toolbar (`#local-dev-bar`)**:
      - Switch seats in place (`P0`–`P3` or `Spectator`), trigger bot moves (`🤖 Act for Others`, `🤖 Step 1`, `⚡ Auto-Bot`), toggle `🔀 Auto-Switch` (automatically switches the UI to whichever player's turn is next), toggle `⏱ Real-Time` vs. `🃏 Exposed Cards`, toggle `🗿 Tiki` card art, or start a `🔄 New Game`.
    - **Live Console Announcer**:

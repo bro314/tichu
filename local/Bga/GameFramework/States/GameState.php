@@ -17,9 +17,6 @@ abstract class GameState
     public \Bga\GameFramework\TableStats $tableStats;
     public \Bga\GameFramework\PlayerStats $playerStats;
     public \Bga\GameFramework\Components\DeckFactory $deckFactory;
-    public \Bga\GameFramework\Components\Counters\CounterFactory $counterFactory;
-    public \Bga\GameFramework\Components\Counters\PlayerCounter $playerScore;
-    public \Bga\GameFramework\Components\Counters\PlayerCounter $playerScoreAux;
     public ?\Bga\GameFramework\GameStateMachine $gamestate = null;
 
     /**
@@ -46,9 +43,6 @@ abstract class GameState
         $this->tableStats = $this->bga->tableStats;
         $this->playerStats = $this->bga->playerStats;
         $this->deckFactory = $this->bga->deckFactory;
-        $this->counterFactory = $this->bga->counterFactory;
-        $this->playerScore = $this->bga->playerScore;
-        $this->playerScoreAux = $this->bga->playerScoreAux;
         $this->gamestate = $game->gamestate;
     }
 

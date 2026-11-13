@@ -11,9 +11,6 @@
 $suiteStart = microtime(true);
 $projectRoot = dirname(__DIR__);
 
-// Force in-memory SQLite database
-putenv('TICHU_DB_PATH=:memory:');
-
 ob_start();
 require_once __DIR__ . '/bga-backend.php';
 require_once $projectRoot . '/tichu.game.php';
@@ -22,8 +19,6 @@ require_once $projectRoot . '/tichu.view.php';
 require_once __DIR__ . '/bot.php';
 require_once __DIR__ . '/scenarios.php';
 ob_end_clean();
-
-\APP_DbObject::setDbPath(':memory:');
 
 const P0 = \LocalTichuScenarios::P0; // 2385074 (Team 0)
 const P1 = \LocalTichuScenarios::P1; // 2385075 (Team 1)
@@ -112,9 +107,9 @@ function test_new_game_and_deal_8_cards(): void
   assertSameVal(4, count($state['multiactive']), 'All 4 players should be multiactive');
 
   $deck = \CardManager::getDeck();
-  assertSameVal(24, $deck->countCardInLocation('deck'), '24 cards should remain in deck after dealing 8 each');
+  assertSameVal(24, (int) $deck->countCardInLocation('deck'), '24 cards should remain in deck after dealing 8 each');
   foreach ([P0, P1, P2, P3] as $pId) {
-    assertSameVal(8, $deck->countCardInLocation('hand', $pId), "Player $pId should hold 8 cards");
+    assertSameVal(8, (int) $deck->countCardInLocation('hand', $pId), "Player $pId should hold 8 cards");
   }
 
   $payload = $game->getFullClientPayload(P0);
@@ -204,7 +199,7 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   );
 
   // P1 tries to call Grand Tichu (200) immediately after P0 (< 60s threshold) -> triggers confirmTichu notification!
-  $beforePacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $beforePacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   callAction($game, P1, 'grandTichuBet', ['bet' => '200']);
   $p1 = \PlayerManager::getPlayer(P1);
   assertSameVal('-1', (string) $p1['call_grand_tichu'], 'P1 GT bet should require confirmation within 60s threshold');
@@ -245,9 +240,9 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   assertSameVal('giveCards', $state['name']);
 
   $deck = \CardManager::getDeck();
-  assertSameVal(0, $deck->countCardInLocation('deck'), 'Deck should be empty after dealing last 6 cards');
+  assertSameVal(0, (int) $deck->countCardInLocation('deck'), 'Deck should be empty after dealing last 6 cards');
   foreach ([P0, P1, P2, P3] as $pId) {
-    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should now have 14 cards");
+    assertSameVal(14, (int) $deck->countCardInLocation('hand', $pId), "Player $pId should now have 14 cards");
   }
 
   // Pass 3 cards for all 4 players so the game transitions to playComboOpen (trick 1, log_trick = 1)
@@ -281,7 +276,7 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
   $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
   callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
-  assertSameVal(13, $deck->countCardInLocation('hand', P0), 'P0 should have 13 cards after playing Mahjong');
+  assertSameVal(13, (int) $deck->countCardInLocation('hand', P0), 'P0 should have 13 cards after playing Mahjong');
   assertThrowsUserException(
     static fn() => callAction($game, P0, 'tichuBet', ['bet' => '100']),
     'after playing a card',
@@ -326,9 +321,9 @@ function test_give_cards_and_accept_passed_cards_and_bomb_passing_stat(): void
 
   // Verify all 4 players have 14 cards in hand and 0 in temporary
   $deck = \CardManager::getDeck();
-  assertSameVal(0, $deck->countCardInLocation('temporary'), 'No cards should remain in temporary');
+  assertSameVal(0, (int) $deck->countCardInLocation('temporary'), 'No cards should remain in temporary');
   foreach ([P0, P1, P2, P3] as $pId) {
-    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards after accepting");
+    assertSameVal(14, (int) $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards after accepting");
   }
 
   // Verify P2 passing (4, 7) to P0 completed P0's 4-of-a-kind bomb of 7s and incremented bombs_completed_by_partner!
@@ -404,6 +399,7 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
     P2 => [[1, 2], [1, 3], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 11]],
     P3 => [[3, 2], [3, 3]],
   ], 'captured_p0');
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
   callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
   callAction($game, P0, 'makeAWish', ['wish' => 11]);
   $aceStarsId = (string) \LocalTichuScenarios::getCardId(2, 14);
@@ -458,6 +454,7 @@ function test_dog_lead_transfer_and_restrictions(): void
 
   // Now reset to playComboOpen with Dog in P0's hand
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $dogId = (string) \LocalTichuScenarios::getCardId(3, 1);
   \APP_DbObject::DbQuery("UPDATE card SET card_location = 'hand', card_location_arg = " . P0 . " WHERE card_id = $dogId");
 
   // P0 leads the Dog -> skips P1 and gives playComboOpen lead to partner P2!
@@ -475,6 +472,7 @@ function test_dog_lead_transfer_and_restrictions(): void
 
   // Also test Dog when partner P2 has 0 cards in hand -> transfers lead to P3!
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $dogId = (string) \LocalTichuScenarios::getCardId(3, 1);
   \APP_DbObject::DbQuery("UPDATE card SET card_location = 'captured', card_location_arg = " . P0 . " WHERE card_location = 'hand' AND card_location_arg = " . P2);
   \APP_DbObject::DbQuery("UPDATE card SET card_location = 'hand', card_location_arg = " . P0 . " WHERE card_id = $dogId");
   $game->gamestate->changeActivePlayer(P0);
@@ -511,7 +509,7 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   callAction($game, P0, 'cancelPhoenix');
   $stateAfterCancel = $game->gamestate->state(P0);
   assertSameVal('playComboOpen', $stateAfterCancel['name'], 'cancelPhoenix on opening lead should return to playComboOpen');
-  assertSameVal(14, \CardManager::getDeck()->countCardInLocation('hand', P0), 'P0 should still have all 14 cards');
+  assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P0), 'P0 should still have all 14 cards');
 
   // Play the ambiguous run again and choose Phoenix = 9
   callAction($game, P0, 'playCombo', ['cards' => implode(';', $runIds)]);
@@ -815,7 +813,7 @@ function test_autopass_once_trick_and_cancel_plus_turn_based_smart_skip(): void
   // Set P1's autopass to AUTOPASS_ONCE (1) before P0 wishes for 9 (which P1 holds)
   \PlayerManager::setAutopass(AUTOPASS_ONCE, P1);
   assertSameVal('1', (string) \PlayerManager::getPlayer(P1)['pass'], 'P1 pass should initially be 1 (AUTOPASS_ONCE)');
-  $beforeWishPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $beforeWishPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   callAction($game, P0, 'makeAWish', ['wish' => 9]);
   assertSameVal('playCombo', $game->gamestate->state()['name']);
   assertSameVal((string) P1, $game->getActivePlayerId(), 'P1 must become active because P1 holds the wished 9');
@@ -849,7 +847,7 @@ function test_double_victory_and_normal_round_scoring(): void
   \PlayerManager::tichuBet(P0, 100);
   \PlayerManager::grandTichuBet(P1, 200);
 
-  $beforeDvPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $beforeDvPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
   callAction($game, P2, 'playCombo', ['cards' => $lastCardId]);
 
@@ -964,7 +962,7 @@ function test_double_victory_and_normal_round_scoring(): void
   $game->setGameStateValue('doubleVictory', -1);
   $game->gamestate->changeActivePlayer(P2);
 
-  $beforePairPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $beforePairPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   callAction($game, P2, 'playCombo', ['cards' => implode(';', $pairIds)]);
   $pairNotifs = $game->getNotificationsSince($beforePairPacketId, P0, false);
   $spuriousP3Pass = false;
@@ -1111,7 +1109,7 @@ function test_zombie_turns_across_all_states(): void
   assertSameVal('giveCards', $game->gamestate->state()['name'], 'After zombie P3 bets in grandTichuBets, game should transition to giveCards');
   $deck = \CardManager::getDeck();
   foreach ([P0, P1, P2, P3] as $pId) {
-    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in giveCards");
+    assertSameVal(14, (int) $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in giveCards");
   }
 
   // 2. giveCards (multipleactiveplayer)
@@ -1127,9 +1125,9 @@ function test_zombie_turns_across_all_states(): void
   $game->zombieTurn($game->gamestate->state(), P3);
 
   assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'After zombie P3 gives cards, game should transition to playComboOpen');
-  assertSameVal(0, $deck->countCardInLocation('temporary'), 'No cards should remain in temporary after giveCards');
+  assertSameVal(0, (int) $deck->countCardInLocation('temporary'), 'No cards should remain in temporary after giveCards');
   foreach ([P0, P1, P2, P3] as $pId) {
-    assertSameVal(14, $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in playComboOpen");
+    assertSameVal(14, (int) $deck->countCardInLocation('hand', $pId), "Player $pId should have 14 cards in playComboOpen");
   }
 
   // 3a. playComboOpen (activeplayer - normal open lead)
@@ -1137,14 +1135,14 @@ function test_zombie_turns_across_all_states(): void
   assertSameVal('playComboOpen', $game->gamestate->state()['name']);
   assertSameVal((string) P0, $game->getActivePlayerId());
 
-  $beforeOpenPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(packet_id), 0) FROM notifications");
+  $beforeOpenPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   $game->setCurrentPlayerId(P1);
   $game->zombieTurn($game->gamestate->state(), P0);
 
   assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P0 playing in playComboOpen should transition to playCombo');
   assertSameVal((string) P1, $game->getActivePlayerId(), 'Turn should advance to P1');
-  assertSameVal(13, $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 13 cards left after open lead');
-  assertSameVal(1, $deck->countCardInLocation('combos'), '1 card should be in combos');
+  assertSameVal(13, (int) $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 13 cards left after open lead');
+  assertSameVal(1, (int) $deck->countCardInLocation('combos'), '1 card should be in combos');
 
   $openNotifs = $game->getNotificationsSince($beforeOpenPacketId, P0, false);
   $playNotifArgs = null;
@@ -1191,7 +1189,7 @@ function test_zombie_turns_across_all_states(): void
   $lastPlayedCombo = \LogManager::getLastCombo();
   assertSameVal(SINGLE_COMBO, $lastPlayedCombo->type, 'Zombie holding only Phoenix should lead Single combo');
   assertSameVal(1.5, (float) $lastPlayedCombo->phoenixValue, 'Phoenix lead should have phoenixValue 1.5');
-  assertSameVal(0, $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 0 cards in hand after leading only card');
+  assertSameVal(0, (int) $deck->countCardInLocation('hand', P0), 'Zombie P0 should have 0 cards in hand after leading only card');
   assertSameVal((int) P0, (int) $game->getGameStateValue('firstOutPlayer'), 'P0 shedding all cards should be firstOutPlayer');
   assertSameVal('playCombo', $game->gamestate->state()['name'], 'Game should transition to playCombo');
   assertSameVal((string) P1, $game->getActivePlayerId(), 'Turn should advance to P1');
@@ -1212,6 +1210,7 @@ function test_zombie_turns_across_all_states(): void
 
   // 5. mahjongPlay (activeplayer)
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
   callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
   assertSameVal('mahjongPlay', $game->gamestate->state()['name']);
   assertSameVal((string) P0, $game->getActivePlayerId());
@@ -1396,7 +1395,7 @@ function test_action_and_parameter_validation_and_card_to_str(): void
   );
   $threeCardIds = \LocalTichuScenarios::getCardIds([[1, 7], [2, 7], [3, 7]]);
   \CardManager::getDeck()->moveCards($threeCardIds, 'hand', P2);
-  assertSameVal(3, \CardManager::getDeck()->countCardInLocation('hand', P2), 'P2 should have 3 cards in hand');
+  assertSameVal(3, (int) \CardManager::getDeck()->countCardInLocation('hand', P2), 'P2 should have 3 cards in hand');
   assertThrowsUserException(
     static fn() => callAction($game, P2, 'playBomb', ['cards' => '']),
     'cannot play a bomb',
@@ -1470,7 +1469,7 @@ $tests = [
 ];
 
 echo "====================================================================\n";
-echo " Tichu Local Backend Integration Test Suite (SQLite :memory:)\n";
+echo " Tichu Local Backend Integration Test Suite (MySQL 8.0 + BGA FW)\n";
 echo "====================================================================\n";
 
 $passed = 0;

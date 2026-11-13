@@ -1256,7 +1256,7 @@ use \Monolog\Level;
         var_dump($object);
 
         $g_trace->log(Level::Info, $label . ' = ' . ob_get_contents());
-        ob_clean();
+        ob_end_clean();
     } 
 
   }

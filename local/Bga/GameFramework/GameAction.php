@@ -18,22 +18,33 @@ use \BgaSystemException;
  */
 class GameAction extends \APP_Action
 {
-    protected string $gameName;
+    protected string $gameName = 'tichu';
     /**
      * @var ?Table
      */
     protected /*?Table*/ $game = null;
-    protected GamePageAction $gamePageAction;
+    protected mixed $gamePageAction = null;
     
     // Constructor
-    function __construct()
+    function __construct(mixed $game = null, array $args = [])
     {
+        if ($game !== null) {
+            $this->game = $game;
+        }
+        parent::__construct($args);
     }
     
-    public function initGameObject(string $gameName, /*Table*/ $game, GamePageAction $gamePageAction): void {
+    public function initGameObject(string $gameName, /*Table*/ $game, mixed $gamePageAction = null): void {
         $this->gameName = $gameName;
         $this->game = $game;
         $this->gamePageAction = $gamePageAction;
+    }
+
+    public function setAjaxMode($bCheckCsrf = true): void
+    {
+        if ($this->game !== null) {
+            $this->game->beginPlayerAction();
+        }
     }
 
     /**
@@ -45,7 +56,12 @@ class GameAction extends \APP_Action
             throw new \feException('Game action cannot return any data', false, false);
         }
 
-        $this->gamePageAction->ajaxResponseWithResult(null);
+        if ($this->game !== null) {
+            $this->game->endPlayerAction();
+        }
+        if ($this->gamePageAction !== null) {
+            $this->gamePageAction->ajaxResponseWithResult(null);
+        }
     }
 
     /**
@@ -53,7 +69,12 @@ class GameAction extends \APP_Action
      * terraformingmars/memoir/unconditionalsurrender/spaceempires/kingdomino/galacticera/eminentdomain/altered
      */
     protected function ajaxResponseWithResult($result) {
-        $this->gamePageAction->ajaxResponseWithResult($result);
+        if ($this->game !== null) {
+            $this->game->endPlayerAction();
+        }
+        if ($this->gamePageAction !== null) {
+            $this->gamePageAction->ajaxResponseWithResult($result);
+        }
     }
 
     private function bgaGetDefaultActionType(string $phpType, string $method): ActionType {

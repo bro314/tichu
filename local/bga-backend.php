@@ -1,2108 +1,982 @@
 <?php
 /**
- * Self-contained local SQLite-backed BGA Framework implementation for Tichu.
- * Zero modifications to existing game files required.
+ * Local BGA Environment Shim & Container Wiring for Tichu.
+ *
+ * Boots the real BGA server-side framework classes in `local/Bga/GameFramework/`
+ * on top of our project-local MySQL 8.0 InnoDB instance (`local/mysql-ctl.sh`).
  */
 
 namespace {
-  error_reporting(E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED);
+    if (!class_exists('feException')) {
+        class feException extends \Exception
+        {
+            public bool $expected = false;
+            public bool $visibility = true;
+            public ?array $args = null;
 
-  if (!defined('APP_GAMEMODULE_PATH')) {
-    define('APP_GAMEMODULE_PATH', __DIR__ . '/');
-  }
-  if (!defined('APP_BASE_PATH')) {
-    define('APP_BASE_PATH', __DIR__ . '/');
-  }
-
-  // Argument type constants
-  if (!defined('AT_int')) define('AT_int', 0);
-  if (!defined('AT_posint')) define('AT_posint', 1);
-  if (!defined('AT_float')) define('AT_float', 2);
-  if (!defined('AT_email')) define('AT_email', 3);
-  if (!defined('AT_url')) define('AT_url', 4);
-  if (!defined('AT_bool')) define('AT_bool', 5);
-  if (!defined('AT_enum')) define('AT_enum', 6);
-  if (!defined('AT_alphanum')) define('AT_alphanum', 7);
-  if (!defined('AT_username')) define('AT_username', 8);
-  if (!defined('AT_login')) define('AT_login', 9);
-  if (!defined('AT_numberlist')) define('AT_numberlist', 13);
-  if (!defined('AT_uuid')) define('AT_uuid', 17);
-  if (!defined('AT_version')) define('AT_version', 18);
-  if (!defined('AT_cityname')) define('AT_cityname', 20);
-  if (!defined('AT_filename')) define('AT_filename', 21);
-  if (!defined('AT_groupname')) define('AT_groupname', 22);
-  if (!defined('AT_timezone')) define('AT_timezone', 23);
-  if (!defined('AT_mediawikipage')) define('AT_mediawikipage', 24);
-  if (!defined('AT_html_id')) define('AT_html_id', 26);
-  if (!defined('AT_alphanum_dash')) define('AT_alphanum_dash', 27);
-  if (!defined('AT_date')) define('AT_date', 28);
-  if (!defined('AT_num')) define('AT_num', 29);
-  if (!defined('AT_alpha_strict')) define('AT_alpha_strict', 30);
-  if (!defined('AT_namewithaccent')) define('AT_namewithaccent', 31);
-  if (!defined('AT_json')) define('AT_json', 32);
-  if (!defined('AT_base64')) define('AT_base64', 33);
-
-  if (!defined('FEX_bad_input_argument')) define('FEX_bad_input_argument', 300);
-
-  if (!function_exists('totranslate')) {
-    function totranslate($text)
-    {
-      return $text;
+            public function __construct(
+                string $message = '',
+                bool $expected = false,
+                bool $visibility = true,
+                int $code = 0,
+                mixed $publicMsg = '',
+                array $args = []
+            ) {
+                parent::__construct($message, (int) $code);
+                $this->expected = $expected;
+                $this->visibility = $visibility;
+                $this->args = $args;
+            }
+        }
     }
-  }
-
-  if (!function_exists('clienttranslate')) {
-    function clienttranslate($x)
-    {
-      return $x;
-    }
-  }
-
-  if (!function_exists('bga_rand')) {
-    function bga_rand($min, $max)
-    {
-      return random_int((int) $min, (int) $max);
-    }
-  }
-
-  if (!function_exists('getKeysWithMaximum')) {
-    function getKeysWithMaximum($array, $bWithMaximum = true)
-    {
-      if (empty($array)) {
-        return [];
-      }
-      $max = max($array);
-      $keys = array_keys($array, $max);
-      return $bWithMaximum ? ['max' => $max, 'keys' => $keys] : $keys;
-    }
-  }
-
-  if (!function_exists('getKeyWithMaximum')) {
-    function getKeyWithMaximum($array)
-    {
-      if (empty($array)) {
-        return null;
-      }
-      $max = max($array);
-      return array_search($max, $array);
-    }
-  }
-
-  if (!class_exists('feException')) {
-    class feException extends \Exception
-    {
-      public bool $expected;
-      public bool $visibility;
-      public string $publicMsg;
-
-      public function __construct(
-        $message,
-        $expected = false,
-        $visibility = true,
-        $code = 100,
-        $publicMsg = ''
-      ) {
-        parent::__construct((string) $message, (int) $code);
-        $this->expected = (bool) $expected;
-        $this->visibility = (bool) $visibility;
-        $this->publicMsg = (string) $publicMsg;
-      }
-    }
-  }
 }
 
-namespace Bga\GameFramework {
-  class UserException extends \feException
-  {
-    public function __construct($message, $code = 100)
-    {
-      parent::__construct($message, true, true, $code);
-    }
-  }
+namespace Bga\Exceptions\Services\Db {
+    class DatabaseException extends \feException {}
+    class UnableToConnectException extends DatabaseException {}
+    class UnableToFindDatabaseException extends DatabaseException {}
+    class DeadlockException extends DatabaseException {}
+    class DatabaseDeadLockException extends DatabaseException {}
+    class DatabaseInvalidResultException extends DatabaseException {}
+    class DatabaseQueryErrorException extends DatabaseException {}
+    class DatabaseTimeOutException extends DatabaseException {}
+    class DabaseSyntaxErrorException extends DatabaseException {}
+}
 
-  class SystemException extends \feException
-  {
-    public function __construct($message, $code = 100)
-    {
-      parent::__construct($message, false, false, $code);
-    }
-  }
+namespace Bga\Exceptions\Framework {
+    class UnknownPlayerStatistic extends \feException {}
+    class NoOutOfTimePlayersException extends \feException {}
+    class CannotExpelPlayerException extends \feException {}
+    class ZombieStateException extends \feException {}
+    class UndoFrameworkException extends \feException {}
+}
 
-  class VisibleSystemException extends SystemException
-  {
-    public function __construct($message, $code = 100)
-    {
-      parent::__construct($message, $code);
-    }
-  }
+namespace Bga\Exceptions\Table {
+    class TableWithoutPlayerException extends \feException {}
+}
 
-  class TableOptions
-  {
-    public function get(int $optionId): ?int
-    {
-      $val = Table::getUniqueValueFromDB(
-        "SELECT global_value FROM global WHERE global_id = " . (int) $optionId
-      );
-      return $val !== null ? (int) $val : null;
+namespace Monolog {
+    if (!enum_exists(Level::class)) {
+        enum Level: int
+        {
+            case Debug = 100;
+            case Info = 200;
+            case Notice = 250;
+            case Warning = 300;
+            case Error = 400;
+            case Critical = 500;
+        }
     }
+}
 
-    public function set(int $optionId, int $value): void
-    {
-      Table::DbQuery(
-        "INSERT OR REPLACE INTO global (global_id, global_value) VALUES (" .
-          (int) $optionId .
-          ", " .
-          (int) $value .
-          ")"
-      );
+namespace Sentry {
+    if (!class_exists(Breadcrumb::class)) {
+        class Breadcrumb
+        {
+            public const LEVEL_INFO = 'info';
+            public const TYPE_DEFAULT = 'default';
+        }
     }
+}
 
-    public function isTurnBased(): bool
+namespace Bga\Services {
+    class Notify
     {
-      $val = Table::getUniqueValueFromDB("SELECT global_value FROM global WHERE global_id = 200");
-      return ((int) $val) === 1;
-    }
-
-    public function isRealTime(): bool
-    {
-      return !$this->isTurnBased();
+        public function publish(...$args): void {}
     }
 
-    public function getGameVersion(): int
+    class Sentry
     {
-      return 999999999;
+        public function addBreadcrumb(...$args): void {}
+        public function captureException(\Throwable $e): void {}
+    }
+}
+
+namespace Bga\Services\Cache {
+    class Apcu
+    {
+        private array $store = [];
+        public function get(string $key, mixed $default = null): mixed
+        {
+            return $this->store[$key] ?? $default;
+        }
+        public function set(string $key, mixed $val, int $ttl = 0): bool
+        {
+            $this->store[$key] = $val;
+            return true;
+        }
     }
 
-    public function getGameLanguage(): ?int
+    class LocalRedis
     {
-      return 0;
+        private array $store = [];
+        public function get(string $key): mixed
+        {
+            return $this->store[$key] ?? false;
+        }
+        public function set(string $key, mixed $val): bool
+        {
+            $this->store[$key] = $val;
+            return true;
+        }
     }
-  }
+}
 
-  class DeckFactory
-  {
-    public function createDeck(string $tableName = 'card'): \Deck
+namespace Bga\Account {
+    class SessionManager
     {
-      return new \Deck($tableName);
+        public function setTemporaryMasquerade(?int $playerId): void
+        {
+            global $g_user;
+            $g_user->setTemporaryMasquerade($playerId);
+        }
+
+        public function getBgaUserId(bool $nullIfNotLogged = false): ?int
+        {
+            global $g_user;
+            return $g_user->get_id($nullIfNotLogged);
+        }
     }
-  }
+}
 
-  class Bga
-  {
-    public TableOptions $tableOptions;
-    public DeckFactory $deckFactory;
-
-    public function __construct()
+namespace Bga\Tables {
+    class TableStatsManager
     {
-      $this->tableOptions = new TableOptions();
-      $this->deckFactory = new DeckFactory();
+        private ?array $cached = null;
+
+        public function get(string $gameName): array
+        {
+            if ($this->cached !== null) {
+                return $this->cached;
+            }
+            $stats_type = ['table' => [], 'player' => []];
+            $file = dirname(__DIR__) . '/stats.inc.php';
+            if (file_exists($file)) {
+                require $file;
+            }
+            // Standard BGA built-in table & player stats referenced by Table.php
+            $stats_type['table']['turns_number'] ??= ['id' => 1, 'name' => 'Number of turns', 'type' => 'int'];
+            $stats_type['table']['player_number'] ??= ['id' => 2, 'name' => 'Number of players', 'type' => 'int'];
+            $stats_type['table']['avg_points'] ??= ['id' => 3, 'name' => 'Average points', 'type' => 'float'];
+            $stats_type['table']['best_score'] ??= ['id' => 4, 'name' => 'Best score', 'type' => 'int'];
+            $stats_type['table']['interaction_nbr'] ??= ['id' => 5, 'name' => 'Interactions', 'type' => 'int'];
+
+            $stats_type['player']['turns_number'] ??= ['id' => 1, 'name' => 'Number of turns', 'type' => 'int'];
+            $stats_type['player']['reflexion_time'] ??= ['id' => 2, 'name' => 'Thinking time', 'type' => 'int'];
+            $stats_type['player']['time_bonus_nbr'] ??= ['id' => 3, 'name' => 'Time bonuses', 'type' => 'int'];
+            $stats_type['player']['reflexion_time_sd'] ??= ['id' => 4, 'name' => 'Thinking time SD', 'type' => 'float'];
+
+            $this->cached = $stats_type;
+            return $this->cached;
+        }
     }
-  }
+
+    class TableOptionsManager
+    {
+        private ?array $cachedOptions = null;
+
+        public function get(string $gameName): array
+        {
+            return $this->getGameOptions($gameName);
+        }
+
+        public function getGameOptions(string $gameName): array
+        {
+            if ($this->cachedOptions !== null) {
+                return $this->cachedOptions;
+            }
+            $game_options = [];
+            $file = dirname(__DIR__) . '/gameoptions.inc.php';
+            if (file_exists($file)) {
+                require $file;
+            }
+            $this->cachedOptions = $game_options;
+            return $this->cachedOptions;
+        }
+
+        public function getTimeLimits(int $timeProfile, string $gameName): array
+        {
+            return [
+                'additional_time_per_move' => 86400,
+                'initial_time_to_thing' => 259200,
+                'maximum_time_per_move' => 259200,
+                'extra_time_to_think_to_expel' => 86400,
+                'no_move_on_extratime' => 0,
+            ];
+        }
+    }
+
+    class UserPreferencesManager
+    {
+        private ?array $cachedPrefs = null;
+
+        public function get(string $gameName): array
+        {
+            if ($this->cachedPrefs !== null) {
+                return $this->cachedPrefs;
+            }
+            $game_preferences = [];
+            $file = dirname(__DIR__) . '/gameoptions.inc.php';
+            if (file_exists($file)) {
+                require $file;
+            }
+            $this->cachedPrefs = $game_preferences;
+            return $this->cachedPrefs;
+        }
+    }
+
+    class GameInfosManager
+    {
+        private ?array $cachedInfos = null;
+
+        public function get(string $gameName): array
+        {
+            if ($this->cachedInfos !== null) {
+                return $this->cachedInfos;
+            }
+            $gameinfos = [];
+            $file = dirname(__DIR__) . '/gameinfos.inc.php';
+            if (file_exists($file)) {
+                require $file;
+            }
+            $this->cachedInfos = $gameinfos;
+            return $this->cachedInfos;
+        }
+    }
 }
 
 namespace {
-  if (!class_exists('BgaUserException')) {
-    class_alias(\Bga\GameFramework\UserException::class, 'BgaUserException');
-  }
-  if (!class_exists('BgaSystemException')) {
-    class_alias(\Bga\GameFramework\SystemException::class, 'BgaSystemException');
-  }
-  if (!class_exists('BgaVisibleSystemException')) {
-    class_alias(\Bga\GameFramework\VisibleSystemException::class, 'BgaVisibleSystemException');
-  }
-
-  class APP_Object
-  {
-    function dump($v, $value)
-    {
-      error_log("$v=" . print_r($value, true));
+    // -------------------------------------------------------------------------
+    // Global Constants
+    // -------------------------------------------------------------------------
+    $projectRoot = dirname(__DIR__);
+    if (!defined('APP_BASE_PATH')) {
+        define('APP_BASE_PATH', __DIR__ . '/');
+    }
+    if (!defined('APP_GAMES_PATH')) {
+        define('APP_GAMES_PATH', $projectRoot . '/');
+    }
+    if (!defined('APP_GAMEMODULE_PATH')) {
+        define('APP_GAMEMODULE_PATH', $projectRoot . '/');
     }
 
-    function info($value)
-    {
-      error_log("[INFO] $value");
+    if (!defined('AT_int')) {
+        define('AT_int', 0);
+        define('AT_posint', 1);
+        define('AT_float', 2);
+        define('AT_bool', 3);
+        define('AT_enum', 4);
+        define('AT_alphanum', 5);
+        define('AT_alphanum_dash', 6);
+        define('AT_numberlist', 7);
+        define('AT_base64', 8);
+        define('AT_json', 9);
     }
 
-    function trace($value)
-    {
-      // no-op in local runner to keep stdout clean for JSON responses
+    if (!defined('GAMESTATE_LAST_MOVE')) {
+        define('GAMESTATE_LAST_MOVE', 0);
+        define('GAMESTATE_CURRENT_STATE', 1);
+        define('GAMESTATE_ACTIVE_PLAYER', 2);
+        define('GAMESTATE_NEXT_NOTIF_NO', 3);
+        define('GAMESTATE_GAME_ID', 4);
+        define('GAMESTATE_ADMIN_PLAYER', 5);
+        define('GAMESTATE_PLAYERTURN_NBR', 6);
+        define('GAMESTATE_GAMEPROGRESSION', 7);
+        define('GAMESTATE_CLOCK_MODE', 200);
+        define('GAMESTATE_CLOCK_MODE_ARG', 202);
+        define('GAMESTATE_CLOCK_NIGHT', 203);
+        define('GAMESTATE_GAME_LANG', 207);
+        define('GAMESTATE_GAMEVERSION', 300);
+        define('GAMESTATE_GAME_RESULT_NEUTRALIZED', 301);
+        define('GAMESTATE_NEUTRALIZED_PLAYER_ID', 302);
+        define('GAMESTATE_UNDO_MOVES_STORED', 303);
+        define('GAMESTATE_UNDO_MOVES_PLAYER', 304);
+        define('GAMESTATE_KEEP_RANKING_ON_QUIT', 305);
+        define('GAMESTATE_IS_TOURNAMENT', 306);
+        define('GAMESTATE_LOCK_TIMESTAMP', 307);
+        define('GAMESTATE_DEFER_INITIAL_AI_TURN', 308);
     }
 
-    function debug($value)
-    {
-      error_log("[DEBUG] $value");
+    if (!defined('FEX_bad_input_argument')) {
+        define('FEX_NOCODE', 0);
+        define('FEX_bad_input_argument', 100);
+        define('FEX_game_not_found', 101);
+        define('FEX_unexpected_exception', 102);
+        define('FEX_sql_connection_error', 200);
+        define('FEX_sql_select_db_error', 201);
+        define('FEX_sql_deadlock_error', 202);
+        define('FEX_sql_request_error', 203);
+        define('FEX_application_deadlock_restart_transaction', 204);
+        define('FEX_mysql_deadlock_restart_transaction', 1213);
+        define('FEX_mysql_max_execution_time_exceeded', 3024);
     }
 
-    function watch($value)
-    {
-      error_log("[WATCH] $value");
+    if (!defined('T_SECOND')) {
+        define('T_SECOND', 1);
+        define('T_MINUTE', 60);
+        define('T_HOUR', 3600);
+        define('T_DAY', 86400);
     }
 
-    function warn($value)
-    {
-      error_log("[WARN] $value");
-    }
-
-    function error($msg)
-    {
-      error_log("[ERROR] $msg");
-    }
-  }
-
-  class APP_DbObject extends APP_Object
-  {
-    protected static ?\PDO $pdo = null;
-    protected static string $dbPath = '';
-    protected static int $lastAffectedRows = 0;
-
-    public static function setDbPath(string $path): void
-    {
-      if (self::$dbPath !== $path) {
-        self::$pdo = null;
-        self::$snapshotPdo = null;
-        self::$dbPath = $path;
-      }
-    }
-
-    public static function getDbPath(): string
-    {
-      if (self::$dbPath !== '') {
-        return self::$dbPath;
-      }
-      $envPath = getenv('TICHU_DB_PATH');
-      if ($envPath !== false && $envPath !== '') {
-        return $envPath;
-      }
-      return __DIR__ . '/tichu.db';
-    }
-
-    public static function setPdo(?\PDO $pdo): void
-    {
-      self::$pdo = $pdo;
-    }
-
-    /**
-     * Returns the primary connection. Inside an MVCC request this is the "current"
-     * connection and the writer lock is acquired first (callers use it to write directly).
-     */
-    public static function getPdo(): \PDO
-    {
-      if (self::$pdo === null) {
-        self::$pdo = self::createPdo(self::getDbPath());
-      }
-      if (self::$mvccRequestActive) {
-        return self::ensureMvccWriteTx();
-      }
-      return self::$pdo;
-    }
-
-    public static function initSchema(?string $schemaFile = null): void
-    {
-      $file = $schemaFile ?? (__DIR__ . '/schema.sql');
-      $sql = file_get_contents($file);
-      if ($sql === false) {
-        throw new \Bga\GameFramework\SystemException("Failed to read schema file: $file");
-      }
-      self::getPdo()->exec($sql);
-    }
-
-    // ------------------------------------------------------------------------------------------
-    // MySQL/InnoDB REPEATABLE READ emulation ("MVCC mode", opt-in via TICHU_DB_MVCC=1 or
-    // APP_DbObject::setMvccEmulation(true), file-backed databases only).
-    //
-    // Used by local/race-tests.php so that parallel PHP worker processes sharing one SQLite
-    // file hit the same races as concurrent BGA requests hitting MySQL:
-    //  * Plain SELECTs read a consistent snapshot that is established by the first read of the
-    //    request (on BGA the framework loads the game state before any game code runs). Holding
-    //    a lock does NOT refresh that snapshot -- exactly like InnoDB.
-    //  * Writes and `SELECT ... FOR UPDATE` are "current" reads/writes. They run on a second
-    //    connection inside `BEGIN IMMEDIATE`, i.e. they wait for any other writer to commit.
-    //    (SQLite has one writer lock per database, so this is coarser than InnoDB row locks.)
-    //  * Once a request has made its first *game* write, plain reads see current data including
-    //    its own writes (InnoDB would keep serving the old snapshot plus own writes; this is the
-    //    one place where the emulation is less strict than MySQL).
-    //  * Framework bookkeeping writes (move id, notifications) take the writer lock but do not
-    //    switch plain reads to current data.
-    // ------------------------------------------------------------------------------------------
-    protected static ?bool $mvccEmulation = null;
-    protected static ?\PDO $snapshotPdo = null;
-    protected static bool $mvccRequestActive = false;
-    protected static bool $mvccWriteTxActive = false;
-    protected static bool $mvccHasWritten = false;
-    protected static bool $mvccFrameworkWrite = false;
-
-    public static function setMvccEmulation(?bool $enabled): void
-    {
-      self::$mvccEmulation = $enabled;
-    }
-
-    public static function isMvccEmulation(): bool
-    {
-      if (self::getDbPath() === ':memory:') {
-        return false;
-      }
-      if (self::$mvccEmulation === null) {
-        $env = getenv('TICHU_DB_MVCC');
-        self::$mvccEmulation = $env !== false && $env !== '' && $env !== '0';
-      }
-      return self::$mvccEmulation;
-    }
-
-    protected static ?bool $ignoreLocks = null;
-
-    private static function ignoreLocks(): bool
-    {
-      if (self::$ignoreLocks === null) {
-        $env = getenv('TICHU_DB_IGNORE_LOCKS');
-        self::$ignoreLocks = $env !== false && $env !== '' && $env !== '0';
-      }
-      return self::$ignoreLocks;
-    }
-
-    public static function isMvccRequestActive(): bool
-    {
-      return self::$mvccRequestActive;
-    }
-
-    private static function createPdo(string $path): \PDO
-    {
-      $dsn = $path === ':memory:' ? 'sqlite::memory:' : 'sqlite:' . $path;
-      $pdo = new \PDO($dsn);
-      $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-      $pdo->setAttribute(\PDO::ATTR_DEFAULT_FETCH_MODE, \PDO::FETCH_ASSOC);
-      // Match BGA mysqli behavior where fetched scalar columns are strings (while NULL stays null)
-      $pdo->setAttribute(\PDO::ATTR_STRINGIFY_FETCHES, true);
-      if ($path !== ':memory:') {
-        $pdo->exec('PRAGMA journal_mode = WAL;');
-        $pdo->exec('PRAGMA synchronous = NORMAL;');
-        // Comparable to innodb_lock_wait_timeout: a writer waits this long for the write lock.
-        $pdo->exec('PRAGMA busy_timeout = 20000;');
-      }
-      return $pdo;
-    }
-
-    private static function getSnapshotPdo(): \PDO
-    {
-      if (self::$snapshotPdo === null) {
-        self::$snapshotPdo = self::createPdo(self::getDbPath());
-      }
-      return self::$snapshotPdo;
-    }
-
-    /** Starts a request transaction in MVCC mode (snapshot is taken lazily by the first read). */
-    public static function beginMvccRequest(): void
-    {
-      self::getPdo();
-      self::getSnapshotPdo()->exec('BEGIN DEFERRED');
-      self::$mvccRequestActive = true;
-      self::$mvccWriteTxActive = false;
-      self::$mvccHasWritten = false;
-    }
-
-    /** Commits (or rolls back) the request transaction in MVCC mode. */
-    public static function endMvccRequest(bool $rollback): void
-    {
-      if (!self::$mvccRequestActive) {
-        return;
-      }
-      self::$mvccRequestActive = false;
-      try {
-        if (self::$mvccWriteTxActive && self::$pdo !== null && self::$pdo->inTransaction()) {
-          self::$pdo->exec($rollback ? 'ROLLBACK' : 'COMMIT');
+    // -------------------------------------------------------------------------
+    // Global Helper Functions
+    // -------------------------------------------------------------------------
+    if (!function_exists('clienttranslate')) {
+        function clienttranslate($text)
+        {
+            return (string) $text;
         }
-      } finally {
-        self::$mvccWriteTxActive = false;
-        self::$mvccHasWritten = false;
-        if (self::$snapshotPdo !== null && self::$snapshotPdo->inTransaction()) {
-          self::$snapshotPdo->exec('ROLLBACK');
+    }
+
+    if (!function_exists('totranslate')) {
+        function totranslate($text)
+        {
+            return (string) $text;
         }
-      }
     }
 
-    /** Acquires the (database-wide) writer lock for the current MVCC request. */
-    private static function ensureMvccWriteTx(): \PDO
-    {
-      $pdo = self::$pdo;
-      if (!self::$mvccWriteTxActive) {
-        $pdo->exec('BEGIN IMMEDIATE');
-        self::$mvccWriteTxActive = true;
-      }
-      return $pdo;
-    }
-
-    /** Records a game write that bypassed DbQuery() (direct PDO use, e.g. Deck::shuffle). */
-    public static function noteGameWrite(): void
-    {
-      if (self::$mvccRequestActive) {
-        self::$mvccHasWritten = true;
-      }
-    }
-
-    /** Runs a framework bookkeeping write that must not switch plain reads to current data. */
-    public static function frameworkWrite(callable $fn)
-    {
-      $prev = self::$mvccFrameworkWrite;
-      self::$mvccFrameworkWrite = true;
-      try {
-        return $fn();
-      } finally {
-        self::$mvccFrameworkWrite = $prev;
-      }
-    }
-
-    public static function DbQuery($sql)
-    {
-      // Convert MySQL backslash-escaped single quotes from addslashes() to SQLite ''
-      $normalizedSql = str_replace("\\'", "''", $sql);
-      $lockingRead = (bool) preg_match(
-        '/\s+(FOR\s+UPDATE|FOR\s+SHARE|LOCK\s+IN\s+SHARE\s+MODE)\b/i',
-        $normalizedSql
-      );
-      $normalizedSql = preg_replace(
-        '/\s+(FOR\s+UPDATE|FOR\s+SHARE|LOCK\s+IN\s+SHARE\s+MODE)\b/i',
-        '',
-        $normalizedSql
-      );
-
-      if (self::$mvccRequestActive) {
-        $isWrite = (bool) preg_match(
-          '/^\s*(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER)\b/i',
-          $normalizedSql
-        );
-        if ($lockingRead && self::ignoreLocks()) {
-          // Baseline mode (TICHU_DB_IGNORE_LOCKS=1): behave as if the game code had no
-          // `FOR UPDATE` at all, to demonstrate the races local/race-tests.php detects.
-          $lockingRead = false;
+    if (!function_exists('translate')) {
+        function translate($game, $text, $domain = null)
+        {
+            return (string) $text;
         }
-        if ($isWrite || $lockingRead) {
-          $pdo = self::ensureMvccWriteTx();
-          if ($isWrite && !self::$mvccFrameworkWrite) {
-            self::$mvccHasWritten = true;
-          }
-        } else {
-          $pdo = self::$mvccHasWritten ? self::$pdo : self::getSnapshotPdo();
+    }
+
+    if (!function_exists('_')) {
+        function _($text)
+        {
+            return (string) $text;
         }
-      } else {
-        $pdo = self::getPdo();
-      }
-
-      $stmt = $pdo->query($normalizedSql);
-      self::$lastAffectedRows = $stmt ? $stmt->rowCount() : 0;
-      return $stmt;
     }
 
-    public static function getUniqueValueFromDB($sql)
-    {
-      $stmt = self::DbQuery($sql);
-      $row = $stmt->fetch(\PDO::FETCH_NUM);
-      return $row !== false ? $row[0] : null;
-    }
-
-    public static function getObjectFromDB($sql)
-    {
-      $stmt = self::DbQuery($sql);
-      $row = $stmt->fetch(\PDO::FETCH_ASSOC);
-      return $row !== false ? $row : null;
-    }
-
-    public static function getNonEmptyObjectFromDB($sql)
-    {
-      $row = self::getObjectFromDB($sql);
-      if (empty($row)) {
-        throw new \Bga\GameFramework\SystemException("Empty result for getNonEmptyObjectFromDB: $sql");
-      }
-      return $row;
-    }
-
-    public static function getObjectListFromDB($sql, $bUniqueValue = false)
-    {
-      $stmt = self::DbQuery($sql);
-      if ($bUniqueValue) {
-        $rows = $stmt->fetchAll(\PDO::FETCH_NUM);
-        return array_map(static fn($r) => $r[0], $rows);
-      }
-      return $stmt->fetchAll(\PDO::FETCH_ASSOC);
-    }
-
-    public static function getCollectionFromDB($sql, $bSingleValue = false)
-    {
-      $stmt = self::DbQuery($sql);
-      $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-      $result = [];
-      foreach ($rows as $row) {
-        $vals = array_values($row);
-        $key = $vals[0];
-        $result[$key] = $bSingleValue ? ($vals[1] ?? null) : $row;
-      }
-      return $result;
-    }
-
-    public static function getNonEmptyCollectionFromDB($sql)
-    {
-      $res = self::getCollectionFromDB($sql);
-      if (empty($res)) {
-        throw new \Bga\GameFramework\SystemException("Empty collection from DB: $sql");
-      }
-      return $res;
-    }
-
-    public static function getDoubleKeyCollectionFromDB($sql, $bSingleValue = false)
-    {
-      $stmt = self::DbQuery($sql);
-      $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-      $result = [];
-      foreach ($rows as $row) {
-        $vals = array_values($row);
-        $k1 = $vals[0];
-        $k2 = $vals[1];
-        if (!isset($result[$k1])) {
-          $result[$k1] = [];
+    if (!function_exists('bga_rand')) {
+        function bga_rand(int $min, int $max): int
+        {
+            return random_int($min, $max);
         }
-        $result[$k1][$k2] = $bSingleValue ? ($vals[2] ?? null) : $row;
-      }
-      return $result;
     }
 
-    public static function DbGetLastId()
-    {
-      // Writes always run on the primary connection (also in MVCC mode).
-      if (self::$pdo === null) {
-        self::getPdo();
-      }
-      return self::$pdo->lastInsertId();
-    }
-
-    public static function DbAffectedRow()
-    {
-      return self::$lastAffectedRows;
-    }
-
-    public static function escapeStringForDB($string)
-    {
-      return str_replace("'", "''", (string) $string);
-    }
-  }
-
-  class APP_Action extends APP_DbObject {}
-
-  class APP_GameAction extends APP_Action
-  {
-    public $game;
-    public $view;
-    public array $viewArgs = [];
-    protected ?array $requestArgs = null;
-    protected bool $ajaxMode = false;
-    protected bool $responseSent = false;
-    protected $responseData = null;
-
-    public function __construct($game = null, ?array $requestArgs = null)
-    {
-      $this->game = $game ?? (\Tichu::$instance ?? null);
-      $this->requestArgs = $requestArgs;
-    }
-
-    public function setGame($game): void
-    {
-      $this->game = $game;
-    }
-
-    public function setRequestArgs(?array $args): void
-    {
-      $this->requestArgs = $args;
-    }
-
-    protected function getEffectiveRequestArgs(): array
-    {
-      return $this->requestArgs !== null ? $this->requestArgs : $_REQUEST;
-    }
-
-    public function getResponseData()
-    {
-      return $this->responseData;
-    }
-
-    protected function isArg($argName): bool
-    {
-      $args = $this->getEffectiveRequestArgs();
-      return array_key_exists($argName, $args);
-    }
-
-    protected function getArg(
-      $name,
-      $type,
-      $mandatory = true,
-      $default = null,
-      $argTypeDetails = [],
-      $bCanFail = false
-    ) {
-      $args = $this->getEffectiveRequestArgs();
-      if (!array_key_exists($name, $args)) {
-        if ($mandatory) {
-          throw new \Bga\GameFramework\UserException(
-            "Missing mandatory argument: $name",
-            FEX_bad_input_argument
-          );
-        }
-        return $default;
-      }
-      $val = $args[$name];
-      switch ($type) {
-        case AT_int:
-        case AT_posint:
-          return (int) $val;
-        case AT_float:
-          return (float) $val;
-        case AT_bool:
-          if (is_bool($val)) {
+    if (!function_exists('doublecheck')) {
+        function doublecheck($val)
+        {
+            if (!is_numeric($val)) {
+                throw new \feException("Invalid numeric value: " . var_export($val, true));
+            }
             return $val;
-          }
-          $str = strtolower(trim((string) $val));
-          return in_array($str, ['1', 'true', 'yes', 'on'], true);
-        case AT_enum:
-          $strVal = (string) $val;
-          if (!empty($argTypeDetails)) {
-            $allowed = array_map('strval', $argTypeDetails);
-            if (!in_array($strVal, $allowed, true)) {
-              throw new \Bga\GameFramework\UserException(
-                "Invalid enum value '$strVal' for argument '$name'",
-                FEX_bad_input_argument
-              );
+        }
+    }
+
+    if (!function_exists('getCurrentGameVersion')) {
+        function getCurrentGameVersion(string $gameName): string
+        {
+            return '999999-9999';
+        }
+    }
+
+    if (!function_exists('mysql_fetch_assoc')) {
+        function mysql_fetch_assoc($result)
+        {
+            if ($result instanceof \mysqli_result) {
+                return $result->fetch_assoc() ?: false;
             }
-          }
-          return $strVal;
-        case AT_json:
-          return is_string($val) ? json_decode($val, true) : $val;
-        case AT_numberlist:
-        case AT_alphanum:
-        default:
-          return (string) $val;
-      }
-    }
-
-    protected function setAjaxMode($bCheckCsrf = true)
-    {
-      $this->ajaxMode = true;
-      $game = $this->game ?? (\Tichu::$instance ?? null);
-      if ($game) {
-        $this->game = $game;
-        $game->beginPlayerAction();
-      }
-    }
-
-    protected function ajaxResponse($data = '')
-    {
-      $this->responseSent = true;
-      $this->responseData = $data;
-      if ($this->game) {
-        $this->game->endPlayerAction();
-      }
-    }
-  }
-
-  class Deck
-  {
-    private string $table;
-
-    public function __construct(string $table = 'card')
-    {
-      $this->table = $table;
-    }
-
-    public function init(string $table): void
-    {
-      $this->table = $table;
-    }
-
-    private function selectColumns(): string
-    {
-      return "SELECT card_id AS id, card_type AS type, card_type_arg AS type_arg, card_location AS location, card_location_arg AS location_arg, card_passed_from AS passed_from FROM {$this->table}";
-    }
-
-    public function createCards(array $cards, string $location = 'deck', int $location_arg = 0): void
-    {
-      $pdo = APP_DbObject::getPdo();
-      APP_DbObject::noteGameWrite();
-      $ownTx = !$pdo->inTransaction();
-      if ($ownTx) {
-        $pdo->beginTransaction();
-      }
-      try {
-        $stmt = $pdo->prepare(
-          "INSERT INTO {$this->table} (card_type, card_type_arg, card_location, card_location_arg) VALUES (?, ?, ?, ?)"
-        );
-        foreach ($cards as $cardDef) {
-          $nbr = (int) ($cardDef['nbr'] ?? 1);
-          $type = (string) $cardDef['type'];
-          $typeArg = (int) $cardDef['type_arg'];
-          for ($i = 0; $i < $nbr; $i++) {
-            $stmt->execute([$type, $typeArg, $location, $location_arg]);
-          }
+            return false;
         }
-        if ($ownTx) {
-          $pdo->commit();
+    }
+
+    if (!function_exists('mysql_fetch_row')) {
+        function mysql_fetch_row($result)
+        {
+            if ($result instanceof \mysqli_result) {
+                return $result->fetch_row() ?: false;
+            }
+            return false;
         }
-      } catch (\Throwable $e) {
-        if ($ownTx && $pdo->inTransaction()) {
-          $pdo->rollBack();
+    }
+
+    if (!function_exists('unserialize_game_notifs')) {
+        function unserialize_game_notifs(string $raw): array
+        {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+            $unser = @unserialize($raw);
+            return is_array($unser) ? $unser : [];
         }
-        throw $e;
-      }
     }
 
-    public function shuffle(string $location): void
-    {
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $ids = APP_DbObject::getObjectListFromDB(
-        "SELECT card_id FROM {$this->table} WHERE card_location = '$locEsc' ORDER BY card_id ASC",
-        true
-      );
-      if (empty($ids)) {
-        return;
-      }
-      shuffle($ids);
-      $pdo = APP_DbObject::getPdo();
-      APP_DbObject::noteGameWrite();
-      $ownTx = !$pdo->inTransaction();
-      if ($ownTx) {
-        $pdo->beginTransaction();
-      }
-      try {
-        $stmt = $pdo->prepare(
-          "UPDATE {$this->table} SET card_location_arg = ? WHERE card_id = ?"
-        );
-        foreach ($ids as $index => $cardId) {
-          $stmt->execute([$index, (int) $cardId]);
+    if (!function_exists('getKeyWithMaximum')) {
+        function getKeyWithMaximum(array $array, bool $bCanReturnNullIfTwoMax = true, bool $bMaximum = true)
+        {
+            if (empty($array)) {
+                return null;
+            }
+            $target = $bMaximum ? max($array) : min($array);
+            $keys = array_keys($array, $target, true);
+            if (count($keys) > 1 && $bCanReturnNullIfTwoMax) {
+                return null;
+            }
+            return $keys[0];
         }
-        if ($ownTx) {
-          $pdo->commit();
+    }
+
+    if (!function_exists('getKeysWithMaximum')) {
+        function getKeysWithMaximum(array $array, bool $bMaximum = true): array
+        {
+            if (empty($array)) {
+                return [];
+            }
+            $target = $bMaximum ? max($array) : min($array);
+            return array_keys($array, $target, true);
         }
-      } catch (\Throwable $e) {
-        if ($ownTx && $pdo->inTransaction()) {
-          $pdo->rollBack();
+    }
+
+    if (!function_exists('apcu_fetch')) {
+        $GLOBALS['__bga_apcu_cache'] = [];
+        function apcu_fetch($key, &$success = null)
+        {
+            if (array_key_exists((string) $key, $GLOBALS['__bga_apcu_cache'])) {
+                $success = true;
+                return $GLOBALS['__bga_apcu_cache'][(string) $key];
+            }
+            $success = false;
+            return false;
         }
-        throw $e;
-      }
-    }
-
-    public function pickCards(int $nbr, string $from_location, int $player_id): array
-    {
-      return $this->pickCardsForLocation($nbr, $from_location, 'hand', $player_id);
-    }
-
-    public function pickCard(string $from_location, int $player_id): ?array
-    {
-      $cards = $this->pickCards(1, $from_location, $player_id);
-      return !empty($cards) ? reset($cards) : null;
-    }
-
-    public function pickCardsForLocation(
-      int $nbr,
-      string $from_location,
-      string $to_location,
-      int $to_location_arg = 0,
-      bool $no_deck_reform = false
-    ): array {
-      $fromEsc = APP_DbObject::escapeStringForDB($from_location);
-      $limit = max(0, (int) $nbr);
-      $rows = APP_DbObject::getObjectListFromDB(
-        $this->selectColumns() .
-          " WHERE card_location = '$fromEsc' ORDER BY card_location_arg ASC, card_id ASC LIMIT $limit"
-      );
-      if (empty($rows)) {
-        return [];
-      }
-      $ids = array_map(static fn($r) => (int) $r['id'], $rows);
-      $this->moveCards($ids, $to_location, $to_location_arg);
-      return array_values($this->getCards($ids));
-    }
-
-    public function pickCardForLocation(
-      string $from_location,
-      string $to_location,
-      int $to_location_arg = 0
-    ): ?array {
-      $cards = $this->pickCardsForLocation(1, $from_location, $to_location, $to_location_arg);
-      return !empty($cards) ? reset($cards) : null;
-    }
-
-    public function getCard($card_id): ?array
-    {
-      return APP_DbObject::getObjectFromDB(
-        $this->selectColumns() . " WHERE card_id = " . (int) $card_id
-      );
-    }
-
-    public function getCards(array $card_array): array
-    {
-      if (empty($card_array)) {
-        return [];
-      }
-      $ids = array_map('intval', $card_array);
-      $inList = implode(',', $ids);
-      return APP_DbObject::getCollectionFromDB(
-        $this->selectColumns() . " WHERE card_id IN ($inList)"
-      );
-    }
-
-    public function getCardsInLocation(
-      string $location,
-      $location_arg = null,
-      ?string $order_by = null
-    ): array {
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $sql = $this->selectColumns() . " WHERE card_location = '$locEsc'";
-      if ($location_arg !== null) {
-        $sql .= " AND card_location_arg = " . (int) $location_arg;
-      }
-      if ($order_by !== null && $order_by !== '') {
-        $sql .= " ORDER BY $order_by";
-      }
-      return APP_DbObject::getCollectionFromDB($sql);
-    }
-
-    public function getPlayerHand($player_id): array
-    {
-      return $this->getCardsInLocation('hand', $player_id);
-    }
-
-    public function countCardInLocation(string $location, $location_arg = null): int
-    {
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $sql = "SELECT COUNT(*) FROM {$this->table} WHERE card_location = '$locEsc'";
-      if ($location_arg !== null) {
-        $sql .= " AND card_location_arg = " . (int) $location_arg;
-      }
-      return (int) APP_DbObject::getUniqueValueFromDB($sql);
-    }
-
-    public function countCardsInLocation(string $location, $location_arg = null): int
-    {
-      return $this->countCardInLocation($location, $location_arg);
-    }
-
-    public function countCardsByLocationArgs(string $location): array
-    {
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $sql = "SELECT card_location_arg, COUNT(*) AS cnt FROM {$this->table} WHERE card_location = '$locEsc' GROUP BY card_location_arg";
-      $raw = APP_DbObject::getCollectionFromDB($sql, true);
-      $res = [];
-      foreach ($raw as $locArg => $cnt) {
-        if ((int) $cnt > 0) {
-          $res[$locArg] = (int) $cnt;
-        }
-      }
-      return $res;
-    }
-
-    public function getCardsOfType($type, $type_arg = null): array
-    {
-      $typeEsc = APP_DbObject::escapeStringForDB((string) $type);
-      $sql = $this->selectColumns() . " WHERE card_type = '$typeEsc'";
-      if ($type_arg !== null) {
-        $sql .= " AND card_type_arg = " . (int) $type_arg;
-      }
-      return APP_DbObject::getCollectionFromDB($sql);
-    }
-
-    public function getCardsOfTypeInLocation(
-      $type,
-      $type_arg = null,
-      ?string $location = null,
-      $location_arg = null
-    ): array {
-      $typeEsc = APP_DbObject::escapeStringForDB((string) $type);
-      $sql = $this->selectColumns() . " WHERE card_type = '$typeEsc'";
-      if ($type_arg !== null) {
-        $sql .= " AND card_type_arg = " . (int) $type_arg;
-      }
-      if ($location !== null) {
-        $locEsc = APP_DbObject::escapeStringForDB($location);
-        $sql .= " AND card_location = '$locEsc'";
-      }
-      if ($location_arg !== null) {
-        $sql .= " AND card_location_arg = " . (int) $location_arg;
-      }
-      return APP_DbObject::getCollectionFromDB($sql);
-    }
-
-    public function moveCard($card_id, string $location, $location_arg = 0): void
-    {
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $locArg = (int) ($location_arg ?? 0);
-      APP_DbObject::DbQuery(
-        "UPDATE {$this->table} SET card_location = '$locEsc', card_location_arg = $locArg WHERE card_id = " .
-          (int) $card_id
-      );
-    }
-
-    public function moveCards(array $cards, string $location, $location_arg = 0): void
-    {
-      if (empty($cards)) {
-        return;
-      }
-      $locEsc = APP_DbObject::escapeStringForDB($location);
-      $locArg = (int) ($location_arg ?? 0);
-      $ids = implode(',', array_map('intval', $cards));
-      APP_DbObject::DbQuery(
-        "UPDATE {$this->table} SET card_location = '$locEsc', card_location_arg = $locArg WHERE card_id IN ($ids)"
-      );
-    }
-
-    public function moveAllCardsInLocation(
-      ?string $from_location,
-      string $to_location,
-      $from_location_arg = null,
-      $to_location_arg = 0
-    ): void {
-      $toEsc = APP_DbObject::escapeStringForDB($to_location);
-      $toArg = (int) ($to_location_arg ?? 0);
-      $sql = "UPDATE {$this->table} SET card_location = '$toEsc', card_location_arg = $toArg";
-      $where = [];
-      if ($from_location !== null) {
-        $fromEsc = APP_DbObject::escapeStringForDB($from_location);
-        $where[] = "card_location = '$fromEsc'";
-      }
-      if ($from_location_arg !== null) {
-        $where[] = "card_location_arg = " . (int) $from_location_arg;
-      }
-      if (!empty($where)) {
-        $sql .= " WHERE " . implode(" AND ", $where);
-      }
-      APP_DbObject::DbQuery($sql);
-    }
-  }
-
-  class GameState
-  {
-    private $game;
-    public array $states = [];
-    private int $transitionDepth = 0;
-
-    public function getTransitionDepth(): int
-    {
-      return $this->transitionDepth;
-    }
-
-    public function __construct($game = null)
-    {
-      $this->game = $game;
-      $statesFile = dirname(__DIR__) . '/states.inc.php';
-      if (file_exists($statesFile)) {
-        $machinestates = [];
-        require $statesFile;
-        $this->states = $machinestates;
-      }
-      if (!isset($this->states[1])) {
-        $this->states[1] = [
-          'name' => 'gameSetup',
-          'description' => '',
-          'type' => 'manager',
-          'transitions' => ['' => 10],
-        ];
-      }
-      if (!isset($this->states[99])) {
-        $this->states[99] = [
-          'name' => 'gameEnd',
-          'description' => clienttranslate('End of game'),
-          'descriptionmyturn' => clienttranslate('End of game'),
-          'type' => 'manager',
-          'possibleactions' => [],
-          'transitions' => [],
-        ];
-      }
-    }
-
-    public function getStateId(): int
-    {
-      $val = APP_DbObject::getUniqueValueFromDB(
-        "SELECT global_value FROM global WHERE global_id = 1"
-      );
-      return $val !== null ? (int) $val : 10;
-    }
-
-    public function setStateId(int $stateId): void
-    {
-      APP_DbObject::DbQuery(
-        "INSERT OR REPLACE INTO global (global_id, global_value) VALUES (1, " . (int) $stateId . ")"
-      );
-    }
-
-    public function getActivePlayerId(): string
-    {
-      $val = APP_DbObject::getUniqueValueFromDB(
-        "SELECT global_value FROM global WHERE global_id = 2"
-      );
-      return $val !== null ? (string) $val : '0';
-    }
-
-    public function changeActivePlayer($player_id): void
-    {
-      APP_DbObject::DbQuery(
-        "INSERT OR REPLACE INTO global (global_id, global_value) VALUES (2, " .
-          (int) $player_id .
-          ")"
-      );
-    }
-
-    public function getPlayerActiveThisTurn(): string
-    {
-      return $this->getActivePlayerId();
-    }
-
-    private function getMultiactivePlayers(): array
-    {
-      $list = APP_DbObject::getObjectListFromDB(
-        "SELECT player_id FROM player WHERE player_is_multiactive = 1 ORDER BY player_no ASC",
-        true
-      );
-      return array_values(array_map('strval', $list));
-    }
-
-    public function getActivePlayerList(): array
-    {
-      $stateId = $this->getStateId();
-      $def = $this->states[$stateId] ?? ['type' => 'game'];
-      $type = $def['type'] ?? 'game';
-      if ($type === 'activeplayer') {
-        $act = $this->getActivePlayerId();
-        return $act && $act !== '0' ? [(string) $act] : [];
-      }
-      if ($type === 'multipleactiveplayer') {
-        return $this->getMultiactivePlayers();
-      }
-      return [];
-    }
-
-    public function isMutiactiveState(): bool
-    {
-      $stateId = $this->getStateId();
-      return ($this->states[$stateId]['type'] ?? '') === 'multipleactiveplayer';
-    }
-
-    public function isMultiactiveState(): bool
-    {
-      return $this->isMutiactiveState();
-    }
-
-    public function isPlayerActive($player_id): bool
-    {
-      $stateId = $this->getStateId();
-      $type = $this->states[$stateId]['type'] ?? 'game';
-      if ($type === 'activeplayer') {
-        return (string) $this->getActivePlayerId() === (string) $player_id;
-      }
-      if ($type === 'multipleactiveplayer') {
-        return in_array((string) $player_id, $this->getActivePlayerList(), true);
-      }
-      return false;
-    }
-
-    private function computeRawArgs(array $def): array
-    {
-      if (!empty($def['args']) && $this->game && method_exists($this->game, $def['args'])) {
-        $res = $this->game->{$def['args']}();
-        return is_array($res) ? $res : [];
-      }
-      return [];
-    }
-
-    private function resolveArgsForViewer(array $rawArgs, ?int $viewerPlayerId): array
-    {
-      if (!array_key_exists('_private', $rawArgs)) {
-        return $rawArgs;
-      }
-      $args = $rawArgs;
-      $privateMap = $rawArgs['_private'];
-      unset($args['_private']);
-
-      if ($viewerPlayerId === null || !is_array($privateMap)) {
-        return $args;
-      }
-
-      if (array_key_exists('active', $privateMap)) {
-        if ($this->isPlayerActive($viewerPlayerId)) {
-          $args['_private'] = $privateMap['active'];
-        }
-      } elseif (array_key_exists($viewerPlayerId, $privateMap)) {
-        $args['_private'] = $privateMap[$viewerPlayerId];
-      } elseif (array_key_exists((string) $viewerPlayerId, $privateMap)) {
-        $args['_private'] = $privateMap[(string) $viewerPlayerId];
-      }
-
-      return $args;
-    }
-
-    public function state(?int $viewerPlayerId = null): array
-    {
-      $stateId = $this->getStateId();
-      $def = $this->states[$stateId] ?? [
-        'name' => 'unknown',
-        'description' => '',
-        'descriptionmyturn' => '',
-        'type' => 'game',
-        'possibleactions' => [],
-        'transitions' => [],
-      ];
-      $rawArgs = $this->computeRawArgs($def);
-      return $this->buildStateArray($stateId, $def, $rawArgs, $viewerPlayerId);
-    }
-
-    private function buildStateArray(
-      int $stateId,
-      array $def,
-      array $rawArgs,
-      ?int $viewerPlayerId
-    ): array {
-      $type = $def['type'] ?? 'game';
-      $activePlayer = (string) $this->getActivePlayerId();
-      $multiactive = $type === 'multipleactiveplayer' ? $this->getActivePlayerList() : [];
-      $args = $this->resolveArgsForViewer($rawArgs, $viewerPlayerId);
-
-      $stateArr = [
-        'id' => (string) $stateId,
-        'name' => $def['name'] ?? '',
-        'type' => $type,
-        'description' => $def['description'] ?? '',
-        'descriptionmyturn' => $def['descriptionmyturn'] ?? ($def['description'] ?? ''),
-        'possibleactions' => $def['possibleactions'] ?? [],
-        'transitions' => $def['transitions'] ?? [],
-        'active_player' => $activePlayer,
-        'multiactive' => $multiactive,
-        'args' => $args,
-        'reflexion' => ['total' => []],
-      ];
-
-      if (!empty($def['updateGameProgression']) && $this->game && method_exists($this->game, 'getGameProgression')) {
-        $stateArr['updateGameProgression'] = (int) $this->game->getGameProgression();
-      }
-
-      return $stateArr;
-    }
-
-    public function getCurrentMainState(): object
-    {
-      return (object) $this->state();
-    }
-
-    public function getCurrentMainStateId(): int
-    {
-      return $this->getStateId();
-    }
-
-    public function getAllStatesForClient(): array
-    {
-      $out = [];
-      foreach ($this->states as $id => $def) {
-        $out[$id] = [
-          'id' => (string) $id,
-          'name' => $def['name'] ?? '',
-          'type' => $def['type'] ?? 'game',
-          'description' => $def['description'] ?? '',
-          'descriptionmyturn' => $def['descriptionmyturn'] ?? ($def['description'] ?? ''),
-          'possibleactions' => $def['possibleactions'] ?? [],
-          'transitions' => $def['transitions'] ?? [],
-          'updateGameProgression' => !empty($def['updateGameProgression']) ? 1 : 0,
-        ];
-      }
-      return $out;
-    }
-
-    public function getStateNumberByTransition($transition = ''): int
-    {
-      $stateId = $this->getStateId();
-      $def = $this->states[$stateId] ?? [];
-      $transitions = $def['transitions'] ?? [];
-      foreach ($transitions as $name => $nextId) {
-        if ($transition === $name || $transition === '' || $transition === null) {
-          return (int) $nextId;
-        }
-      }
-      if (is_numeric($transition) && isset($this->states[(int) $transition])) {
-        return (int) $transition;
-      }
-      throw new \feException(
-        "This transition ($transition) is impossible at this state ($stateId)"
-      );
-    }
-
-    public function nextState($transition = ''): void
-    {
-      $nextId = $this->getStateNumberByTransition((string) $transition);
-      $this->jumpToState($nextId);
-    }
-
-    public function jumpToState(int $stateNum): void
-    {
-      if ($this->transitionDepth === 0 && $this->game) {
-        $this->game->ensureMoveStarted();
-      }
-      $this->transitionDepth++;
-      try {
-        $this->setStateId($stateNum);
-        $def = $this->states[$stateNum] ?? [];
-        $rawArgs = $this->computeRawArgs($def);
-        $publicState = $this->buildStateArray($stateNum, $def, $rawArgs, null);
-
-        if ($this->game) {
-          if (isset($rawArgs['_private']) && is_array($rawArgs['_private'])) {
-            $privateMap = $rawArgs['_private'];
-            if (array_key_exists('active', $privateMap)) {
-              $actId = (int) $this->getActivePlayerId();
-              if ($actId > 0) {
-                $this->game->notifyPlayer(
-                  $actId,
-                  'gameStateChangePrivateArg',
-                  '',
-                  $privateMap['active']
-                );
-              }
-            } else {
-              foreach ($privateMap as $pId => $privData) {
-                if (is_numeric($pId) && (int) $pId > 0) {
-                  $this->game->notifyPlayer((int) $pId, 'gameStateChangePrivateArg', '', $privData);
+        function apcu_add($key, $var = null, int $ttl = 0)
+        {
+            if (is_array($key)) {
+                foreach ($key as $k => $v) {
+                    $GLOBALS['__bga_apcu_cache'][(string) $k] = $v;
                 }
-              }
+                return [];
             }
-          }
-
-          $this->game->notifyAllPlayers('gameStateChange', '', $publicState);
-
-          if (!empty($def['action']) && method_exists($this->game, $def['action'])) {
-            $actionMethod = $def['action'];
-            $this->game->$actionMethod();
-          }
+            $GLOBALS['__bga_apcu_cache'][(string) $key] = $var;
+            return true;
         }
-      } finally {
-        $this->transitionDepth--;
-        if ($this->transitionDepth === 0 && $this->game) {
-          $this->game->onTopLevelTransitionComplete();
+        function apcu_store($key, $var = null, int $ttl = 0)
+        {
+            return apcu_add($key, $var, $ttl);
         }
-      }
-    }
-
-    public function setAllPlayersMultiactive(): void
-    {
-      APP_DbObject::DbQuery("UPDATE player SET player_is_multiactive = 1");
-      if ($this->game) {
-        $this->game->notifyAllPlayers(
-          'gameStateMultipleActiveUpdate',
-          '',
-          $this->getMultiactivePlayers()
-        );
-      }
-    }
-
-    public function setPlayersMultiactive($players, $next_state, $bExclusive = false): bool
-    {
-      if ($this->transitionDepth === 0 && $this->game) {
-        $this->game->ensureMoveStarted();
-      }
-      $this->transitionDepth++;
-      try {
-        if ($bExclusive) {
-          APP_DbObject::DbQuery("UPDATE player SET player_is_multiactive = 0");
+        function apcu_exists($keys)
+        {
+            return array_key_exists((string) $keys, $GLOBALS['__bga_apcu_cache']);
         }
-        if (!empty($players)) {
-          $ids = implode(',', array_map('intval', $players));
-          APP_DbObject::DbQuery(
-            "UPDATE player SET player_is_multiactive = 1 WHERE player_id IN ($ids)"
-          );
-        }
-        $activeList = $this->getMultiactivePlayers();
-        if ($this->game) {
-          $this->game->notifyAllPlayers('gameStateMultipleActiveUpdate', '', $activeList);
-        }
-        if (count($activeList) === 0 && $next_state !== '' && $next_state !== null) {
-          $this->nextState($next_state);
-          return true;
-        }
-        return false;
-      } finally {
-        $this->transitionDepth--;
-        if ($this->transitionDepth === 0 && $this->game) {
-          $this->game->onTopLevelTransitionComplete();
-        }
-      }
     }
 
-    public function setPlayerNonMultiactive($player_id, $next_state): bool
-    {
-      if ($this->transitionDepth === 0 && $this->game) {
-        $this->game->ensureMoveStarted();
-      }
-      $this->transitionDepth++;
-      try {
-        APP_DbObject::DbQuery(
-          "UPDATE player SET player_is_multiactive = 0 WHERE player_id = " . (int) $player_id
-        );
-        $activeList = $this->getMultiactivePlayers();
-        if ($this->game) {
-          $this->game->notifyAllPlayers('gameStateMultipleActiveUpdate', '', $activeList);
-        }
-        if (count($activeList) === 0) {
-          if ($next_state !== '' && $next_state !== null) {
-            $this->nextState($next_state);
-          }
-          return true;
-        }
-        return false;
-      } finally {
-        $this->transitionDepth--;
-        if ($this->transitionDepth === 0 && $this->game) {
-          $this->game->onTopLevelTransitionComplete();
-        }
-      }
-    }
+    // -------------------------------------------------------------------------
+    // Core Legacy Platform Classes
+    // -------------------------------------------------------------------------
+    if (!class_exists('feException')) {
+        class feException extends \Exception
+        {
+            public bool $expected = false;
+            public bool $visibility = true;
+            public ?array $args = null;
 
-    public function updateMultiactiveOrNextState($next_state_if_none): bool
-    {
-      if ($this->transitionDepth === 0 && $this->game) {
-        $this->game->ensureMoveStarted();
-      }
-      $this->transitionDepth++;
-      try {
-        $activeList = $this->getMultiactivePlayers();
-        if ($this->game) {
-          $this->game->notifyAllPlayers('gameStateMultipleActiveUpdate', '', $activeList);
-        }
-        if (count($activeList) === 0 && $next_state_if_none !== '' && $next_state_if_none !== null) {
-          $this->nextState($next_state_if_none);
-          return true;
-        }
-        return false;
-      } finally {
-        $this->transitionDepth--;
-        if ($this->transitionDepth === 0 && $this->game) {
-          $this->game->onTopLevelTransitionComplete();
-        }
-      }
-    }
-
-    public function checkPossibleAction(string $action): void
-    {
-      $stateId = $this->getStateId();
-      $def = $this->states[$stateId] ?? [];
-      $possible = $def['possibleactions'] ?? [];
-      if (!in_array($action, $possible, true)) {
-        $stateName = $def['name'] ?? (string) $stateId;
-        throw new \Bga\GameFramework\UserException(
-          "Action '$action' is not allowed in current game state '$stateName'"
-        );
-      }
-    }
-
-    public function reloadState(): array
-    {
-      return $this->state();
-    }
-  }
-}
-
-namespace Bga\GameFramework {
-  abstract class Table extends \APP_DbObject
-  {
-    public Bga $bga;
-    public ?\GameState $gamestate = null;
-    public bool $bSelectGlobalsForUpdate = false;
-    public bool $not_a_move_notification = false;
-    protected array $stateLabels = [];
-    protected int $currentPlayerId = 2385074;
-    protected array $basicPlayersCache = [];
-    protected bool $moveInProgress = false;
-    protected bool $inAjaxAction = false;
-    protected bool $ownActionTransaction = false;
-
-    public function __construct()
-    {
-      $this->bga = new Bga();
-      $materialFile = dirname(__DIR__) . '/material.inc.php';
-      if (file_exists($materialFile)) {
-        require $materialFile;
-      }
-      $this->gamestate = new \GameState($this);
-    }
-
-    public ?int $table_id = 1;
-
-    protected function initTable(): void
-    {
-    }
-
-    public static function _($s): string
-    {
-      return (string) $s;
-    }
-
-    public function setCurrentPlayerId(int $playerId): void
-    {
-      $this->currentPlayerId = $playerId;
-    }
-
-    public function getCurrentPlayerId(): int
-    {
-      return $this->currentPlayerId;
-    }
-
-    public function getCurrentPlayerName(): string
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return $players[$this->currentPlayerId]['player_name'] ?? '';
-    }
-
-    public function getCurrentPlayerColor(): string
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return $players[$this->currentPlayerId]['player_color'] ?? '000000';
-    }
-
-    public function isCurrentPlayerZombie(): bool
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return !empty($players[$this->currentPlayerId]['player_zombie']);
-    }
-
-    public function getActivePlayerId()
-    {
-      return $this->gamestate->getActivePlayerId();
-    }
-
-    public function getActivePlayerName(): string
-    {
-      $actId = (int) $this->getActivePlayerId();
-      $players = $this->loadPlayersBasicInfos();
-      return $players[$actId]['player_name'] ?? '';
-    }
-
-    public function loadPlayersBasicInfos(): array
-    {
-      $rows = self::getCollectionFromDB(
-        "SELECT player_id, player_no, player_name, player_color, player_score, player_score_aux, player_zombie, player_eliminated, player_is_multiactive, player_avatar, player_canal, player_team FROM player ORDER BY player_no ASC"
-      );
-      $this->basicPlayersCache = $rows;
-      return $rows;
-    }
-
-    public function reloadPlayersBasicInfos(): void
-    {
-      $this->loadPlayersBasicInfos();
-    }
-
-    public function getPlayersNumber(): int
-    {
-      return (int) self::getUniqueValueFromDB("SELECT COUNT(*) FROM player");
-    }
-
-    public function getPlayerNameById($player_id): string
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return $players[$player_id]['player_name'] ?? '';
-    }
-
-    public function getPlayerNoById($player_id): int
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return (int) ($players[$player_id]['player_no'] ?? 0);
-    }
-
-    public function getPlayerColorById($player_id): string
-    {
-      $players = $this->loadPlayersBasicInfos();
-      return $players[$player_id]['player_color'] ?? '000000';
-    }
-
-    public function initGameStateLabels(array $labels): void
-    {
-      $this->stateLabels = $labels;
-    }
-
-    protected function resolveGlobalId($labelOrId): int
-    {
-      if (isset($this->stateLabels[$labelOrId])) {
-        return (int) $this->stateLabels[$labelOrId];
-      }
-      if (is_numeric($labelOrId)) {
-        return (int) $labelOrId;
-      }
-      throw new SystemException("Unknown game state label: $labelOrId");
-    }
-
-    public function setGameStateInitialValue($value_label, $value_value): void
-    {
-      $id = $this->resolveGlobalId($value_label);
-      self::DbQuery(
-        "INSERT OR REPLACE INTO global (global_id, global_value) VALUES ($id, " .
-          (int) $value_value .
-          ")"
-      );
-    }
-
-    public function getGameStateValue($value_label, $default = 0)
-    {
-      $id = $this->resolveGlobalId($value_label);
-      $val = self::getUniqueValueFromDB(
-        "SELECT global_value FROM global WHERE global_id = $id"
-      );
-      return $val !== null ? (int) $val : $default;
-    }
-
-    public function setGameStateValue($value_label, $value_value): void
-    {
-      $id = $this->resolveGlobalId($value_label);
-      self::DbQuery(
-        "INSERT OR REPLACE INTO global (global_id, global_value) VALUES ($id, " .
-          (int) $value_value .
-          ")"
-      );
-    }
-
-    public function incGameStateValue($value_label, $increment): int
-    {
-      $cur = (int) $this->getGameStateValue($value_label, 0);
-      $next = $cur + (int) $increment;
-      $this->setGameStateValue($value_label, $next);
-      return $next;
-    }
-
-    protected function activeNextPlayer(): int
-    {
-      $players = array_values($this->loadPlayersBasicInfos());
-      if (empty($players)) {
-        return 0;
-      }
-      $actId = (string) $this->getActivePlayerId();
-      $count = count($players);
-      for ($i = 0; $i < $count; $i++) {
-        if ((string) $players[$i]['player_id'] === $actId) {
-          $next = (int) $players[($i + 1) % $count]['player_id'];
-          $this->gamestate->changeActivePlayer($next);
-          return $next;
-        }
-      }
-      $first = (int) $players[0]['player_id'];
-      $this->gamestate->changeActivePlayer($first);
-      return $first;
-    }
-
-    protected function activePrevPlayer(): int
-    {
-      $players = array_values($this->loadPlayersBasicInfos());
-      if (empty($players)) {
-        return 0;
-      }
-      $actId = (string) $this->getActivePlayerId();
-      $count = count($players);
-      for ($i = 0; $i < $count; $i++) {
-        if ((string) $players[$i]['player_id'] === $actId) {
-          $prev = (int) $players[($i + $count - 1) % $count]['player_id'];
-          $this->gamestate->changeActivePlayer($prev);
-          return $prev;
-        }
-      }
-      $first = (int) $players[0]['player_id'];
-      $this->gamestate->changeActivePlayer($first);
-      return $first;
-    }
-
-    public function checkAction($actionName, $bThrowException = true): bool
-    {
-      try {
-        $this->gamestate->checkPossibleAction($actionName);
-        if (!$this->gamestate->isPlayerActive($this->currentPlayerId)) {
-          throw new UserException(clienttranslate("This is not your turn"));
-        }
-        $this->ensureMoveStarted();
-        return true;
-      } catch (\Throwable $e) {
-        if ($bThrowException) {
-          throw $e;
-        }
-        return false;
-      }
-    }
-
-    public function beginPlayerAction(): void
-    {
-      if (self::isMvccEmulation()) {
-        if (!self::isMvccRequestActive()) {
-          self::beginMvccRequest();
-          $this->ownActionTransaction = true;
-        }
-        $this->inAjaxAction = true;
-        // Model the BGA framework loading the game state before any game code runs: this
-        // plain read establishes the request's consistent snapshot. The move id is only
-        // incremented lazily (checkAction / first transition / first notification), so that
-        // this emulation does not take a write lock before the game code does.
-        $this->gamestate->getStateId();
-        $this->initTable();
-        return;
-      }
-      $pdo = self::getPdo();
-      if (!$pdo->inTransaction()) {
-        $pdo->beginTransaction();
-        $this->ownActionTransaction = true;
-      }
-      $this->inAjaxAction = true;
-      $this->initTable();
-      $this->ensureMoveStarted();
-    }
-
-    public function endPlayerAction(bool $rollback = false): void
-    {
-      if (self::isMvccRequestActive()) {
-        if ($this->ownActionTransaction) {
-          self::endMvccRequest($rollback);
-        }
-      } else {
-        $pdo = self::getPdo();
-        if ($this->ownActionTransaction && $pdo->inTransaction()) {
-          if ($rollback) {
-            $pdo->rollBack();
-          } else {
-            $pdo->commit();
-          }
-        }
-      }
-      $this->ownActionTransaction = false;
-      $this->inAjaxAction = false;
-      $this->moveInProgress = false;
-      // Each BGA request runs in a fresh PHP process. Let the game reset any per-request
-      // state (e.g. the table lock flag of Tichu::acquireGameLock()).
-      if (method_exists($this, 'onRequestEnd')) {
-        $this->onRequestEnd();
-      }
-    }
-
-    public function rollbackPlayerAction(): void
-    {
-      $this->endPlayerAction(true);
-    }
-
-    public function ensureMoveStarted(): void
-    {
-      if (!$this->moveInProgress) {
-        $this->incrementMoveId();
-        $this->moveInProgress = true;
-      }
-    }
-
-    public function onTopLevelTransitionComplete(): void
-    {
-      if (!$this->inAjaxAction) {
-        $this->moveInProgress = false;
-      }
-    }
-
-    public function initStat($table_or_player, $name, $value, $player_id = null): void
-    {
-      $nameEsc = self::escapeStringForDB($name);
-      $val = (float) $value;
-      if ($table_or_player === 'table') {
-        self::DbQuery(
-          "INSERT OR REPLACE INTO stats (stats_type, stats_player_id, stats_value) VALUES ('$nameEsc', 0, $val)"
-        );
-      } else {
-        if ($player_id !== null) {
-          $pId = (int) $player_id;
-          self::DbQuery(
-            "INSERT OR REPLACE INTO stats (stats_type, stats_player_id, stats_value) VALUES ('$nameEsc', $pId, $val)"
-          );
-        } else {
-          $playerIds = self::getObjectListFromDB("SELECT player_id FROM player", true);
-          foreach ($playerIds as $pId) {
-            $pIdInt = (int) $pId;
-            self::DbQuery(
-              "INSERT OR REPLACE INTO stats (stats_type, stats_player_id, stats_value) VALUES ('$nameEsc', $pIdInt, $val)"
-            );
-          }
-        }
-      }
-    }
-
-    public function setStat($value, $name, $player_id = null, $bDoNotLoop = false): void
-    {
-      $nameEsc = self::escapeStringForDB($name);
-      $val = (float) $value;
-      $pId = $player_id !== null ? (int) $player_id : 0;
-      self::DbQuery(
-        "INSERT OR REPLACE INTO stats (stats_type, stats_player_id, stats_value) VALUES ('$nameEsc', $pId, $val)"
-      );
-    }
-
-    public function incStat($delta, $name, $player_id = null): void
-    {
-      $cur = (float) $this->getStat($name, $player_id);
-      $this->setStat($cur + (float) $delta, $name, $player_id);
-    }
-
-    public function getStat($name, $player_id = null)
-    {
-      $nameEsc = self::escapeStringForDB($name);
-      $pId = $player_id !== null ? (int) $player_id : 0;
-      $val = self::getUniqueValueFromDB(
-        "SELECT stats_value FROM stats WHERE stats_type = '$nameEsc' AND stats_player_id = $pId"
-      );
-      return $val !== null ? (float) $val : 0;
-    }
-
-    public function getMoveId(): int
-    {
-      // Current read (FOR UPDATE): in MVCC mode a snapshot read could hand out a stale move id.
-      $val = self::getUniqueValueFromDB(
-        "SELECT global_value FROM global WHERE global_id = 3" .
-          (self::isMvccRequestActive() ? " FOR UPDATE" : "")
-      );
-      return $val !== null ? (int) $val : 1;
-    }
-
-    public function incrementMoveId(): int
-    {
-      $next = $this->getMoveId() + 1;
-      self::frameworkWrite(function () use ($next) {
-        self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (3, $next)");
-      });
-      return $next;
-    }
-
-    public function notifyAllPlayers($type, $message, $args = []): void
-    {
-      $this->insertNotification('/table/t1', (string) $type, (string) ($message ?? ''), $args);
-    }
-
-    public function notifyPlayer(
-      $player_id,
-      $notification_type,
-      $notification_log,
-      $notification_args = []
-    ): void {
-      $channel = '/player/p' . (int) $player_id;
-      $this->insertNotification(
-        $channel,
-        (string) $notification_type,
-        (string) ($notification_log ?? ''),
-        $notification_args
-      );
-    }
-
-    protected function insertNotification(
-      string $channel,
-      string $type,
-      string $log,
-      $args
-    ): void {
-      $this->ensureMoveStarted();
-      $pdo = self::getPdo();
-      $moveId = $this->getMoveId();
-      $jsonArgs = json_encode($args ?? []);
-      $stmt = $pdo->prepare(
-        "INSERT INTO notifications (move_id, channel, type, log, args, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-      );
-      $stmt->execute([$moveId, $channel, $type, $log, $jsonArgs, time()]);
-
-      // If called directly on $game (outside APP_GameAction and outside a state transition)
-      // for an action that does not transition state (e.g. out-of-turn autopass, confirmTichu, or mid-round tichuBet),
-      // close the move so the next direct call starts a fresh move_id.
-      if (!$this->inAjaxAction && $this->gamestate && $this->gamestate->getTransitionDepth() === 0) {
-        if ($type === 'autopass' || $type === 'confirmTichu') {
-          $this->moveInProgress = false;
-        } elseif ($type === 'tichuBet' && $this->gamestate->getStateId() !== 20 && (int) ($args['bet'] ?? 0) === 100) {
-          $this->moveInProgress = false;
-        }
-      }
-    }
-
-    public function getNotificationsSince(
-      int $lastPacketId = 0,
-      ?int $viewerPlayerId = null,
-      bool $allChannels = false
-    ): array {
-      $sql = "SELECT packet_id, move_id, channel, type, log, args, created_at FROM notifications WHERE packet_id > " . (int) $lastPacketId;
-      if (!$allChannels && $viewerPlayerId !== null) {
-        $pChan = '/player/p' . (int) $viewerPlayerId;
-        $sql .= " AND (channel = '/table/t1' OR channel = '$pChan')";
-      }
-      $sql .= " ORDER BY packet_id ASC";
-      $rows = self::getObjectListFromDB($sql);
-      $packets = [];
-      $pendingPrivateArg = null;
-      foreach ($rows as $row) {
-        $decodedArgs = json_decode($row['args'], true);
-        if ($decodedArgs === null && $row['args'] !== 'null') {
-          $decodedArgs = [];
-        }
-        if (!$allChannels && $viewerPlayerId !== null) {
-          if ($row['type'] === 'gameStateChangePrivateArg' && $row['channel'] === '/player/p' . (int) $viewerPlayerId) {
-            $pendingPrivateArg = $decodedArgs;
-          } elseif ($row['type'] === 'gameStateChange' && $pendingPrivateArg !== null) {
-            if (!isset($decodedArgs['args']) || !is_array($decodedArgs['args'])) {
-              $decodedArgs['args'] = [];
+            public function __construct(
+                string $message = '',
+                bool $expected = false,
+                bool $visibility = true,
+                int $code = 0,
+                mixed $publicMsg = '',
+                array $args = []
+            ) {
+                parent::__construct($message, (int) $code);
+                $this->expected = $expected;
+                $this->visibility = $visibility;
+                $this->args = $args;
             }
-            $decodedArgs['args']['_private'] = $pendingPrivateArg;
-            $pendingPrivateArg = null;
-          }
         }
-        $packets[] = [
-          'packet_id' => (string) $row['packet_id'],
-          'packet_type' => 'single',
-          'move_id' => (string) $row['move_id'],
-          'channel' => $row['channel'],
-          'table_id' => 1,
-          'time' => (string) $row['created_at'],
-          'data' => [
-            [
-              'uid' => 'notif_' . $row['packet_id'],
-              'type' => $row['type'],
-              'log' => $row['log'],
-              'args' => $decodedArgs,
-              'h' => substr(md5('notif_' . $row['packet_id']), 0, 6),
+    }
+
+    if (!class_exists('Trace')) {
+        class Trace
+        {
+            public mixed $log_error_forgame = null;
+            public static function trace_sql(string $msg): void {}
+            public static function createLogHandler(...$args): mixed
+            {
+                return null;
+            }
+            public function incDbTime(mixed $time = 0): void {}
+            public function logFatalException(\Throwable $e): void {}
+            public function error(string $msg): void {}
+            public function __call(string $name, array $args): mixed
+            {
+                return null;
+            }
+            public static function __callStatic(string $name, array $args): mixed
+            {
+                return null;
+            }
+        }
+    }
+
+    if (!class_exists('Locale')) {
+        class Locale
+        {
+            private static string $loc = 'en_US';
+            public static function GetLocalization(): string
+            {
+                return self::$loc;
+            }
+            public static function SetLocalization(string $loc): void
+            {
+                self::$loc = $loc;
+            }
+        }
+    }
+
+    if (!class_exists('APP_Object')) {
+        class APP_Object
+        {
+            public static function trace($message): void {}
+            public static function debug($message): void {}
+            public static function warn($message): void {}
+            public static function error($message): void {}
+            public static function dump($prefix, $object): void {}
+
+            public static function masterNodeRequest(string $method, array $args = []): mixed
+            {
+                return ['ok' => true];
+            }
+
+            public static function getMasterNodeUrl(): string
+            {
+                return 'http://127.0.0.1:8080';
+            }
+        }
+    }
+
+    if (!class_exists('APP_Action')) {
+        class APP_Action extends APP_Object
+        {
+            public array $args = [];
+            public string $view = '';
+            public array $viewArgs = [];
+
+            public function __construct(array $args = [])
+            {
+                $this->args = !empty($args) ? $args : array_merge($_GET ?? [], $_POST ?? []);
+            }
+
+            public function setAjaxMode($bCheckCsrf = true): void {}
+
+            public function isArg(string $name): bool
+            {
+                return array_key_exists($name, $this->args);
+            }
+
+            public function getArg(
+                string $name,
+                int $type,
+                bool $mandatory = true,
+                mixed $default = null,
+                array $enum = [],
+                bool $bCanFail = false
+            ): mixed {
+                if (!array_key_exists($name, $this->args)) {
+                    if ($mandatory) {
+                        throw new \Bga\GameFramework\UserException("Missing mandatory parameter: $name");
+                    }
+                    return $default;
+                }
+                $val = $this->args[$name];
+                switch ($type) {
+                    case AT_int:
+                        if (!is_numeric($val)) {
+                            throw new \Bga\GameFramework\UserException("Invalid integer parameter: $name");
+                        }
+                        return (int) $val;
+                    case AT_posint:
+                        if ($val === null || $val === '') {
+                            if (!$mandatory) {
+                                return $default;
+                            }
+                            throw new \Bga\GameFramework\UserException("Invalid positive integer parameter: $name");
+                        }
+                        if (!is_numeric($val) || (int) $val < 0) {
+                            throw new \Bga\GameFramework\UserException("Invalid positive integer parameter: $name");
+                        }
+                        return (int) $val;
+                    case AT_float:
+                        if (!is_numeric($val)) {
+                            throw new \Bga\GameFramework\UserException("Invalid float parameter: $name");
+                        }
+                        return (float) $val;
+                    case AT_bool:
+                        if ($val === 'true' || $val === '1' || $val === 1 || $val === true) {
+                            return true;
+                        }
+                        if ($val === 'false' || $val === '0' || $val === 0 || $val === false || $val === '') {
+                            return false;
+                        }
+                        throw new \Bga\GameFramework\UserException("Invalid boolean parameter: $name");
+                    case AT_enum:
+                        $strVal = (string) $val;
+                        if (!empty($enum) && !in_array($strVal, array_map('strval', $enum), true)) {
+                            throw new \Bga\GameFramework\UserException("Invalid enum value '$strVal' for parameter: $name");
+                        }
+                        return $strVal;
+                    case AT_numberlist:
+                        $strVal = (string) $val;
+                        if ($strVal !== '' && !preg_match('/^[0-9;,_-]+$/', $strVal)) {
+                            throw new \Bga\GameFramework\UserException("Invalid numberlist parameter: $name");
+                        }
+                        return $strVal;
+                    case AT_json:
+                        if (is_array($val)) {
+                            return $val;
+                        }
+                        $decoded = json_decode((string) $val, true);
+                        if ($decoded === null && strtolower((string) $val) !== 'null') {
+                            throw new \Bga\GameFramework\UserException("Invalid JSON parameter: $name");
+                        }
+                        return $decoded;
+                    default:
+                        return (string) $val;
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Load Real BGA Framework Files (`local/Bga/GameFramework/`)
+    // -------------------------------------------------------------------------
+    $fwDir = __DIR__ . '/Bga/GameFramework';
+
+    require_once $fwDir . '/StateType.php';
+    require_once $fwDir . '/GameException.php';
+    require_once $fwDir . '/UserException.php';
+    require_once $fwDir . '/SystemException.php';
+    require_once $fwDir . '/VisibleSystemException.php';
+
+    require_once $fwDir . '/Actions/CheckAction.php';
+    require_once $fwDir . '/Actions/Debug.php';
+    require_once $fwDir . '/Actions/Types/ActionType.php';
+    require_once $fwDir . '/Actions/Types/BoolParam.php';
+    require_once $fwDir . '/Actions/Types/FloatParam.php';
+    require_once $fwDir . '/Actions/Types/IntArrayParam.php';
+    require_once $fwDir . '/Actions/Types/IntParam.php';
+    require_once $fwDir . '/Actions/Types/JsonParam.php';
+    require_once $fwDir . '/Actions/Types/StringParam.php';
+
+    require_once $fwDir . '/Old/Db.php';
+    require_once $fwDir . '/Old/APP_DbObject.php';
+    require_once $fwDir . '/Old/APP_GameClass.php';
+
+    require_once $fwDir . '/Db/Globals.php';
+    require_once $fwDir . '/Legacy.php';
+    require_once $fwDir . '/Logs.php';
+    require_once $fwDir . '/Notify.php';
+    require_once $fwDir . '/Stats.php';
+    require_once $fwDir . '/TableStats.php';
+    require_once $fwDir . '/PlayerStats.php';
+    require_once $fwDir . '/TableInfos.php';
+    require_once $fwDir . '/TableOptions.php';
+    require_once $fwDir . '/UserPreferences.php';
+    require_once $fwDir . '/Debug.php';
+
+    require_once $fwDir . '/Components/Deck.php';
+    require_once $fwDir . '/Components/DeckFactory.php';
+
+    require_once $fwDir . '/States/GameState.php';
+    require_once $fwDir . '/States/LegacyGameState.php';
+    require_once $fwDir . '/GameState.php';
+    require_once $fwDir . '/GameStateBuilder.php';
+    require_once $fwDir . '/GamestateMachine.php';
+    require_once $fwDir . '/Bga.php';
+    require_once $fwDir . '/Table.php';
+    require_once $fwDir . '/GameAction.php';
+
+    // -------------------------------------------------------------------------
+    // Global Aliases for Legacy BGA Classes
+    // -------------------------------------------------------------------------
+    if (!class_exists('APP_DbObject')) {
+        class_alias(\Bga\GameFramework\Old\APP_DbObject::class, 'APP_DbObject');
+    }
+    if (!class_exists('APP_GameClass')) {
+        class_alias(\Bga\GameFramework\Old\APP_GameClass::class, 'APP_GameClass');
+    }
+    if (!class_exists('APP_GameAction')) {
+        class_alias(\Bga\GameFramework\GameAction::class, 'APP_GameAction');
+    }
+    if (!class_exists('Deck')) {
+        class_alias(\Bga\GameFramework\Components\Deck::class, 'Deck');
+    }
+    if (!class_exists('Table')) {
+        class_alias(\Bga\GameFramework\Table::class, 'Table');
+    }
+    if (!class_exists('GameState')) {
+        class_alias(\Bga\GameFramework\GamestateMachine::class, 'GameState');
+    }
+    if (!class_exists('BgaUserException')) {
+        class_alias(\Bga\GameFramework\UserException::class, 'BgaUserException');
+    }
+    if (!class_exists('BgaSystemException')) {
+        class_alias(\Bga\GameFramework\SystemException::class, 'BgaSystemException');
+    }
+    if (!class_exists('BgaVisibleSystemException')) {
+        class_alias(\Bga\GameFramework\VisibleSystemException::class, 'BgaVisibleSystemException');
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Configuration, Session User, Trace & Service Container
+    // -------------------------------------------------------------------------
+    global $g_config, $g_user, $g_trace, $bgaContainer;
+
+    $g_config = [
+        'db_host' => getenv('TICHU_MYSQL_HOST') ?: 'localhost',
+        'db_user' => getenv('TICHU_MYSQL_USER') ?: 'root',
+        'db_password' => getenv('TICHU_MYSQL_PASS') ?: '',
+        'db_name' => getenv('TICHU_MYSQL_DB') ?: 'ebd_tichu_1',
+        'db_socket' => getenv('TICHU_MYSQL_SOCKET') ?: (__DIR__ . '/.mysql/mysql.sock'),
+        'db_timeout' => 30,
+        'db_job_timeout' => 300,
+        'trace_sql_queries' => false,
+        'services_timeout' => [
+            'mysql' => [
+                'player' => 10,
+                'visitor' => 5,
+                'cronjob' => 300,
             ],
-          ],
-        ];
-      }
-      return $packets;
-    }
-
-    public function getAllGamelogsForReplay(): array
-    {
-      return $this->getNotificationsSince(0, null, true);
-    }
-
-    public function giveExtraTime($player_id, $specific_time = null): void {}
-    public function reattributeColorsBasedOnPreferences($players, $colors): void {}
-    public function applyDbChangeToAllDB($sql): void {}
-    public function applyDbUpgradeToAllDB($sql): void {}
-    public function undoSavepoint(): void {}
-    public function undoRestorePoint(): void {}
-    public function say($text): void {}
-
-    public function getBgaEnvironment(): string
-    {
-      return 'studio';
-    }
-
-    public function getGameinfos(): array
-    {
-      $gameinfos = [];
-      require dirname(__DIR__) . '/gameinfos.inc.php';
-      return $gameinfos;
-    }
-
-    abstract protected function setupNewGame($players, $options = []);
-    abstract protected function getAllDatas(int $currentPlayerId);
-
-    /**
-     * Initializes a fresh local SQLite database and starts a new 4-player Tichu game.
-     */
-    public function createNewGame(array $options = [], ?array $customPlayers = null): void
-    {
-      self::initSchema();
-
-      $gameLength = (int) ($options[100] ?? $options['gameLength'] ?? 2);
-      $playerTeams = (int) ($options[101] ?? $options['playerTeams'] ?? 1);
-      $gameVariant = (int) ($options[102] ?? $options['gameVariant'] ?? 1);
-      $turnBased = !empty($options['turnBased']) ? 1 : 0;
-
-      // Initialize reserved & option globals before setupNewGame runs
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (1, 1)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (2, 0)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (3, 1)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (100, $gameLength)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (101, $playerTeams)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (102, $gameVariant)");
-      self::DbQuery("INSERT OR REPLACE INTO global (global_id, global_value) VALUES (200, $turnBased)");
-
-      $players = $customPlayers ?? [
-        2385074 => [
-          'player_name' => 'dashwood0',
-          'player_canal' => 'canal_2385074',
-          'player_avatar' => '000000',
-          'player_table_order' => 1,
+            'php' => [
+                'player' => 10,
+                'visitor' => 5,
+                'cronjob' => 300,
+            ],
         ],
-        2385075 => [
-          'player_name' => 'dashwood1',
-          'player_canal' => 'canal_2385075',
-          'player_avatar' => '000000',
-          'player_table_order' => 2,
-        ],
-        2385076 => [
-          'player_name' => 'dashwood2',
-          'player_canal' => 'canal_2385076',
-          'player_avatar' => '000000',
-          'player_table_order' => 3,
-        ],
-        2385077 => [
-          'player_name' => 'dashwood3',
-          'player_canal' => 'canal_2385077',
-          'player_avatar' => '000000',
-          'player_table_order' => 4,
-        ],
-      ];
+        'app_domain' => 'studio.boardgamearena.com',
+        'cluster_is_master' => true,
+        'no_move_on_extratime' => false,
+        'prevent_spectator_chat' => false,
+        'enable_warning_before_expel' => false,
+        'webpush_enabled' => false,
+        'androidpush_enabled' => false,
+    ];
 
-      $this->setCurrentPlayerId((int) array_key_first($players));
-      $this->moveInProgress = true;
-      try {
-        $nextStateId = $this->setupNewGame($players, $options);
-        $this->gamestate->jumpToState((int) $nextStateId);
-      } finally {
-        $this->moveInProgress = false;
-      }
-    }
+    $g_trace = new Trace();
 
-    /**
-     * Returns the complete client `gamedatas` structure for `$viewerPlayerId`.
-     */
-    public function getFullClientPayload(int $viewerPlayerId): array
-    {
-      $this->setCurrentPlayerId($viewerPlayerId);
-      $datas = $this->getAllDatas($viewerPlayerId);
-      $basic = $this->loadPlayersBasicInfos();
+    $g_user = new class {
+        public int $id = 2385074;
+        public bool $isSpectator = false;
+        public ?int $temporary_masquerade = null;
 
-      foreach ($datas['players'] as $pId => &$pRow) {
-        $bRow = $basic[$pId] ?? [];
-        $pRow['id'] = (int) $pId;
-        $pRow['no'] = (int) ($pRow['no'] ?? $bRow['player_no'] ?? 0);
-        $pRow['name'] = $pRow['name'] ?? $bRow['player_name'] ?? '';
-        $pRow['color'] = $bRow['player_color'] ?? '000000';
-        $pRow['color_back'] = null;
-        $pRow['score'] = (string) ($pRow['score'] ?? $bRow['player_score'] ?? '0');
-        $pRow['score_aux'] = (string) ($bRow['player_score_aux'] ?? '0');
-        $pRow['zombie'] = (int) ($bRow['player_zombie'] ?? 0);
-        $pRow['eliminated'] = (int) ($bRow['player_eliminated'] ?? 0);
-        $pRow['is_ai'] = '0';
-        $pRow['beginner'] = false;
-        $pRow['avatar'] = $bRow['player_avatar'] ?? '000000';
-      }
-      unset($pRow);
-
-      // Compute playerorder starting from $viewerPlayerId in seat order (player_no ASC)
-      $orderedIds = array_map(
-        static fn($r) => (int) $r['player_id'],
-        array_values($basic)
-      );
-      $count = count($orderedIds);
-      for ($i = 0; $i < $count; $i++) {
-        if ($orderedIds[0] === $viewerPlayerId) {
-          break;
+        public function is_logged(): bool
+        {
+            return true;
         }
-        $orderedIds[] = array_shift($orderedIds);
-      }
 
-      $lastPacketId = (int) (self::getUniqueValueFromDB(
-        "SELECT IFNULL(MAX(packet_id), 0) FROM notifications"
-      ) ?? 0);
-
-      $datas['playerorder'] = $orderedIds;
-      $datas['gamestate'] = $this->gamestate->state($viewerPlayerId);
-      $datas['gamestates'] = $this->gamestate->getAllStatesForClient();
-      $datas['tablespeed'] = $this->bga->tableOptions->isTurnBased() ? 20 : 1;
-      $datas['notifications'] = [
-        'last_packet_id' => $lastPacketId,
-        'move_nbr' => $this->getMoveId(),
-      ];
-
-      return $datas;
-    }
-  }
-}
-
-namespace {
-  if (!class_exists('Table')) {
-    class_alias(\Bga\GameFramework\Table::class, 'Table');
-  }
-
-  class Page
-  {
-    public array $blocks = [];
-
-    public function begin_block(string $template, string $block): void
-    {
-      if (!isset($this->blocks[$block])) {
-        $this->blocks[$block] = [];
-      }
-    }
-
-    public function reset_subblocks(string $block): void
-    {
-      $this->blocks[$block] = [];
-    }
-
-    public function insert_block(string $block, array $args): void
-    {
-      $this->blocks[$block][] = [
-        'vars' => $args,
-        'subblocks' => $this->blocks,
-      ];
-    }
-
-    public function renderTemplate(string $tplContent, array $rootVars = []): string
-    {
-      $defaults = [
-        'OVERALL_GAME_HEADER' => '',
-        'OVERALL_GAME_FOOTER' => '',
-        'GAMETHEMEURL' => '/',
-      ];
-      $vars = array_merge($defaults, $rootVars);
-      return $this->expandBlocksAndVars($tplContent, $this->blocks, $vars);
-    }
-
-    private function expandBlocksAndVars(string $html, array $blocks, array $vars): string
-    {
-      $expanded = preg_replace_callback(
-        '/<!--\s*BEGIN\s+(\w+)\s*-->(.*?)<!--\s*END\s+\1\s*-->/s',
-        function (array $matches) use ($blocks, $vars): string {
-          $blockName = $matches[1];
-          $innerTemplate = $matches[2];
-          if (empty($blocks[$blockName])) {
-            return '';
-          }
-          $out = '';
-          foreach ($blocks[$blockName] as $entry) {
-            $mergedVars = array_merge($vars, $entry['vars'] ?? []);
-            $subBlocks = $entry['subblocks'] ?? [];
-            $out .= $this->expandBlocksAndVars($innerTemplate, $subBlocks, $mergedVars);
-          }
-          return $out;
-        },
-        $html
-      );
-
-      $replacements = [];
-      foreach ($vars as $k => $v) {
-        if (is_scalar($v) || $v === null) {
-          $replacements['{' . $k . '}'] = (string) $v;
+        public function is_visitor(): bool
+        {
+            return $this->isSpectator;
         }
-      }
-      return strtr($expanded ?? $html, $replacements);
-    }
-  }
 
-  class game_view
-  {
-    public $game;
-    public Page $page;
-    public array $tpl = [];
+        public function is_admin(): bool
+        {
+            return false;
+        }
 
-    public function __construct($game = null)
+        public function has_right(string $right): bool
+        {
+            return false;
+        }
+
+        public function __call(string $name, array $args): mixed
+        {
+            return false;
+        }
+
+        public function get_id(bool $bNullIfNotLogged = false): ?int
+        {
+            if (!$bNullIfNotLogged) {
+                $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 12);
+                $directCallerClass = $trace[2]['class'] ?? '';
+                $isFrameworkCaller = str_starts_with($directCallerClass, 'Bga\\GameFramework\\');
+                if (!$isFrameworkCaller) {
+                    foreach ($trace as $frame) {
+                        $cls = $frame['class'] ?? '';
+                        $fn = $frame['function'] ?? '';
+                        if ($cls === 'Tichu' && ($fn === 'setupNewGame' || $fn === 'zombieTurn' || str_starts_with($fn, 'arg'))) {
+                            throw new \Bga\GameFramework\SystemException(
+                                "Cannot call getCurrentPlayerId() inside $cls::$fn()"
+                            );
+                        }
+                    }
+                }
+            }
+            if ($this->temporary_masquerade !== null) {
+                return $this->temporary_masquerade;
+            }
+            if ($this->isSpectator) {
+                return 0;
+            }
+            return $this->id;
+        }
+
+        public function setTemporaryMasquerade(?int $playerId): void
+        {
+            $this->temporary_masquerade = $playerId;
+        }
+    };
+
+    $bgaContainer = new class {
+        private array $services = [];
+
+        public function get(string $id): mixed
+        {
+            if (!isset($this->services[$id])) {
+                $this->services[$id] = $this->create($id);
+            }
+            return $this->services[$id];
+        }
+
+        private function create(string $id): mixed
+        {
+            switch ($id) {
+                case \Bga\GameFramework\Old\Db::class:
+                    global $g_config;
+                    if (!empty($g_config['db_socket']) && !file_exists($g_config['db_socket'])) {
+                        $ctl = __DIR__ . '/mysql-ctl.sh';
+                        if (is_file($ctl)) {
+                            shell_exec('bash ' . escapeshellarg($ctl) . ' ensure');
+                        }
+                    }
+                    $db = new \Bga\GameFramework\Old\Db($g_config['db_name']);
+                    $db->connect();
+                    return $db;
+                case \Bga\Services\Notify::class:
+                    return new \Bga\Services\Notify();
+                case \Bga\Services\Sentry::class:
+                    return new \Bga\Services\Sentry();
+                case \Bga\Services\Cache\Apcu::class:
+                    return new \Bga\Services\Cache\Apcu();
+                case \Bga\Services\Cache\LocalRedis::class:
+                    return new \Bga\Services\Cache\LocalRedis();
+                case \Bga\Account\SessionManager::class:
+                    return new \Bga\Account\SessionManager();
+                case \Bga\Tables\TableStatsManager::class:
+                    return new \Bga\Tables\TableStatsManager();
+                case \Bga\Tables\TableOptionsManager::class:
+                    return new \Bga\Tables\TableOptionsManager();
+                case \Bga\Tables\UserPreferencesManager::class:
+                    return new \Bga\Tables\UserPreferencesManager();
+                case \Bga\Tables\GameInfosManager::class:
+                    return new \Bga\Tables\GameInfosManager();
+                case 'module.metasite.metasite':
+                    return new class {
+                        public function checkBeforeTranslation(string $text): void {}
+                        public function __call(string $name, array $args): mixed
+                        {
+                            return null;
+                        }
+                    };
+                default:
+                    if (class_exists($id)) {
+                        return new $id();
+                    }
+                    throw new \RuntimeException("Unknown container service: $id");
+            }
+        }
+    };
+
+    // -------------------------------------------------------------------------
+    // Legacy Template View Rendering (`tichu.view.php`)
+    // -------------------------------------------------------------------------
+    class Page
     {
-      $this->game = $game ?? (\Tichu::$instance ?? null);
-      $this->page = new Page();
+        public array $blocks = [];
+
+        public function begin_block(string $template, string $block): void
+        {
+            if (!isset($this->blocks[$block])) {
+                $this->blocks[$block] = [];
+            }
+        }
+
+        public function reset_subblocks(string $block): void
+        {
+            $this->blocks[$block] = [];
+        }
+
+        public function insert_block(string $block, array $args): void
+        {
+            $this->blocks[$block][] = [
+                'vars' => $args,
+                'subblocks' => $this->blocks,
+            ];
+        }
+
+        public function renderTemplate(string $tplContent, array $rootVars = []): string
+        {
+            $defaults = [
+                'OVERALL_GAME_HEADER' => '',
+                'OVERALL_GAME_FOOTER' => '',
+                'GAMETHEMEURL' => '/',
+            ];
+            $vars = array_merge($defaults, $rootVars);
+            return $this->expandBlocksAndVars($tplContent, $this->blocks, $vars);
+        }
+
+        private function expandBlocksAndVars(string $html, array $blocks, array $vars): string
+        {
+            $expanded = preg_replace_callback(
+                '/<!--\s*BEGIN\s+(\w+)\s*-->(.*?)<!--\s*END\s+\1\s*-->/s',
+                function (array $matches) use ($blocks, $vars): string {
+                    $blockName = $matches[1];
+                    $innerTemplate = $matches[2];
+                    if (empty($blocks[$blockName])) {
+                        return '';
+                    }
+                    $out = '';
+                    foreach ($blocks[$blockName] as $entry) {
+                        $mergedVars = array_merge($vars, $entry['vars'] ?? []);
+                        $subBlocks = $entry['subblocks'] ?? [];
+                        $out .= $this->expandBlocksAndVars($innerTemplate, $subBlocks, $mergedVars);
+                    }
+                    return $out;
+                },
+                $html
+            );
+
+            $replacements = [];
+            foreach ($vars as $k => $v) {
+                if (is_scalar($v) || $v === null) {
+                    $replacements['{' . $k . '}'] = (string) $v;
+                }
+            }
+            return strtr($expanded ?? $html, $replacements);
+        }
     }
 
-    public function _($text): string
+    class game_view
     {
-      return (string) $text;
-    }
+        public $game;
+        public Page $page;
+        public array $tpl = [];
 
-    public function render(?string $tplFile = null, array $viewArgs = []): string
-    {
-      if (method_exists($this, 'build_page')) {
-        $this->build_page($viewArgs);
-      }
-      $file = $tplFile ?? (dirname(__DIR__) . '/tichu_tichu.tpl');
-      $content = file_get_contents($file);
-      if ($content === false) {
-        return '';
-      }
-      return $this->page->renderTemplate($content, $this->tpl);
+        public function __construct($game = null)
+        {
+            $this->game = $game ?? (\Tichu::$instance ?? null);
+            $this->page = new Page();
+        }
+
+        public function _($text): string
+        {
+            return (string) $text;
+        }
+
+        public function render(?string $tplFile = null, array $viewArgs = []): string
+        {
+            if (method_exists($this, 'build_page')) {
+                $this->build_page($viewArgs);
+            }
+            $file = $tplFile ?? (dirname(__DIR__) . '/tichu_tichu.tpl');
+            $content = file_get_contents($file);
+            if ($content === false) {
+                return '';
+            }
+            return $this->page->renderTemplate($content, $this->tpl);
+        }
     }
-  }
 }

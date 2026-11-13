@@ -125,6 +125,7 @@ function executeRequest(array $req): array
       case 'zombie':
         // The framework calls zombieTurn() for the active player (from its cached state).
         $game->beginPlayerAction();
+        $game->acquireGameLockOrFail();
         $state = $game->gamestate->state();
         $active =
           $state['type'] === 'multipleactiveplayer'
@@ -181,11 +182,6 @@ function rollbackRequest($game): void
   } catch (\Throwable $e) {
     // ignore
   }
-  try {
-    \APP_DbObject::endMvccRequest(true);
-  } catch (\Throwable $e) {
-    // ignore
-  }
 }
 
 // ============================================================================================
@@ -211,18 +207,13 @@ function runMain(array $opts): int
   $verbose = isset($opts['verbose']);
   mt_srand($seed);
 
-  $dbPath = sys_get_temp_dir() . '/tichu-race-' . getmypid() . '.db';
-  foreach (['', '-wal', '-shm'] as $suffix) {
-    @unlink($dbPath . $suffix);
-  }
-  putenv("TICHU_DB_PATH=$dbPath");
+  shell_exec('bash ' . escapeshellarg(__DIR__ . '/mysql-ctl.sh') . ' ensure');
   loadGameCode();
-  \APP_DbObject::setDbPath($dbPath);
-  // The main process only reads between bursts (autocommit, latest committed data).
-  \APP_DbObject::setMvccEmulation(false);
+  global $g_config;
+  $dbLabel = 'MySQL 8.0 (' . ($g_config['db_name'] ?? 'ebd_tichu_1') . ')';
 
   echo "====================================================================\n";
-  echo " Tichu Race / Concurrency Stress Test\n";
+  echo " Tichu Race / Concurrency Stress Test (MySQL 8.0 + BGA FW)\n";
   echo "====================================================================\n";
   printf(
     " duration=%ss workers=%d seed=%d mode=%s\n db=%s\n\n",
@@ -230,7 +221,7 @@ function runMain(array $opts): int
     $numWorkers,
     $seed,
     $baseline ? 'BASELINE (locks ignored, expected to fail)' : 'locking',
-    $dbPath
+    $dbLabel
   );
 
   $stats = [
@@ -253,7 +244,7 @@ function runMain(array $opts): int
     'latencies' => [],
   ];
 
-  $workers = spawnWorkers($numWorkers, $dbPath, $baseline);
+  $workers = spawnWorkers($numWorkers, $baseline);
 
   // Phase 1: targeted scenarios.
   $scenarioReport = [];
@@ -368,9 +359,6 @@ function runMain(array $opts): int
   }
   accumulateGameStats($stats);
   stopWorkers($workers);
-  foreach (['', '-wal', '-shm'] as $suffix) {
-    @unlink($dbPath . $suffix);
-  }
   $result = printSummary($stats, $duration, $seed);
   if (!empty($scenarioFailures)) {
     echo " Targeted scenarios FAILED (see above).\n";
@@ -397,12 +385,10 @@ function accumulateGameStats(array &$stats): void
   );
 }
 
-function spawnWorkers(int $n, string $dbPath, bool $baseline): array
+function spawnWorkers(int $n, bool $baseline): array
 {
   $workers = [];
   $env = array_merge(getenv(), [
-    'TICHU_DB_PATH' => $dbPath,
-    'TICHU_DB_MVCC' => '1',
     'TICHU_DB_IGNORE_LOCKS' => $baseline ? '1' : '0',
   ]);
   for ($i = 0; $i < $n; $i++) {
@@ -458,10 +444,19 @@ function dispatchBurst(array $workers, array $burst): array
   return $results;
 }
 
+function stateDef(\Tichu $game, int $stateId): ?array
+{
+  $def = $game->gamestate->states[$stateId] ?? null;
+  if ($def === null) {
+    return null;
+  }
+  return is_object($def) ? $def->toArray() : $def;
+}
+
 function readSnapshot(\Tichu $game): array
 {
   $stateId = (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 1');
-  $def = $game->gamestate->states[$stateId] ?? ['name' => 'unknown', 'type' => 'unknown'];
+  $def = stateDef($game, $stateId) ?? ['name' => 'unknown', 'type' => 'unknown'];
   $players = array_map('intval', \PlayerManager::getPlayerIds());
   sort($players);
   $hands = [];
@@ -497,9 +492,11 @@ function act(int $player, string $action, array $args = [], ?string $label = nul
 
 function statValue(string $name, int $pid = 0): int
 {
-  return (int) \APP_DbObject::getUniqueValueFromDB(
-    "SELECT stats_value FROM stats WHERE stats_type = '$name' AND stats_player_id = $pid"
-  );
+  $game = \Tichu::$instance;
+  if ($game === null) {
+    return 0;
+  }
+  return (int) $game->getStat($name, $pid > 0 ? $pid : null);
 }
 
 function stateName(\Tichu $game): string
@@ -651,7 +648,7 @@ function runTargetedScenarios(array $workers, int $reps, array &$report): array
       $errs = [];
       foreach ([$P1, $P2, $P3] as $p) {
         $calls = (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM actionlog WHERE log_action = 'tichuCall' AND log_player = $p");
-        $confirm = (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM notifications WHERE type = 'confirmTichu' AND channel = '/player/p$p'");
+        $confirm = (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM gamelog WHERE gamelog_player = $p AND gamelog_notification LIKE '%\"type\":\"confirmTichu\"%'");
         if ($calls + $confirm < 1) {
           $errs[] = "player $p: Tichu call lost";
         }
@@ -1019,7 +1016,7 @@ function checkInvariants(\Tichu $game, ?int $lastVersion): array
   // --- state machine
   $stateId = (int) $db::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 1');
   $active = (int) $db::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 2');
-  $def = $game->gamestate->states[$stateId] ?? null;
+  $def = stateDef($game, $stateId);
   if ($def === null) {
     $errs[] = "unknown state id $stateId";
     return $errs;
@@ -1117,9 +1114,7 @@ function checkInvariants(\Tichu $game, ?int $lastVersion): array
       $tichuCalls[(int) $l['log_player']] = ($tichuCalls[(int) $l['log_player']] ?? 0) + 1;
     }
   }
-  $stat = fn($name, $pid = 0) => (int) $db::getUniqueValueFromDB(
-    "SELECT stats_value FROM stats WHERE stats_type = '$name' AND stats_player_id = $pid"
-  );
+  $stat = fn($name, $pid = 0) => statValue($name, $pid);
   if ($stat('trick_number') !== $newTricks) {
     $errs[] = "stats: trick_number={$stat('trick_number')} but $newTricks newTrick log entries";
   }

@@ -8,3 +8,4 @@ tichu.js
 local/*.db
 local/*.db-*
 local/*.sqlite
+local/.mysql/
