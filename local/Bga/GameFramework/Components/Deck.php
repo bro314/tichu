@@ -1,0 +1,460 @@
+<?php
+ /**
+  * deck.game.php
+  *
+  *
+  * Generic card deck management
+  *
+  */
+declare(strict_types=1);
+
+namespace Bga\GameFramework\Components;
+
+  
+/*
+    This is a generic class to manage a set of cards moving from a deck, players hands, discard stack, and other places.
+
+    On DB side this is based on a standard table with the following fields:
+    card_id, card_type (string), card_type_arg, card_location_type (string), card_location_arg
+
+    Concerning the location, 3 values are reserved as keyword:
+    _ deck  (argument = position in the deck, top of the deck = highest value)
+    _ hand  (argument = which player)
+    _ discard  (argument = position in the discard stack, top of the stack = highest value)
+*/  
+
+
+class Deck extends \Deck
+{
+    var $table;
+    var $autoreshuffle = false; // If true, a new deck is automatically formed with a reshuffled discard as soon at is needed
+    var $autoreshuffle_trigger = null;  // Callback to a method called when an autoreshuffle occurs
+                                        // autoreshuffle_trigger = array( 'obj' => object, 'method' => method_name )
+
+    var $autoreshuffle_custom = array();   // If defined, tell the name of the deck and what is the corresponding discard (ex : "mydeck" => "mydiscard")
+
+	function __construct( )
+	{
+	}
+	
+	// MUST be called before any other method
+	function init( $table )
+	{
+	    $this->table = $table;	
+	}
+	
+	// This is the way cards are created and should not be called during the game.
+	// Cards are added to the deck (not shuffled)
+	// Cards is an array of "card types" with at least the followin fields:
+	// array( 
+	//      array(                              // This is my first card type
+	//          "type" => "name of this type"   // Note: <10 caracters
+	//          "type_arg" => <type arg>        // Argument that should be applied to all card of this card type
+	//          "nbr" => <nbr>                  // Number of cards with this card type to create in game
+	//
+	// If location_arg is not specified, cards are placed at location extreme position
+	function createCards( $cards, $location='deck', $location_arg=null )
+	{
+	    $next_pos = self::getExtremePosition( true, 'deck' ) + 1;
+        $values = array();	
+	    foreach( $cards as $card_type )
+	    {
+	        for( $i=0; $i < $card_type['nbr']; $i++ )
+	        {
+	            $card_location_arg = $location_arg;
+	            if( $card_location_arg===null )
+	                $card_location_arg = $next_pos;
+	            $values[] = "( '".addslashes( (string)$card_type['type'] )."', '".($card_type['type_arg'] ?? 0)."', '$location', '$card_location_arg' ) ";
+	            $next_pos ++;
+	        }
+	    }
+
+		if (count($values) == 0) return; // Avoid SQL error if cards list is empty
+	    
+	    // Shuffle values to avoid that cards of the same ID have always the same type
+	    shuffle($values);
+
+        $sql = "INSERT INTO `".$this->table."` (`card_type`,`card_type_arg`,`card_location`,`card_location_arg`) ";
+        $sql .= "VALUES ".implode( ",", $values );
+        self::DbQuery( $sql );
+	}
+	
+	// Get position of extreme cards (top or back) on the specific location
+	function getExtremePosition( $getMax ,$location )
+	{
+	    if( $getMax )
+    	    $sql = "SELECT MAX(`card_location_arg`) res ";
+    	else
+    	    $sql = "SELECT MIN(`card_location_arg`) res ";
+    	
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_location`='".addslashes((string)$location)."' ";
+        return self::getUniqueValueFromDB($sql) ?: 0;
+	}
+	
+    // Shuffle cards of a specified location
+    function shuffle( $location )
+    {
+        $card_ids = self::getObjectListFromDB( "SELECT `card_id` FROM `".$this->table."` WHERE `card_location`='$location'", true );
+        shuffle( $card_ids );
+        
+        $n=0;
+        foreach( $card_ids as $card_id )
+        {
+            self::DbQuery( "UPDATE `".$this->table."` SET `card_location_arg`='$n' WHERE `card_id`='$card_id'" );
+            $n++;
+        }
+    }
+	
+	// Pick the first card on top of specified deck and give it to specified player
+	// Return card infos or null if no card in the specified location
+	function pickCard( $location, $player_id )
+	{
+	    return self::pickCardForLocation( $location, "hand", $player_id );
+	}
+
+	// Pick the "nbr" first cards on top of specified deck and give it to specified player
+	// Return card infos (array) or null if no card in the specified location
+	function pickCards( $nbr, $location, $player_id )
+	{
+	    return self::pickCardsForLocation( $nbr, $location, "hand", $player_id );
+	}
+
+	
+	// Pick the first card on top of specified deck and place it in target location
+	// Return card infos or null if no card in the specified location
+	function pickCardForLocation( $from_location, $to_location, $location_arg=0 )
+	{
+	    $card = self::getCardOnTop( $from_location );
+	    if( ( $from_location == 'deck' || isset( $this->autoreshuffle_custom[ $from_location ] ) ) && $card == null && $this->autoreshuffle )
+	    {
+	        // No more cards in deck & reshuffle is active => form another deck
+            self::reformDeckFromDiscard( $from_location );
+    	    $card = self::getCardOnTop( $from_location );
+	    }
+
+        if( $card  )
+        {
+            $sql = "UPDATE `".$this->table."` SET `card_location`='".addslashes((string)$to_location)."', `card_location_arg`='$location_arg' ";
+            $sql .= "WHERE `card_id`='".$card['id']."'";
+            self::DbQuery( $sql );
+            
+            $card['location'] = $to_location;
+            $card['location_arg'] = $location_arg;
+            
+            unset( $card['res'] );
+            return $card;
+        }
+        else
+            return null;	    
+	
+	}
+
+	// Pick the first "$nbr" cards on top of specified deck and place it in target location
+	// Return cards infos or void array if no card in the specified location
+	function pickCardsForLocation( $nbr, $from_location, $to_location, $location_arg=0, $no_deck_reform=false )
+	{
+	    $cards = self::getCardsOnTop( $nbr, $from_location );
+
+        $cards_ids = array();
+        foreach( $cards as $i => $card )
+        {
+            $cards_ids[] = $card['id'];
+            $cards[$i]['location'] = $to_location;
+            $cards[$i]['location_arg'] = $location_arg;
+        }
+        
+        $sql = "UPDATE `".$this->table."` SET `card_location`='".addslashes((string)$to_location)."', `card_location_arg`='$location_arg' ";
+        $sql .= "WHERE `card_id` IN ('".implode( "','", $cards_ids )."') ";
+        self::DbQuery( $sql );
+
+	    if( ( $from_location == 'deck' || isset( $this->autoreshuffle_custom[ $from_location ] ) ) && count( $cards ) < $nbr && $this->autoreshuffle && !$no_deck_reform )
+	    {
+	        // No more cards in deck & reshuffle is active => form another deck
+	        $nbr_card_missing = $nbr - count( $cards );
+            self::reformDeckFromDiscard( $from_location );
+    	    $newcards = self::pickCardsForLocation( $nbr_card_missing, $from_location, $to_location, $location_arg, true ); // Note: block anothr deck reform
+    	    foreach( $newcards as $card )
+    	    {
+    	        $cards[] = $card;
+    	    }
+	    }
+
+            
+        return $cards;
+	}
+
+	
+	// Return card on top of this location
+	function getCardOnTop( $location )
+	{
+  	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_location`='".addslashes((string)$location)."' ";
+    	$sql .= "ORDER BY `card_location_arg` DESC ";
+    	$sql .= "LIMIT 1 ";
+        return self::getObjectFromDB($sql);
+	}
+	
+	// Return "$nbr" cards on top of this location
+	function getCardsOnTop( $nbr, $location )
+	{
+  	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_location`='".addslashes((string)$location)."' ";
+    	$sql .= "ORDER BY `card_location_arg` DESC ";
+    	$sql .= "LIMIT $nbr ";
+	    return self::getObjectListFromDB($sql);
+	}
+	
+	function reformDeckFromDiscard( $from_location='deck' )
+	{
+        $discard_location = 'discard';
+	    if( isset( $this->autoreshuffle_custom[ $from_location ] ) )
+	        $discard_location = $this->autoreshuffle_custom[ $from_location ];
+	
+	    self::moveAllCardsInLocation( $discard_location, $from_location );
+	    self::shuffle( $from_location );
+	    
+	    if( $this->autoreshuffle_trigger )
+	    {
+	       $obj = $this->autoreshuffle_trigger['obj'];
+	       $method = $this->autoreshuffle_trigger['method'];
+	       $obj->$method( $from_location );
+	    }
+	}
+	
+	// Move a card to specific location
+	function moveCard( $card_id, $location, $location_arg=0 )
+	{
+	    $sql = "UPDATE `".$this->table."` ";
+	    $sql .= "SET `card_location`='".addslashes((string) $location )."', `card_location_arg`='".addslashes( (string)$location_arg )."' ";
+	    $sql .= "WHERE `card_id`='$card_id' ";
+	    self::DbQuery( $sql );
+	}
+
+	// Move cards to specific location
+	function moveCards( $cards, $location, $location_arg=0 )
+	{
+	    $sql = "UPDATE `".$this->table."` ";
+	    $sql .= "SET `card_location`='".addslashes((string) $location )."', `card_location_arg`='".addslashes( (string)$location_arg )."' ";
+	    $sql .= "WHERE `card_id` IN ('".implode( "','", $cards )."') ";
+	    self::DbQuery( $sql );
+	}
+	
+	// Move a card to a specific location where card are ordered. If location_arg place is already taken, increment
+	// all cards after location_arg in order to insert new card at this precise location
+	function insertCard( $card_id, $location, $location_arg )
+	{
+	    $sql = "UPDATE `".$this->table."` ";
+	    $sql .= "SET `card_location_arg`=`card_location_arg`+1 ";
+	    $sql .= "WHERE `card_location`='".addslashes((string) $location )."' ";
+	    $sql .= "AND `card_location_arg`>=".$location_arg;
+	    self::DbQuery( $sql );
+	    
+	    self::moveCard( $card_id, $location, $location_arg );
+	}
+	function insertCardOnExtremePosition( $card_id, $location, $bOnTop )
+	{
+	    $extreme_pos = self::getExtremePosition( $bOnTop, $location );
+	    if( $bOnTop )
+    	    self::insertCard( $card_id, $location, $extreme_pos+1 );
+    	else
+    	    self::insertCard( $card_id, $location, $extreme_pos-1 );
+	}
+	
+	// Move all cards from a location to another
+	// !!! location arg is reseted to 0 or specified value !!!
+	// if "from_location" and "from_location_arg" are null: move ALL cards to specific location
+	function moveAllCardsInLocation( $from_location, $to_location, $from_location_arg=null, $to_location_arg=0 )
+	{
+	    $sql = "UPDATE `".$this->table."` ";
+	    $sql .= "SET `card_location`='".addslashes((string) $to_location )."', `card_location_arg`='$to_location_arg' ";
+	    if( $from_location !== null )
+	    {
+	        $sql .= "WHERE `card_location`='".addslashes((string) $from_location )."' ";
+	        if( $from_location_arg !== null )
+	            $sql .= "AND `card_location_arg`='$from_location_arg' ";
+        }
+	    self::DbQuery( $sql );	
+	}
+
+	// Move all cards from a location to another
+	// location arg stays with the same value
+	function moveAllCardsInLocationKeepOrder( $from_location, $to_location )
+	{
+	    $sql = "UPDATE `".$this->table."` ";
+	    $sql .= "SET `card_location`='".addslashes((string) $to_location )."' ";
+	    $sql .= "WHERE `card_location`='".addslashes((string) $from_location )."' ";
+	    self::DbQuery( $sql );	
+	}
+	
+	// Return all cards in specific location
+	// note: if "order by" is used, result object is NOT indexed by card ids
+	function getCardsInLocation( $location, $location_arg = null, $order_by = null )
+	{
+	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+
+		if( is_array( $location ) )
+		{
+		    // Multiple location case
+		    $sql .= "WHERE `card_location` IN ('".implode( "','", $location )."') ";
+		}
+		else
+		{
+		    // Simple (and normal) case
+		    $sql .= "WHERE `card_location`='".addslashes((string) $location )."' ";
+		}
+
+    	if( $location_arg !== null )
+        	$sql .= " AND `card_location_arg`='$location_arg' ";
+
+        if( $order_by !== null )
+            $sql .= "ORDER BY $order_by";
+            
+        $result = self::getCollectionFromDB($sql);
+        if( $order_by !== null )
+        {
+            $result = array_values($result);
+        }
+        
+        return $result;	
+	}
+	
+	function getPlayerHand( $player_id )
+	{
+	    return self::getCardsInLocation( "hand", $player_id );
+	}
+	
+	// Get specific card infos
+	function getCard( $card_id )
+	{
+	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_id`='$card_id' LIMIT 1";
+        return self::getObjectFromDB($sql);
+	}
+	
+	// Get specific cards infos
+	function getCards( $cards_array )
+	{
+	    if( count( $cards_array ) == 0 )
+	        return array();
+	
+	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_id` IN ('".implode( "','", $cards_array )."') ";
+        $result = self::getCollectionFromDB($sql);
+    	
+    	if( count( $result ) != count( $cards_array ) )
+    	{
+    	    self::error( "getCards: some cards have not been found:" );
+    	    self::error( "requested: ".implode( ",", $cards_array ) );
+    	    self::error( "received: ".implode( ",", array_keys( $result ) ) );
+    	    throw new \feException( "getCards: Some cards have not been found !" );
+    	}
+    	
+    	return $result;
+	}
+	
+	// Get cards from their IDs (same as getCards), but with a location specified. Raises an exception if the cards are not in the specified location.
+	function getCardsFromLocation( $cards_array, $location, $location_arg = null )
+	{
+		if( count( $cards_array ) == 0 )
+			return array();
+	
+		$sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+		$sql .= "FROM `".$this->table."` ";
+		$sql .= "WHERE `card_id` IN ('".implode( "','", $cards_array )."') ";
+		$sql .= "AND `card_location`='".addslashes((string) $location )."' ";
+		if( $location_arg !== null )
+			$sql .= " AND `card_location_arg`='$location_arg' ";
+        $result = self::getCollectionFromDB($sql);
+		 
+		if( count( $result ) != count( $cards_array ) )
+		{
+			self::error( "getCardsFromLocation: some cards have not been found in this location:" );
+			self::error( "location: ".$location." ".$location_arg );
+			self::error( "requested: ".implode( ",", $cards_array ) );
+			self::error( "received: ".implode( ",", array_keys( $result ) ) );
+			throw new \feException( "getCardsFromLocation: Some cards have not been found in this location!" );
+		}
+		 
+		return $result;
+	}
+	
+	// Get card of a specific type
+	function getCardsOfType( $type, $type_arg=null )
+	{
+	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_type`='$type' ";
+    	if( $type_arg !== null )
+    	    $sql .= "AND `card_type_arg`='$type_arg' ";
+    	    
+        $result = self::getCollectionFromDB($sql);
+    	return $result;
+	}
+	
+	// Get cards of a specific type in a specific location
+	function getCardsOfTypeInLocation( $type, /*?int*/ $type_arg, $location, $location_arg = null )
+	{
+	    $sql = "SELECT `card_id` id, `card_type` type, `card_type_arg` type_arg, `card_location` location, `card_location_arg` location_arg ";
+    	$sql .= "FROM `".$this->table."` ";
+    	$sql .= "WHERE `card_type`='$type' ";
+    	if( $type_arg !== null )
+    	    $sql .= "AND `card_type_arg`='$type_arg' ";
+    	$sql .= " AND `card_location`='".addslashes((string) $location )."' ";
+		if( $location_arg !== null )
+			$sql .= " AND `card_location_arg`='$location_arg' ";
+			
+        $result = self::getCollectionFromDB($sql);
+    	return $result;
+	}
+	
+	// Move a card to discard pile
+	function playCard( $card_id )
+	{
+	    $next_pos = self::getExtremePosition( true, 'discard' ) + 1;
+
+        $sql = "UPDATE `".$this->table."` SET `card_location`='discard', `card_location_arg`='$next_pos' ";
+        $sql .= "WHERE `card_id`='".$card_id."'";
+        self::DbQuery( $sql );
+	}
+	
+	function countCardInLocation( $location, $location_arg=null )
+	{
+	    $sql = "SELECT COUNT(`card_id`) cnt FROM `".$this->table."` ";
+	    $sql .= "WHERE `card_location`='".addslashes((string)$location)."' ";
+	    if( $location_arg !== null )
+	        $sql .= "AND `card_location_arg`='".addslashes((string)$location_arg)."' ";
+        return self::getUniqueValueFromDB($sql);
+	}
+	
+	// Alternate naming with plural (so as not avoid typing it wrong every time)
+	function countCardsInLocation( $location, $location_arg=null )
+	{
+		return $this->countCardInLocation( $location, $location_arg );
+	}
+	
+	// Return an array "location" => number of cards
+	function countCardsInLocations( )
+	{
+	    $sql = "SELECT `card_location`, COUNT(`card_id`) cnt FROM `".$this->table."` GROUP BY `card_location` ";
+        $result = self::getCollectionFromDB($sql, true);
+	    return $result;
+	}
+	// Return an array "location_arg" => number of cards (for this location)
+    function countCardsByLocationArgs( $location )
+    {
+	    $sql = "SELECT `card_location_arg`, COUNT(`card_id`) cnt FROM `".$this->table."` ";
+	    $sql .= "WHERE `card_location`='$location' ";
+	    $sql .= "GROUP BY `card_location_arg` ";
+        $result = self::getCollectionFromDB($sql, true);
+	    return $result;
+    
+    }
+}
+  
+
