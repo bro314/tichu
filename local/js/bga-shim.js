@@ -1864,6 +1864,9 @@
       if (typeof this.onGameUserPreferenceChanged === "function") {
         this.onGameUserPreferenceChanged(Number(prefId), Number(value));
       }
+      if (typeof this.onPreferenceChange === "function") {
+        this.onPreferenceChange(Number(prefId), Number(value));
+      }
     }
 
     getTableOption(optionId) {
@@ -3228,6 +3231,12 @@
       bindClick("devbar_tiki", () => {
         const nextVal = isTiki ? 2 : 1;
         this.setGameUserPreference(103, nextVal);
+        if (typeof this.onPreferenceChange === "function") {
+          this.onPreferenceChange(103, nextVal);
+        }
+        if (window.gameModel && typeof window.gameModel.setTiki === "function") {
+          window.gameModel.setTiki(nextVal === 1);
+        }
         const overall = document.getElementById("overall-content");
         if (overall) overall.classList.toggle("tiki", nextVal === 1);
         this._renderDevBar();

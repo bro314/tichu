@@ -95,6 +95,9 @@ export class TichuGame extends LitElement {
   override connectedCallback() {
     super.connectedCallback();
     this.syncExternalClasses();
+    if (typeof document !== "undefined" && document.body && !document.querySelector("tichu-trick-modal")) {
+      document.body.appendChild(document.createElement("tichu-trick-modal"));
+    }
   }
 
   private syncExternalClasses() {
@@ -166,7 +169,6 @@ export class TichuGame extends LitElement {
         <tichu-pass-area></tichu-pass-area>
         <tichu-hand></tichu-hand>
         <tichu-played-cards></tichu-played-cards>
-        <tichu-trick-modal></tichu-trick-modal>
       </div>
     `;
   }

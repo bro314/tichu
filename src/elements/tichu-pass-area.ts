@@ -44,7 +44,6 @@ export class TichuPassArea extends LitElement {
           height: 210px;
           border-radius: var(--border-radius);
           background: var(--bg-color-lighter);
-          box-shadow: var(--elevation);
           padding: 10px;
           margin: 10px 0;
         }
@@ -57,24 +56,20 @@ export class TichuPassArea extends LitElement {
         }
         #playertables .playertablename {
           font-weight: bold;
+          height: 24px;
+          line-height: 24px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           margin-bottom: 10px;
         }
         .playertablecard {
-          position: relative;
           width: 120px;
           height: 155px;
           margin: 0 auto;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
         }
         .playertablebackground {
-          position: absolute;
-          inset: 0;
+          position: relative;
           width: 120px;
           display: flex;
           flex-direction: column;
@@ -95,18 +90,21 @@ export class TichuPassArea extends LitElement {
         }
         tichu-card.given-card,
         tichu-card.received-card {
-          position: relative;
-          z-index: 1;
+          position: absolute;
+          top: 40px;
+          left: 20px;
+          z-index: 5;
           transition:
-            transform 0.5s ease-in-out,
-            opacity 0.5s ease-in-out;
+            transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.5s ease-in;
+          will-change: transform, opacity;
         }
         tichu-card.slide-out {
           transform: translateY(-60px);
           opacity: 0;
         }
         tichu-card.slide-to-hand {
-          transform: translateY(160px);
+          transform: translateY(180px);
           opacity: 0;
         }
       `,
@@ -188,33 +186,17 @@ export class TichuPassArea extends LitElement {
     const name = targetPlayer?.name ?? "";
     const isGrandTichu = targetPlayer?.callGrandTichu === 200;
     const isTichu = targetPlayer?.callTichu === 100;
+    const hasCard = slot.givenCard !== null || slot.receivedCard !== null;
 
     return html`
       <div
         class="whiteblock playertable playertable_${slot.dir}"
         id="playertable_${slot.dir}"
         data-player-id="${slot.playerId}"
+        @click=${() => this.onSlotClick(slot.dir - 1)}
       >
-        <div class="playertablename" style="color: #${color}">
-          <span class="icons">
-            <span
-              class="icon grandtichucolor ${slot.playerId}"
-              style="display: ${isGrandTichu ? "inline-block" : "none"}"
-              title=${t("Grand Tichu bet")}
-            ></span>
-            <span
-              class="icon tichucolor ${slot.playerId}"
-              style="display: ${isTichu ? "inline-block" : "none"}"
-              title=${t("Tichu bet")}
-            ></span>
-          </span>
-          ${name}
-        </div>
-        <div
-          class="playertablecard"
-          id="give_${slot.dir}"
-          @click=${() => this.onSlotClick(slot.dir - 1)}
-        >
+        <div class="playertablename" style="color: #${color}">${name}</div>
+        <div class="playertablecard" id="give_${slot.dir}">
           <div class="givePassCard" id="giveplayertable_${slot.dir}"></div>
           <div class="receivePassCard" id="receiveplayertable_${slot.playerId}"></div>
           <div class="playertablebackground">
@@ -222,13 +204,18 @@ export class TichuPassArea extends LitElement {
               <div
                 class="icon big grandtichucolor ${slot.playerId}"
                 style="display: ${isGrandTichu ? "inline-block" : "none"}"
+                title=${t("Grand Tichu bet")}
               ></div>
               <div
                 class="icon big tichucolor ${slot.playerId}"
                 style="display: ${isTichu ? "inline-block" : "none"}"
+                title=${t("Tichu bet")}
               ></div>
             </div>
-            <div class="CardBack selectable playertabletext">
+            <div
+              class="CardBack selectable playertabletext"
+              style=${hasCard ? "display: none" : ""}
+            >
               <span>${t("Select a card and click here")}</span>
             </div>
           </div>

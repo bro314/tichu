@@ -25,9 +25,9 @@ export class TichuTrickModal extends LitElement {
           background: rgba(0, 0, 0, 0.55);
           z-index: 9500;
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: center;
-          padding: 20px;
+          padding: min(180px, 18vh) 20px 20px;
         }
         .custom_popin {
           background: #f6f0e6;
@@ -44,13 +44,12 @@ export class TichuTrickModal extends LitElement {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 16px;
-          background: #e7dccb;
-          border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+          padding: 14px 16px 4px 16px;
           font-size: 17px;
           font-weight: 700;
         }
-        #popin_showCurrentTrickDialog_close {
+        #popin_showCurrentTrickDialog_close,
+        #popin_showLastTrickDialog_close {
           background: transparent;
           border: none;
           font-size: 20px;
@@ -62,7 +61,8 @@ export class TichuTrickModal extends LitElement {
           border-radius: 4px;
           text-decoration: none;
         }
-        #popin_showCurrentTrickDialog_close:hover {
+        #popin_showCurrentTrickDialog_close:hover,
+        #popin_showLastTrickDialog_close:hover {
           background: rgba(0, 0, 0, 0.1);
           color: #1f2328;
         }
@@ -106,31 +106,33 @@ export class TichuTrickModal extends LitElement {
         @click=${this.onUnderlayClick}
       >
         <div id="popin_showCurrentTrickDialog" class="custom_popin bga-popin-dialog">
-          <div class="custom_popin_titlebar bga-popin-titlebar">
-            <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
-              ${t("Cards in current Trick")}
-            </span>
-            <a
-              href="#"
-              id="popin_showCurrentTrickDialog_close"
-              class="bga-popin-close"
-              title="Close"
-              @click=${this.onClose}
-              >X</a
+          <div id="popin_showLastTrickDialog">
+            <div class="custom_popin_titlebar bga-popin-titlebar">
+              <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
+                ${t("Cards in current Trick")}
+              </span>
+              <a
+                href="#"
+                id="popin_showCurrentTrickDialog_close"
+                class="bga-popin-close"
+                title="Close"
+                @click=${this.onClose}
+                ><span id="popin_showLastTrickDialog_close">&times;</span></a
+              >
+            </div>
+            <div
+              id="popin_showCurrentTrickDialog_contents"
+              class="custom_popin_content bga-popin-content"
             >
-          </div>
-          <div
-            id="popin_showCurrentTrickDialog_contents"
-            class="custom_popin_content bga-popin-content"
-          >
-            <div id="currentTrickCards">
-              <tichu-stock
-                .cards=${this.currentTrick}
-                .scale=${0.75}
-                sortMode="preserve"
-                .tiki=${this.isTiki}
-                .dynamicOverlap=${true}
-              ></tichu-stock>
+              <div id="currentTrickCards">
+                <tichu-stock
+                  .cards=${this.currentTrick}
+                  .scale=${0.75}
+                  sortMode="preserve"
+                  .tiki=${this.isTiki}
+                  .dynamicOverlap=${true}
+                ></tichu-stock>
+              </div>
             </div>
           </div>
         </div>

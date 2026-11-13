@@ -123,10 +123,7 @@ a.themelink .bg3 {
 }
 
 #game_play_area_wrap {
-  /* this is set dynamically using resize observers */
-  transform: scale(1);
-  /* this is set dynamically using resize observers */
-  transform-origin: top left;
+  /* transform is set dynamically using resize observers when factor < 1 */
   margin: 0px 10px;
 }
 #game_play_area {

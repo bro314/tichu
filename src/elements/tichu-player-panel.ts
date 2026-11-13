@@ -26,13 +26,15 @@ export class TichuPlayerPanel extends LitElement {
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          gap: 4px;
           padding-top: 4px;
           font-weight: 600;
           color: #1f2328;
         }
         .ha_board .count {
           margin-right: 8px;
+        }
+        .ha_board .icon:not(.hand):not(.star) {
+          margin-right: 4px;
         }
       `,
     ];
@@ -80,25 +82,21 @@ export class TichuPlayerPanel extends LitElement {
 
     return html`
       <div class="ha_board">
-        <div class="icon hand" title=${t("Number of cards in hand")}></div>
-        &#x00D7;<span
+        <div class="icon hand" title=${t("Cards in hand")}></div>&#x00D7;<span
           id="handcount_${id}"
           class="count handcount ${id}"
-          title=${t("Number of cards in hand")}
+          title=${t("Cards in hand")}
           >${handcount}</span
-        >
-        <div class="icon star" title=${t("Points captured in this round")}></div>
-        &#x00D7;<span
+        ><div class="icon star" title=${t("Points captured")}></div>&#x00D7;<span
           id="pointcount_${id}"
           class="count pointcount ${id}"
-          title=${t("Points captured in this round")}
+          title=${t("Points captured")}
           >${capturedPoints}</span
-        >
-        <div
+        ><div
           id="grandtichublack_${id}"
           class="icon grandtichublack ${id}"
           style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
-          title=${t("Grand Tichu bet")}
+          title=${t("Grand Tichu bet yet to be made")}
         ></div>
         <div
           id="grandtichucolor_${id}"
@@ -110,7 +108,7 @@ export class TichuPlayerPanel extends LitElement {
           id="tichublack_${id}"
           class="icon tichublack ${id}"
           style="display: ${showTichuBlack ? "inline-block" : "none"}"
-          title=${t("Tichu bet")}
+          title=${t("Tichu bet yet to be made")}
         ></div>
         <div
           id="tichucolor_${id}"
@@ -122,7 +120,7 @@ export class TichuPlayerPanel extends LitElement {
           id="firstoutcolor_${id}"
           class="icon firstoutcolor ${id}"
           style="display: ${isFirstOut ? "inline-block" : "none"}"
-          title=${t("First player to go out")}
+          title=${t("First player out")}
         ></div>
         <div
           id="cardback_${id}"

@@ -37,8 +37,12 @@ export class TichuValueChoice extends LitElement {
           margin-bottom: 15px;
           font-size: 20px;
         }
-        #mahjong,
-        #mahjongvalues,
+        #mahjong {
+          display: grid;
+          grid-template-columns: repeat(7, 70px);
+          gap: 5px;
+          min-height: 105px;
+        }
         #phoenixChoice,
         #phoenixvalues {
           display: flex;
@@ -131,11 +135,12 @@ export class TichuValueChoice extends LitElement {
 
   private renderPhoenix() {
     const isVisible = this.stateName === "phoenixPlay" && this.isCurrentPlayerActive;
+    const sortedPhoenixValues = [...this.phoenixAllowedValues].sort((a, b) => a - b);
     return html`
       <div id="phoenixpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
         <h3>${t("Phoenix Choice")}</h3>
         <div id="phoenixChoice" class="phoenixvalues">
-          ${this.phoenixAllowedValues.map((val) => {
+          ${sortedPhoenixValues.map((val) => {
             const idx = val - 2;
             const col = idx % 7;
             const row = Math.floor(idx / 7);

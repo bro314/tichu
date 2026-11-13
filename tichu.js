@@ -1823,7 +1823,9 @@
       this.phoenixValues = {
         get items() {
           var _a, _b;
-          var allowed = (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().phoenixAllowedValues) !== null && _b !== void 0 ? _b : [];
+          var allowed = __spreadArray([], (_b = (_a = window.gameModel) === null || _a === void 0 ? void 0 : _a.getState().phoenixAllowedValues) !== null && _b !== void 0 ? _b : [], true).sort(function(a, b) {
+            return a - b;
+          });
           return allowed.map(function(v) {
             return { id: v, type: v - 2 };
           });
@@ -1924,6 +1926,9 @@
         });
       });
     };
+    Tichu2.prototype.onGameUserPreferenceChanged = function(prefId, prefValue) {
+      this.onPreferenceChange(prefId, prefValue);
+    };
     Tichu2.prototype.onPreferenceChange = function(prefId, prefValue) {
       var _a;
       switch (Number(prefId)) {
@@ -1961,6 +1966,9 @@
           var gameEl = document.createElement("tichu-game");
           playArea.appendChild(gameEl);
         }
+      }
+      if (document.body && !document.querySelector("tichu-trick-modal")) {
+        document.body.appendChild(document.createElement("tichu-trick-modal"));
       }
       (_c = window.gameModel) === null || _c === void 0 ? void 0 : _c.hydrateFromGamedatas(gamedatas, this.player_id, this.isSpectator, this.bRealtime, this.readPrefs());
       this.enableAllPlayerPanels();
@@ -2360,8 +2368,13 @@
       var widthFactor = Math.max(widthAvailable / widthMin, 0.4);
       var heightFactor = Math.max(heightAvailable / heightMin, 0.7);
       var factor = Math.min(widthFactor, heightFactor, 1);
-      areaWrapElement.style.transform = "scale(".concat(factor, ")");
-      areaWrapElement.style.transformOrigin = factor === 1 ? "top center" : "top left";
+      if (factor >= 1) {
+        areaWrapElement.style.transform = "";
+        areaWrapElement.style.transformOrigin = "";
+      } else {
+        areaWrapElement.style.transform = "scale(".concat(factor, ")");
+        areaWrapElement.style.transformOrigin = "top left";
+      }
       gameElement.style.width = "".concat(Math.max(Math.min(widthAvailable / factor, widthMax), widthMin), "px");
     };
     Tichu2.prototype.onGiveCard = function(index) {
@@ -7827,13 +7840,15 @@
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          gap: 4px;
           padding-top: 4px;
           font-weight: 600;
           color: #1f2328;
         }
         .ha_board .count {
           margin-right: 8px;
+        }
+        .ha_board .icon:not(.hand):not(.star) {
+          margin-right: 4px;
         }
       `
       ];
@@ -7858,25 +7873,21 @@
       const isPassReady = Boolean(p3?.passedCardReady);
       return x`
       <div class="ha_board">
-        <div class="icon hand" title=${t4("Number of cards in hand")}></div>
-        &#x00D7;<span
+        <div class="icon hand" title=${t4("Cards in hand")}></div>&#x00D7;<span
           id="handcount_${id}"
           class="count handcount ${id}"
-          title=${t4("Number of cards in hand")}
+          title=${t4("Cards in hand")}
           >${handcount}</span
-        >
-        <div class="icon star" title=${t4("Points captured in this round")}></div>
-        &#x00D7;<span
+        ><div class="icon star" title=${t4("Points captured")}></div>&#x00D7;<span
           id="pointcount_${id}"
           class="count pointcount ${id}"
-          title=${t4("Points captured in this round")}
+          title=${t4("Points captured")}
           >${capturedPoints}</span
-        >
-        <div
+        ><div
           id="grandtichublack_${id}"
           class="icon grandtichublack ${id}"
           style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
-          title=${t4("Grand Tichu bet")}
+          title=${t4("Grand Tichu bet yet to be made")}
         ></div>
         <div
           id="grandtichucolor_${id}"
@@ -7888,7 +7899,7 @@
           id="tichublack_${id}"
           class="icon tichublack ${id}"
           style="display: ${showTichuBlack ? "inline-block" : "none"}"
-          title=${t4("Tichu bet")}
+          title=${t4("Tichu bet yet to be made")}
         ></div>
         <div
           id="tichucolor_${id}"
@@ -7900,7 +7911,7 @@
           id="firstoutcolor_${id}"
           class="icon firstoutcolor ${id}"
           style="display: ${isFirstOut ? "inline-block" : "none"}"
-          title=${t4("First player to go out")}
+          title=${t4("First player out")}
         ></div>
         <div
           id="cardback_${id}"
@@ -7984,8 +7995,12 @@
           margin-bottom: 15px;
           font-size: 20px;
         }
-        #mahjong,
-        #mahjongvalues,
+        #mahjong {
+          display: grid;
+          grid-template-columns: repeat(7, 70px);
+          gap: 5px;
+          min-height: 105px;
+        }
         #phoenixChoice,
         #phoenixvalues {
           display: flex;
@@ -8045,11 +8060,12 @@
     }
     renderPhoenix() {
       const isVisible = this.stateName === "phoenixPlay" && this.isCurrentPlayerActive;
+      const sortedPhoenixValues = [...this.phoenixAllowedValues].sort((a3, b3) => a3 - b3);
       return x`
       <div id="phoenixpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
         <h3>${t5("Phoenix Choice")}</h3>
         <div id="phoenixChoice" class="phoenixvalues">
-          ${this.phoenixAllowedValues.map((val) => {
+          ${sortedPhoenixValues.map((val) => {
         const idx = val - 2;
         const col = idx % 7;
         const row = Math.floor(idx / 7);
@@ -8431,12 +8447,12 @@
         <div class="last-played-player">
           <div class="playertablename" style="color: #${player.color}">${player.name}</div>
           <div class="last-played-icons">
-            <div class="icon hand" id="icon_hand_${id}" title=${t6("Number of cards in hand")}></div>
+            <div class="icon hand" id="icon_hand_${id}" title=${t6("Cards in hand")}></div>
             <div class="count handcount ${id}">${player.handcount}</div>
             <div
               class="icon star"
               id="icon_star_${id}"
-              title=${t6("Points captured in this round")}
+              title=${t6("Points captured")}
             ></div>
             <div class="count pointcount ${id}">${player.capturedPoints}</div>
           </div>
@@ -8600,7 +8616,6 @@
           height: 210px;
           border-radius: var(--border-radius);
           background: var(--bg-color-lighter);
-          box-shadow: var(--elevation);
           padding: 10px;
           margin: 10px 0;
         }
@@ -8613,24 +8628,20 @@
         }
         #playertables .playertablename {
           font-weight: bold;
+          height: 24px;
+          line-height: 24px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           margin-bottom: 10px;
         }
         .playertablecard {
-          position: relative;
           width: 120px;
           height: 155px;
           margin: 0 auto;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
         }
         .playertablebackground {
-          position: absolute;
-          inset: 0;
+          position: relative;
           width: 120px;
           display: flex;
           flex-direction: column;
@@ -8651,18 +8662,21 @@
         }
         tichu-card.given-card,
         tichu-card.received-card {
-          position: relative;
-          z-index: 1;
+          position: absolute;
+          top: 40px;
+          left: 20px;
+          z-index: 5;
           transition:
-            transform 0.5s ease-in-out,
-            opacity 0.5s ease-in-out;
+            transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.5s ease-in;
+          will-change: transform, opacity;
         }
         tichu-card.slide-out {
           transform: translateY(-60px);
           opacity: 0;
         }
         tichu-card.slide-to-hand {
-          transform: translateY(160px);
+          transform: translateY(180px);
           opacity: 0;
         }
       `
@@ -8696,32 +8710,16 @@
       const name = targetPlayer?.name ?? "";
       const isGrandTichu = targetPlayer?.callGrandTichu === 200;
       const isTichu = targetPlayer?.callTichu === 100;
+      const hasCard = slot.givenCard !== null || slot.receivedCard !== null;
       return x`
       <div
         class="whiteblock playertable playertable_${slot.dir}"
         id="playertable_${slot.dir}"
         data-player-id="${slot.playerId}"
+        @click=${() => this.onSlotClick(slot.dir - 1)}
       >
-        <div class="playertablename" style="color: #${color}">
-          <span class="icons">
-            <span
-              class="icon grandtichucolor ${slot.playerId}"
-              style="display: ${isGrandTichu ? "inline-block" : "none"}"
-              title=${t7("Grand Tichu bet")}
-            ></span>
-            <span
-              class="icon tichucolor ${slot.playerId}"
-              style="display: ${isTichu ? "inline-block" : "none"}"
-              title=${t7("Tichu bet")}
-            ></span>
-          </span>
-          ${name}
-        </div>
-        <div
-          class="playertablecard"
-          id="give_${slot.dir}"
-          @click=${() => this.onSlotClick(slot.dir - 1)}
-        >
+        <div class="playertablename" style="color: #${color}">${name}</div>
+        <div class="playertablecard" id="give_${slot.dir}">
           <div class="givePassCard" id="giveplayertable_${slot.dir}"></div>
           <div class="receivePassCard" id="receiveplayertable_${slot.playerId}"></div>
           <div class="playertablebackground">
@@ -8729,13 +8727,18 @@
               <div
                 class="icon big grandtichucolor ${slot.playerId}"
                 style="display: ${isGrandTichu ? "inline-block" : "none"}"
+                title=${t7("Grand Tichu bet")}
               ></div>
               <div
                 class="icon big tichucolor ${slot.playerId}"
                 style="display: ${isTichu ? "inline-block" : "none"}"
+                title=${t7("Tichu bet")}
               ></div>
             </div>
-            <div class="CardBack selectable playertabletext">
+            <div
+              class="CardBack selectable playertabletext"
+              style=${hasCard ? "display: none" : ""}
+            >
               <span>${t7("Select a card and click here")}</span>
             </div>
           </div>
@@ -9277,8 +9280,9 @@
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          padding: 10px 0px 0px 0px;
+          padding: 0px 0px 10px 10px;
           line-height: 16px;
+          color: #1f2328;
         }
         #themes > * {
           margin-right: 15px;
@@ -9397,23 +9401,23 @@
             @click=${this.onExpReplay}
             >[${t9("Experimental Replay")}]</a
           >
-          <div id="themes">
-            <span>${t9("Color Themes:")}</span>
-            ${THEME_NUMBERS.map(
+        </div>
+        <div id="themes">
+          <span>${t9("Color Themes:")}</span>
+          ${THEME_NUMBERS.map(
         (themeNo) => x`
-                <a
-                  href="#"
-                  class="themelink theme${themeNo}"
-                  id="theme${themeNo}"
-                  @click=${(e7) => this.onThemeClick(e7, themeNo)}
-                >
-                  <div class="bg bg1"></div>
-                  <div class="bg bg2"></div>
-                  <div class="bg bg3"></div>
-                </a>
-              `
+              <a
+                href="#"
+                class="themelink theme${themeNo}"
+                id="theme${themeNo}"
+                @click=${(e7) => this.onThemeClick(e7, themeNo)}
+              >
+                <div class="bg bg1"></div>
+                <div class="bg bg2"></div>
+                <div class="bg bg3"></div>
+              </a>
+            `
       )}
-          </div>
         </div>
       </div>
     `;
@@ -9749,9 +9753,9 @@
           background: rgba(0, 0, 0, 0.55);
           z-index: 9500;
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           justify-content: center;
-          padding: 20px;
+          padding: min(180px, 18vh) 20px 20px;
         }
         .custom_popin {
           background: #f6f0e6;
@@ -9768,13 +9772,12 @@
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 16px;
-          background: #e7dccb;
-          border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+          padding: 14px 16px 4px 16px;
           font-size: 17px;
           font-weight: 700;
         }
-        #popin_showCurrentTrickDialog_close {
+        #popin_showCurrentTrickDialog_close,
+        #popin_showLastTrickDialog_close {
           background: transparent;
           border: none;
           font-size: 20px;
@@ -9786,7 +9789,8 @@
           border-radius: 4px;
           text-decoration: none;
         }
-        #popin_showCurrentTrickDialog_close:hover {
+        #popin_showCurrentTrickDialog_close:hover,
+        #popin_showLastTrickDialog_close:hover {
           background: rgba(0, 0, 0, 0.1);
           color: #1f2328;
         }
@@ -9809,31 +9813,33 @@
         @click=${this.onUnderlayClick}
       >
         <div id="popin_showCurrentTrickDialog" class="custom_popin bga-popin-dialog">
-          <div class="custom_popin_titlebar bga-popin-titlebar">
-            <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
-              ${t11("Cards in current Trick")}
-            </span>
-            <a
-              href="#"
-              id="popin_showCurrentTrickDialog_close"
-              class="bga-popin-close"
-              title="Close"
-              @click=${this.onClose}
-              >X</a
+          <div id="popin_showLastTrickDialog">
+            <div class="custom_popin_titlebar bga-popin-titlebar">
+              <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
+                ${t11("Cards in current Trick")}
+              </span>
+              <a
+                href="#"
+                id="popin_showCurrentTrickDialog_close"
+                class="bga-popin-close"
+                title="Close"
+                @click=${this.onClose}
+                ><span id="popin_showLastTrickDialog_close">&times;</span></a
+              >
+            </div>
+            <div
+              id="popin_showCurrentTrickDialog_contents"
+              class="custom_popin_content bga-popin-content"
             >
-          </div>
-          <div
-            id="popin_showCurrentTrickDialog_contents"
-            class="custom_popin_content bga-popin-content"
-          >
-            <div id="currentTrickCards">
-              <tichu-stock
-                .cards=${this.currentTrick}
-                .scale=${0.75}
-                sortMode="preserve"
-                .tiki=${this.isTiki}
-                .dynamicOverlap=${true}
-              ></tichu-stock>
+              <div id="currentTrickCards">
+                <tichu-stock
+                  .cards=${this.currentTrick}
+                  .scale=${0.75}
+                  sortMode="preserve"
+                  .tiki=${this.isTiki}
+                  .dynamicOverlap=${true}
+                ></tichu-stock>
+              </div>
             </div>
           </div>
         </div>
@@ -9940,6 +9946,9 @@
     connectedCallback() {
       super.connectedCallback();
       this.syncExternalClasses();
+      if (typeof document !== "undefined" && document.body && !document.querySelector("tichu-trick-modal")) {
+        document.body.appendChild(document.createElement("tichu-trick-modal"));
+      }
     }
     syncExternalClasses() {
       if (typeof document === "undefined") return;
@@ -10005,7 +10014,6 @@
         <tichu-pass-area></tichu-pass-area>
         <tichu-hand></tichu-hand>
         <tichu-played-cards></tichu-played-cards>
-        <tichu-trick-modal></tichu-trick-modal>
       </div>
     `;
     }

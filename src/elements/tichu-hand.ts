@@ -52,8 +52,9 @@ export class TichuHand extends LitElement {
           display: flex;
           align-items: center;
           flex-wrap: wrap;
-          padding: 10px 0px 0px 0px;
+          padding: 0px 0px 10px 10px;
           line-height: 16px;
+          color: #1f2328;
         }
         #themes > * {
           margin-right: 15px;
@@ -224,23 +225,23 @@ export class TichuHand extends LitElement {
             @click=${this.onExpReplay}
             >[${t("Experimental Replay")}]</a
           >
-          <div id="themes">
-            <span>${t("Color Themes:")}</span>
-            ${THEME_NUMBERS.map(
-              (themeNo) => html`
-                <a
-                  href="#"
-                  class="themelink theme${themeNo}"
-                  id="theme${themeNo}"
-                  @click=${(e: Event) => this.onThemeClick(e, themeNo)}
-                >
-                  <div class="bg bg1"></div>
-                  <div class="bg bg2"></div>
-                  <div class="bg bg3"></div>
-                </a>
-              `,
-            )}
-          </div>
+        </div>
+        <div id="themes">
+          <span>${t("Color Themes:")}</span>
+          ${THEME_NUMBERS.map(
+            (themeNo) => html`
+              <a
+                href="#"
+                class="themelink theme${themeNo}"
+                id="theme${themeNo}"
+                @click=${(e: Event) => this.onThemeClick(e, themeNo)}
+              >
+                <div class="bg bg1"></div>
+                <div class="bg bg2"></div>
+                <div class="bg bg3"></div>
+              </a>
+            `,
+          )}
         </div>
       </div>
     `;

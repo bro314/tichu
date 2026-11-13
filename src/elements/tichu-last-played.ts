@@ -368,12 +368,12 @@ export class TichuLastPlayed extends LitElement {
         <div class="last-played-player">
           <div class="playertablename" style="color: #${player.color}">${player.name}</div>
           <div class="last-played-icons">
-            <div class="icon hand" id="icon_hand_${id}" title=${t("Number of cards in hand")}></div>
+            <div class="icon hand" id="icon_hand_${id}" title=${t("Cards in hand")}></div>
             <div class="count handcount ${id}">${player.handcount}</div>
             <div
               class="icon star"
               id="icon_star_${id}"
-              title=${t("Points captured in this round")}
+              title=${t("Points captured")}
             ></div>
             <div class="count pointcount ${id}">${player.capturedPoints}</div>
           </div>

@@ -197,6 +197,8 @@ Instead of relying solely on global variables for complex trick history, `LogMan
    - Therefore, `npm run bundle` first bundles `./dist/tichu.js` with `--target=es5` into `tichu.js`, and then bundles `./src/elements/elements.ts` directly via `esbuild` (preserving ES6 classes) and appends it to `tichu.js`.
    - `src/tichu.ts` must only use `import type` when referencing types from `src/elements/` so `tsc` does not downlevel Lit classes into `dist/tichu.js`.
    - Inside Shadow DOM `<style>` blocks, never hardcode relative `url("img/...")` paths (since `document.baseURI` on BGA Studio is `/<table_id>/tichu`, not `/game/tichu/`). Instead, use the CSS custom properties (`--icon-url`, `--table-icons-url`, `--mahjong-bg-url`, `--tiki-mahjong-bg-url`) initialized from `g_gamethemeurl` in `src/elements/game-model.ts` and `src/elements/tichu-card.ts`.
+   - `<tichu-trick-modal>` is mounted on `document.body` outside `#game_play_area_wrap` (and `rescale()` clears `transform` when `factor >= 1.0`) so `position: fixed` modals are never trapped inside a CSS `transform` containing block on BGA Studio.
+   - In `<tichu-value-choice>`, `#mahjong` uses a 7x2 (`7+7`) grid matching the 7-column `tichu-icons-table.png` sprite sheet, and `phoenixAllowedValues` is sorted ascending (`(a, b) => a - b`).
 
 ### BGA Platform Pitfalls & Best Practices (PHP, MySQL & Client)
 

@@ -174,7 +174,9 @@ export class Tichu {
 
   phoenixValues = {
     get items() {
-      const allowed = window.gameModel?.getState().phoenixAllowedValues ?? [];
+      const allowed = [...(window.gameModel?.getState().phoenixAllowedValues ?? [])].sort(
+        (a, b) => a - b,
+      );
       return allowed.map((v) => ({ id: v, type: v - 2 }));
     },
     getSelectedItems: () => {
@@ -256,6 +258,10 @@ export class Tichu {
     });
   }
 
+  onGameUserPreferenceChanged(prefId: number, prefValue: number) {
+    this.onPreferenceChange(prefId, prefValue);
+  }
+
   onPreferenceChange(prefId: number, prefValue: number) {
     switch (Number(prefId)) {
       case 100:
@@ -293,6 +299,9 @@ export class Tichu {
         const gameEl = document.createElement("tichu-game");
         playArea.appendChild(gameEl);
       }
+    }
+    if (document.body && !document.querySelector("tichu-trick-modal")) {
+      document.body.appendChild(document.createElement("tichu-trick-modal"));
     }
 
     window.gameModel?.hydrateFromGamedatas(
@@ -758,8 +767,13 @@ export class Tichu {
     const heightFactor = Math.max(heightAvailable / heightMin, 0.7);
     const factor = Math.min(widthFactor, heightFactor, 1.0);
 
-    areaWrapElement.style.transform = `scale(${factor})`;
-    areaWrapElement.style.transformOrigin = factor === 1.0 ? "top center" : "top left";
+    if (factor >= 1.0) {
+      areaWrapElement.style.transform = "";
+      areaWrapElement.style.transformOrigin = "";
+    } else {
+      areaWrapElement.style.transform = `scale(${factor})`;
+      areaWrapElement.style.transformOrigin = "top left";
+    }
     gameElement.style.width = `${Math.max(
       Math.min(widthAvailable / factor, widthMax),
       widthMin,
