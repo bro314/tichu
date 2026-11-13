@@ -35,7 +35,7 @@ class Hand
     $length = count($combo->cards);
     $name = Combo::$comboNames[$combo->type];
     $highestCombo =
-      $this->getWishHighestBomb($wish, $length) ??
+      $this->getWishHighestBomb($wish) ??
       call_user_func([$this, "getWishHighest$name"], $wish, $length);
 
     if (is_null($highestCombo)) {
@@ -564,6 +564,320 @@ class Hand
     if (count($filtered) == 4) {
       return new Combo($filtered);
     }
+  }
+
+  /**
+   * Finds the lowest legal Combo constructed from real card rows in this hand
+   * (preserving card `id`, `type`, and `type_arg`, with any ambiguous Phoenix value
+   * resolved to a concrete rank) that beats $lastCombo and, when $wish > 0, contains $wish.
+   */
+  public function findPlayableCombo($lastCombo = null, int $wish = 0): ?Combo
+  {
+    if (empty($this->cards)) {
+      return null;
+    }
+
+    $byRank = [];
+    $bySuit = [1 => [], 2 => [], 3 => [], 4 => []];
+    $mahjong = null;
+    $dog = null;
+    $dragon = null;
+    $phoenix = $this->phoenix;
+
+    foreach ($this->cards as $card) {
+      $rank = (int) $card["type_arg"];
+      $suit = (int) $card["type"];
+      if ($rank === 1) {
+        if ($suit === TYPE_MAHJONG) {
+          $mahjong = $card;
+        } elseif ($suit === TYPE_DOG) {
+          $dog = $card;
+        } elseif ($suit === TYPE_DRAGON) {
+          $dragon = $card;
+        }
+      } else {
+        $byRank[$rank][] = $card;
+        $bySuit[$suit][$rank] = $card;
+      }
+    }
+
+    $isLeading =
+      $lastCombo === null ||
+      $lastCombo->type === NO_COMBO ||
+      $lastCombo->type === DOG_COMBO ||
+      empty($lastCombo->cards);
+
+    $tryCombo = function (array $cards) use ($lastCombo, $isLeading, $wish): ?Combo {
+      if (empty($cards)) {
+        return null;
+      }
+      if ($wish > 0) {
+        $hasWish = false;
+        foreach ($cards as $c) {
+          if ((int) $c["type_arg"] === $wish) {
+            $hasWish = true;
+            break;
+          }
+        }
+        if (!$hasWish) {
+          return null;
+        }
+      }
+      $combo = new Combo($cards);
+      if ($combo->type === INVALID_COMBO || $combo->type === NO_COMBO) {
+        return null;
+      }
+      if (is_array($combo->phoenixValue)) {
+        $candidates = array_values(array_unique($combo->phoenixValue));
+        sort($candidates);
+        foreach ($candidates as $cand) {
+          $resolved = new Combo($cards);
+          $resolved->setPhoenixValue($cand);
+          if ($isLeading || $resolved->canBeat($lastCombo)) {
+            return $resolved;
+          }
+        }
+        return null;
+      }
+      if (!$isLeading && !$combo->canBeat($lastCombo)) {
+        return null;
+      }
+      return $combo;
+    };
+
+    $pickRank = function (int $rank, int $count) use ($byRank): ?array {
+      if (!isset($byRank[$rank]) || count($byRank[$rank]) < $count) {
+        return null;
+      }
+      return array_slice($byRank[$rank], 0, $count);
+    };
+
+    $findSingle = function () use ($byRank, $mahjong, $dog, $dragon, $phoenix, $isLeading, $tryCombo): ?Combo {
+      for ($r = 2; $r <= 14; $r++) {
+        if (!empty($byRank[$r])) {
+          $res = $tryCombo([$byRank[$r][0]]);
+          if ($res !== null) {
+            return $res;
+          }
+        }
+      }
+      $specials = $isLeading
+        ? [$mahjong, $dog, $phoenix, $dragon]
+        : [$mahjong, $phoenix, $dragon];
+      foreach ($specials as $special) {
+        if ($special !== null) {
+          $res = $tryCombo([$special]);
+          if ($res !== null) {
+            return $res;
+          }
+        }
+      }
+      return null;
+    };
+
+    $findPair = function () use ($pickRank, $phoenix, $tryCombo): ?Combo {
+      for ($r = 2; $r <= 14; $r++) {
+        $natural = $pickRank($r, 2);
+        if ($natural !== null && ($res = $tryCombo($natural)) !== null) {
+          return $res;
+        }
+        if ($phoenix !== null && ($single = $pickRank($r, 1)) !== null) {
+          if (($res = $tryCombo([$single[0], $phoenix])) !== null) {
+            return $res;
+          }
+        }
+      }
+      return null;
+    };
+
+    $findTrip = function () use ($pickRank, $phoenix, $tryCombo): ?Combo {
+      for ($r = 2; $r <= 14; $r++) {
+        $natural = $pickRank($r, 3);
+        if ($natural !== null && ($res = $tryCombo($natural)) !== null) {
+          return $res;
+        }
+        if ($phoenix !== null && ($pair = $pickRank($r, 2)) !== null) {
+          if (($res = $tryCombo(array_merge($pair, [$phoenix]))) !== null) {
+            return $res;
+          }
+        }
+      }
+      return null;
+    };
+
+    $findFullHouse = function () use ($pickRank, $phoenix, $tryCombo): ?Combo {
+      for ($t = 2; $t <= 14; $t++) {
+        $trip = $pickRank($t, 3);
+        $pairFromT = $pickRank($t, 2);
+        if ($pairFromT === null) {
+          continue;
+        }
+        for ($p = 2; $p <= 14; $p++) {
+          if ($p === $t) {
+            continue;
+          }
+          if ($trip !== null && ($pair = $pickRank($p, 2)) !== null) {
+            if (($res = $tryCombo(array_merge($trip, $pair))) !== null) {
+              return $res;
+            }
+          }
+          if ($phoenix !== null) {
+            if (($pair = $pickRank($p, 2)) !== null) {
+              if (($res = $tryCombo(array_merge($pairFromT, $pair, [$phoenix]))) !== null) {
+                return $res;
+              }
+            }
+            if ($trip !== null && ($single = $pickRank($p, 1)) !== null) {
+              if (($res = $tryCombo(array_merge($trip, $single, [$phoenix]))) !== null) {
+                return $res;
+              }
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    $findRunningPairs = function (int $pairCount) use ($byRank, $phoenix, $tryCombo): ?Combo {
+      for ($start = 2; $start <= 15 - $pairCount; $start++) {
+        $cards = [];
+        $usedPhoenix = false;
+        $valid = true;
+        for ($r = $start; $r < $start + $pairCount; $r++) {
+          $avail = count($byRank[$r] ?? []);
+          if ($avail >= 2) {
+            $cards[] = $byRank[$r][0];
+            $cards[] = $byRank[$r][1];
+          } elseif ($avail === 1 && !$usedPhoenix && $phoenix !== null) {
+            $cards[] = $byRank[$r][0];
+            $cards[] = $phoenix;
+            $usedPhoenix = true;
+          } else {
+            $valid = false;
+            break;
+          }
+        }
+        if ($valid && ($res = $tryCombo($cards)) !== null) {
+          return $res;
+        }
+      }
+      return null;
+    };
+
+    $findStraight = function (int $len) use ($byRank, $mahjong, $phoenix, $tryCombo): ?Combo {
+      for ($start = 1; $start <= 15 - $len; $start++) {
+        $cards = [];
+        $usedPhoenix = false;
+        $valid = true;
+        for ($r = $start; $r < $start + $len; $r++) {
+          if ($r === 1) {
+            if ($mahjong !== null) {
+              $cards[] = $mahjong;
+            } else {
+              $valid = false;
+              break;
+            }
+          } elseif (!empty($byRank[$r])) {
+            $cards[] = $byRank[$r][0];
+          } elseif (!$usedPhoenix && $phoenix !== null) {
+            $cards[] = $phoenix;
+            $usedPhoenix = true;
+          } else {
+            $valid = false;
+            break;
+          }
+        }
+        if ($valid && ($res = $tryCombo($cards)) !== null) {
+          return $res;
+        }
+      }
+      return null;
+    };
+
+    $findBomb = function () use ($pickRank, $bySuit, $tryCombo): ?Combo {
+      for ($r = 2; $r <= 14; $r++) {
+        $four = $pickRank($r, 4);
+        if ($four !== null && ($res = $tryCombo($four)) !== null) {
+          return $res;
+        }
+      }
+      for ($len = 5; $len <= 14; $len++) {
+        for ($suit = 1; $suit <= 4; $suit++) {
+          for ($start = 2; $start <= 15 - $len; $start++) {
+            $cards = [];
+            $valid = true;
+            for ($r = $start; $r < $start + $len; $r++) {
+              if (!isset($bySuit[$suit][$r])) {
+                $valid = false;
+                break;
+              }
+              $cards[] = $bySuit[$suit][$r];
+            }
+            if ($valid && ($res = $tryCombo($cards)) !== null) {
+              return $res;
+            }
+          }
+        }
+      }
+      return null;
+    };
+
+    if ($isLeading) {
+      if ($wish > 0) {
+        if (($res = $findSingle()) !== null) {
+          return $res;
+        }
+        if (($res = $findPair()) !== null) {
+          return $res;
+        }
+        if (($res = $findTrip()) !== null) {
+          return $res;
+        }
+        if (($res = $findFullHouse()) !== null) {
+          return $res;
+        }
+        for ($pairs = 2; $pairs <= 7; $pairs++) {
+          if (($res = $findRunningPairs($pairs)) !== null) {
+            return $res;
+          }
+        }
+        for ($len = 5; $len <= 14; $len++) {
+          if (($res = $findStraight($len)) !== null) {
+            return $res;
+          }
+        }
+        return $findBomb();
+      }
+      return $findSingle();
+    }
+
+    $len = count($lastCombo->cards);
+    $found = null;
+    switch ($lastCombo->type) {
+      case SINGLE_COMBO:
+        $found = $findSingle();
+        break;
+      case PAIR_COMBO:
+        $found = $findPair();
+        break;
+      case TRIP_COMBO:
+        $found = $findTrip();
+        break;
+      case FULL_HOUSE_COMBO:
+        $found = $findFullHouse();
+        break;
+      case RUNNING_PAIRS_COMBO:
+        $found = $findRunningPairs((int) ($len / 2));
+        break;
+      case STRAIGHT_COMBO:
+        $found = $findStraight($len);
+        break;
+    }
+    if ($found !== null) {
+      return $found;
+    }
+
+    return $findBomb();
   }
 }
 ?>

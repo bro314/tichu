@@ -79,7 +79,7 @@ BGA games use an event-driven client-server architecture built on a finite state
 ├── modules/                     # Modularized PHP backend logic
 │   ├── Constants.php            # PHP constants (state IDs ST_*, combo types *_COMBO, special card types, team modes)
 │   ├── Combo.php                # Card combination validation, sorting, Phoenix resolution, description, and comparison (`canBeat`)
-│   ├── Hand.php                 # Player hand analysis: finding highest combos/bombs, checking if hand can beat a combo or fulfill Mahjong wish
+│   ├── Hand.php                 # Player hand analysis: finding highest/playable combos & bombs (`findPlayableCombo`), checking if hand can beat a combo or fulfill Mahjong wish
 │   ├── Utils.php                # Array/DB utility helpers (`filterColumns`, `parseInt`, `map`, `getDoubles`, `die`)
 │   └── managers/
 │       ├── CardManager.php      # Wrapper around BGA `Deck` component (`card` table), point calculation, passed cards
@@ -91,7 +91,8 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── tichu.ts                 # Lean BGA client adapter (`Tichu`), Dojo notification subscriptions, state & action handlers
 │   ├── studio-test.ts           # Studio-only test runner (`window.tt` & `#studio-test-bar`, only active on `studio.boardgamearena.com`)
 │   ├── types/
-│   │   └── bga-framework.d.ts   # TypeScript ambient declarations for BGA framework (`ebg`, `dojo`, `GameGui`, `Stock`)
+│   │   ├── bga-framework.d.ts   # TypeScript ambient declarations for BGA framework (`ebg`, `dojo`, `GameGui`, `Stock`)
+│   │   └── tichu-contracts.ts   # Shared canonical TypeScript contracts (actions, notifications, cards, combos, bets)
 │   └── elements/                # Lit + RxJS Web Components (Full Shadow DOM for both live gameplay & archive replay)
 │       ├── elements.ts          # Entry point registering all `<tichu-*>` custom elements and `window.gameModel`
 │       ├── game-model.ts        # RxJS `BehaviorSubject`-based reactive state store (`GameModel`) for live gameplay
@@ -129,6 +130,7 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── bot.php                  # Rule-compliant `LocalTichuBot` (`actForOtherPlayers`, `stepSingleBotTurn`, `autoPlayUntilPlayer`)
 │   ├── scenarios.php            # Deterministic test scenarios (`grand_tichu`, `give_cards`, `mahjong_wish`, `phoenix_ambiguous`, `bomb_interrupt`, `dragon_gift`, `double_victory`)
 │   ├── integration-tests.php    # MySQL 8.0 + real `Bga\GameFramework` backend integration test suite (`npm run test:integration`)
+│   ├── check-contracts.php      # Static cross-stack contract verifier (`npm run test:contracts`)
 │   ├── race-tests.php           # Parallel-worker MySQL 8.0 InnoDB concurrency/race stress test (`npm run test:race`, NOT part of `npm test`)
 │   ├── view/common/game.view.php # View base class included by `tichu.view.php`
 │   ├── js/bga-shim.js           # Lean frontend shim (`dojo`, `declare`, `ebg.stock`, `ebg.counter`, `ebg.popindialog`, `GameGui`), dev bar, console announcer, and `window.tt` test runner
@@ -268,6 +270,7 @@ Rules for new code:
 - **Watch TypeScript**: `npm run watch` (`tsc --watch -p src`)
 - **Bundle into `tichu.js`**: `npm run bundle` (`esbuild ./dist/tichu.js --bundle --outfile=tichu.js --target=es5 && esbuild ./src/elements/elements.ts --bundle >> tichu.js`)
 - **Full Build (Tests + Compile + Bundle)**: `npm run build` (`npm test && npm run compile && npm run bundle`)
+- **Contract & Static Checks**: `npm run test:contracts` (`php local/check-contracts.php`) and `npm run phpstan` (`php -d memory_limit=512M ./vendor/bin/phpstan analyse` via `phpstan.neon`)
 - **Upload to BGA Studio SFTP**: `npm run deploy:sftp` (uploads `tichu.js` + any git-modified deployable files in ~3s via `local/sftp-sync.sh`), `npm run deploy:sftp -- <file1> <file2>` (specific files), or `npm run deploy:sftp:all` (all deployable files)
 - **Format Code (TS + PHP)**: `npm run format` (`npx prettier --write .`)
 
@@ -388,7 +391,7 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      "
      ```
    - **Files Ignored from SFTP Upload**:
-     `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `docs`, `plans`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+     `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `docs`, `plans`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, `phpstan.neon`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
    - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and inline its pure-locator snippet directly in the subagent prompt (never ask the `browser` subagent to `read_file` from the repo workspace, as its sandbox blocks workspace reads)!

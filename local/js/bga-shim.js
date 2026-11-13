@@ -1781,6 +1781,23 @@
       return this.isSpectator;
     }
 
+    isReadOnly() {
+      return Boolean(
+        this.isSpectator ||
+          typeof window.g_replayFrom !== "undefined" ||
+          window.g_archive_mode,
+      );
+    }
+
+    bgaAnimationsActive() {
+      if (this.instantaneousMode) return false;
+      if (this.notifqueue && this.notifqueue.speedMode === "instant") return false;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return false;
+      }
+      return true;
+    }
+
     isCurrentPlayerActive() {
       if (this.isSpectator) return false;
       const st = this.gamedatas && this.gamedatas.gamestate;

@@ -6,6 +6,8 @@
   "scripts": {
     "test:unit": "php -d error_reporting=24575 ./vendor/bin/phpunit --do-not-cache-result tests",
     "test:integration": "bash local/mysql-ctl.sh ensure && php local/integration-tests.php",
+    "test:contracts": "php local/check-contracts.php",
+    "phpstan": "php -d memory_limit=512M ./vendor/bin/phpstan analyse",
     "test:race": "bash local/mysql-ctl.sh ensure && php local/race-tests.php",
     "test": "npm run test:unit && npm run test:integration",
     "local": "bash local/mysql-ctl.sh ensure && php -S 127.0.0.1:8080 local/router.php",

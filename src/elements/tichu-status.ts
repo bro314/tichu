@@ -3,6 +3,8 @@ import { property } from "lit/decorators.js";
 import { button } from "./styles";
 import { fire } from "./utils";
 
+const t = (s: string) => (typeof _ === "function" ? _(s) : s);
+
 export class TichuStatus extends LitElement {
   @property({ type: Number }) roundCount = 0;
   @property({ type: Number }) trickCount = 0;
@@ -16,9 +18,9 @@ export class TichuStatus extends LitElement {
   override render() {
     return html`
       <div>
-        <div>Round: <span id="roundCounter">${this.roundCount}</span></div>
-        <div>Trick: <span id="trickCounter">${this.trickCount}</span></div>
-        <div>Trick Points: <span id="currentTrickCounter">${this.trickPoints}</span></div>
+        <div>${t("Round:")} <span id="roundCounter">${this.roundCount}</span></div>
+        <div>${t("Trick:")} <span id="trickCounter">${this.trickCount}</span></div>
+        <div>${t("Trick Points:")} <span id="currentTrickCounter">${this.trickPoints}</span></div>
         <div>${this.renderButton()}</div>
       </div>
     `;
@@ -26,7 +28,7 @@ export class TichuStatus extends LitElement {
 
   private renderButton() {
     if (this.trickSize === 0) return;
-    return html`<button @click=${this.onShowClick}>Show current trick</button>`;
+    return html`<button @click=${this.onShowClick}>${t("Show current trick")}</button>`;
   }
 
   private onShowClick() {

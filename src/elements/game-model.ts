@@ -1,8 +1,8 @@
 import { BehaviorSubject, Observable } from "rxjs";
-import { Card } from "./model";
+import type { Card, CardData, TichuGamedatas } from "../types/tichu-contracts";
 import { select } from "./utils";
 
-export { Card };
+export type { Card, CardData };
 
 export type GrandTichuBetValue = -1 | 0 | 100 | 200;
 export type TichuBetValue = -1 | 0 | 100;
@@ -282,7 +282,7 @@ export class GameModel {
   }
 
   hydrateFromGamedatas(
-    gamedatas: any,
+    gamedatas: Partial<TichuGamedatas> & Record<string, any>,
     currentPlayerId: string | number,
     isSpectator: boolean,
     isRealtime: boolean,

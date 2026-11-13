@@ -1,0 +1,22 @@
+parameters:
+  level: 5
+  paths:
+    - tichu.game.php
+    - tichu.action.php
+    - tichu.view.php
+    - modules
+  bootstrapFiles:
+    - modules/Constants.php
+  scanFiles:
+    - _ide_helper.php
+    - local/Bga/GameFramework/Old/Db.php
+    - material.inc.php
+    - states.inc.php
+    - gameinfos.inc.php
+    - gameoptions.inc.php
+    - stats.inc.php
+  ignoreErrors:
+    - message: '#Path in require_once\(\) "view/common/game\.view\.php" is not a file#'
+      path: tichu.view.php
+    - message: '#Access to an undefined property Tichu::\$bSelectGlobalsForUpdate#'
+      path: tichu.game.php

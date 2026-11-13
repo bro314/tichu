@@ -536,6 +536,7 @@ declare class GameGui<G = Gamedatas> {
   getPlayerName(player_id: number | string): string;
   isCurrentPlayerSpectator(): boolean;
   isSpectatorOrArchive(): boolean;
+  isReadOnly(): boolean;
 
   /**
    * Returns true if the player on whose browser the code is running is currently active (it's his turn to play).

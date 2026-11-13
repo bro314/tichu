@@ -1,7 +1,7 @@
 # 01 — Static Contracts, PHPStan & GitHub Actions CI
 
 - **Priority**: P0 (Prevents silent client/server payload drift, PHP 8.4 regressions, and broken PRs)
-- **Scope**: Shared TS contracts (`src/types/tichu-contracts.ts`), static cross-layer verifier (`local/check-contracts.php`), PHPStan (`phpstan.neon`, `composer.json`), and GitHub Actions (`.github/workflows/ci.yml`)
+- **Scope**: Shared TS contracts (`src/types/tichu-contracts.ts`), static cross-layer verifier (`local/check-contracts.php`), PHPStan (`phpstan.neon`, `composer.json`)
 - **Estimated Effort**: Medium (1 focused session)
 - **Dependencies / Sibling Interactions**: Should land right after [00 — Live Bugs](file:///Users/brohlfs/git/tichu/plans/00-live-bugs-and-bga-compliance-fixes.md) (fixes the contract mismatch on `grandTichuBet.bet` and `autopass`) and before major backend/frontend refactors ([04](file:///Users/brohlfs/git/tichu/plans/04-client-combo-validator-and-smart-play-ux.md), [13](file:///Users/brohlfs/git/tichu/plans/13-modern-bga-frontend-esm-and-sound-cleanup.md), [14](file:///Users/brohlfs/git/tichu/plans/14-modern-bga-backend-autowired-actions-and-namespaces.md)).
 
@@ -22,7 +22,6 @@ Goal: Build a fast (<1s locally), zero-runtime-overhead verification layer:
 1. **Single-source TypeScript contracts** (`src/types/tichu-contracts.ts`) shared between `src/tichu.ts`, `GameModel`, and `Model` (`tichu-replay.ts`).
 2. **`local/check-contracts.php`** (~50–100ms PHP CLI script) checking PHP<->TS notification keys, action names, `states.inc.php` graph reachability & action coverage, `dbmodel.sql` compliance, `clienttranslate(...)` hygiene, and `_ide_helper.php` alignment.
 3. **PHPStan (`phpstan.neon`)** configured cleanly against `_ide_helper.php` (catching undefined BGA methods, bad types, PHP 8.4 issues).
-4. **GitHub Actions CI (`.github/workflows/ci.yml`)** running PHPUnit, `check-contracts.php`, PHPStan, `npm run build` + Prettier check, MySQL 8.0 `SERIALIZABLE` integration tests (`local/integration-tests.php`), and a `dbmodel.sql` load test.
 
 ---
 
@@ -37,23 +36,23 @@ Goal: Build a fast (<1s locally), zero-runtime-overhead verification layer:
 
 ## 3. Current State in Tichu
 
-- `package.json` has `compile` (`tsc`), `bundle` (`esbuild`), `build`, `format`, `test:unit` (PHPUnit), `test:integration` (MySQL 8.0 via `local/mysql-ctl.sh`), `test:race` (parallel worker stress). There is **no** `.github/workflows/`, **no** `phpstan.neon`, **no** static contract checker, and **no** `typecheck` / `lint:contracts` script.
+- `package.json` has `compile` (`tsc`), `bundle` (`esbuild`), `build`, `format`, `test:unit` (PHPUnit), `test:integration` (MySQL 8.0 via `local/mysql-ctl.sh`), `test:race` (parallel worker stress). There is **no** `phpstan.neon`, **no** static contract checker, and **no** `typecheck` / `lint:contracts` script.
 - `src/tichu.ts` subscribes to ~17+ notifications (`dojo.subscribe(...)`) and sends 15 actions (`tichu.action.php`) without typed payload interfaces.
 - `_ide_helper.php` exists in the repo root for BGA framework stubs.
-- `local/mysql-ctl.sh` uses MySQL 8.0 with `--transaction-isolation=SERIALIZABLE`, which is ideal to mirror in GitHub Actions' `services: mysql:8.0`.
+- `local/mysql-ctl.sh` uses MySQL 8.0 with `--transaction-isolation=SERIALIZABLE`
 
 ---
 
 ## 4. Decisions & Alternatives for You
 
 1. **Contract checking mechanism (`PHP <-> TS`)**:
-   - **Option A (Recommended)**: TypeScript interfaces in `src/types/tichu-contracts.ts` as the typed client contract + lightweight `local/check-contracts.php` parsing `NotificationManager.php` / `tichu.action.php` / `states.inc.php` / `tichu-contracts.ts` via `token_get_all()` + regex to ensure every notification type, payload key, and action endpoint matches across PHP and TS.
+   - **Option A (CONFIRMED)**: TypeScript interfaces in `src/types/tichu-contracts.ts` as the typed client contract + lightweight `local/check-contracts.php` parsing `NotificationManager.php` / `tichu.action.php` / `states.inc.php` / `tichu-contracts.ts` via `token_get_all()` + regex to ensure every notification type, payload key, and action endpoint matches across PHP and TS.
    - **Option B**: Code-gen TS from PHP attributes. _Rejected_ — heavy ceremony for classic BGA PHP 8.4 without adding a reflection build step.
 2. **PHPStan strictness level**:
-   - **Option A (Recommended)**: Start at **level 4 or 5** on `modules/`, `tichu.game.php`, `tichu.action.php`, `tichu.view.php` with a baseline if needed (`phpstan-baseline.neon`), excluding `local/` and `tests/` initially, and fail CI on new errors.
+   - **Option A (CONFIRMED)**: Start at **level 4 or 5** on `modules/`, `tichu.game.php`, `tichu.action.php`, `tichu.view.php` with a baseline if needed (`phpstan-baseline.neon`), excluding `local/` and `tests/` initially, and fail CI on new errors.
    - **Option B**: Level 8+ immediately. _Avoid initially_ — classic BGA `Deck::getCardsInLocation` mixed array returns create noisy false positives until gradual typing is added.
 3. **CI Scope for `race-tests.php`**:
-   - **Option A (Recommended)**: Keep `test:race` manual/on-demand (or `workflow_dispatch`) because multi-worker MySQL contention tests take longer and can flake on shared CI runners; run fast MySQL 8.0 `test:integration` (`services: mysql:8.0`) + `dbmodel.sql` schema smoke check on every PR.
+   - **Option A (CONFIRMED)**: Keep `test:race` manual/on-demand (or `workflow_dispatch`) because multi-worker MySQL contention tests take longer and can flake on shared CI runners; run fast MySQL 8.0 `test:integration` (`services: mysql:8.0`) + `dbmodel.sql` schema smoke check on every PR.
 
 ---
 
@@ -87,14 +86,6 @@ Write a fast, zero-dependency PHP CLI validator wired to `"test:contracts": "php
   - `scanFiles`: `_ide_helper.php`, `material.inc.php`, `states.inc.php`, `gameinfos.inc.php`, `gameoptions.inc.php`, `stats.inc.php`
 - Run `composer phpstan`; either fix trivial type bugs exposed immediately (preferred) or generate a minimal `phpstan-baseline.neon` only for legitimate BGA `Deck` dynamic-array noise.
 
-### Step 4: Add `.github/workflows/ci.yml`
-
-Configure workflow triggered on `push` (`main`) and `pull_request`:
-
-- **Job 1 (`php-and-contracts`)**: `ubuntu-latest`, PHP 8.4 (`shivammathur/setup-php@v2` with `pdo_mysql`, `mbstring`), `composer install`, `vendor/bin/phpunit`, `php local/check-contracts.php`, `vendor/bin/phpstan analyse`.
-- **Job 2 (`frontend-build`)**: Node 22, `npm ci`, `npx tsc --noEmit`, `npm run build`, `npx prettier --check "src/**/*.ts" "plans/*.md"` (verify exact formatter scope so CI checks committed style without failing on legacy unformatted files).
-- **Job 3 (`mysql-schema-and-integration`)**: `services: mysql:8.0` with `--transaction-isolation=SERIALIZABLE`, strip/execute `dbmodel.sql` (verifying BGA single-line newline-stripped execution!) and run `php local/integration-tests.php`.
-
 ---
 
 ## 6. Pitfalls, Live-Game Guardrails & Sibling Plan Interactions
@@ -115,16 +106,4 @@ Configure workflow triggered on `push` (`main`) and `pull_request`:
 - [ ] `vendor/bin/phpstan analyse` exits 0 on `tichu.game.php`, `tichu.action.php`, `tichu.view.php`, `modules/`.
 - [ ] `npx tsc --noEmit` exits 0 with zero `any` regressions in `tichu-contracts.ts`.
 - [ ] `npm test` (unit + integration) and `npm run build` exit 0.
-- [ ] `.github/workflows/ci.yml` passes `actionlint` or YAML syntax check and mirrors local MySQL 8.0 `SERIALIZABLE` behavior.
 
-### Kickoff Prompt for a Fresh Agent
-
-```text
-Read /Users/brohlfs/git/tichu/AGENTS.md and /Users/brohlfs/git/tichu/plans/01-static-contracts-phpstan-and-ci.md.
-Confirm Decisions in Section 4 (or proceed with Option A defaults) and implement Steps 1–4:
-1) `src/types/tichu-contracts.ts` wired into `src/tichu.ts`, `game-model.ts`, `model.ts`, and `tichu-replay.ts`
-2) `local/check-contracts.php` + `package.json` script
-3) `phpstan.neon` + `composer.json`
-4) `.github/workflows/ci.yml`.
-Run PHPUnit, PHPStan, `php local/check-contracts.php`, `npm run test:integration`, and `npm run build`, reporting exact command results.
-```

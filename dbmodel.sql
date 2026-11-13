@@ -1,29 +1,34 @@
+/*
+ * ======
+ * BGA framework: © Gregory Isabelli <gisabelli@boardgamearena.com> & Emmanuel Colin <ecolin@boardgamearena.com>
+ * Tichu implementation : © Yannick Priol <camertwo@hotmail.com>
+ *
+ * This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
+ * See http://en.boardgamearena.com/#!doc/Studio for more information.
+ * ======
+ */
 
--- ------
--- BGA framework: © Gregory Isabelli <gisabelli@boardgamearena.com> & Emmanuel Colin <ecolin@boardgamearena.com>
--- Tichu implementation : © Yannick Priol <camertwo@hotmail.com>
---
--- This code has been produced on the BGA studio platform for use on http://boardgamearena.com.
--- See http://en.boardgamearena.com/#!doc/Studio for more information.
--- -----
+/* dbmodel.sql */
 
--- dbmodel.sql
+/*
+ * This is the file where you are describing the database schema of your game
+ * Basically, you just have to export from PhpMyAdmin your table structure and copy/paste
+ * this export here.
+ * Note that the database itself and the standard tables ("global", "stats", "gamelog" and "player") are
+ * already created and must not be created here
+ */
 
--- This is the file where you are describing the database schema of your game
--- Basically, you just have to export from PhpMyAdmin your table structure and copy/paste
--- this export here.
--- Note that the database itself and the standard tables ("global", "stats", "gamelog" and "player") are
--- already created and must not be created here
+/*
+ * Note: The database schema is created from this file when the game starts. If you modify this file,
+ *       you have to restart a game to see your changes in database.
+ */
 
--- Note: The database schema is created from this file when the game starts. If you modify this file,
---       you have to restart a game to see your changes in database.
-
--- Example 1: create a standard "card" table to be used with the "Deck" tools (see example game "hearts"):
+/* Example 1: create a standard "card" table to be used with the "Deck" tools (see example game "hearts"): */
 
 ALTER TABLE `player` ADD `player_team` int(3) NOT NULL DEFAULT '-1' COMMENT 'Team 0 or 1, 2 players on each team and not next to each other';
 ALTER TABLE `player` ADD `player_call_tichu` INT NOT NULL DEFAULT '-1' COMMENT '-1=call possible, 0=no bet, 100=called';
 ALTER TABLE `player` ADD `player_call_grand_tichu` INT NOT NULL DEFAULT '-1';
--- player_has_bomb is obsolete and can be removed
+/* player_has_bomb is obsolete and can be removed */
 ALTER TABLE `player` ADD `player_has_bomb` INT NOT NULL DEFAULT '0';
 ALTER TABLE `player` ADD `player_pass` INT NOT NULL DEFAULT '0';
 
@@ -47,7 +52,3 @@ CREATE TABLE IF NOT EXISTS `actionlog` (
   `log_arg` varchar(1024),
   PRIMARY KEY (`log_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 AUTO_INCREMENT=1 ;
-
-
--- Example 2: add a custom field to the standard "player" table
--- ALTER TABLE `player` ADD `player_my_custom_field` INT UNSIGNED NOT NULL DEFAULT '0';

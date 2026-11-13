@@ -21,6 +21,10 @@
  *
  */
 
+/**
+ * @property Tichu $game
+ * @method void trace(string $message)
+ */
 class action_tichu extends APP_GameAction
 {
   // Constructor: please do not modify

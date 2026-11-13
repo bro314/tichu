@@ -43,6 +43,7 @@ class PlayerManager
       $player = $players[$player_id];
       $color = "ffffff"; // Default to white (should never be left to white unless the following doesn't work)
       $player_no = 9; // Default to 9 (should never be left to 9 unless the following doesn't work)
+      $player_team = 0; // Default to team 0 unless overwritten below
       $counter++;
 
       if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_RANDOM) {
@@ -152,7 +153,7 @@ class PlayerManager
   public static function getNextPlayerWithCards($mixed, $lastPlayerId = null, $amount = 1)
   {
     $next_players = is_array($mixed) ? $mixed : self::getNextPlayers($mixed);
-    $handCounts = $handCounts ?? CardManager::getDeck()->countCardsByLocationArgs("hand");
+    $handCounts = CardManager::getDeck()->countCardsByLocationArgs("hand");
     foreach ($next_players as $player) {
       if ($lastPlayerId == $player["id"]) {
         return $lastPlayerId;

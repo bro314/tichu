@@ -9,93 +9,18 @@
  */
 import type { GameModel, LiveGamePrefs } from "./elements/game-model";
 import { initStudioTestHelper } from "./studio-test";
-
-enum Bet {
-  // Player can still make a bet.
-  NO_BET_YET = "-1",
-  // Player cannot bet anymore.
-  NO_BET = "0",
-  TICHU = "100",
-  GRAND_TICHU = "200",
-}
-
-interface Card {
-  id: string;
-  type: string;
-  type_arg: string;
-  location: string;
-  location_arg: string;
-  passed_from: string;
-}
-
-interface Combo {
-  cards: Card[];
-  description: string;
-  phoenixValue: number | null;
-  type: number;
-}
+import { Bet } from "./types/tichu-contracts";
+import type {
+  CardData as Card,
+  TichuActionMap,
+  TichuCombo as Combo,
+  TichuNotificationMap,
+  TypedNotif,
+} from "./types/tichu-contracts";
 
 declare global {
   interface Window {
     gameModel: GameModel;
-  }
-
-  // prettier-ignore
-  interface NotifTypes {
-    "dealCards": { cards: Card[] };
-    "grandTichuBet": { bet: number; player_id: number };
-    "tichuBet": { bet: number; player_id: number };
-    "confirmTichu": { grand: boolean; msg: string };
-    "playCombo": { cards: Card[]; player_id: number; combo_name: string; points: number };
-    "wishMade": { wish: number };
-    "mahjongWishGranted": {};
-    "playerGoOut": { firstout_id: number; player_id: number };
-    "pass": { player_id: number };
-    "captureCards": { player_id: number; trick_value: number };
-    "newScores": { newScores: { [key: number]: number } };
-    "autopass": { autopass: string };
-    "acceptCards": { cards: Card[] };
-    "passCards": { cardIds: string[] };
-    "devConsole": { msg: string };
-  }
-
-  interface PlayerActions {
-    grandTichuBet: {};
-    giveCards: {};
-    pass: {};
-    tichuBet: {};
-    makeAWish: {};
-    phoenixPlay: {};
-    chooseDragonGift: {};
-    collect: {};
-    acceptCards: {};
-    playCombo: {};
-  }
-
-  interface Player {
-    call_tichu: Bet;
-    call_grand_tichu: Bet;
-    pass: string;
-    no: number;
-  }
-
-  interface Gamedatas {
-    allLastCombos: Record<number, Combo>;
-    capturedpoints: Record<number, number>;
-    capturedCards: Card[];
-    currentTrick: Card[];
-    currentTrickValue: number;
-    firstoutplayer: number;
-    hand: Card[];
-    handcount: Record<number, number>;
-    lastComboDescription: string;
-    lastComboPlayer: string;
-    mahjongOwner: number;
-    mahjongWish: number;
-    isAllInfoExposed: number;
-    passes: number[];
-    round: number;
-    trick: number;
   }
 }
 
@@ -221,6 +146,28 @@ export class Tichu {
 
   set cardsToPass(_val: (number | null)[]) {
     // Compatibility setter for test harnesses
+  }
+
+  isReadOnly(): boolean {
+    return Boolean(
+      this.isSpectator ||
+        typeof g_replayFrom !== "undefined" ||
+        (typeof g_archive_mode !== "undefined" && g_archive_mode),
+    );
+  }
+
+  areAnimationsActive(): boolean {
+    if (typeof this.bgaAnimationsActive === "function") {
+      return Boolean(this.bgaAnimationsActive());
+    }
+    return !(this as any).instantaneousMode;
+  }
+
+  playLaserSound() {
+    if (!this.areAnimationsActive()) return;
+    if (typeof playSound === "function") {
+      playSound("tichu_laser");
+    }
   }
 
   readPrefs(): LiveGamePrefs {
@@ -351,6 +298,7 @@ export class Tichu {
 
     document.addEventListener("visibilitychange", () => {
       if (
+        !this.isReadOnly() &&
         document.visibilityState === "visible" &&
         this.gamedatas?.gamestate?.name === "showPassedCards" &&
         this.isCurrentPlayerActive()
@@ -605,7 +553,7 @@ export class Tichu {
       isCurrentPlayerActive: this.isCurrentPlayerActive(),
     });
 
-    if (this.isCurrentPlayerActive()) {
+    if (this.isCurrentPlayerActive() && !this.isReadOnly()) {
       switch (stateName) {
         case "giveCards":
           this.addActionButton(
@@ -655,7 +603,7 @@ export class Tichu {
       }
     }
 
-    if (!this.isSpectator && this.gamedatas?.players) {
+    if (!this.isReadOnly() && this.gamedatas?.players) {
       const player = this.gamedatas.players[this.player_id];
       if (player && String(player.call_grand_tichu) === Bet.NO_BET_YET) {
         this.addActionButton(
@@ -812,7 +760,7 @@ export class Tichu {
     this.takeAction("acceptCards", {});
   }
 
-  onGrandTichuBet(bet: Bet) {
+  onGrandTichuBet(bet: Bet.NO_BET | Bet.GRAND_TICHU) {
     this.takeAction("grandTichuBet", { bet });
   }
 
@@ -849,16 +797,17 @@ export class Tichu {
     this.playCombo("playCombo");
   }
 
-  playCombo(actionName: string) {
+  playCombo(actionName: "playCombo" | "playBomb") {
     const items = this.playerHand.getSelectedItems();
-    this.playerHand.unselectAll();
     const cardIds = items.map((item) => item.id).join(";");
     if (items.length === 0 && actionName === "playCombo") {
       this.showMessage(_("You have to select some cards first"), "error");
       return;
     }
     clearTimeout(this.autoCollectTimeout);
-    this.takeAction(actionName, { cards: cardIds });
+    this.takeAction(actionName, { cards: cardIds }, () => {
+      this.playerHand.unselectAll();
+    });
   }
 
   onPass(onlyOnce: boolean) {
@@ -872,8 +821,9 @@ export class Tichu {
       );
       return;
     }
-    this.playerHand.unselectAll();
-    this.takeAction("pass", { onlyOnce });
+    this.takeAction("pass", { onlyOnce }, () => {
+      this.playerHand.unselectAll();
+    });
   }
 
   cancelAutopass(evt?: Event) {
@@ -949,9 +899,16 @@ export class Tichu {
     this.takeAction("collect");
   }
 
-  takeAction(action: string, args: any = {}) {
-    args.lock = true;
-    this.ajaxcall("/tichu/tichu/" + action + ".html", args, this, () => {});
+  takeAction<K extends keyof TichuActionMap>(
+    action: K,
+    ...[args, onSuccess]: {} extends TichuActionMap[K]
+      ? [args?: TichuActionMap[K], onSuccess?: (result: any) => void]
+      : [args: TichuActionMap[K], onSuccess?: (result: any) => void]
+  ) {
+    const payload = { ...(args ?? {}), lock: true };
+    this.ajaxcall("/tichu/tichu/" + action + ".html", payload, this, (result: any) => {
+      onSuccess?.(result);
+    });
   }
 
   // ===========================================================================
@@ -959,7 +916,10 @@ export class Tichu {
   // ===========================================================================
 
   setupNotifications() {
-    const notifs: Partial<{ [id in keyof NotifTypes]: any }> = {
+    const notifs: Omit<
+      Record<keyof TichuNotificationMap, number | undefined>,
+      "log" | "tableWindow"
+    > = {
       dealCards: 500,
       grandTichuBet: undefined,
       tichuBet: undefined,
@@ -978,15 +938,15 @@ export class Tichu {
     };
     for (const [type, duration] of Object.entries(notifs)) {
       dojo.subscribe(type, this, "notif_" + type);
-      this.notifqueue.setSynchronous(type as keyof NotifTypes, duration);
+      this.notifqueue.setSynchronous(type as keyof TichuNotificationMap, duration);
     }
   }
 
-  notif_devConsole(notif: Notif & { args: NotifTypes["devConsole"] }) {
+  notif_devConsole(notif: TypedNotif<"devConsole">) {
     window.console.log(`DEV NOTIF: ${notif.args.msg}`);
   }
 
-  notif_dealCards(notif: Notif & { args: NotifTypes["dealCards"] }) {
+  notif_dealCards(notif: TypedNotif<"dealCards">) {
     const cards = notif.args.cards || [];
     const totalCards = cards.length === 8 ? 8 : 14;
     if (this.gamedatas) {
@@ -1008,7 +968,7 @@ export class Tichu {
     window.gameModel?.dealCards(cards);
   }
 
-  notif_passCards(notif: Notif & { args: NotifTypes["passCards"] }) {
+  notif_passCards(notif: TypedNotif<"passCards">) {
     const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
     if (!Array.isArray(ids)) return;
     if (this.gamedatas?.hand) {
@@ -1018,7 +978,7 @@ export class Tichu {
     window.gameModel?.applyPassCardsNotif(ids);
   }
 
-  notif_acceptCards(notif: Notif & { args: NotifTypes["acceptCards"] }) {
+  notif_acceptCards(notif: TypedNotif<"acceptCards">) {
     clearTimeout(this.autoAcceptTimeout);
     window.gameModel?.setAcceptingCardsCountdown(false);
     const cards = notif.args.cards || [];
@@ -1036,7 +996,7 @@ export class Tichu {
       window.gameModel?.finishAcceptCards(cards);
     };
 
-    if ((this as any).instantaneousMode) {
+    if (!this.areAnimationsActive()) {
       acceptFn();
     } else {
       setTimeout(() => window.gameModel?.startAcceptCardsAnimation(), 1500);
@@ -1044,7 +1004,7 @@ export class Tichu {
     }
   }
 
-  notif_playCombo(notif: Notif & { args: NotifTypes["playCombo"] }) {
+  notif_playCombo(notif: TypedNotif<"playCombo">) {
     const playerId = Number(notif.args.player_id);
     const cards = notif.args.cards || [];
     const comboName = notif.args.combo_name || "";
@@ -1061,6 +1021,7 @@ export class Tichu {
       if (playerId === Number(this.player_id) && Array.isArray(this.gamedatas.hand)) {
         const playedIds = new Set(cards.map((c: Card) => String(c.id)));
         this.gamedatas.hand = this.gamedatas.hand.filter((c) => !playedIds.has(String(c.id)));
+        this.playerHand.unselectAll();
       }
       this.allLastCombos[playerId] = {
         cards,
@@ -1076,7 +1037,7 @@ export class Tichu {
     window.gameModel?.applyPlayCombo(playerId, cards, comboName, points);
   }
 
-  notif_pass(notif: Notif & { args: NotifTypes["pass"] }) {
+  notif_pass(notif: TypedNotif<"pass">) {
     const playerId = Number(notif.args.player_id);
     if (this.allLastCombos) {
       delete this.allLastCombos[playerId];
@@ -1084,7 +1045,7 @@ export class Tichu {
     window.gameModel?.applyPass(playerId);
   }
 
-  notif_captureCards(notif: Notif & { args: NotifTypes["captureCards"] }) {
+  notif_captureCards(notif: TypedNotif<"captureCards">) {
     const playerId = Number(notif.args.player_id);
     const trickValue = Number(notif.args.trick_value || 0);
 
@@ -1097,7 +1058,7 @@ export class Tichu {
     window.gameModel?.applyCaptureCards(playerId, trickValue);
   }
 
-  notif_grandTichuBet(notif: Notif & { args: NotifTypes["grandTichuBet"] }) {
+  notif_grandTichuBet(notif: TypedNotif<"grandTichuBet">) {
     const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
     if (this.gamedatas?.players?.[playerId]) {
@@ -1109,7 +1070,7 @@ export class Tichu {
     window.gameModel?.applyGrandTichuBet(playerId, bet);
     if (bet === Bet.GRAND_TICHU) {
       window.gameModel?.triggerBetAnimation(playerId, 200);
-      playSound("tichu_laser");
+      this.playLaserSound();
       this.notifqueue.setSynchronousDuration(1000);
     } else {
       this.notifqueue.setSynchronousDuration(1);
@@ -1117,7 +1078,7 @@ export class Tichu {
     this.onUpdateActionButtons(this.stateName, {});
   }
 
-  notif_tichuBet(notif: Notif & { args: NotifTypes["tichuBet"] }) {
+  notif_tichuBet(notif: TypedNotif<"tichuBet">) {
     const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
     if (this.gamedatas?.players?.[playerId]) {
@@ -1127,7 +1088,7 @@ export class Tichu {
     window.gameModel?.applyTichuBet(playerId, bet);
     if (bet === Bet.TICHU) {
       window.gameModel?.triggerBetAnimation(playerId, 100);
-      playSound("tichu_laser");
+      this.playLaserSound();
       this.notifqueue.setSynchronousDuration(1000);
     } else {
       this.notifqueue.setSynchronousDuration(1);
@@ -1135,7 +1096,7 @@ export class Tichu {
     this.onUpdateActionButtons(this.stateName, {});
   }
 
-  notif_confirmTichu(notif: Notif & { args: NotifTypes["confirmTichu"] }) {
+  notif_confirmTichu(notif: TypedNotif<"confirmTichu">) {
     const titleSave = this.gamedatas.gamestate.descriptionmyturn;
     const s = notif.args.grand ? "grand " : "";
     this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
@@ -1155,14 +1116,14 @@ export class Tichu {
     );
   }
 
-  notif_mahjongWishGranted(_notif: Notif) {
+  notif_mahjongWishGranted(_notif: TypedNotif<"mahjongWishGranted">) {
     if (this.gamedatas) {
       this.gamedatas.mahjongWish = 0;
     }
     window.gameModel?.setMahjongWish(0);
   }
 
-  notif_wishMade(notif: Notif & { args: NotifTypes["wishMade"] }) {
+  notif_wishMade(notif: TypedNotif<"wishMade">) {
     const wish = Number(notif.args.wish);
     if (this.gamedatas) {
       this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? wish : 0;
@@ -1170,7 +1131,7 @@ export class Tichu {
     window.gameModel?.setMahjongWish(wish);
   }
 
-  notif_playerGoOut(notif: Notif & { args: NotifTypes["playerGoOut"] }) {
+  notif_playerGoOut(notif: TypedNotif<"playerGoOut">) {
     const playerId = Number(notif.args.player_id);
     const firstOutId = Number(notif.args.firstout_id);
     if (playerId === firstOutId && this.gamedatas) {
@@ -1180,11 +1141,11 @@ export class Tichu {
     window.gameModel?.applyPlayerGoOut(playerId, firstOutId);
   }
 
-  notif_newScores(notif: Notif & { args: NotifTypes["newScores"] }) {
+  notif_newScores(notif: TypedNotif<"newScores">) {
     const newScores = notif.args.newScores || {};
     for (const player_id in newScores) {
       const pId = Number(player_id);
-      this.scoreCtrl[pId]?.toValue(newScores[pId]!);
+      this.scoreCtrl[pId]?.toValue(Number(newScores[pId]!));
       if (this.gamedatas?.players?.[pId]) {
         (this.gamedatas.players[pId] as any).score = String(newScores[pId]!);
       }
@@ -1192,11 +1153,11 @@ export class Tichu {
     window.gameModel?.applyNewScores(newScores);
   }
 
-  notif_autopass(notif: Notif & { args: NotifTypes["autopass"] }) {
-    if (!this.isSpectator && this.gamedatas?.players?.[this.player_id]) {
+  notif_autopass(notif: TypedNotif<"autopass">) {
+    if (!this.isReadOnly() && this.gamedatas?.players?.[this.player_id]) {
       this.gamedatas.players[this.player_id]!.pass = notif.args.autopass;
     }
-    window.gameModel?.setAutopass(notif.args.autopass);
+    window.gameModel?.setAutopass(String(notif.args.autopass));
     this.onUpdateActionButtons(this.stateName, {});
   }
 }

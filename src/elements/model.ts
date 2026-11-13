@@ -1,5 +1,10 @@
 import { BehaviorSubject } from "rxjs";
+import { Bet } from "../types/tichu-contracts";
+import type { Card, CardData, TichuNotificationMap as NotifTypes } from "../types/tichu-contracts";
 import { select } from "./utils";
+
+export { Bet };
+export type { Card, CardData, NotifTypes };
 
 export interface ScoreBoard {
   rounds: RoundScore[];
@@ -56,34 +61,6 @@ export interface PlayerState {
   active: boolean;
   roundPoints: number;
   gamePoints: number;
-}
-
-export interface Card {
-  // random number 1-56, different in each game
-  id: string;
-  // 1-4
-  // 1: black (or dragon)
-  // 2: red (or phoenix)
-  // 3: blue (or dog)
-  // 4: green (or mahjong)
-  type: string;
-  // 1-14
-  // 1 are special cards, 14 is ace, 11-13 are J,Q,K
-  type_arg: string;
-  location?: string;
-  location_arg?: string;
-  passed_from?: string;
-}
-
-export enum Bet {
-  // Player can still make a Grand Tichu bet.
-  INITIAL = "-2",
-  // Player can still make a Tichu bet.
-  NO_BET_YET = "-1",
-  // Player cannot bet anymore.
-  NO_BET = "0",
-  TICHU = "100",
-  GRAND_TICHU = "200",
 }
 
 export const betLookup: { [key: string]: Bet | undefined } = {
@@ -333,23 +310,4 @@ export class Model {
     const trick: Trick = { id: currentTrick.id + 1, combos: [] };
     this.updateState({ trick });
   }
-}
-
-// prettier-ignore
-interface NotifTypes {
-  "wishMade": { wish: number };
-  "mahjongWishGranted": {};
-  "dealCards": { cards: Card[] };
-  "grandTichuBet": { bet: number; player_id: number };
-  "tichuBet": { bet: number; player_id: number };
-  "confirmTichu": { grand: boolean; msg: string };
-  "playCombo": { cards: Card[]; player_id: number; combo_name: string; points: number };
-  "playerGoOut": { firstout_id: number; player_id: number };
-  "pass": { player_id: number };
-  "captureCards": { player_id: number; trick_value: number };
-  "newScores": { newScores: { [key: number]: number } };
-  "autopass": { autopass: string };
-  "acceptCards": { cards: Card[] };
-  "passCards": { cardIds: string[] };
-  "devConsole": { msg: string };
 }

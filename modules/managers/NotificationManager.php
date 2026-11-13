@@ -3,7 +3,7 @@ class NotificationManager
 {
   public static function dealCards($player_id, $cards, $msg)
   {
-    Tichu::$instance->notifyPlayer($player_id, "dealCards", clienttranslate($msg), [
+    Tichu::$instance->notifyPlayer($player_id, "dealCards", $msg, [
       "cards" => $cards,
     ]);
   }
@@ -12,13 +12,12 @@ class NotificationManager
   {
     $msg =
       $bet == 0
-        ? '${player_name} makes no Grand Tichu bet'
-        : '
-												${player_name} makes a Grand Tichu bet';
-    Tichu::$instance->notifyAllPlayers("grandTichuBet", clienttranslate($msg), [
+        ? clienttranslate('${player_name} makes no Grand Tichu bet')
+        : clienttranslate('${player_name} makes a Grand Tichu bet');
+    Tichu::$instance->notifyAllPlayers("grandTichuBet", $msg, [
       "player_id" => $player_id,
       "player_name" => $player_name,
-      "bet" => $bet,
+      "bet" => (int) $bet,
     ]);
   }
 
@@ -28,18 +27,19 @@ class NotificationManager
     Tichu::$instance->notifyAllPlayers("tichuBet", $msg, [
       "player_id" => $player_id,
       "player_name" => $player_name,
-      "bet" => $bet,
+      "bet" => (int) $bet,
     ]);
   }
 
   public static function log($msg, $args)
   {
-    Tichu::$instance->notifyAllPlayers("log", clienttranslate($msg), $args);
+    Tichu::$instance->notifyAllPlayers("log", $msg, $args);
   }
 
   public static function playCombo($playerId, $playerName, $combo, $msg)
   {
     Tichu::$instance->notifyAllPlayers("playCombo", $msg, [
+      "i18n" => ["combo_name"],
       "player_id" => $playerId,
       "player_name" => $playerName,
       "combo_name" => $combo->description,
@@ -51,6 +51,7 @@ class NotificationManager
   public static function wishMade($player_id, $player_name, $wish, $textValue, $msg)
   {
     Tichu::$instance->notifyAllPlayers("wishMade", $msg, [
+      "i18n" => ["text_value"],
       "player_id" => $player_id,
       "player_name" => $player_name,
       "wish" => $wish,
@@ -78,7 +79,7 @@ class NotificationManager
 
   public static function pass($player_id, $player_name, $msg = null)
   {
-    Tichu::$instance->notifyAllPlayers("pass", clienttranslate($msg ?? '${player_name} passes'), [
+    Tichu::$instance->notifyAllPlayers("pass", $msg ?? clienttranslate('${player_name} passes'), [
       "player_id" => $player_id,
       "player_name" => $player_name,
     ]);
@@ -134,10 +135,9 @@ class NotificationManager
 
   public static function confirmTichu($player_id, $grand, $msg = null)
   {
-    $s = $grand ? " grand" : "";
     Tichu::$instance->notifyPlayer($player_id, "confirmTichu", "", [
       "grand" => $grand,
-      "msg" => clienttranslate($msg ?? "Another tichu bet has just been made. Are you sure?"),
+      "msg" => $msg ?? clienttranslate("Another tichu bet has just been made. Are you sure?"),
     ]);
   }
 

@@ -1202,11 +1202,21 @@ function test_zombie_turns_across_all_states(): void
   assertSameVal('playCombo', $game->gamestate->state()['name']);
   assertSameVal((string) P1, $game->getActivePlayerId());
 
+  // P1 holds (1, 9) in mahjong_wish and MUST fulfill wish when zombieTurn runs in playCombo
   $game->setCurrentPlayerId(P0);
   $game->zombieTurn($game->gamestate->state(), P1);
 
-  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P1 passing in playCombo should advance to P2 in playCombo');
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Zombie P1 holding wished 9 in playCombo must play it and grant the wish');
+  assertSameVal(13, (int) $deck->countCardInLocation('hand', P1), 'Zombie P1 should have 13 cards after fulfilling wish');
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Game should stay in playCombo after zombie P1 plays 9');
   assertSameVal((string) P2, $game->getActivePlayerId(), 'Active player should now be P2');
+
+  // Now mahjongWish is 0; zombie P2 in playCombo without lead/wish should pass cleanly
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P2);
+
+  assertSameVal('playCombo', $game->gamestate->state()['name'], 'Zombie P2 passing in playCombo should advance to P3 in playCombo');
+  assertSameVal((string) P3, $game->getActivePlayerId(), 'Active player should now be P3');
 
   // 5. mahjongPlay (activeplayer)
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);

@@ -1,6 +1,7 @@
 import { html, css, LitElement } from "lit";
 import { state } from "lit/decorators.js";
 import { Bet, Model, PlayerScore, RoundScore, ScoreBoard, State } from "./model";
+import type { TichuNotificationMap } from "../types/tichu-contracts";
 import "./tichu-player";
 import "./tichu-stock";
 import "./tichu-card";
@@ -460,10 +461,10 @@ export class TichuReplay extends LitElement {
       this.model.pass(playerId);
     } else if (type === "grandTichuBet") {
       const playerId = Number(args.player_id);
-      this.model.setBet(playerId, args.bet === "200" ? Bet.GRAND_TICHU : Bet.NO_BET_YET);
+      this.model.setBet(playerId, Number(args.bet) === 200 ? Bet.GRAND_TICHU : Bet.NO_BET_YET);
     } else if (type === "tichuBet") {
       const playerId = Number(args.player_id);
-      this.model.setBet(playerId, args.bet === 100 ? Bet.TICHU : Bet.NO_BET);
+      this.model.setBet(playerId, Number(args.bet) === 100 ? Bet.TICHU : Bet.NO_BET);
     } else if (type === "gameStateMultipleActiveUpdate") {
       const playerIds = args.map((id: string) => Number(id));
       this.model.setActive(playerIds);
@@ -509,6 +510,8 @@ function isIgnored(notif: Notif) {
   const type = notif.type as string;
   const args = notif.args as any;
   if (type === "autopass") return true;
+  if (type === "confirmTichu") return true;
+  if (type === "devConsole") return true;
   if (type === "hasBomb") return true;
   if (type === "log") return true;
   if (type === "playerGoOut") return true;
@@ -526,13 +529,13 @@ function isIgnored(notif: Notif) {
 function createScoreBoard(notifs: Notif[], playerIds: number[]): ScoreBoard {
   const rounds: RoundScore[] = [];
   let roundCount = 1;
-  let newScores: { [player_id: string]: string } = {};
-  let oldScores: { [player_id: string]: string } = {};
+  let newScores: Record<string, string | number> = {};
+  let oldScores: Record<string, string | number> = {};
   for (const notif of notifs) {
     if ((notif.type as string) !== "newScores") continue;
 
     oldScores = newScores;
-    newScores = (notif.args as any).newScores;
+    newScores = (notif.args as TichuNotificationMap["newScores"]).newScores;
 
     const scores: PlayerScore[] = [];
     for (const id of playerIds) {
@@ -547,7 +550,7 @@ function createScoreBoard(notifs: Notif[], playerIds: number[]): ScoreBoard {
   return { rounds };
 }
 
-function toNumber(s?: string) {
+function toNumber(s?: string | number) {
   const n = Number(s ?? "") ?? 0;
   return isNaN(n) ? 0 : n;
 }

@@ -126,16 +126,29 @@ export class TichuActionBar extends LitElement {
     );
   }
 
+  private isReadOnly(): boolean {
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.isReadOnly === "function") {
+      return Boolean(ui.isReadOnly());
+    }
+    return (
+      this.isSpectator ||
+      typeof (window as any).g_replayFrom !== "undefined" ||
+      Boolean((window as any).g_archive_mode)
+    );
+  }
+
   override render() {
+    const readOnly = this.isReadOnly();
     const showBomb =
-      !this.isSpectator &&
+      !readOnly &&
       ((this.isCurrentPlayerActive && this.stateName === "confirmTrick") ||
         (!this.isCurrentPlayerActive &&
           (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
           this.hand.length > 0));
 
     const showTichu =
-      !this.isSpectator &&
+      !readOnly &&
       this.currentPlayer !== null &&
       this.currentPlayer.callTichu === -1 &&
       this.currentPlayer.callGrandTichu !== 200 &&
@@ -180,6 +193,9 @@ export class TichuActionBar extends LitElement {
   }
 
   private renderPlayButtonContent() {
+    if (this.isReadOnly()) {
+      return html`<h3>${t("My hand")}</h3>`;
+    }
     if (this.acceptingCardsCountdown) {
       return html`<h3>${t("Auto accepting in 2 seconds ...")}</h3>`;
     }
@@ -188,7 +204,6 @@ export class TichuActionBar extends LitElement {
     }
 
     const canPlayCombo =
-      !this.isSpectator &&
       this.isCurrentPlayerActive &&
       (this.stateName === "playComboOpen" ||
         this.stateName === "playCombo" ||
@@ -205,7 +220,6 @@ export class TichuActionBar extends LitElement {
     }
 
     const canCollect =
-      !this.isSpectator &&
       this.isCurrentPlayerActive &&
       this.stateName === "confirmTrick" &&
       !this.isRealtime &&
@@ -228,7 +242,7 @@ export class TichuActionBar extends LitElement {
     if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
       return "";
     }
-    if (this.isSpectator) return "";
+    if (this.isReadOnly()) return "";
 
     if (this.isCurrentPlayerActive) {
       if (this.stateName === "playCombo") {
@@ -284,7 +298,7 @@ export class TichuActionBar extends LitElement {
     if (this.acceptingCardsCountdown || this.collectingTrickCountdown) {
       return "";
     }
-    if (this.isSpectator) return "";
+    if (this.isReadOnly()) return "";
 
     const passMode = this.currentPlayer?.pass ?? 0;
     const showTrickPass =
@@ -309,6 +323,7 @@ export class TichuActionBar extends LitElement {
 
   private onPlayCombo(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-play-combo", {
         bubbles: true,
@@ -327,6 +342,7 @@ export class TichuActionBar extends LitElement {
 
   private onPass(e: Event, onlyOnce: boolean) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent(onlyOnce ? "action-pass" : "action-pass-trick", {
         detail: { onlyOnce },
@@ -342,6 +358,7 @@ export class TichuActionBar extends LitElement {
 
   private onCancelAutopass(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-cancel-autopass", {
         bubbles: true,
@@ -356,6 +373,7 @@ export class TichuActionBar extends LitElement {
 
   private onCancelBomb(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-cancel-bomb", {
         bubbles: true,
@@ -374,6 +392,7 @@ export class TichuActionBar extends LitElement {
 
   private onCollect(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-collect", {
         bubbles: true,
@@ -388,6 +407,7 @@ export class TichuActionBar extends LitElement {
 
   private onPlayBomb(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-play-bomb", {
         bubbles: true,
@@ -406,6 +426,7 @@ export class TichuActionBar extends LitElement {
 
   private onTichuBet(e: Event) {
     e.preventDefault();
+    if (this.isReadOnly()) return;
     this.dispatchEvent(
       new CustomEvent("action-tichu-bet", {
         bubbles: true,

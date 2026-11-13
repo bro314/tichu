@@ -43,13 +43,13 @@ Based on modern agent engineering best practices and BGA ecosystem tooling (`rbe
 ## 4. Decisions & Alternatives for You
 
 1. **Where to place the project skills (`.agents/skills/` vs `.claude/skills/`)**:
-   - **Option A (Recommended)**: Store canonical skills in `.agents/skills/<name>/SKILL.md` (Antigravity's native workspace skill discovery root) and optionally add a thin symlink or `CLAUDE.md` `@AGENTS.md` pointer if you also use Claude Code or Codex in the same repo.
+   - **Option A (CONFIRMED)**: Store canonical skills in `.agents/skills/<name>/SKILL.md` (Antigravity's native workspace skill discovery root) and optionally add a thin symlink or `CLAUDE.md` `@AGENTS.md` pointer if you also use Claude Code or Codex in the same repo.
    - **Option B**: Put skills inside global `~/.gemini/...`. _Not recommended_ for Tichu-specific skills (`tichu-concurrency-locks`, `bga-studio-testing` with Tichu accounts/buttons) — those belong versioned in the Tichu git repo.
 2. **Fate of `BGA_STUDIO_TESTING.md` at repo root**:
-   - **Option A (Recommended)**: Move its full content into `.agents/skills/bga-studio-testing/SKILL.md` and either delete `BGA_STUDIO_TESTING.md` (with `README.md` link updated) or keep a 5-line tombstone pointer if any external scripts/bookmarks open `BGA_STUDIO_TESTING.md`.
+   - **Option A (CONFIRMED)**: Move its full content into `.agents/skills/bga-studio-testing/SKILL.md` and either delete `BGA_STUDIO_TESTING.md` (with `README.md` link updated) or keep a 5-line tombstone pointer if any external scripts/bookmarks open `BGA_STUDIO_TESTING.md`.
    - **Option B**: Keep both files. _Rejected_ — creates immediate doc drift.
 3. **Install official `modernize-bga-game-project.zip`**:
-   - **Option A (Recommended)**: Download during execution only into `~/.gemini/antigravity/skills/modernize-bga-game-project/` (global, not committed into Tichu unless desired) or extract key BGA 2025/2026 checklists into `.agents/skills/bga-release-and-qa/SKILL.md` so no third-party archive clutters the Tichu repo.
+   - **Option A (CONFIRMED)**: Download during execution only into `~/.gemini/antigravity/skills/modernize-bga-game-project/` (global, not committed into Tichu unless desired) or extract key BGA 2025/2026 checklists into `.agents/skills/bga-release-and-qa/SKILL.md` so no third-party archive clutters the Tichu repo.
 
 ---
 
@@ -106,10 +106,3 @@ Each `SKILL.md` requires valid YAML frontmatter (`name`, `description` optimized
 - [ ] Every markdown file path reference resolves cleanly on disk.
 - [ ] `npx prettier --check AGENTS.md README.md ".agents/skills/**/*.md"` passes.
 
-### Kickoff Prompt for a Fresh Agent
-
-```text
-Read /Users/brohlfs/git/tichu/AGENTS.md, /Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md, and /Users/brohlfs/git/tichu/plans/02-agent-skills-and-docs-restructure.md.
-Confirm Decisions in Section 4 (default: .agents/skills/, replace BGA_STUDIO_TESTING.md) and execute Steps 1–4 carefully without losing any concrete constants, commands, or caveats from the existing docs.
-Verify line counts, Prettier formatting, and broken-link checks before reporting back.
-```

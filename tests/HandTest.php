@@ -414,5 +414,47 @@ final class HandTest extends TestCase
     $this->assertNull((new Hand([A3]))->getWishHighestSingle(4));
     $this->assertNull((new Hand([PH, A3]))->getWishHighestPair(4));
   }
+
+  public function testFindPlayableCombo(): void
+  {
+    // Leading with no wish plays lowest natural single
+    LogManager::$lastComboForTesting = null;
+    $lead = (new Hand([DR, A5, B2, MJ]))->findPlayableCombo(null, 0);
+    $this->assertNotNull($lead);
+    $this->assertEquals(SINGLE_COMBO, $lead->type);
+    $this->assertEquals([B2], $lead->cards);
+
+    // Leading with an active wish picks a combo containing the wish
+    $leadWish = (new Hand([B2, C9, DK]))->findPlayableCombo(null, 9);
+    $this->assertNotNull($leadWish);
+    $this->assertEquals(SINGLE_COMBO, $leadWish->type);
+    $this->assertEquals([C9], $leadWish->cards);
+
+    // Following single wish with Phoenix as pair
+    $lastPair = new Combo([A4, B4]);
+    LogManager::$lastComboForTesting = $lastPair;
+    $pairWish = (new Hand([PH, A7, C8]))->findPlayableCombo($lastPair, 7);
+    $this->assertNotNull($pairWish);
+    $this->assertEquals(PAIR_COMBO, $pairWish->type);
+    $this->assertTrue($pairWish->canBeat($lastPair));
+
+    // Following straight with ambiguous Phoenix resolves phoenixValue concretely
+    $lastStraight = new Combo([A4, B5, C6, D7, A8]);
+    LogManager::$lastComboForTesting = $lastStraight;
+    $straightWish = (new Hand([PH, A5, B6, C7, D8]))->findPlayableCombo($lastStraight, 6);
+    $this->assertNotNull($straightWish);
+    $this->assertEquals(STRAIGHT_COMBO, $straightWish->type);
+    $this->assertFalse(is_array($straightWish->phoenixValue));
+    $this->assertEquals(9, $straightWish->phoenixValue);
+    $this->assertTrue($straightWish->canBeat($lastStraight));
+
+    // Fulfilling wish on a high combo using a 4-of-a-kind bomb
+    $lastHighPair = new Combo([AA, BA]);
+    LogManager::$lastComboForTesting = $lastHighPair;
+    $bombWish = (new Hand([A5, B5, C5, D5]))->findPlayableCombo($lastHighPair, 5);
+    $this->assertNotNull($bombWish);
+    $this->assertEquals(BOMB_COMBO, $bombWish->type);
+    $this->assertTrue($bombWish->canBeat($lastHighPair));
+  }
 }
 ?>

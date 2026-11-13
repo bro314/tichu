@@ -60,7 +60,7 @@ class LogManager
       }
       $ret[] = $row;
     }
-    return $single ? null : $ret;
+    return $ret;
   }
 
   public static function getLastAction($action, $currentTrick = true)
