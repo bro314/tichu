@@ -1327,57 +1327,477 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     const wrap = document.getElementById("game_play_area_wrap");
     if (!wrap || !wrap.parentNode) return;
 
+    if (!document.getElementById("studio-test-bar-styles")) {
+      const styleEl = document.createElement("style");
+      styleEl.id = "studio-test-bar-styles";
+      styleEl.textContent = `
+        #studio-test-bar {
+          background: #0d1117;
+          color: #e6edf3;
+          border: 1px solid #30363d;
+          border-radius: 6px;
+          padding: 5px 8px;
+          margin: 4px auto 6px auto;
+          width: 100%;
+          max-width: 700px;
+          box-sizing: border-box;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 11px;
+          display: flex;
+          flex-direction: column;
+          gap: 5px;
+          z-index: 100;
+          position: relative;
+        }
+        #studio-test-bar.is-collapsed {
+          width: fit-content;
+          padding: 3px 8px;
+          gap: 0;
+        }
+        #studio-test-bar.is-collapsed #tt_bar_body {
+          display: none;
+        }
+        #studio-test-bar.is-dismissed {
+          display: none;
+        }
+        #studio-test-restore {
+          display: none;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          background: #0d1117;
+          color: #58a6ff;
+          border: 1px solid #30363d;
+          border-radius: 4px;
+          padding: 2px 7px;
+          margin: 4px auto 6px auto;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 10px;
+          font-weight: bold;
+          cursor: pointer;
+          width: fit-content !important;
+          z-index: 100;
+          position: relative;
+        }
+        #studio-test-restore.is-visible {
+          display: flex;
+        }
+        #studio-test-restore:hover {
+          background: #161b22;
+          border-color: #58a6ff;
+        }
+        #studio-test-bar button {
+          width: auto !important;
+          min-width: 0;
+          margin: 0;
+          background: #21262d;
+          color: #e6edf3;
+          border: 1px solid #30363d;
+          border-radius: 4px;
+          padding: 2px 6px;
+          height: 22px;
+          line-height: 16px;
+          cursor: pointer;
+          font-family: inherit;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          box-sizing: border-box;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
+          transition: background 0.12s ease, border-color 0.12s ease;
+        }
+        #studio-test-bar button:hover {
+          background: #30363d;
+          border-color: #8b949e;
+        }
+        #studio-test-bar button.tt-btn-primary {
+          background: #238636;
+          color: #ffffff;
+          border-color: #2ea043;
+          font-weight: bold;
+        }
+        #studio-test-bar button.tt-btn-primary:hover {
+          background: #2ea043;
+          border-color: #3fb950;
+        }
+        #studio-test-bar button.tt-btn-danger {
+          background: #da3633;
+          color: #ffffff;
+          border-color: #f85149;
+        }
+        #studio-test-bar button.tt-btn-danger:hover {
+          background: #f85149;
+          border-color: #ff7b72;
+        }
+        #studio-test-bar button.tt-btn-icon {
+          padding: 1px 5px;
+          height: 18px;
+          font-size: 10px;
+          color: #8b949e;
+          background: transparent;
+          border-color: transparent;
+        }
+        #studio-test-bar button.tt-btn-icon:hover {
+          color: #e6edf3;
+          background: #21262d;
+          border-color: #30363d;
+        }
+        #tt_bar_header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          min-height: 18px;
+        }
+        #tt_bar_body {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+        #tt_btn_grid,
+        #tt_cmd_row,
+        #tt_output_row {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 4px;
+          align-items: start;
+        }
+        #tt_btn_grid button,
+        #tt_cmd_run,
+        #tt_output_toggle {
+          width: 100% !important;
+        }
+        #tt_cmd_input,
+        #tt_test_output {
+          grid-column: span 4;
+          width: 100% !important;
+          min-width: 0;
+          box-sizing: border-box;
+        }
+        @media (max-width: 560px) {
+          #tt_btn_grid,
+          #tt_cmd_row,
+          #tt_output_row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          #tt_cmd_input,
+          #tt_test_output {
+            grid-column: span 1;
+          }
+        }
+        #tt_cmd_input {
+          height: 22px;
+          background: #161b22;
+          color: #e6edf3;
+          border: 1px solid #30363d;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-family: inherit;
+          font-size: 11px;
+        }
+        #tt_cmd_input:focus {
+          outline: none;
+          border-color: #58a6ff;
+        }
+        #tt_test_output {
+          margin: 0;
+          padding: 2px 6px;
+          height: 22px;
+          line-height: 16px;
+          background: #161b22;
+          border: 1px solid #21262d;
+          border-radius: 4px;
+          color: #8b949e;
+          font-family: inherit;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          cursor: pointer;
+        }
+        #tt_test_output.is-expanded {
+          height: auto;
+          max-height: 200px;
+          padding: 4px 6px;
+          white-space: pre-wrap;
+          word-break: break-word;
+          overflow: auto;
+        }
+        #studio-test-tooltip {
+          position: fixed;
+          z-index: 100000;
+          max-width: 320px;
+          background: #161b22;
+          color: #e6edf3;
+          border: 1px solid #58a6ff;
+          border-radius: 5px;
+          padding: 5px 8px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 11px;
+          line-height: 1.35;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+          pointer-events: none;
+          opacity: 0;
+          visibility: hidden;
+          transition: opacity 0.1s ease;
+        }
+        #studio-test-tooltip.is-visible {
+          opacity: 1;
+          visibility: visible;
+        }
+      `;
+      document.head.appendChild(styleEl);
+    }
+
+    const esc = (s: string) =>
+      s
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const tips = {
+      smoke: esc(
+        "Run full Studio smoke test: completes Grand Tichu bets, passes 3 cards for all players, plays 3 tricks at instant speed, and verifies DOM/UI state invariants (tt.runSmokeTest).",
+      ),
+      round: esc(
+        "Fast-forward the current round to completion using server bot moves (debug_bgaPlayMoves) at instant speed and verify UI state (tt.runRound).",
+      ),
+      game: esc(
+        "Fast-forward the entire game to Game End (state 99) using server bot moves at instant speed (tt.runGame).",
+      ),
+      gtAll: esc(
+        "Decline Grand Tichu (bet 0) for all 4 players in the current tab without switching player views (tt.betAllGrandTichu).",
+      ),
+      passAll: esc(
+        "Select and pass 3 default low singleton cards for the active viewer and step server bots for the other 3 players (tt.passAllCards).",
+      ),
+      step1: esc(
+        "Execute 1 automated server bot move (zombieTurn via debug_bgaPlayMoves) for whichever player is currently active (tt.step(1)).",
+      ),
+      others: esc(
+        "Step server bot moves for the other players until it is your turn to act again (tt.actForOthers).",
+      ),
+      assert: esc(
+        "Verify that live DOM elements (hand cards, round/trick/points counters, player hand counts) match gamedatas and output table status JSON (tt.assertUI + tt.status).",
+      ),
+      newTable: esc(
+        "Stop the current table, create a new 4-player Tichu table, and express-start it via BGA Studio endpoints (tt.expressStartNew).",
+      ),
+      stopTable: esc(
+        "Immediately abort and close the current BGA Studio table (tt.expressStop).",
+      ),
+      cmdInput: esc(
+        "Type any window.tt method with optional colon argument — e.g. status, hand, assertUI, wish:8, play:S10, pass, step:4, giveDragon:0. Press Enter or click Run.",
+      ),
+      cmdRun: esc(
+        "Execute the window.tt command from the input box and display its JSON result below.",
+      ),
+      output: esc(
+        "Click to toggle between single-line compact JSON and expanded multi-line formatted JSON.",
+      ),
+      outputToggle: esc(
+        "Expand or collapse the JSON output area between 1 line and a larger multi-line box.",
+      ),
+      collapse: esc("Collapse or expand the Studio Test controls."),
+      dismiss: esc(
+        "Dismiss the Studio Test widget into a tiny restore pill (or run tt.showBar() in console).",
+      ),
+      restore: esc("Restore the BGA Studio Test widget (window.tt)."),
+    };
+
     const bar = document.createElement("div");
     bar.id = "studio-test-bar";
-    bar.style.cssText =
-      "background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;margin:4px 0 8px 0;font-family:monospace;font-size:12px;display:flex;flex-direction:column;gap:6px;z-index:100;position:relative;";
-
-    const btnStyle =
-      "background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;";
-    const primaryBtnStyle =
-      "background:#238636;color:#ffffff;border:1px solid #2ea043;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:bold;";
 
     bar.innerHTML =
-      `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">` +
-      `<strong style="color:#58a6ff;">⚡ Studio Test (` +
-      `window.tt)</strong>` +
-      `<button type="button" id="tt_btn_smoke" style="${primaryBtnStyle}">🧪 Smoke Test</button>` +
-      `<button type="button" id="tt_btn_round" style="${btnStyle}">🏁 Run Round</button>` +
-      `<button type="button" id="tt_btn_game" style="${btnStyle}">🏆 Run Game</button>` +
-      `<button type="button" id="tt_btn_gt_all" style="${btnStyle}">⚡ GT Bet All 4</button>` +
-      `<button type="button" id="tt_btn_pass_all" style="${btnStyle}">🃏 Pass 3 + Bots</button>` +
-      `<button type="button" id="tt_btn_step1" style="${btnStyle}">🤖 Step 1</button>` +
-      `<button type="button" id="tt_btn_others" style="${btnStyle}">🤖 Act for Others</button>` +
-      `<button type="button" id="tt_btn_assert" style="${btnStyle}">✔ Assert UI</button>` +
-      `<button type="button" id="tt_btn_new" style="${btnStyle}">🔄 New Express Table</button>` +
-      `<button type="button" id="tt_btn_stop" style="background:#da3633;color:#ffffff;border:1px solid #f85149;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;">⏹ Express Stop</button>` +
-      `<input type="text" id="tt_cmd_input" placeholder="e.g. runSmokeTest / status / wish:8" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 6px;font-family:monospace;font-size:11px;width:180px;" />` +
-      `<button type="button" id="tt_cmd_run" style="${btnStyle}">▶ Run</button>` +
+      `<div id="tt_bar_header">` +
+      `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="tt_header_title" data-tooltip="${tips.collapse}">` +
+      `<strong style="color:#58a6ff;">⚡ Studio Test (window.tt)</strong>` +
       `</div>` +
-      `<pre id="tt_test_output" data-done="1" data-status="ready" style="margin:0;padding:4px 8px;background:#161b22;border:1px solid #21262d;border-radius:4px;color:#8b949e;max-height:110px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-size:11px;">Ready — click a button or run \`await tt.runSmokeTest()\` in console.</pre>`;
+      `<div style="display:flex;align-items:center;gap:2px;">` +
+      `<button type="button" id="tt_btn_collapse" class="tt-btn-icon" data-tooltip="${tips.collapse}">▾ Collapse</button>` +
+      `<button type="button" id="tt_btn_dismiss" class="tt-btn-icon" data-tooltip="${tips.dismiss}">✕</button>` +
+      `</div>` +
+      `</div>` +
+      `<div id="tt_bar_body">` +
+      `<div id="tt_btn_grid">` +
+      `<button type="button" id="tt_btn_smoke" class="tt-btn-primary" data-tooltip="${tips.smoke}">🧪 Smoke Test</button>` +
+      `<button type="button" id="tt_btn_round" data-tooltip="${tips.round}">🏁 Run Round</button>` +
+      `<button type="button" id="tt_btn_game" data-tooltip="${tips.game}">🏆 Run Game</button>` +
+      `<button type="button" id="tt_btn_gt_all" data-tooltip="${tips.gtAll}">⚡ GT Bet All 4</button>` +
+      `<button type="button" id="tt_btn_pass_all" data-tooltip="${tips.passAll}">🃏 Pass 3 + Bots</button>` +
+      `<button type="button" id="tt_btn_step1" data-tooltip="${tips.step1}">🤖 Step 1</button>` +
+      `<button type="button" id="tt_btn_others" data-tooltip="${tips.others}">🤖 Act for Others</button>` +
+      `<button type="button" id="tt_btn_assert" data-tooltip="${tips.assert}">✔ Assert UI</button>` +
+      `<button type="button" id="tt_btn_new" data-tooltip="${tips.newTable}">🔄 New Table</button>` +
+      `<button type="button" id="tt_btn_stop" class="tt-btn-danger" data-tooltip="${tips.stopTable}">⏹ Express Stop</button>` +
+      `</div>` +
+      `<div id="tt_cmd_row">` +
+      `<input type="text" id="tt_cmd_input" placeholder="Command: e.g. status, hand, wish:8, play:S10, step:4" data-tooltip="${tips.cmdInput}" />` +
+      `<button type="button" id="tt_cmd_run" data-tooltip="${tips.cmdRun}">▶ Run</button>` +
+      `</div>` +
+      `<div id="tt_output_row">` +
+      `<pre id="tt_test_output" data-done="1" data-status="ready" data-tooltip="${tips.output}">Ready — click a button or run \`await tt.runSmokeTest()\` in console.</pre>` +
+      `<button type="button" id="tt_output_toggle" data-tooltip="${tips.outputToggle}">▾ Expand</button>` +
+      `</div>` +
+      `</div>`;
 
+    const restoreBtn = document.createElement("button");
+    restoreBtn.type = "button";
+    restoreBtn.id = "studio-test-restore";
+    restoreBtn.setAttribute("data-tooltip", tips.restore);
+    restoreBtn.textContent = "⚡ TT";
+
+    wrap.parentNode.insertBefore(restoreBtn, wrap);
     wrap.parentNode.insertBefore(bar, wrap);
 
+    // Custom instant tooltip handler
+    let tipEl = document.getElementById("studio-test-tooltip");
+    if (!tipEl) {
+      tipEl = document.createElement("div");
+      tipEl.id = "studio-test-tooltip";
+      tipEl.setAttribute("role", "tooltip");
+      document.body.appendChild(tipEl);
+    }
+    const hideTip = () => {
+      if (tipEl) tipEl.classList.remove("is-visible");
+    };
+    const showTipFor = (target: EventTarget | null) => {
+      if (!tipEl || !(target instanceof Element)) {
+        hideTip();
+        return;
+      }
+      const host = target.closest("[data-tooltip]");
+      if (!host || (!bar.contains(host) && host !== restoreBtn)) {
+        hideTip();
+        return;
+      }
+      const text = host.getAttribute("data-tooltip");
+      if (!text) {
+        hideTip();
+        return;
+      }
+      tipEl.textContent = text;
+      tipEl.classList.add("is-visible");
+      const rect = host.getBoundingClientRect();
+      const tipWidth = tipEl.offsetWidth || 260;
+      const tipHeight = tipEl.offsetHeight || 36;
+      const left = Math.min(
+        Math.max(8, rect.left),
+        Math.max(8, window.innerWidth - tipWidth - 8),
+      );
+      const top =
+        rect.bottom + tipHeight + 12 > window.innerHeight
+          ? Math.max(8, rect.top - tipHeight - 6)
+          : rect.bottom + 6;
+      tipEl.style.left = `${Math.round(left)}px`;
+      tipEl.style.top = `${Math.round(top)}px`;
+    };
+
+    bar.addEventListener("mouseover", (e) => showTipFor(e.target));
+    bar.addEventListener("focusin", (e) => showTipFor(e.target));
+    bar.addEventListener("mouseout", (e) => {
+      const next = e.relatedTarget as Element | null;
+      if (!next || !bar.contains(next) || !next.closest("[data-tooltip]")) {
+        hideTip();
+      }
+    });
+    bar.addEventListener("focusout", hideTip);
+    bar.addEventListener("mousedown", hideTip);
+    restoreBtn.addEventListener("mouseover", (e) => showTipFor(e.target));
+    restoreBtn.addEventListener("mouseout", hideTip);
+    restoreBtn.addEventListener("mousedown", hideTip);
+
+    // Collapse / Expand / Dismiss handlers
+    const collapseBtn = document.getElementById("tt_btn_collapse");
+    const headerTitle = document.getElementById("tt_header_title");
+    const dismissBtn = document.getElementById("tt_btn_dismiss");
+
+    const setCollapsed = (collapsed: boolean) => {
+      hideTip();
+      bar.classList.toggle("is-collapsed", collapsed);
+      if (collapseBtn) {
+        collapseBtn.textContent = collapsed ? "▸ Expand" : "▾ Collapse";
+      }
+    };
+    const toggleCollapsed = () => setCollapsed(!bar.classList.contains("is-collapsed"));
+
+    if (collapseBtn) collapseBtn.addEventListener("click", toggleCollapsed);
+    if (headerTitle) headerTitle.addEventListener("click", toggleCollapsed);
+    if (dismissBtn) {
+      dismissBtn.addEventListener("click", () => {
+        hideTip();
+        bar.classList.add("is-dismissed");
+        restoreBtn.classList.add("is-visible");
+      });
+    }
+    restoreBtn.addEventListener("click", () => {
+      hideTip();
+      restoreBtn.classList.remove("is-visible");
+      bar.classList.remove("is-dismissed");
+      setCollapsed(false);
+    });
+    (tt as any).showBar = () => {
+      restoreBtn.classList.remove("is-visible");
+      bar.classList.remove("is-dismissed");
+      setCollapsed(false);
+    };
+
+    // Output 1-line vs expanded toggle
     const outEl = document.getElementById("tt_test_output")!;
+    const outToggleBtn = document.getElementById("tt_output_toggle");
+    let lastJsonValue: any = undefined;
+    let hasJsonValue = false;
+
+    const renderOutputText = () => {
+      if (!hasJsonValue) return;
+      const expanded = outEl.classList.contains("is-expanded");
+      outEl.textContent = expanded
+        ? JSON.stringify(lastJsonValue, null, 2)
+        : JSON.stringify(lastJsonValue);
+    };
+
+    const toggleOutputExpanded = () => {
+      const expanded = outEl.classList.toggle("is-expanded");
+      if (outToggleBtn) {
+        outToggleBtn.textContent = expanded ? "▴ Collapse" : "▾ Expand";
+      }
+      renderOutputText();
+    };
+
+    outEl.addEventListener("click", toggleOutputExpanded);
+    if (outToggleBtn) {
+      outToggleBtn.addEventListener("click", toggleOutputExpanded);
+    }
+
     const runTask = async (label: string, fn: () => Promise<any> | any) => {
+      hasJsonValue = false;
       outEl.setAttribute("data-done", "0");
       outEl.setAttribute("data-status", "running");
       outEl.style.color = "#d29922";
       outEl.textContent = `Running ${label}...`;
       try {
         const res = await fn();
+        lastJsonValue = res;
+        hasJsonValue = true;
         outEl.setAttribute("data-status", "pass");
         outEl.setAttribute("data-done", "1");
         outEl.style.color = "#3fb950";
-        outEl.textContent = JSON.stringify(res);
+        renderOutputText();
       } catch (err: any) {
+        lastJsonValue = {
+          ok: false,
+          error: (err && err.message) || String(err),
+        };
+        hasJsonValue = true;
         outEl.setAttribute("data-status", "fail");
         outEl.setAttribute("data-done", "1");
         outEl.style.color = "#f85149";
-        outEl.textContent = JSON.stringify({
-          ok: false,
-          error: (err && err.message) || String(err),
-        });
+        renderOutputText();
       }
     };
 
@@ -1405,7 +1825,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     const cmdBtn = document.getElementById("tt_cmd_run");
     const cmdInput = document.getElementById("tt_cmd_input") as HTMLInputElement | null;
     if (cmdBtn && cmdInput) {
-      cmdBtn.addEventListener("click", () => {
+      const executeCmd = () => {
         const raw = (cmdInput.value || "").trim();
         if (!raw) return;
         const colonIdx = raw.indexOf(":");
@@ -1427,6 +1847,13 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           }
           return await fn.call(tt, parsedArg);
         });
+      };
+      cmdBtn.addEventListener("click", executeCmd);
+      cmdInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          executeCmd();
+        }
       });
     }
   }

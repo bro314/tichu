@@ -1579,20 +1579,162 @@
       var wrap = document.getElementById("game_play_area_wrap");
       if (!wrap || !wrap.parentNode)
         return;
+      if (!document.getElementById("studio-test-bar-styles")) {
+        var styleEl = document.createElement("style");
+        styleEl.id = "studio-test-bar-styles";
+        styleEl.textContent = "\n        #studio-test-bar {\n          background: #0d1117;\n          color: #e6edf3;\n          border: 1px solid #30363d;\n          border-radius: 6px;\n          padding: 5px 8px;\n          margin: 4px auto 6px auto;\n          width: 100%;\n          max-width: 700px;\n          box-sizing: border-box;\n          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n          font-size: 11px;\n          display: flex;\n          flex-direction: column;\n          gap: 5px;\n          z-index: 100;\n          position: relative;\n        }\n        #studio-test-bar.is-collapsed {\n          width: fit-content;\n          padding: 3px 8px;\n          gap: 0;\n        }\n        #studio-test-bar.is-collapsed #tt_bar_body {\n          display: none;\n        }\n        #studio-test-bar.is-dismissed {\n          display: none;\n        }\n        #studio-test-restore {\n          display: none;\n          align-items: center;\n          justify-content: center;\n          gap: 4px;\n          background: #0d1117;\n          color: #58a6ff;\n          border: 1px solid #30363d;\n          border-radius: 4px;\n          padding: 2px 7px;\n          margin: 4px auto 6px auto;\n          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n          font-size: 10px;\n          font-weight: bold;\n          cursor: pointer;\n          width: fit-content !important;\n          z-index: 100;\n          position: relative;\n        }\n        #studio-test-restore.is-visible {\n          display: flex;\n        }\n        #studio-test-restore:hover {\n          background: #161b22;\n          border-color: #58a6ff;\n        }\n        #studio-test-bar button {\n          width: auto !important;\n          min-width: 0;\n          margin: 0;\n          background: #21262d;\n          color: #e6edf3;\n          border: 1px solid #30363d;\n          border-radius: 4px;\n          padding: 2px 6px;\n          height: 22px;\n          line-height: 16px;\n          cursor: pointer;\n          font-family: inherit;\n          font-size: 11px;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n          box-sizing: border-box;\n          display: inline-flex;\n          align-items: center;\n          justify-content: center;\n          gap: 3px;\n          transition: background 0.12s ease, border-color 0.12s ease;\n        }\n        #studio-test-bar button:hover {\n          background: #30363d;\n          border-color: #8b949e;\n        }\n        #studio-test-bar button.tt-btn-primary {\n          background: #238636;\n          color: #ffffff;\n          border-color: #2ea043;\n          font-weight: bold;\n        }\n        #studio-test-bar button.tt-btn-primary:hover {\n          background: #2ea043;\n          border-color: #3fb950;\n        }\n        #studio-test-bar button.tt-btn-danger {\n          background: #da3633;\n          color: #ffffff;\n          border-color: #f85149;\n        }\n        #studio-test-bar button.tt-btn-danger:hover {\n          background: #f85149;\n          border-color: #ff7b72;\n        }\n        #studio-test-bar button.tt-btn-icon {\n          padding: 1px 5px;\n          height: 18px;\n          font-size: 10px;\n          color: #8b949e;\n          background: transparent;\n          border-color: transparent;\n        }\n        #studio-test-bar button.tt-btn-icon:hover {\n          color: #e6edf3;\n          background: #21262d;\n          border-color: #30363d;\n        }\n        #tt_bar_header {\n          display: flex;\n          align-items: center;\n          justify-content: space-between;\n          gap: 8px;\n          min-height: 18px;\n        }\n        #tt_bar_body {\n          display: flex;\n          flex-direction: column;\n          gap: 4px;\n        }\n        #tt_btn_grid,\n        #tt_cmd_row,\n        #tt_output_row {\n          display: grid;\n          grid-template-columns: repeat(5, minmax(0, 1fr));\n          gap: 4px;\n          align-items: start;\n        }\n        #tt_btn_grid button,\n        #tt_cmd_run,\n        #tt_output_toggle {\n          width: 100% !important;\n        }\n        #tt_cmd_input,\n        #tt_test_output {\n          grid-column: span 4;\n          width: 100% !important;\n          min-width: 0;\n          box-sizing: border-box;\n        }\n        @media (max-width: 560px) {\n          #tt_btn_grid,\n          #tt_cmd_row,\n          #tt_output_row {\n            grid-template-columns: repeat(2, minmax(0, 1fr));\n          }\n          #tt_cmd_input,\n          #tt_test_output {\n            grid-column: span 1;\n          }\n        }\n        #tt_cmd_input {\n          height: 22px;\n          background: #161b22;\n          color: #e6edf3;\n          border: 1px solid #30363d;\n          border-radius: 4px;\n          padding: 2px 6px;\n          font-family: inherit;\n          font-size: 11px;\n        }\n        #tt_cmd_input:focus {\n          outline: none;\n          border-color: #58a6ff;\n        }\n        #tt_test_output {\n          margin: 0;\n          padding: 2px 6px;\n          height: 22px;\n          line-height: 16px;\n          background: #161b22;\n          border: 1px solid #21262d;\n          border-radius: 4px;\n          color: #8b949e;\n          font-family: inherit;\n          font-size: 11px;\n          white-space: nowrap;\n          overflow: hidden;\n          text-overflow: ellipsis;\n          cursor: pointer;\n        }\n        #tt_test_output.is-expanded {\n          height: auto;\n          max-height: 200px;\n          padding: 4px 6px;\n          white-space: pre-wrap;\n          word-break: break-word;\n          overflow: auto;\n        }\n        #studio-test-tooltip {\n          position: fixed;\n          z-index: 100000;\n          max-width: 320px;\n          background: #161b22;\n          color: #e6edf3;\n          border: 1px solid #58a6ff;\n          border-radius: 5px;\n          padding: 5px 8px;\n          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n          font-size: 11px;\n          line-height: 1.35;\n          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);\n          pointer-events: none;\n          opacity: 0;\n          visibility: hidden;\n          transition: opacity 0.1s ease;\n        }\n        #studio-test-tooltip.is-visible {\n          opacity: 1;\n          visibility: visible;\n        }\n      ";
+        document.head.appendChild(styleEl);
+      }
+      var esc = function(s) {
+        return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      };
+      var tips = {
+        smoke: esc("Run full Studio smoke test: completes Grand Tichu bets, passes 3 cards for all players, plays 3 tricks at instant speed, and verifies DOM/UI state invariants (tt.runSmokeTest)."),
+        round: esc("Fast-forward the current round to completion using server bot moves (debug_bgaPlayMoves) at instant speed and verify UI state (tt.runRound)."),
+        game: esc("Fast-forward the entire game to Game End (state 99) using server bot moves at instant speed (tt.runGame)."),
+        gtAll: esc("Decline Grand Tichu (bet 0) for all 4 players in the current tab without switching player views (tt.betAllGrandTichu)."),
+        passAll: esc("Select and pass 3 default low singleton cards for the active viewer and step server bots for the other 3 players (tt.passAllCards)."),
+        step1: esc("Execute 1 automated server bot move (zombieTurn via debug_bgaPlayMoves) for whichever player is currently active (tt.step(1))."),
+        others: esc("Step server bot moves for the other players until it is your turn to act again (tt.actForOthers)."),
+        assert: esc("Verify that live DOM elements (hand cards, round/trick/points counters, player hand counts) match gamedatas and output table status JSON (tt.assertUI + tt.status)."),
+        newTable: esc("Stop the current table, create a new 4-player Tichu table, and express-start it via BGA Studio endpoints (tt.expressStartNew)."),
+        stopTable: esc("Immediately abort and close the current BGA Studio table (tt.expressStop)."),
+        cmdInput: esc("Type any window.tt method with optional colon argument \u2014 e.g. status, hand, assertUI, wish:8, play:S10, pass, step:4, giveDragon:0. Press Enter or click Run."),
+        cmdRun: esc("Execute the window.tt command from the input box and display its JSON result below."),
+        output: esc("Click to toggle between single-line compact JSON and expanded multi-line formatted JSON."),
+        outputToggle: esc("Expand or collapse the JSON output area between 1 line and a larger multi-line box."),
+        collapse: esc("Collapse or expand the Studio Test controls."),
+        dismiss: esc("Dismiss the Studio Test widget into a tiny restore pill (or run tt.showBar() in console)."),
+        restore: esc("Restore the BGA Studio Test widget (window.tt).")
+      };
       var bar = document.createElement("div");
       bar.id = "studio-test-bar";
-      bar.style.cssText = "background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;margin:4px 0 8px 0;font-family:monospace;font-size:12px;display:flex;flex-direction:column;gap:6px;z-index:100;position:relative;";
-      var btnStyle = "background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;";
-      var primaryBtnStyle = "background:#238636;color:#ffffff;border:1px solid #2ea043;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;font-weight:bold;";
-      bar.innerHTML = '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;"><strong style="color:#58a6ff;">\u26A1 Studio Test (window.tt)</strong>' + '<button type="button" id="tt_btn_smoke" style="'.concat(primaryBtnStyle, '">\uD83E\uDDEA Smoke Test</button>') + '<button type="button" id="tt_btn_round" style="'.concat(btnStyle, '">\uD83C\uDFC1 Run Round</button>') + '<button type="button" id="tt_btn_game" style="'.concat(btnStyle, '">\uD83C\uDFC6 Run Game</button>') + '<button type="button" id="tt_btn_gt_all" style="'.concat(btnStyle, '">\u26A1 GT Bet All 4</button>') + '<button type="button" id="tt_btn_pass_all" style="'.concat(btnStyle, '">\uD83C\uDCCF Pass 3 + Bots</button>') + '<button type="button" id="tt_btn_step1" style="'.concat(btnStyle, '">\uD83E\uDD16 Step 1</button>') + '<button type="button" id="tt_btn_others" style="'.concat(btnStyle, '">\uD83E\uDD16 Act for Others</button>') + '<button type="button" id="tt_btn_assert" style="'.concat(btnStyle, '">\u2714 Assert UI</button>') + '<button type="button" id="tt_btn_new" style="'.concat(btnStyle, '">\uD83D\uDD04 New Express Table</button>') + '<button type="button" id="tt_btn_stop" style="background:#da3633;color:#ffffff;border:1px solid #f85149;border-radius:4px;padding:3px 8px;cursor:pointer;font-family:monospace;font-size:11px;">\u23F9 Express Stop</button><input type="text" id="tt_cmd_input" placeholder="e.g. runSmokeTest / status / wish:8" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 6px;font-family:monospace;font-size:11px;width:180px;" />' + '<button type="button" id="tt_cmd_run" style="'.concat(btnStyle, '">\u25B6 Run</button>') + '</div><pre id="tt_test_output" data-done="1" data-status="ready" style="margin:0;padding:4px 8px;background:#161b22;border:1px solid #21262d;border-radius:4px;color:#8b949e;max-height:110px;overflow:auto;white-space:pre-wrap;word-break:break-all;font-size:11px;">Ready \u2014 click a button or run `await tt.runSmokeTest()` in console.</pre>';
+      bar.innerHTML = '<div id="tt_bar_header">' + '<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="tt_header_title" data-tooltip="'.concat(tips.collapse, '">') + '<strong style="color:#58a6ff;">\u26A1 Studio Test (window.tt)</strong></div><div style="display:flex;align-items:center;gap:2px;">' + '<button type="button" id="tt_btn_collapse" class="tt-btn-icon" data-tooltip="'.concat(tips.collapse, '">\u25BE Collapse</button>') + '<button type="button" id="tt_btn_dismiss" class="tt-btn-icon" data-tooltip="'.concat(tips.dismiss, '">\u2715</button>') + '</div></div><div id="tt_bar_body"><div id="tt_btn_grid">' + '<button type="button" id="tt_btn_smoke" class="tt-btn-primary" data-tooltip="'.concat(tips.smoke, '">\uD83E\uDDEA Smoke Test</button>') + '<button type="button" id="tt_btn_round" data-tooltip="'.concat(tips.round, '">\uD83C\uDFC1 Run Round</button>') + '<button type="button" id="tt_btn_game" data-tooltip="'.concat(tips.game, '">\uD83C\uDFC6 Run Game</button>') + '<button type="button" id="tt_btn_gt_all" data-tooltip="'.concat(tips.gtAll, '">\u26A1 GT Bet All 4</button>') + '<button type="button" id="tt_btn_pass_all" data-tooltip="'.concat(tips.passAll, '">\uD83C\uDCCF Pass 3 + Bots</button>') + '<button type="button" id="tt_btn_step1" data-tooltip="'.concat(tips.step1, '">\uD83E\uDD16 Step 1</button>') + '<button type="button" id="tt_btn_others" data-tooltip="'.concat(tips.others, '">\uD83E\uDD16 Act for Others</button>') + '<button type="button" id="tt_btn_assert" data-tooltip="'.concat(tips.assert, '">\u2714 Assert UI</button>') + '<button type="button" id="tt_btn_new" data-tooltip="'.concat(tips.newTable, '">\uD83D\uDD04 New Table</button>') + '<button type="button" id="tt_btn_stop" class="tt-btn-danger" data-tooltip="'.concat(tips.stopTable, '">\u23F9 Express Stop</button>') + '</div><div id="tt_cmd_row">' + '<input type="text" id="tt_cmd_input" placeholder="Command: e.g. status, hand, wish:8, play:S10, step:4" data-tooltip="'.concat(tips.cmdInput, '" />') + '<button type="button" id="tt_cmd_run" data-tooltip="'.concat(tips.cmdRun, '">\u25B6 Run</button>') + '</div><div id="tt_output_row">' + '<pre id="tt_test_output" data-done="1" data-status="ready" data-tooltip="'.concat(tips.output, '">Ready \u2014 click a button or run `await tt.runSmokeTest()` in console.</pre>') + '<button type="button" id="tt_output_toggle" data-tooltip="'.concat(tips.outputToggle, '">\u25BE Expand</button>') + "</div></div>";
+      var restoreBtn = document.createElement("button");
+      restoreBtn.type = "button";
+      restoreBtn.id = "studio-test-restore";
+      restoreBtn.setAttribute("data-tooltip", tips.restore);
+      restoreBtn.textContent = "\u26A1 TT";
+      wrap.parentNode.insertBefore(restoreBtn, wrap);
       wrap.parentNode.insertBefore(bar, wrap);
+      var tipEl = document.getElementById("studio-test-tooltip");
+      if (!tipEl) {
+        tipEl = document.createElement("div");
+        tipEl.id = "studio-test-tooltip";
+        tipEl.setAttribute("role", "tooltip");
+        document.body.appendChild(tipEl);
+      }
+      var hideTip = function() {
+        if (tipEl)
+          tipEl.classList.remove("is-visible");
+      };
+      var showTipFor = function(target) {
+        if (!tipEl || !(target instanceof Element)) {
+          hideTip();
+          return;
+        }
+        var host2 = target.closest("[data-tooltip]");
+        if (!host2 || !bar.contains(host2) && host2 !== restoreBtn) {
+          hideTip();
+          return;
+        }
+        var text = host2.getAttribute("data-tooltip");
+        if (!text) {
+          hideTip();
+          return;
+        }
+        tipEl.textContent = text;
+        tipEl.classList.add("is-visible");
+        var rect = host2.getBoundingClientRect();
+        var tipWidth = tipEl.offsetWidth || 260;
+        var tipHeight = tipEl.offsetHeight || 36;
+        var left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - tipWidth - 8));
+        var top = rect.bottom + tipHeight + 12 > window.innerHeight ? Math.max(8, rect.top - tipHeight - 6) : rect.bottom + 6;
+        tipEl.style.left = "".concat(Math.round(left), "px");
+        tipEl.style.top = "".concat(Math.round(top), "px");
+      };
+      bar.addEventListener("mouseover", function(e) {
+        return showTipFor(e.target);
+      });
+      bar.addEventListener("focusin", function(e) {
+        return showTipFor(e.target);
+      });
+      bar.addEventListener("mouseout", function(e) {
+        var next = e.relatedTarget;
+        if (!next || !bar.contains(next) || !next.closest("[data-tooltip]")) {
+          hideTip();
+        }
+      });
+      bar.addEventListener("focusout", hideTip);
+      bar.addEventListener("mousedown", hideTip);
+      restoreBtn.addEventListener("mouseover", function(e) {
+        return showTipFor(e.target);
+      });
+      restoreBtn.addEventListener("mouseout", hideTip);
+      restoreBtn.addEventListener("mousedown", hideTip);
+      var collapseBtn = document.getElementById("tt_btn_collapse");
+      var headerTitle = document.getElementById("tt_header_title");
+      var dismissBtn = document.getElementById("tt_btn_dismiss");
+      var setCollapsed = function(collapsed) {
+        hideTip();
+        bar.classList.toggle("is-collapsed", collapsed);
+        if (collapseBtn) {
+          collapseBtn.textContent = collapsed ? "\u25B8 Expand" : "\u25BE Collapse";
+        }
+      };
+      var toggleCollapsed = function() {
+        return setCollapsed(!bar.classList.contains("is-collapsed"));
+      };
+      if (collapseBtn)
+        collapseBtn.addEventListener("click", toggleCollapsed);
+      if (headerTitle)
+        headerTitle.addEventListener("click", toggleCollapsed);
+      if (dismissBtn) {
+        dismissBtn.addEventListener("click", function() {
+          hideTip();
+          bar.classList.add("is-dismissed");
+          restoreBtn.classList.add("is-visible");
+        });
+      }
+      restoreBtn.addEventListener("click", function() {
+        hideTip();
+        restoreBtn.classList.remove("is-visible");
+        bar.classList.remove("is-dismissed");
+        setCollapsed(false);
+      });
+      tt.showBar = function() {
+        restoreBtn.classList.remove("is-visible");
+        bar.classList.remove("is-dismissed");
+        setCollapsed(false);
+      };
       var outEl = document.getElementById("tt_test_output");
+      var outToggleBtn = document.getElementById("tt_output_toggle");
+      var lastJsonValue = void 0;
+      var hasJsonValue = false;
+      var renderOutputText = function() {
+        if (!hasJsonValue)
+          return;
+        var expanded = outEl.classList.contains("is-expanded");
+        outEl.textContent = expanded ? JSON.stringify(lastJsonValue, null, 2) : JSON.stringify(lastJsonValue);
+      };
+      var toggleOutputExpanded = function() {
+        var expanded = outEl.classList.toggle("is-expanded");
+        if (outToggleBtn) {
+          outToggleBtn.textContent = expanded ? "\u25B4 Collapse" : "\u25BE Expand";
+        }
+        renderOutputText();
+      };
+      outEl.addEventListener("click", toggleOutputExpanded);
+      if (outToggleBtn) {
+        outToggleBtn.addEventListener("click", toggleOutputExpanded);
+      }
       var runTask = function(label, fn) {
         return __awaiter(_this, void 0, void 0, function() {
           var res, err_1;
           return __generator(this, function(_a) {
             switch (_a.label) {
               case 0:
+                hasJsonValue = false;
                 outEl.setAttribute("data-done", "0");
                 outEl.setAttribute("data-status", "running");
                 outEl.style.color = "#d29922";
@@ -1603,20 +1745,24 @@
                 return [4, fn()];
               case 2:
                 res = _a.sent();
+                lastJsonValue = res;
+                hasJsonValue = true;
                 outEl.setAttribute("data-status", "pass");
                 outEl.setAttribute("data-done", "1");
                 outEl.style.color = "#3fb950";
-                outEl.textContent = JSON.stringify(res);
+                renderOutputText();
                 return [3, 4];
               case 3:
                 err_1 = _a.sent();
+                lastJsonValue = {
+                  ok: false,
+                  error: err_1 && err_1.message || String(err_1)
+                };
+                hasJsonValue = true;
                 outEl.setAttribute("data-status", "fail");
                 outEl.setAttribute("data-done", "1");
                 outEl.style.color = "#f85149";
-                outEl.textContent = JSON.stringify({
-                  ok: false,
-                  error: err_1 && err_1.message || String(err_1)
-                });
+                renderOutputText();
                 return [3, 4];
               case 4:
                 return [2];
@@ -1668,7 +1814,7 @@
       var cmdBtn = document.getElementById("tt_cmd_run");
       var cmdInput = document.getElementById("tt_cmd_input");
       if (cmdBtn && cmdInput) {
-        cmdBtn.addEventListener("click", function() {
+        var executeCmd_1 = function() {
           var raw = (cmdInput.value || "").trim();
           if (!raw)
             return;
@@ -1702,6 +1848,13 @@
               });
             });
           });
+        };
+        cmdBtn.addEventListener("click", executeCmd_1);
+        cmdInput.addEventListener("keydown", function(e) {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            executeCmd_1();
+          }
         });
       }
     }
