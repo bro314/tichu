@@ -105,4 +105,3 @@ Each `SKILL.md` requires valid YAML frontmatter (`name`, `description` optimized
 - [ ] Line-by-line diff/audit confirms every concrete constant, account ID, command, and BGA pitfall from old `AGENTS.md` + `BGA_STUDIO_TESTING.md` is preserved in either `AGENTS.md` or a `SKILL.md`.
 - [ ] Every markdown file path reference resolves cleanly on disk.
 - [ ] `npx prettier --check AGENTS.md README.md ".agents/skills/**/*.md"` passes.
-
