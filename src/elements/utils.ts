@@ -1,5 +1,6 @@
 import { Observable } from "rxjs";
 import { distinctUntilChanged, map, shareReplay } from "rxjs/operators";
+import { Hand } from "./combo-validator";
 import { Card } from "./model";
 
 export function fire(el: Element, eventName: string) {
@@ -37,32 +38,7 @@ export function playerIdFromChannel(channel: string): number {
   return Number(playerIdString);
 }
 
-export function hasBomb(cards: Card[]) {
-  // straight bombs
-  for (let color = 1; color <= 4; color++) {
-    let values = cards
-      .filter((c) => Number(c.type) === color && Number(c.type_arg) > 1)
-      .map((c) => Number(c.type_arg))
-      .sort((a, b) => a - b);
-    for (let idx = 0; idx < values.length - 4; idx++) {
-      const numBegin = values[idx]!;
-      for (let idy = idx + 4; idy < values.length; idy++) {
-        const numEnd = values[idy];
-        let length = idy - idx + 1;
-        if (numEnd === numBegin + length - 1) {
-          return true;
-        }
-      }
-    }
-  }
-
-  // four bombs
-  for (let value = 2; value <= 14; value++) {
-    let cardsWithValue = cards.filter((c) => Number(c.type_arg) === value);
-    if (cardsWithValue.length === 4) {
-      return true;
-    }
-  }
-
-  return false;
+export function hasBomb(cards: Card[]): boolean {
+  if (!cards || cards.length < 4) return false;
+  return new Hand(cards).hasBomb();
 }

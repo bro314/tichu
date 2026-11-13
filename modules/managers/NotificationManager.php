@@ -45,6 +45,8 @@ class NotificationManager
       "combo_name" => $combo->description,
       "cards" => $combo->cards,
       "points" => CardManager::getTrickValue($combo->cards),
+      "type" => (int) $combo->type,
+      "phoenixValue" => $combo->phoenixValue,
     ]);
   }
 

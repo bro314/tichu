@@ -5,11 +5,12 @@
   "main": "tichu.js",
   "scripts": {
     "test:unit": "php -d error_reporting=24575 ./vendor/bin/phpunit --do-not-cache-result tests",
+    "test:validator": "esbuild tests/combo-validator.test.ts --bundle --platform=node --outfile=dist/combo-validator.test.cjs && node dist/combo-validator.test.cjs",
     "test:integration": "bash local/mysql-ctl.sh ensure && php local/integration-tests.php",
     "test:contracts": "php local/check-contracts.php",
     "phpstan": "php -d memory_limit=512M ./vendor/bin/phpstan analyse",
     "test:race": "bash local/mysql-ctl.sh ensure && php local/race-tests.php",
-    "test": "npm run test:unit && npm run test:integration",
+    "test": "npm run test:unit && npm run test:validator && npm run test:integration",
     "local": "bash local/mysql-ctl.sh ensure && php -S 127.0.0.1:8080 local/router.php",
     "mysql:start": "bash local/mysql-ctl.sh start",
     "mysql:stop": "bash local/mysql-ctl.sh stop",

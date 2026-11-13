@@ -132,6 +132,14 @@ export const styles = css`
   .bgabutton:hover {
     text-decoration: none !important;
   }
+  .bgabutton.disabled,
+  .bgabutton.disabled:hover,
+  .bgabutton.disabled:active {
+    opacity: 0.55;
+    cursor: not-allowed;
+    filter: grayscale(0.35);
+    box-shadow: none;
+  }
   .bgabutton_blue,
   .bgabutton_primary {
     background:

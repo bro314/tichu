@@ -1088,6 +1088,8 @@ export class Tichu {
     const cards = notif.args.cards || [];
     const comboName = notif.args.combo_name || "";
     const points = Number(notif.args.points || 0);
+    const comboType = notif.args.type !== undefined ? Number(notif.args.type) : 0;
+    const phoenixValue = notif.args.phoenixValue !== undefined ? notif.args.phoenixValue : null;
 
     if (this.gamedatas) {
       this.gamedatas.currentTrick = [...(this.gamedatas.currentTrick || []), ...cards];
@@ -1105,15 +1107,22 @@ export class Tichu {
       this.allLastCombos[playerId] = {
         cards,
         description: comboName,
-        type: 0,
-        phoenixValue: null,
+        type: comboType,
+        phoenixValue,
       };
       this.gamedatas.allLastCombos = this.allLastCombos as Record<number, Combo>;
       this.gamedatas.lastComboPlayer = String(playerId);
       this.gamedatas.lastComboDescription = comboName;
+      this.gamedatas.lastCombo = {
+        player: String(playerId),
+        cards,
+        description: comboName,
+        type: comboType,
+        phoenixValue,
+      };
     }
 
-    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points);
+    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points, comboType, phoenixValue);
   }
 
   notif_pass(notif: TypedNotif<"pass">) {

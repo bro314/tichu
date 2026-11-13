@@ -35,6 +35,8 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) dynamicOverlap = false;
 
+  @property({ type: Number }) highlightedRank = 0;
+
   @state() private containerWidth = 0;
 
   private resizeObserver?: ResizeObserver;
@@ -159,6 +161,11 @@ export class TichuStock extends LitElement {
               .tiki=${this.tiki}
               .selectable=${isSelectable}
               .selected=${isSelectable && selectedSet.has(String(card.id))}
+              .wishMatch=${
+                this.highlightedRank >= 2 &&
+                this.highlightedRank <= 14 &&
+                Number(card.type_arg) === this.highlightedRank
+              }
               @card-click=${(e: CustomEvent<{ card: Card }>) => this.onCardClick(e, card)}
             ></tichu-card>
           `,

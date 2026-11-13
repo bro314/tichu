@@ -1,6 +1,7 @@
 import { html, css, LitElement } from "lit";
 import { state } from "lit/decorators.js";
-import { Card } from "./game-model";
+import { Combo, Hand } from "./combo-validator";
+import { Card, TrickLastComboState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-action-bar";
@@ -20,6 +21,14 @@ export class TichuHand extends LitElement {
   @state() private clockwise = true;
   @state() private squareTable = false;
   @state() private theme = 0;
+  @state() private mahjongWish = 0;
+  @state() private trickLastCombo: TrickLastComboState = {
+    playerId: "",
+    type: 99,
+    cards: [],
+    phoenixValue: null,
+    description: "",
+  };
 
   static override get styles() {
     return [
@@ -128,6 +137,16 @@ export class TichuHand extends LitElement {
       () => window.gameModel.theme$,
       (theme) => (this.theme = theme),
     );
+    subscribe(
+      this,
+      () => window.gameModel.mahjongWish$,
+      (mahjongWish) => (this.mahjongWish = mahjongWish),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.trickLastCombo$,
+      (trickLastCombo) => (this.trickLastCombo = trickLastCombo),
+    );
   }
 
   private getSelectionMode(): 0 | 1 | 2 {
@@ -139,6 +158,14 @@ export class TichuHand extends LitElement {
   override render() {
     const selectionMode = this.getSelectionMode();
     const isArchiveMode = Boolean((window as any).g_archive_mode);
+    const canFulfillWish =
+      this.mahjongWish >= 2 &&
+      this.mahjongWish <= 14 &&
+      new Hand(this.hand).canFulFillWish(
+        this.mahjongWish,
+        Combo.fromLastComboState(this.trickLastCombo),
+      );
+    const highlightedRank = canFulfillWish ? this.mahjongWish : 0;
 
     return html`
       <tichu-action-bar></tichu-action-bar>
@@ -156,6 +183,7 @@ export class TichuHand extends LitElement {
             .selectionMode=${selectionMode}
             .selectedIds=${this.selectedCardIds}
             .dynamicOverlap=${true}
+            .highlightedRank=${highlightedRank}
             @selection-change=${this.onSelectionChange}
           ></tichu-stock>
         </div>

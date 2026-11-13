@@ -35,6 +35,16 @@ export interface LastComboState {
   cards: Card[];
   description: string;
   passed: boolean;
+  type?: number;
+  phoenixValue?: number | number[] | null;
+}
+
+export interface TrickLastComboState {
+  playerId: string;
+  type: number;
+  cards: Card[];
+  phoenixValue: number | number[] | null;
+  description: string;
 }
 
 export interface BetAnimation {
@@ -80,6 +90,7 @@ export interface LiveGameState {
   firstOutPlayerId: string;
   lastComboPlayerId: string;
   lastCombos: Record<string, LastComboState>;
+  trickLastCombo: TrickLastComboState;
   mahjongWish: number;
   selectedMahjongWish: number | null;
   phoenixAllowedValues: number[];
@@ -132,6 +143,13 @@ export const initialLiveGameState: LiveGameState = {
   firstOutPlayerId: "",
   lastComboPlayerId: "",
   lastCombos: {},
+  trickLastCombo: {
+    playerId: "",
+    type: 99,
+    cards: [],
+    phoenixValue: null,
+    description: "",
+  },
   mahjongWish: 0,
   selectedMahjongWish: null,
   phoenixAllowedValues: [],
@@ -234,6 +252,7 @@ export class GameModel {
   public readonly firstOutPlayerId$ = select(this.state$, (s) => s.firstOutPlayerId);
   public readonly lastComboPlayerId$ = select(this.state$, (s) => s.lastComboPlayerId);
   public readonly lastCombos$ = select(this.state$, (s) => s.lastCombos);
+  public readonly trickLastCombo$ = select(this.state$, (s) => s.trickLastCombo);
   public readonly lastCombo$ = (playerId: string | number) =>
     select(
       this.state$,
@@ -364,18 +383,24 @@ export class GameModel {
           cards: comboCards,
           description: String(combo?.description ?? ""),
           passed: false,
+          type: Number.isNaN(comboType) ? 0 : comboType,
+          phoenixValue: combo?.phoenixValue ?? null,
         };
       } else if (hasPassed) {
         lastCombos[pid] = {
           cards: [],
           description: "Pass",
           passed: true,
+          type: 0,
+          phoenixValue: null,
         };
       } else {
         lastCombos[pid] = {
           cards: [],
           description: "",
           passed: false,
+          type: 99,
+          phoenixValue: null,
         };
       }
     }
@@ -406,9 +431,41 @@ export class GameModel {
       gamedatas?.firstoutplayer ?? gamedatas?.first_out_player ?? gamedatas?.first_out;
     const firstOutPlayerId = rawFirstOut && String(rawFirstOut) !== "0" ? String(rawFirstOut) : "";
 
-    const rawLastComboPlayer = gamedatas?.lastComboPlayer ?? gamedatas?.last_combo_player;
+    const rawLastComboPlayer =
+      gamedatas?.lastCombo?.player ?? gamedatas?.lastComboPlayer ?? gamedatas?.last_combo_player;
     const lastComboPlayerId =
       rawLastComboPlayer && String(rawLastComboPlayer) !== "0" ? String(rawLastComboPlayer) : "";
+
+    const rawStructuredLast = gamedatas?.lastCombo;
+    const fallbackCombo = lastComboPlayerId ? lastCombos[lastComboPlayerId] : undefined;
+    const trickLastComboCards = Array.isArray(rawStructuredLast?.cards)
+      ? normalizeCards(rawStructuredLast.cards)
+      : fallbackCombo?.cards
+        ? [...fallbackCombo.cards]
+        : [];
+    const trickLastComboType =
+      rawStructuredLast?.type !== undefined
+        ? Number(rawStructuredLast.type)
+        : fallbackCombo?.type !== undefined
+          ? Number(fallbackCombo.type)
+          : trickLastComboCards.length > 0
+            ? 0
+            : 99;
+    const trickLastCombo: TrickLastComboState = {
+      playerId: lastComboPlayerId,
+      type: Number.isNaN(trickLastComboType) ? 99 : trickLastComboType,
+      cards: trickLastComboCards,
+      phoenixValue:
+        rawStructuredLast?.phoenixValue !== undefined
+          ? rawStructuredLast.phoenixValue
+          : (fallbackCombo?.phoenixValue ?? null),
+      description: String(
+        rawStructuredLast?.description ??
+          gamedatas?.lastComboDescription ??
+          fallbackCombo?.description ??
+          "",
+      ),
+    };
 
     const rawWish = Number(gamedatas?.mahjongWish ?? gamedatas?.mahjong_wish ?? 0);
     const mahjongWish = rawWish > 0 && rawWish < 15 ? rawWish : 0;
@@ -474,6 +531,7 @@ export class GameModel {
       firstOutPlayerId,
       lastComboPlayerId,
       lastCombos,
+      trickLastCombo,
       mahjongWish,
       selectedMahjongWish: null,
       phoenixAllowedValues: [],
@@ -545,6 +603,13 @@ export class GameModel {
     this.update({
       lastCombos,
       lastComboPlayerId: "",
+      trickLastCombo: {
+        playerId: "",
+        type: 99,
+        cards: [],
+        phoenixValue: null,
+        description: "",
+      },
     });
   }
 
@@ -573,6 +638,13 @@ export class GameModel {
       lastCombos,
       passSlots,
       lastComboPlayerId: "",
+      trickLastCombo: {
+        playerId: "",
+        type: 99,
+        cards: [],
+        phoenixValue: null,
+        description: "",
+      },
       capturedCards: [],
       hand: [],
       selectedCardIds: [],
@@ -629,6 +701,13 @@ export class GameModel {
     this.update({
       lastCombos,
       lastComboPlayerId: "",
+      trickLastCombo: {
+        playerId: "",
+        type: 99,
+        cards: [],
+        phoenixValue: null,
+        description: "",
+      },
       capturedCards: [...prev.capturedCards, ...prev.currentTrick],
       currentTrick: [],
       currentTrickValue: 0,
@@ -677,6 +756,14 @@ export class GameModel {
       selectedCardIds: [],
       players,
       firstOutPlayerId: "",
+      lastComboPlayerId: "",
+      trickLastCombo: {
+        playerId: "",
+        type: 99,
+        cards: [],
+        phoenixValue: null,
+        description: "",
+      },
     });
   }
 
@@ -866,6 +953,8 @@ export class GameModel {
     cards: Card[],
     comboName: string,
     points: number,
+    type?: number,
+    phoenixValue?: number | number[] | null,
   ): void {
     const pid = String(playerId);
     const normalized = normalizeCards(cards);
@@ -890,12 +979,17 @@ export class GameModel {
         }
       : prev.players;
 
+    const comboType = type !== undefined ? Number(type) : 0;
+    const comboPhoenix = phoenixValue !== undefined ? phoenixValue : null;
+
     const lastCombos = {
       ...prev.lastCombos,
       [pid]: {
         cards: normalized,
         description: comboName,
         passed: false,
+        type: comboType,
+        phoenixValue: comboPhoenix,
       },
     };
 
@@ -905,6 +999,13 @@ export class GameModel {
       players,
       lastCombos,
       lastComboPlayerId: pid,
+      trickLastCombo: {
+        playerId: pid,
+        type: comboType,
+        cards: normalized,
+        phoenixValue: comboPhoenix,
+        description: comboName,
+      },
       currentTrick: [...prev.currentTrick, ...normalized],
       currentTrickValue: prev.currentTrickValue + Number(points ?? 0),
     });

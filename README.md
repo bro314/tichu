@@ -52,11 +52,14 @@ npm run mysql:start
 npm run mysql:status
 npm run mysql:stop
 
-# Run both PHPUnit unit tests and MySQL 8.0 backend integration tests (~2.7s)
+# Run PHPUnit unit tests, TypeScript combo/hand validator tests, and MySQL 8.0 backend integration tests (~2.7s)
 npm test
 
 # Run only PHPUnit unit tests (Combo & Hand logic, ~15ms)
 npm run test:unit
+
+# Run only TypeScript client Combo & Hand parity + Smart Play UX unit tests (~130ms)
+npm run test:validator
 
 # Run only MySQL 8.0 + BGA Framework backend integration tests (14 end-to-end suites)
 npm run test:integration
@@ -100,9 +103,9 @@ tt.help(); // List all console test runner commands
 | `src/tichu.ts`                       | Lean TypeScript BGA adapter (`bgagame.tichu`) bridging BGA notifications, state hooks, and status-bar buttons to `window.gameModel`                                                                                                                                                                                                                                                                                                                             |
 | `src/studio-test.ts`                 | BGA Studio test toolbar (`#studio-test-bar`) and console runner (`window.tt`), active only on `studio.boardgamearena.com`                                                                                                                                                                                                                                                                                                                                       |
 | `src/types/`                         | TypeScript contracts and ambient declarations (`tichu-contracts.ts`, `bga-framework.d.ts`)                                                                                                                                                                                                                                                                                                                                                                      |
-| `src/elements/`                      | Lit + RxJS web components for live gameplay and archive replay (`<tichu-game>`, `<tichu-player-panel>`, `<tichu-last-played>`, `<tichu-pass-area>`, `<tichu-action-bar>`, `<tichu-hand>`, `<tichu-value-choice>`, `<tichu-played-cards>`, `<tichu-trick-modal>`, `<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`)                                                                                  |
+| `src/elements/`                      | Lit + RxJS web components (`<tichu-game>`, `<tichu-player-panel>`, `<tichu-last-played>`, `<tichu-pass-area>`, `<tichu-action-bar>`, `<tichu-hand>`, `<tichu-value-choice>`, `<tichu-played-cards>`, `<tichu-trick-modal>`, `<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`) and zero-DOM client `Combo`/`Hand` validator (`combo-validator.ts`)                                                   |
 | `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                                                                                                                                                                                                                                                                    |
-| `tests/` & `phpstan.neon`            | PHPUnit test suite (`ComboTest.php`, `HandTest.php`), BGA stubs, and PHPStan static analysis config                                                                                                                                                                                                                                                                                                                                                             |
+| `tests/` & `phpstan.neon`            | PHPUnit test suite (`ComboTest.php`, `HandTest.php`), TypeScript client validator parity suite (`combo-validator.test.ts`), BGA stubs, and PHPStan static analysis config                                                                                                                                                                                                                                                                                       |
 | `local/`                             | Self-contained local BGA runner executing the real `local/Bga/GameFramework/` PHP classes against an isolated MySQL 8.0 InnoDB instance (`mysql-ctl.sh`, `bga-std-schema.sql`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), backend integration, contract, & race stress tests (`integration-tests.php`, `check-contracts.php`, `race-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
 | `.agents/skills/`, `docs/`, `plans/` | Progressive-disclosure [agent skills](./.agents/skills) (Studio testing, concurrency locks, release QA, bug triage), [open-source BGA ecosystem reference](./docs/BGA_OPEN_SOURCE_ECOSYSTEM.md), and prioritized implementation plans (`00`–`14`)                                                                                                                                                                                                               |
 

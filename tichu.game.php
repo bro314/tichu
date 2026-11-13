@@ -348,6 +348,13 @@ class Tichu extends Table
     $lastCombo = LogManager::getLastCombo();
     $result["lastComboPlayer"] = $lastCombo->player;
     $result["lastComboDescription"] = $lastCombo->description;
+    $result["lastCombo"] = [
+      "player" => $lastCombo->player,
+      "type" => (int) $lastCombo->type,
+      "cards" => $lastCombo->cards ?? [],
+      "phoenixValue" => $lastCombo->phoenixValue,
+      "description" => $lastCombo->description ?? "",
+    ];
 
     list($lastCombos, $passes) = LogManager::getLastCombos();
     $result["allLastCombos"] = $lastCombos;

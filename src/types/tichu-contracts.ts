@@ -25,7 +25,7 @@ export type Card = CardData;
 export interface TichuCombo {
   cards: CardData[];
   description: string;
-  phoenixValue: number | null;
+  phoenixValue: number | number[] | null;
   type: number;
 }
 
@@ -45,6 +45,8 @@ export interface TichuNotificationMap {
     combo_name: string;
     cards: CardData[];
     points: number;
+    type: number;
+    phoenixValue: number | number[] | null;
   };
   wishMade: {
     i18n?: string[];
@@ -116,6 +118,7 @@ export interface TichuGamedatas {
   firstoutplayer: number;
   hand: CardData[];
   handcount: Record<number, number>;
+  lastCombo?: TichuCombo & { player?: string | number };
   lastComboDescription: string;
   lastComboPlayer: string | number;
   mahjongOwner: number;
