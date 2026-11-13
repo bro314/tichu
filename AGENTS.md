@@ -8,25 +8,25 @@ This document provides comprehensive architectural, structural, and operational 
 
 ### Official BGA Studio Documentation
 
-When working on BGA game logic, client APIs, or platform conventions, consult the official BGA Studio Wiki:
+When working on BGA game logic, client APIs, or platform conventions, consult the official BGA Studio documentation:
 
-- **Main Studio Hub**: https://en.doc.boardgamearena.com/Studio
-- **Game Main PHP Logic (`*.game.php`)**: https://en.doc.boardgamearena.com/Main_game_logic:_yourgamename.game.php
-- **State Machine (`states.inc.php`)**: https://en.doc.boardgamearena.com/Your_game_state_machine:_states.inc.php
-- **Client-Side JS (`GameGui`)**: https://en.doc.boardgamearena.com/Game_interface_logic:_yourgamename.js
-- **Deck Component (`module.common.deck`)**: https://en.doc.boardgamearena.com/Deck
-- **Stock UI Component (`ebg/stock`)**: https://en.doc.boardgamearena.com/Stock
-- **Game Meta-Information (`gameinfos.inc.php`)**: https://en.doc.boardgamearena.com/Game_meta-information:_gameinfos.inc.php
-- **Options & Preferences (`gameoptions.inc.php`)**: https://en.doc.boardgamearena.com/Options_and_preferences:_gameoptions.inc.php
-- **Statistics (`stats.inc.php`)**: https://en.doc.boardgamearena.com/Game_statistics:_stats.inc.php
-- **Post-Release & DB Migrations (`upgradeTableDb`)**: https://en.doc.boardgamearena.com/Post-release_phase
-- **Pre-Release Checklist**: https://en.doc.boardgamearena.com/Pre-release_checklist
-- **Tutorials Checklist**: https://en.doc.boardgamearena.com/Tutorials_checklist
+- **2025–2026 Official Studio Docs (`doc.studio.boardgamearena.com` — supersedes MediaWiki for PHP 8.4 / ES2022)**: https://doc.studio.boardgamearena.com/
+- **Official AI Migration Skill (`modernize-bga-game-project.zip`)**: https://doc.studio.boardgamearena.com/framework-documentation/ai-tooling/
+- **Legacy Studio MediaWiki Hub** (still authoritative for classic `Deck` / `ebg/stock` / release checklists): https://en.doc.boardgamearena.com/Studio
+  - **Main PHP Logic (`*.game.php`)**: https://en.doc.boardgamearena.com/Main_game_logic:_yourgamename.game.php
+  - **State Machine (`states.inc.php`)**: https://en.doc.boardgamearena.com/Your_game_state_machine:_states.inc.php
+  - **Client-Side JS (`GameGui`)**: https://en.doc.boardgamearena.com/Game_interface_logic:_yourgamename.js
+  - **Deck (`module.common.deck`) & Stock (`ebg/stock`)**: https://en.doc.boardgamearena.com/Deck & https://en.doc.boardgamearena.com/Stock
+  - **Metadata, Options, Stats**: https://en.doc.boardgamearena.com/Game_meta-information:_gameinfos.inc.php, https://en.doc.boardgamearena.com/Options_and_preferences:_gameoptions.inc.php, https://en.doc.boardgamearena.com/Game_statistics:_stats.inc.php
+  - **Release, Migrations & Tutorials**: https://en.doc.boardgamearena.com/Pre-release_checklist, https://en.doc.boardgamearena.com/Post-release_phase, https://en.doc.boardgamearena.com/Tutorials_checklist
+  - **Open-Source Sharing Index**: https://en.doc.boardgamearena.com/BGA_Code_Sharing
 - **Tichu Bug Tracker on BGA**: https://boardgamearena.com/bugs?game=1237 (individual bug reports are at `https://boardgamearena.com/bug?id=<BUG_ID>`)
 
-### Authoritative API Stubs & External BGA Skill Reference
+### Authoritative API Stubs, Ecosystem Research & Improvement Plans
 
 - **Generated Stubs Beat the Wiki**: BGA ships generated [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS) on every Studio server and updates them ahead of the hand-written BGA Wiki. When the Wiki and the local stubs disagree, **trust the stubs** (and re-download `/tichu/_ide_helper.php` via SFTP if checking for newer platform APIs).
+- **Open-Source BGA Ecosystem Reference (Progressive Disclosure)**: [`docs/BGA_OPEN_SOURCE_ECOSYSTEM.md`](file:///Users/brohlfs/git/tichu/docs/BGA_OPEN_SOURCE_ECOSYSTEM.md) catalogs the full `doc.studio.boardgamearena.com` URL map, the **Top 10 open-source BGA reference games** (`Odin`, `Velonimo`, `The Crew`, `Papayoo`, `Coinche`, `Ticket to Ride`, `Conspiracy`/`Sea Salt & Paper`, `Heat`/`tisaac-boilerplate`, `Terraforming Mars`, `Earth`/`Hardback`), high-signal BGA tools/skills/libraries, the `742`-repo ecosystem census, `AndyKerrison/bga-tichu` & `BGATichu` lineage notes, explicit "what NOT to adopt" guardrails, and BGA Developer Discord access methods. Read it on demand when researching external BGA patterns.
+- **Prioritized Improvement Plans**: [`plans/`](file:///Users/brohlfs/git/tichu/plans) contains 15 self-contained, priority-ordered blueprints (`00`–`14`) derived from that ecosystem audit.
 - **Community BGA Agent Reference (`rbellec/claude-code-bga`)**:
   - Repo: https://github.com/rbellec/claude-code-bga (fetch via `https://www.github.com/rbellec/claude-code-bga.git` if cloning locally).
   - Contains concise reference guides under `skills/board-game-arena/references/` (`deck.md`, `stock.md`, `counter.md`, `notifications.md`, `translations.md`, `guidelines.md`, `debug-helpers.md`, `tutorial-ready.md`, `legacy-migration.md`) and platform root-cause explanations in `TECHNICAL_NOTES.md`.
@@ -133,6 +133,9 @@ BGA games use an event-driven client-server architecture built on a finite state
 │   ├── view/common/game.view.php # View base class included by `tichu.view.php`
 │   ├── js/bga-shim.js           # Lean frontend shim (`dojo`, `declare`, `ebg.stock`, `ebg.counter`, `ebg.popindialog`, `GameGui`), dev bar, console announcer, and `window.tt` test runner
 │   └── css/bga-shim.css         # BGA base layout, `.stockitem`, `.bgabutton`, `.whiteblock`, and `#local-dev-bar` styles
+├── docs/                        # Progressive-disclosure engineering & BGA ecosystem references (not uploaded)
+│   └── BGA_OPEN_SOURCE_ECOSYSTEM.md # Curated BGA docs map, Top 10 open-source games, census, tools & guardrails
+├── plans/                       # Ranked implementation plans (`00-*.md`..`14-*.md`, not uploaded)
 └── img/                         # Game assets
     ├── tichu-cards.png          # Standard card sprite sheet (14 columns x 4 rows, 100x150px per card)
     ├── tiki-cards.png           # Tiki Edition card sprite sheet (14 columns x 4 rows)
@@ -385,7 +388,7 @@ BGA games cannot execute full multiplayer lifecycle locally; they run on the rem
      "
      ```
    - **Files Ignored from SFTP Upload**:
-     `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
+     `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `BGA_STUDIO_TESTING.md`, `README.md`, `bga-platform`, `docs`, `plans`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, or `version.php`.
 
 3. **Testing on BGA Studio (via `browser` Subagent or User Browser)**:
    - **MANDATORY PLAYBOOK FOR BROWSER SUBAGENT**: Before delegating any live testing on BGA Studio to the `browser` subagent, **read [`BGA_STUDIO_TESTING.md`](file:///Users/brohlfs/git/tichu/BGA_STUDIO_TESTING.md)** and inline its pure-locator snippet directly in the subagent prompt (never ask the `browser` subagent to `read_file` from the repo workspace, as its sandbox blocks workspace reads)!

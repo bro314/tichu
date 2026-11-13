@@ -97,6 +97,7 @@ tt.help(); // List all console test runner commands
 | `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                                                                                                                                                                                                                                  |
 | `tests/`                             | PHPUnit test suite (`ComboTest.php`, `HandTest.php`) and BGA stubs                                                                                                                                                                                                                                                                                                                                                            |
 | `local/`                             | Self-contained local BGA runner executing the real `local/Bga/GameFramework/` PHP classes against an isolated MySQL 8.0 InnoDB instance (`mysql-ctl.sh`, `bga-std-schema.sql`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), backend integration & race stress tests (`integration-tests.php`, `race-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
+| `docs/` & `plans/`                   | Progressive-disclosure [open-source BGA ecosystem reference](./docs/BGA_OPEN_SOURCE_ECOSYSTEM.md) (docs map, Top 10 inspiration repos, tooling, guardrails) and prioritized implementation plans (`00`–`14`)                                                                                                                                                                                                                  |
 
 ## Syncing & Deploying to BGA Studio
 
@@ -107,4 +108,4 @@ tt.help(); // List all console test runner commands
 3. **Deploying to Production**: Build a new release from the BGA Studio Control Panel once all changes are synced and verified.
 4. **Bug Tracker**: Production bug reports for Tichu on BGA are tracked at [https://boardgamearena.com/bugs?game=1237](https://boardgamearena.com/bugs?game=1237).
 
-For detailed architectural notes and AI agent guidelines, see [AGENTS.md](./AGENTS.md).
+For detailed architectural notes and AI agent guidelines, see [AGENTS.md](./AGENTS.md) and [docs/BGA_OPEN_SOURCE_ECOSYSTEM.md](./docs/BGA_OPEN_SOURCE_ECOSYSTEM.md).
