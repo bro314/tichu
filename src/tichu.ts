@@ -585,6 +585,13 @@ export class Tichu {
       this.gamedatas.passes = [];
       this.gamedatas.lastComboPlayer = "0";
       this.gamedatas.lastComboDescription = "";
+      this.gamedatas.lastCombo = {
+        cards: [],
+        type: 99,
+        phoenixValue: null,
+        description: "",
+        player: "0",
+      } as any;
       for (const id in this.gamedatas.players) {
         this.gamedatas.players[id]!.call_tichu = Bet.NO_BET_YET;
         this.gamedatas.players[id]!.call_grand_tichu = Bet.NO_BET_YET;
@@ -638,6 +645,13 @@ export class Tichu {
       this.gamedatas.passes = [];
       this.gamedatas.lastComboPlayer = "0";
       this.gamedatas.lastComboDescription = "";
+      this.gamedatas.lastCombo = {
+        cards: [],
+        type: 99,
+        phoenixValue: null,
+        description: "",
+        player: "0",
+      } as any;
       for (const p of Object.values(this.gamedatas.players || {})) {
         p.pass = "0";
       }

@@ -1,4 +1,5 @@
 import { GameModel } from "./game-model";
+import { Combo, Hand } from "./combo-validator";
 import "./tichu-card";
 import "./tichu-stock";
 import "./tichu-animation-layer";
@@ -57,6 +58,9 @@ if (typeof document !== "undefined" && document.documentElement) {
   );
 }
 
-if (typeof window !== "undefined" && !window.gameModel) {
-  window.gameModel = new GameModel();
+if (typeof window !== "undefined") {
+  if (!window.gameModel) {
+    window.gameModel = new GameModel();
+  }
+  (window as any).__tichuComboValidator = { Combo, Hand };
 }

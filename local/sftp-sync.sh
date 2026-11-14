@@ -98,7 +98,7 @@ done
 
 echo "Uploading ${#FILES[@]} file(s) to ${USER}@${HOST}:${REMOTE_PATH}: ${FILES[*]}"
 
-/usr/bin/expect -c "
+OUTPUT=$(/usr/bin/expect -c "
 set timeout 30
 spawn sftp -P ${PORT} -o StrictHostKeyChecking=no ${USER}@${HOST}
 expect \"Password:\"
@@ -107,4 +107,15 @@ expect \"sftp>\"
 $(printf "%b" "$SFTP_CMDS")
 send \"bye\r\"
 expect eof
-"
+")
+printf "%s\n" "$OUTPUT"
+
+AFTER_CONNECT=$(printf "%s\n" "$OUTPUT" | awk '/Connected to/{flag=1; next} flag')
+if [[ -z "$AFTER_CONNECT" ]]; then
+  echo "Error: SFTP did not connect cleanly." >&2
+  exit 1
+fi
+if printf "%s\n" "$AFTER_CONNECT" | grep -qE "Permission denied|not found|Failure|Couldn't"; then
+  echo "Error: SFTP upload failed (see errors above)." >&2
+  exit 1
+fi

@@ -311,6 +311,77 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   let consoleVerbose = true;
   let speedMode: "normal" | "fast" | "instant" = "normal";
 
+  interface ConsoleIssue {
+    ts: string;
+    level: "error" | "warn";
+    source: string;
+    message: string;
+  }
+
+  const consoleIssues: ConsoleIssue[] = [];
+
+  function formatConsoleArg(arg: any): string {
+    if (typeof arg === "string") return arg;
+    if (arg instanceof Error) return arg.stack || arg.message || String(arg);
+    if (arg === null || arg === undefined) return String(arg);
+    try {
+      return JSON.stringify(arg);
+    } catch (_e) {
+      return String(arg);
+    }
+  }
+
+  function recordConsoleIssue(level: "error" | "warn", source: string, args: any[]) {
+    const message = args.map(formatConsoleArg).join(" ").trim();
+    if (!message) return;
+    if (consoleIssues.length >= 200) {
+      consoleIssues.shift();
+    }
+    consoleIssues.push({
+      ts: new Date().toISOString(),
+      level,
+      source,
+      message,
+    });
+  }
+
+  function hookWindowConsole(targetWin: any, prefix: string) {
+    if (!targetWin || targetWin.__tichuConsoleWatched) return;
+    targetWin.__tichuConsoleWatched = true;
+    try {
+      const origErr = targetWin.console?.error;
+      if (typeof origErr === "function") {
+        targetWin.console.error = function (...args: any[]) {
+          recordConsoleIssue("error", `${prefix}.console.error`, args);
+          return origErr.apply(this, args);
+        };
+      }
+      const origWarn = targetWin.console?.warn;
+      if (typeof origWarn === "function") {
+        targetWin.console.warn = function (...args: any[]) {
+          recordConsoleIssue("warn", `${prefix}.console.warn`, args);
+          return origWarn.apply(this, args);
+        };
+      }
+      targetWin.addEventListener("error", (ev: any) => {
+        const msg = ev?.error ? formatConsoleArg(ev.error) : ev?.message || "Unknown window error";
+        recordConsoleIssue("error", `${prefix}.window.error`, [msg]);
+      });
+      targetWin.addEventListener("unhandledrejection", (ev: any) => {
+        recordConsoleIssue("error", `${prefix}.unhandledrejection`, [ev?.reason ?? "Rejection"]);
+      });
+    } catch (_e) {
+      // Ignore cross-origin frame access errors
+    }
+  }
+
+  hookWindowConsole(win, "iframe");
+  try {
+    if (window.parent && window.parent !== window) {
+      hookWindowConsole(window.parent, "parent");
+    }
+  } catch (_e) {}
+
   function logAnnounce(tag: string, msg: string, color = "#58a6ff") {
     if (!consoleVerbose) return;
     try {
@@ -385,7 +456,31 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     return actionsRunning > 0 || sitecoreRunning > 0 || queueLen > 0 || waitingSync || resyncing;
   }
 
-  function waitUntilIdle(timeoutMs = 15000, settleMs = 50): Promise<void> {
+  function nextMicrotaskTick(): Promise<void> {
+    return Promise.resolve().then(() => Promise.resolve());
+  }
+
+  async function waitLitUpdates(): Promise<void> {
+    await nextMicrotaskTick();
+    try {
+      const els = queryDeepAll(
+        "tichu-hand, tichu-status, tichu-player-panel, tichu-last-played, tichu-pass-area, tichu-action-bar",
+      );
+      const promises: Promise<any>[] = [];
+      for (let i = 0; i < els.length; i++) {
+        const uc = (els[i] as any)?.updateComplete;
+        if (uc && typeof uc.then === "function") promises.push(uc);
+      }
+      if (promises.length > 0) await Promise.all(promises);
+    } catch (_e) {}
+    await nextMicrotaskTick();
+  }
+
+  async function waitUntilIdle(timeoutMs = 15000, settleMs = 50): Promise<void> {
+    if (speedMode === "instant" && !isQueueBusy()) {
+      await nextMicrotaskTick();
+      if (!isQueueBusy()) return;
+    }
     return new Promise((resolve) => {
       const start = Date.now();
       let idleSince: number | null = null;
@@ -598,6 +693,18 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           Command: "await tt.runGame(opts?)",
           Description: "Fast-forward entire game to gameEnd (state 99) on Studio",
         },
+        {
+          Command: "await tt.actMyTurn()",
+          Description: "Play 1 legal move strictly for this tab's player (zero zombie turns)",
+        },
+        {
+          Command: "await tt.startAutoPlayMe(opts?)",
+          Description: "Auto-play this tab's player until gameEnd while watching console",
+        },
+        {
+          Command: "tt.getConsoleIssues()",
+          Description: "List all captured console errors/warnings and breadcrumb warnings",
+        },
       ];
       window.console.table(rows);
       return rows;
@@ -732,6 +839,8 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         hand,
         handCodes: hand.map((c: any) => c.code),
         buttons,
+        consoleIssueCount: tt.getConsoleIssues().length,
+        consoleIssues: tt.getConsoleIssues(),
       };
 
       if (logToConsole) {
@@ -947,7 +1056,14 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }
 
       const toGiveStr = chosenCards.map((c) => c.id).join(";") + ";";
-      return tt.ajax("giveTheCards", { cards: toGiveStr });
+      try {
+        return await tt.ajax("giveTheCards", { cards: toGiveStr });
+      } catch (err) {
+        if (typeof ui.onResetPassCards === "function") {
+          ui.onResetPassCards();
+        }
+        throw err;
+      }
     },
 
     async passAllCards(cards?: any) {
@@ -1011,7 +1127,24 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           : st && st.active_player
             ? Number(st.active_player)
             : undefined;
-      return tt.ajax("collect", {}, targetSeat);
+      const isViewerCollect =
+        ui && (!targetSeat || Number(resolvePlayerId(targetSeat)) === Number(ui.player_id));
+      if (isViewerCollect) {
+        ui.collectSent = true;
+      }
+      try {
+        return await tt.ajax("collect", {}, targetSeat);
+      } catch (err) {
+        if (
+          isViewerCollect &&
+          ui.gamedatas?.gamestate?.name === "confirmTrick" &&
+          typeof ui.isCurrentPlayerActive === "function" &&
+          ui.isCurrentPlayerActive()
+        ) {
+          ui.collectSent = false;
+        }
+        throw err;
+      }
     },
 
     async wish(rank: any = 15, seat?: any) {
@@ -1323,6 +1456,572 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         tableviewUrl: `https://studio.boardgamearena.com/tableview?table=${newTableId}`,
       };
     },
+
+    getConsoleIssues() {
+      const ui = getUi();
+      const issues: ConsoleIssue[] = [...consoleIssues];
+      const breadcrumbs = ui && Array.isArray(ui.debugBreadcrumbs) ? ui.debugBreadcrumbs : [];
+      for (let i = 0; i < breadcrumbs.length; i++) {
+        const b = breadcrumbs[i];
+        if (b && b.cat === "warn") {
+          const msg =
+            `[tichu breadcrumb] ${b.name} ${b.detail ? JSON.stringify(b.detail) : ""}`.trim();
+          if (!issues.some((existing) => existing.message.indexOf(b.name) !== -1)) {
+            issues.push({
+              ts: b.ts || new Date().toISOString(),
+              level: "warn",
+              source: "tichu.breadcrumb",
+              message: msg,
+            });
+          }
+        }
+      }
+      return issues;
+    },
+
+    clearConsoleIssues() {
+      consoleIssues.length = 0;
+      return [];
+    },
+
+    async actMyTurn() {
+      const ui = getUi();
+      if (!ui || !ui.gamedatas) {
+        throw new Error("window.gameui or gamedatas is not initialized");
+      }
+      await waitUntilIdle(5000, 30);
+      await waitLitUpdates();
+
+      const cur = tt.status(false);
+      if (!cur) return { acted: false, reason: "no_status", assertionsPassed: 0 };
+      if (cur.state.name === "gameEnd" || cur.state.id === 99) {
+        return { acted: false, reason: "game_end", status: cur, assertionsPassed: 0 };
+      }
+      if (cur.state.type === "game") {
+        return { acted: false, reason: "game_state", status: cur, assertionsPassed: 0 };
+      }
+
+      let assertionsPassed = 0;
+      tt.assertUI();
+      assertionsPassed++;
+
+      if (!cur.isMyTurn) {
+        return { acted: false, reason: "not_my_turn", status: cur, assertionsPassed };
+      }
+
+      let actionDesc = "";
+      switch (cur.state.name) {
+        case "grandTichuBets": {
+          if ((ui.gamedatas.hand || []).length !== 8) {
+            if (ui.notifqueue && !ui.notifqueue.notificationResendInProgress) {
+              ui.notifqueue.resynchronizeNotifications?.(false);
+            }
+            return { acted: false, reason: "waiting_8_cards", status: cur, assertionsPassed };
+          }
+          await tt.betGrandTichu(0);
+          actionDesc = "grandTichuBet(0)";
+          break;
+        }
+        case "giveCards": {
+          if ((ui.gamedatas.hand || []).length < 14) {
+            if (ui.notifqueue && !ui.notifqueue.notificationResendInProgress) {
+              ui.notifqueue.resynchronizeNotifications?.(false);
+            }
+            return { acted: false, reason: "waiting_14_cards", status: cur, assertionsPassed };
+          }
+          await tt.giveCards();
+          actionDesc = "giveCards(3)";
+          break;
+        }
+        case "showPassedCards": {
+          await tt.ajax("acceptCards", {});
+          actionDesc = "acceptCards";
+          break;
+        }
+        case "playComboOpen":
+        case "playCombo": {
+          const handCards = ui.gamedatas.hand || [];
+          if (handCards.length === 0) {
+            throw new Error(`isMyTurn=true in ${cur.state.name} with 0 cards in hand`);
+          }
+          const cv = (window as any).__tichuComboValidator;
+          if (!cv || !cv.Hand || !cv.Combo) {
+            throw new Error("__tichuComboValidator is missing on window");
+          }
+          const hand = new cv.Hand(handCards);
+          const gmState = (window as any).gameModel?.getState?.();
+          const rawLast = gmState?.trickLastCombo ?? ui.gamedatas.lastCombo;
+          const lastCombo =
+            cur.state.name === "playComboOpen"
+              ? cv.Combo.noCombo
+              : cv.Combo.fromLastComboState(rawLast);
+          const wish = Number(ui.gamedatas.mahjongWish || 0);
+          const mustWish =
+            wish >= 2 && wish <= 14 && hand.canFulFillWish(wish, lastCombo) ? wish : 0;
+          const playable = hand.findPlayableCombo(lastCombo, mustWish);
+          if (playable !== null) {
+            const ids = playable.cards.map((c: any) => `#${c.id}`).join(";");
+            await tt.play(ids);
+            actionDesc = `play(${playable.cards.map((c: any) => formatCardCode(c)).join(",")})`;
+          } else if (cur.state.name === "playCombo") {
+            await tt.pass(true);
+            actionDesc = "pass(once)";
+          } else {
+            throw new Error("No playable combo found in playComboOpen");
+          }
+          break;
+        }
+        case "mahjongPlay": {
+          const handRanks = new Set((ui.gamedatas.hand || []).map((c: any) => Number(c.type_arg)));
+          const wishRank = Number(cur.round) === 1 && !handRanks.has(8) ? 8 : 15;
+          await tt.wish(wishRank);
+          actionDesc = `wish(${wishRank})`;
+          break;
+        }
+        case "phoenixPlay": {
+          await tt.choosePhoenix();
+          actionDesc = "choosePhoenix";
+          break;
+        }
+        case "confirmTrick": {
+          await tt.collect();
+          actionDesc = "collect";
+          break;
+        }
+        case "chooseDragonGift": {
+          await tt.giveDragon(0);
+          actionDesc = "giveDragon(0)";
+          break;
+        }
+        case "playBomb": {
+          await tt.cancelBomb();
+          actionDesc = "cancelBomb";
+          break;
+        }
+        default:
+          throw new Error(`Unhandled active state in actMyTurn: ${cur.state.name}`);
+      }
+
+      await waitUntilIdle(5000, 30);
+      await waitLitUpdates();
+      const after = tt.status(false);
+      if (after && after.state.name !== "endRound" && after.state.name !== "newRound") {
+        tt.assertUI();
+        assertionsPassed++;
+      }
+
+      return {
+        acted: true,
+        stateBefore: cur.state.name,
+        action: actionDesc,
+        status: after,
+        assertionsPassed,
+      };
+    },
+
+    autoPlayStatus() {
+      const cur = tt.status(false);
+      const issues = tt.getConsoleIssues();
+      return {
+        running: autoPlayCtrl.running,
+        tableId: cur?.tableId ?? autoPlayCtrl.tableId,
+        player: cur?.viewer ?? autoPlayCtrl.player,
+        playerId: cur?.viewerId ?? autoPlayCtrl.playerId,
+        seat: autoPlayCtrl.seat,
+        movesPlayed: autoPlayCtrl.movesPlayed,
+        assertionsPassed: autoPlayCtrl.assertionsPassed,
+        round: cur?.round ?? autoPlayCtrl.lastRound,
+        trick: cur?.trick ?? autoPlayCtrl.lastTrick,
+        state: cur?.state ?? { name: autoPlayCtrl.lastState },
+        players: cur?.players?.map((p: any) => ({
+          seat: p.seat,
+          id: p.id,
+          name: p.name,
+          score: p.score,
+          handCount: p.handCount,
+        })),
+        consoleIssueCount: issues.length,
+        consoleIssues: issues,
+        actionErrors: autoPlayCtrl.actionErrors,
+        elapsedMs: autoPlayCtrl.startedAt ? Date.now() - autoPlayCtrl.startedAt : 0,
+      };
+    },
+
+    stopAutoPlayMe(reason = "stopped_by_user") {
+      if (!autoPlayCtrl.running) {
+        return tt.autoPlayStatus();
+      }
+      autoPlayCtrl.stopRequested = true;
+      autoPlayCtrl.stopReason = reason;
+      autoPlayCtrl.kick();
+      return tt.autoPlayStatus();
+    },
+
+    startAutoPlayMe({
+      timeoutMs = 600000,
+      staggerMs = 350,
+    }: { timeoutMs?: number; staggerMs?: number } = {}) {
+      if (autoPlayCtrl.running) {
+        tt.stopAutoPlayMe("restarted");
+      }
+      tt.setSpeed("instant");
+      const ui = getUi();
+      const initStatus = tt.status(false);
+      if (!ui || !initStatus) {
+        throw new Error("Game UI not ready for startAutoPlayMe");
+      }
+      const players = getSortedPlayers();
+      const myPlayerId = Number(ui.player_id);
+      const mySeat = players.findIndex((p: any) => Number(p.id) === myPlayerId);
+
+      autoPlayCtrl.running = true;
+      autoPlayCtrl.stopRequested = false;
+      autoPlayCtrl.stopReason = "";
+      autoPlayCtrl.tableId = initStatus.tableId;
+      autoPlayCtrl.player = initStatus.viewer;
+      autoPlayCtrl.playerId = myPlayerId;
+      autoPlayCtrl.seat = mySeat;
+      autoPlayCtrl.movesPlayed = 0;
+      autoPlayCtrl.assertionsPassed = 0;
+      autoPlayCtrl.actionErrors = [];
+      autoPlayCtrl.moveHistory = [];
+      autoPlayCtrl.startedAt = Date.now();
+      autoPlayCtrl.lastRound = initStatus.round;
+      autoPlayCtrl.lastTrick = initStatus.trick;
+      autoPlayCtrl.lastState = initStatus.state.name;
+
+      logAnnounce(
+        "[TICHU AUTOPLAY]",
+        `▶ Starting real-player loop for ${initStatus.viewer} (seat ${mySeat}) on Table #${initStatus.tableId}`,
+        "#3fb950",
+      );
+
+      return new Promise((resolve) => {
+        let ticking = false;
+        let finished = false;
+        let lastProgressAt = Date.now();
+        let lastResyncAt = 0;
+        let multiactiveKey = "";
+        let multiactiveSeenAt = 0;
+        let intervalId: number | null = null;
+        const dojoSubs: any[] = [];
+        const mc = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
+
+        const outEl = document.getElementById("tt_test_output");
+        const writeLiveOutput = (cur: any) => {
+          if (!outEl || finished) return;
+          const issues = tt.getConsoleIssues();
+          outEl.setAttribute("data-done", "0");
+          outEl.setAttribute("data-status", "running");
+          outEl.style.color = "#d29922";
+          outEl.textContent = JSON.stringify({
+            running: true,
+            tableId: cur?.tableId ?? autoPlayCtrl.tableId,
+            player: autoPlayCtrl.player,
+            seat: autoPlayCtrl.seat,
+            movesPlayed: autoPlayCtrl.movesPlayed,
+            assertionsPassed: autoPlayCtrl.assertionsPassed,
+            round: cur?.round ?? autoPlayCtrl.lastRound,
+            trick: cur?.trick ?? autoPlayCtrl.lastTrick,
+            state: cur?.state?.name ?? autoPlayCtrl.lastState,
+            scores: cur?.players?.map((p: any) => p.score) ?? [],
+            consoleIssueCount: issues.length,
+            actionErrorCount: autoPlayCtrl.actionErrors.length,
+            elapsedMs: Date.now() - autoPlayCtrl.startedAt,
+          });
+        };
+
+        const cleanup = () => {
+          if (intervalId !== null) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+          const dojoObj = (window as any).dojo;
+          if (dojoObj && typeof dojoObj.unsubscribe === "function") {
+            for (let i = 0; i < dojoSubs.length; i++) {
+              try {
+                dojoObj.unsubscribe(dojoSubs[i]);
+              } catch (_e) {}
+            }
+          }
+          dojoSubs.length = 0;
+          if (mc) {
+            try {
+              mc.port1.close();
+              mc.port2.close();
+            } catch (_e) {}
+          }
+          autoPlayCtrl.running = false;
+          autoPlayCtrl.kick = () => {};
+        };
+
+        const finish = (okOverride?: boolean, extraError?: string) => {
+          if (finished) return;
+          finished = true;
+          cleanup();
+          const cur = tt.status(false);
+          const issues = tt.getConsoleIssues();
+          if (extraError) {
+            autoPlayCtrl.actionErrors.push({
+              ts: new Date().toISOString(),
+              state: cur?.state?.name || autoPlayCtrl.lastState,
+              error: extraError,
+            });
+          }
+          const ok =
+            okOverride !== undefined
+              ? okOverride && issues.length === 0 && autoPlayCtrl.actionErrors.length === 0
+              : (cur?.state?.name === "gameEnd" || cur?.state?.id === 99) &&
+                issues.length === 0 &&
+                autoPlayCtrl.actionErrors.length === 0;
+          const summary = {
+            ok,
+            tableId: cur?.tableId ?? autoPlayCtrl.tableId,
+            player: autoPlayCtrl.player,
+            playerId: autoPlayCtrl.playerId,
+            seat: autoPlayCtrl.seat,
+            movesPlayed: autoPlayCtrl.movesPlayed,
+            assertionsPassed: autoPlayCtrl.assertionsPassed,
+            round: cur?.round ?? autoPlayCtrl.lastRound,
+            trick: cur?.trick ?? autoPlayCtrl.lastTrick,
+            state: cur?.state ?? { name: autoPlayCtrl.lastState },
+            players:
+              cur?.players?.map((p: any) => ({
+                seat: p.seat,
+                id: p.id,
+                name: p.name,
+                score: p.score,
+              })) ?? [],
+            consoleIssueCount: issues.length,
+            consoleIssues: issues,
+            actionErrors: autoPlayCtrl.actionErrors,
+            stopReason: autoPlayCtrl.stopReason || undefined,
+            elapsedMs: Date.now() - autoPlayCtrl.startedAt,
+            moveHistory: autoPlayCtrl.moveHistory.slice(-25),
+          };
+          logAnnounce(
+            "[TICHU AUTOPLAY]",
+            `${ok ? "✔ DONE" : "✘ FINISHED WITH ISSUES"} — ${summary.player}: moves=${summary.movesPlayed}, assertions=${summary.assertionsPassed}, issues=${summary.consoleIssueCount}, errors=${summary.actionErrors.length}`,
+            ok ? "#3fb950" : "#f85149",
+          );
+          resolve(summary);
+        };
+
+        const checkPrevpacketBuffer = () => {
+          const nq = ui?.notifqueue;
+          if (!nq || !Array.isArray(nq.prevpacketBuffer) || nq.prevpacketBuffer.length === 0) {
+            return;
+          }
+          if (nq.notificationResendInProgress) return;
+          const now = Date.now();
+          let oldestAge = 0;
+          for (let i = 0; i < nq.prevpacketBuffer.length; i++) {
+            const age = now - Number(nq.prevpacketBuffer[i]?.bufferedAt || now);
+            if (age > oldestAge) oldestAge = age;
+          }
+          if (oldestAge > 350 && now - lastResyncAt > 500) {
+            lastResyncAt = now;
+            nq.resynchronizeNotifications?.(false);
+          }
+        };
+
+        const tick = async () => {
+          if (ticking || finished) return;
+          if (autoPlayCtrl.stopRequested) {
+            finish(false, autoPlayCtrl.stopReason || "stopped");
+            return;
+          }
+          if (Date.now() - autoPlayCtrl.startedAt > timeoutMs) {
+            finish(false, `AutoPlay timed out after ${timeoutMs}ms`);
+            return;
+          }
+          ticking = true;
+          try {
+            checkPrevpacketBuffer();
+            if (isQueueBusy()) {
+              return;
+            }
+            await waitLitUpdates();
+            const cur = tt.status(false);
+            if (!cur) return;
+
+            const stateSig = `${cur.round}:${cur.trick}:${cur.state.name}:${cur.activePlayerId}:${cur.multiactiveIds.join(",")}`;
+            if (
+              cur.round !== autoPlayCtrl.lastRound ||
+              cur.trick !== autoPlayCtrl.lastTrick ||
+              cur.state.name !== autoPlayCtrl.lastState
+            ) {
+              lastProgressAt = Date.now();
+            }
+            autoPlayCtrl.lastRound = cur.round;
+            autoPlayCtrl.lastTrick = cur.trick;
+            autoPlayCtrl.lastState = cur.state.name;
+            writeLiveOutput(cur);
+
+            if (cur.state.name === "gameEnd" || cur.state.id === 99) {
+              finish();
+              return;
+            }
+
+            if (cur.state.type === "multipleactiveplayer" && cur.isMyTurn) {
+              const key = `${cur.round}:${cur.state.name}`;
+              if (multiactiveKey !== key) {
+                multiactiveKey = key;
+                multiactiveSeenAt = Date.now();
+              }
+              const targetWait = Math.max(0, mySeat) * staggerMs;
+              const elapsedWait = Date.now() - multiactiveSeenAt;
+              if (elapsedWait < targetWait) {
+                setTimeout(scheduleKick, Math.max(20, targetWait - elapsedWait));
+                return;
+              }
+            } else {
+              multiactiveKey = "";
+            }
+
+            if (!cur.isMyTurn) {
+              if (
+                Date.now() - lastProgressAt > 15000 &&
+                Date.now() - lastResyncAt > 5000 &&
+                ui.notifqueue &&
+                !ui.notifqueue.notificationResendInProgress
+              ) {
+                lastResyncAt = Date.now();
+                ui.notifqueue.resynchronizeNotifications?.(false);
+              }
+              return;
+            }
+
+            let actedOk = false;
+            let lastErr: any = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
+              try {
+                const res = await tt.actMyTurn();
+                autoPlayCtrl.assertionsPassed += res.assertionsPassed || 0;
+                if (res.acted) {
+                  autoPlayCtrl.movesPlayed++;
+                  lastProgressAt = Date.now();
+                  autoPlayCtrl.moveHistory.push({
+                    move: autoPlayCtrl.movesPlayed,
+                    round: cur.round,
+                    trick: cur.trick,
+                    state: res.stateBefore || cur.state.name,
+                    action: res.action || "",
+                  });
+                  if (autoPlayCtrl.moveHistory.length > 50) {
+                    autoPlayCtrl.moveHistory.shift();
+                  }
+                  writeLiveOutput(res.status || tt.status(false));
+                  actedOk = true;
+                } else if (res.reason === "waiting_8_cards" || res.reason === "waiting_14_cards") {
+                  setTimeout(scheduleKick, 120);
+                  actedOk = true;
+                } else {
+                  actedOk = true;
+                }
+                break;
+              } catch (err: any) {
+                lastErr = err;
+                const msg = (err && err.message) || String(err);
+                autoPlayCtrl.actionErrors.push({
+                  ts: new Date().toISOString(),
+                  state: cur.state.name,
+                  error: `attempt ${attempt + 1} (${stateSig}): ${msg}`,
+                });
+                if (attempt < 2) {
+                  await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+                  await waitUntilIdle(5000, 30);
+                  const recheck = tt.status(false);
+                  if (!recheck || !recheck.isMyTurn || recheck.state.name === "gameEnd") {
+                    actedOk = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (!actedOk && lastErr) {
+              finish(false, (lastErr && lastErr.message) || String(lastErr));
+              return;
+            }
+            const afterCur = tt.status(false);
+            if (afterCur && (afterCur.state.name === "gameEnd" || afterCur.state.id === 99)) {
+              finish();
+              return;
+            }
+          } catch (outerErr: any) {
+            finish(false, (outerErr && outerErr.message) || String(outerErr));
+          } finally {
+            ticking = false;
+          }
+        };
+
+        let kickQueued = false;
+        const scheduleKick = () => {
+          if (finished || kickQueued) return;
+          kickQueued = true;
+          const runKick = () => {
+            kickQueued = false;
+            void tick();
+          };
+          if (mc) {
+            mc.port2.postMessage(null);
+          } else {
+            void nextMicrotaskTick().then(runKick);
+          }
+        };
+        if (mc) {
+          mc.port1.onmessage = () => {
+            kickQueued = false;
+            void tick();
+          };
+        }
+
+        autoPlayCtrl.kick = scheduleKick;
+
+        const dojoObj = (window as any).dojo;
+        if (dojoObj && typeof dojoObj.subscribe === "function") {
+          for (const topic of [
+            "gameStateChange",
+            "gameStateMultipleActiveUpdate",
+            "dealCards",
+            "acceptCards",
+            "playCombo",
+            "pass",
+            "newScores",
+          ]) {
+            dojoSubs.push(dojoObj.subscribe(topic, null, () => scheduleKick()));
+          }
+        }
+
+        intervalId = window.setInterval(scheduleKick, 250);
+        scheduleKick();
+      });
+    },
+  };
+
+  const autoPlayCtrl = {
+    running: false,
+    stopRequested: false,
+    stopReason: "",
+    tableId: 0,
+    player: "",
+    playerId: 0,
+    seat: -1,
+    movesPlayed: 0,
+    assertionsPassed: 0,
+    actionErrors: [] as Array<{ ts: string; state: string; error: string }>,
+    moveHistory: [] as Array<{
+      move: number;
+      round: number;
+      trick: number;
+      state: string;
+      action: string;
+    }>,
+    startedAt: 0,
+    lastRound: 0,
+    lastTrick: 0,
+    lastState: "",
+    kick: () => {},
   };
 
   function mountStudioTestBar() {
@@ -1779,9 +2478,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         const res = await fn();
         lastJsonValue = res;
         hasJsonValue = true;
-        outEl.setAttribute("data-status", "pass");
+        const isFail = Boolean(res && typeof res === "object" && res.ok === false);
+        outEl.setAttribute("data-status", isFail ? "fail" : "pass");
         outEl.setAttribute("data-done", "1");
-        outEl.style.color = "#3fb950";
+        outEl.style.color = isFail ? "#f85149" : "#3fb950";
         renderOutputText();
       } catch (err: any) {
         lastJsonValue = {
