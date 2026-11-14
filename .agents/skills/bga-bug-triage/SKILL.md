@@ -26,11 +26,15 @@ Whenever the user references a reported bug (by ID, title, or topic) or asks to 
 2. **Choose the Fastest Reproduction Tier**:
    - **Pure card/combo/hand/wish bug**: Write a failing test in [`tests/ComboTest.php`](file:///Users/brohlfs/git/tichu/tests/ComboTest.php) or [`tests/HandTest.php`](file:///Users/brohlfs/git/tichu/tests/HandTest.php) and run `npm run test:unit`.
    - **State machine / scoring / autopass / locking bug**: Add a scenario or regression test in [`local/scenarios.php`](file:///Users/brohlfs/git/tichu/local/scenarios.php) / [`local/integration-tests.php`](file:///Users/brohlfs/git/tichu/local/integration-tests.php) (run `npm test`) or [`local/race-tests.php`](file:///Users/brohlfs/git/tichu/local/race-tests.php) (run `npm run test:race`).
-   - **Full production SQL dump (`bug_<id>.sql`)**: Import locally into MySQL 8.0 (`ebd_tichu_1`) with:
+   - **Full production SQL dump (`bug_<id>.sql`)**: Import locally into MySQL 8.0 (`ebd_tichu_1`) and inspect its state/cards/logs with:
      ```bash
-     npm run bug:import -- path/to/bug_<id>.sql [--state=75]
+     npm run bug:import -- path/to/bug_<id>.sql [--state=75] [--inspect]
+     npm run bug:inspect
      ```
      Then start `npm run local` and inspect `http://127.0.0.1:8080`. On BGA Studio, [`DebugTrait`](file:///Users/brohlfs/git/tichu/modules/DebugTrait.php) exposes `loadBugReportSQL(int $reportId, array $studioPlayers)` plus `#[Debug(reload: true)]` helpers (`debug_reopenFinishedGame`, `debug_goToEndOfRound`, `debug_dealBombToCurrentPlayer`).
+   - **Live browser & production log inspection**:
+     - Client console: BGA attaches the tail of the browser JS console to bug reports. [`src/tichu.ts`](file:///Users/brohlfs/git/tichu/src/tichu.ts) logs `[tichu]` state/action/notif breadcrumbs (last 50 in `window.__tichuBreadcrumbs`), warns on hand-count mismatches or deploy version mismatches (`checkVersion`), and exposes `window.tichuDebugSnapshot()` for one-command inspection of state, hand, trick, prefs, and breadcrumbs.
+     - Server production logs: [`tichu.game.php`](file:///Users/brohlfs/git/tichu/tichu.game.php) emits structured `$this->logProdWarn(...)` (`game_err_tichu.log`) on lock/stale-state rejections, card-count mismatches, missing logs, and zombie fallbacks, and records `grandTichuBet`, `giveCards`, `acceptCards`, `mahjongWish`, `chooseDragonGift`, and `zombieTurn` in `actionlog` alongside tricks/combos/bets.
 3. **Remapping Production SQL Dumps Safely (7 `player_id` Surfaces)**:
    - Production dumps use live BGA `player_id`s and often end in state `99` (`ST_GAME_END`).
    - **Never** do a naive 1-pass `player_id` replacement (breaks if old/target IDs overlap or seats swap). [`DebugTrait::loadBugReportSQL()`](file:///Users/brohlfs/git/tichu/modules/DebugTrait.php) performs **two-phase offset remapping** (`oldId -> maxId + 1000 + idx -> targetId`, e.g., local/Studio `dashwood0`..`dashwood3` = `2385074`..`2385077`) across **all 7 Tichu `player_id` surfaces**:

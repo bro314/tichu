@@ -1625,6 +1625,14 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   );
   assertSameVal(P3, $remappedRecipients['recipient'], 'remapActionLogArg should remap recipient');
   assertSameVal([P1, P2, P3], $remappedRecipients['recipients'], 'remapActionLogArg should remap recipients list');
+
+  // Verify inspectBugDatabase() & formatBugInspectionReport() against imported state.
+  $inspection = inspectBugDatabase();
+  assertSameVal(56, $inspection['cards']['totalCards'], 'Inspection should count all 56 cards');
+  assertTrueVal((bool) $inspection['cards']['integrityOk'], 'Inspection integrityOk should be true');
+  $report = formatBugInspectionReport($inspection);
+  assertTrueVal(str_contains($report, '56/56'), 'Inspection report should include 56/56 card summary');
+  assertTrueVal(str_contains($report, 'playCombo'), 'Inspection report should include overridden playCombo state name');
 }
 
 $tests = [
