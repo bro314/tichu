@@ -45,14 +45,14 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 | `states.inc.php`, `material.inc.php`                                                                                 | BGA finite state machine (`$machinestates`) and static card/combo material + `modules/` imports                                                                                                          |
 | `gameinfos.inc.php`, `gameoptions.inc.php`, `stats.inc.php`, `version.php`                                           | BGA metadata, options (`100`–`102`) & prefs (`100`–`104`), statistics, version file (do not edit `version.php`)                                                                                          |
 | `tichu.css`, `tichu.js`                                                                                              | Stylesheet (themes `0`–`10`, square/list layouts, card sprites) and gitignored ES5+ES6 bundle `tichu.js`                                                                                                 |
-| `modules/` (`Constants`, `Combo`, `Hand`, `Utils`)                                                                   | Pure PHP constants, combo validation/comparison (`canBeat`), and hand analysis (`findPlayableCombo`)                                                                                                     |
+| `modules/` (`Constants`, `Combo`, `Hand`, `Utils`, `DebugTrait`)                                                     | Pure PHP constants, combo validation/comparison (`canBeat`), hand analysis (`findPlayableCombo`), and Studio bug SQL loader / `#[Debug]` helpers                                                       |
 | `modules/managers/` (`CardManager`, `LogManager`, `NotificationManager`, `PlayerManager`)                            | `Deck` wrapper (`card`), `actionlog` queries, notifications, teams/seats/bets/autopass                                                                                                                   |
 | `src/tichu.ts`, `src/studio-test.ts`, `src/types/`                                                                   | Lean Dojo adapter, Studio test bar (`window.tt`), `bga-framework.d.ts`, `tichu-contracts.ts`                                                                                                             |
 | `src/elements/` (`elements`, `game-model`, `model`, `combo-validator`, `subscription-controller`, `styles`, `utils`) | RxJS `BehaviorSubject` stores (`GameModel` live, `Model` replay), TS `Combo`/`Hand` validator, Lit controller, shared styles & `hasBomb`                                                                 |
 | `src/elements/tichu-*.ts` (16 Lit Shadow DOM elements)                                                               | `game`, `animation-layer`, `player-panel`, `value-choice`, `last-played`, `pass-area`, `action-bar`, `hand`, `played-cards`, `trick-modal`, `status`, `replay`, `player`, `stock`, `card`, `score-board` |
 | `tests/` (`stubs.php`, `TestUtils.php`, `ComboTest.php`, `HandTest.php`, `combo-validator.test.ts`)                  | PHPUnit unit test suite (~15ms) and TS client combo/hand parity tests (~130ms)                                                                                                                           |
 | `local/` (`Bga/GameFramework/`, `mysql-ctl.sh`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`)         | Local BGA PHP 8 + MySQL 8.0 runner (`ebd_tichu_1`), rule bot, and deterministic test scenarios                                                                                                           |
-| `local/` (`integration-tests.php`, `check-contracts.php`, `race-tests.php`, `sftp-sync.sh`, `js/bga-shim.js`)        | 14-suite backend integration tests, static contract check, multi-worker race stress test, SFTP sync, frontend shim                                                                                       |
+| `local/` (`integration-tests.php`, `check-contracts.php`, `race-tests.php`, `import-bug-sql.php`, `sftp-sync.sh`, `js/bga-shim.js`) | 15-suite backend integration tests, static contract check, multi-worker race stress test, bug SQL CLI importer/inspector, SFTP sync, frontend shim |
 | `docs/`, `plans/`, `img/`                                                                                            | Ecosystem reference, plans (`00`–`14`), sprite sheets (`tichu-cards.png`, `tiki-cards.png`, `tichu-icons*.png`), `tichu_laser.mp3`/`.ogg`                                                                |
 
 ---
@@ -74,7 +74,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 ### Action Log & Quirks
 
-- **`actionlog` Events (`LogManager.php`)**: JSON records (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) for `newRound`, `newTrick`, `combo`, `pass`, `phoenix`, `changePlayer`, `confirm`, and `tichuCall` (`TICHU_CONFIRMATION_TRESHOLD = 60`s).
+- **`actionlog` Events (`LogManager.php`)**: JSON records (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) for `newRound`, `newTrick`, `combo`, `pass`, `phoenix`, `changePlayer`, `confirm`, `tichuCall` (`TICHU_CONFIRMATION_TRESHOLD = 60`s), `grandTichuBet`, `giveCards`, `acceptCards`, `mahjongWish`, `chooseDragonGift`, and `zombieTurn`.
 - **Action Naming Mismatches**:
   - `states.inc.php` `"giveCards"` routes to `giveTheCards` in `tichu.action.php` / `tichu.game.php`.
   - `states.inc.php` `"phoenixPlay"` routes to `choosePhoenix` in `tichu.action.php`.
@@ -95,6 +95,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 - **Session & PHP 8.4**: Never call `getCurrentPlayerId()` inside `setupNewGame()`, `zombieTurn()`, or `arg*()`. Avoid PHP 8.4 warnings in AJAX JSON (`{$var}` not `${var}`, `$this->` not `self::`/`static::`).
 - **Concurrency Locks**: Always call `$this->acquireGameLockOrFail()` first in mutating entry points (`bSelectGlobalsForUpdate = true`, `initTable()` `GET_LOCK` + `REPEATABLE-READ`, `GLOBAL_LOCK_VERSION = 30`). Never enable `$this->bIndependantMultiactiveTable`.
 - **`@thoun` Autopass Invariants**: Audit `player_pass` (`AUTOPASS_NONE`=0, `AUTOPASS_ONCE`=1, `AUTOPASS_TRICK`=2) resets via `PlayerManager::setAutopass` in `stNewTrick`, `stNewRound`, and `stNextPlayer`.
+- **Studio `bga_*` Table Guard & Production Warnings**: Studio's `APP_DbObject::assertNoBgaTable()` throws if `DbQuery()` touches `bga_*` tables (`bga_user_preferences`); `DebugTrait` routes `bga_*` SQL through `$bgaContainer->get(Db::class)` locally only. In production, `$this->trace()` is dropped while `$this->warn()` / `$this->error()` write to `game_err_tichu.log` (used by `$this->logProdWarn()` on lock/card/log anomalies and zombie turns). Read `game_db_version` via `$this->getGameStateValue("game_db_version", 0)` so missing `global_id = 300` rows never emit PHP warnings.
 
 ### Client Bundle, Shadow DOM & UI
 
@@ -105,6 +106,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 - **`ebg/stock` Moves**: Add to destination stock before removing from source stock (`noupdate = true` in loops, then `updateDisplay()`).
 - **Dark Mode & Translations**: Dark mode uses `html[data-theme="dark"]`. Pass literal strings only to `clienttranslate()` (`&dummyTranslations` tests `_()`).
 - **Zero-Reload Preferences (`100`–`104`) & Two-Way Sync**: All 5 prefs use `"needReload" => false`, are read safely via `safeGetPref(prefId, fallback)` (guarding spectator/archive missing `#preference_control_<id>`), update `GameModel` via `onGameUserPreferenceChanged` -> `onPreferenceChange` (no duplicate `initPreferencesObserver()`), and persist in-hand clicks via `persistUserPreference` (which skips `setGameUserPreference` when `isReadOnly()` is `true`). Hand sort order persists in `localStorage` (`tichu_hand_sort_order`).
+- **Client Breadcrumbs, Version Guard & Snapshot (`src/tichu.ts`)**: `getAllDatas` exposes `gameVersion`; `src/tichu.ts` checks version parity (`checkVersion`), logs state/action/notif breadcrumbs into a 50-entry ring buffer (`window.__tichuBreadcrumbs`), warns on hand-count mismatches, and exposes read-only `window.tichuDebugSnapshot()`.
 
 ---
 
@@ -114,10 +116,11 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 - **PATH & Build**: Ensure `/opt/homebrew/bin` is on `PATH`. Always run `npm run build` (`npm test && npm run compile && npm run bundle`) after editing `.ts` or `.php` files.
 - **Test & Dev Commands**:
-  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand` validator tests (`npm run test:validator`, ~130ms) + 14-suite MySQL 8.0 integration tests (~2.7s)
+  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand` validator tests (`npm run test:validator`, ~130ms) + 15-suite MySQL 8.0 integration tests (~2.7s)
   - `npm run test:contracts` — static cross-stack contract checks (`php local/check-contracts.php`)
   - `npm run phpstan` — PHP static analysis (`phpstan.neon`)
   - `npm run test:race` — multi-worker MySQL 8.0 concurrency stress test (~70s, opt-in)
+  - `npm run bug:import -- <file.sql> [--state=<id>] [--inspect]` / `npm run bug:inspect` — import a BGA production bug SQL dump into local MySQL 8.0 (two-phase remapping across all 7 `player_id` surfaces) and print a diagnostic state/card/log summary
   - `npm run local` — local MySQL 8.0 + PHP BGA runner at `http://127.0.0.1:8080` (`window.tt`)
   - `npm run deploy:sftp` / `npm run deploy:sftp:all` — upload `tichu.js` + modified/all deployable files to Studio (~3s)
   - `npm run format` — format TS, JS, CSS, and PHP with Prettier (`npx prettier --write .`)
