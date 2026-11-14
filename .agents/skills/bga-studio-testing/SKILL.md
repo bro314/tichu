@@ -74,6 +74,9 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
 - **Files Ignored from SFTP Upload**:
   `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.agents`, `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `README.md`, `bga-platform`, `docs`, `plans`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, `phpstan.neon`, or `version.php`.
 
+> [!CAUTION]
+> **ABSOLUTE NO-GO — BGA Platform Internals**: Never access BGA platform internals (`$bgaContainer`, `\Bga\GameFramework\Old\Db`, `bga_*` tables, `Reflection*`, `file_get_contents`, `exec`, etc.) in any file uploaded to BGA Studio or production (`tichu.*.php`, `modules/**`). Doing so trips BGA security alerts and causes BGA admins to revoke SFTP and project access. [`local/sftp-sync.sh`](file:///Users/brohlfs/git/tichu/local/sftp-sync.sh) runs `php local/check-contracts.php` before uploading and blocks any violation.
+
 ---
 
 ## 3. CRITICAL Rules for the `browser` Subagent

@@ -106,4 +106,3 @@ Write a fast, zero-dependency PHP CLI validator wired to `"test:contracts": "php
 - [ ] `vendor/bin/phpstan analyse` exits 0 on `tichu.game.php`, `tichu.action.php`, `tichu.view.php`, `modules/`.
 - [ ] `npx tsc --noEmit` exits 0 with zero `any` regressions in `tichu-contracts.ts`.
 - [ ] `npm test` (unit + integration) and `npm run build` exit 0.
-

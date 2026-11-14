@@ -108,4 +108,3 @@ And Tichu's `local/mysql-ctl.sh` + `local/bga-backend.php` already run against a
 - [x] `composer phpstan` (if Plan 01 installed) + `npm test` + `npm run build` pass cleanly.
 - [x] `local/sftp-sync.sh` verified to include `modules/DebugTrait.php`.
 - [ ] Test on some actual bug reports.
-

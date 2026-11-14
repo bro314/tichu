@@ -91,6 +91,9 @@ if [[ ${#FILES[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# Always block upload if any deployable file violates static contracts or BGA platform safety rules.
+php local/check-contracts.php >/dev/null
+
 SFTP_CMDS=""
 for f in "${FILES[@]}"; do
   SFTP_CMDS+="send \"put $f ${REMOTE_PATH}$f\r\"\nexpect \"sftp>\"\n"

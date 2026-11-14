@@ -1,4 +1,4 @@
--- Sanitized synthetic BGA production bug report dump for testing DebugTrait & import-bug-sql.php
+-- Sanitized synthetic BGA production bug report dump for testing LocalBugSqlLoader & import-bug-sql.php
 -- Production player IDs: 90001 (seat 1, Team 0), 90002 (seat 2, Team 1), 90003 (seat 3, Team 0), 90004 (seat 4, Team 1)
 /*!40101 SET NAMES utf8mb4 */;
 

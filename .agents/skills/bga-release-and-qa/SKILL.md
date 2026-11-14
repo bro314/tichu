@@ -53,6 +53,7 @@ Explicit invariant: every state transition that resets or advances trick/round p
   - `getCollectionFromDb($sql)` keys by the first selected column and silently overwrites duplicate keys — always select a unique column first or use `getObjectListFromDB($sql)` (`getObjectListFromDB($sql, true)` for a flat 1D array).
   - Never emit PHP warnings/deprecations in AJAX responses (`JSON_ERROR_SYNTAX`): always use `{$var}` (never `${var}`) and `$this->` (never `self::`/`static::`) for non-static framework instance methods.
   - Never call `getCurrentPlayerId()` inside `setupNewGame()`, `zombieTurn()`, or `arg*()` state methods (throws `"Not logged"`).
+- **ABSOLUTE NO-GO — Platform & Sandbox Boundaries**: No deployed file (`tichu.*.php`, `modules/**`) may ever access BGA platform internals (`$bgaContainer`, `\Bga\GameFramework\Old\Db`, `bga_*` tables such as `bga_user_preferences`, filesystem/process functions like `file_get_contents`/`exec`, or `Reflection*`). Enforced automatically by `npm run test:contracts`.
 
 ---
 

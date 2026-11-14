@@ -840,6 +840,126 @@ foreach ($tsScanIter as $fileInfo) {
 }
 
 // ============================================================================
+// 6. BGA Platform Internals & Sandbox Safety Check (Deployable PHP files)
+// ============================================================================
+if (file_exists("$root/modules/DebugTrait.php")) {
+  addError(
+    $errors,
+    "PlatformSafety",
+    "modules/DebugTrait.php must not exist in deployed modules/; keep debug/SQL loaders in local/"
+  );
+}
+
+$deployablePhpFiles = [];
+foreach (
+  [
+    "tichu.game.php",
+    "tichu.action.php",
+    "tichu.view.php",
+    "material.inc.php",
+    "states.inc.php",
+    "gameinfos.inc.php",
+    "gameoptions.inc.php",
+    "stats.inc.php",
+  ]
+  as $rootPhp
+) {
+  $fullPath = "$root/$rootPhp";
+  if (is_file($fullPath)) {
+    $deployablePhpFiles[] = $fullPath;
+  }
+}
+if (is_dir("$root/modules")) {
+  $modIter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("$root/modules"));
+  foreach ($modIter as $fileInfo) {
+    if ($fileInfo->isFile() && $fileInfo->getExtension() === "php") {
+      $deployablePhpFiles[] = $fileInfo->getPathname();
+    }
+  }
+}
+
+$forbiddenPlatformTokens = [
+  "file_get_contents",
+  "file_put_contents",
+  "fopen",
+  "unlink",
+  "scandir",
+  "glob",
+  "exec",
+  "shell_exec",
+  "proc_open",
+  "passthru",
+  "system",
+  "popen",
+  "ReflectionClass",
+  "ReflectionMethod",
+  "ReflectionProperty",
+  "ReflectionObject",
+  "ReflectionFunction",
+];
+
+foreach ($deployablePhpFiles as $phpFile) {
+  $relPath = str_replace("$root/", "", $phpFile);
+  $code = (string) file_get_contents($phpFile);
+  if (
+    preg_match(
+      '/\$bgaContainer|Bga\\\\GameFramework\\\\Old\\\\Db|\bbga_user_preferences\b|\bmysqldump\b/i',
+      $code,
+      $rawMatch
+    )
+  ) {
+    addError(
+      $errors,
+      "PlatformSafety",
+      "$relPath contains forbidden internal platform reference '{$rawMatch[0]}' (including comments)"
+    );
+  }
+  $tokens = token_get_all($code);
+  foreach ($tokens as $tok) {
+    if (!is_array($tok)) {
+      continue;
+    }
+    $type = $tok[0];
+    $text = $tok[1];
+    $line = $tok[2];
+    if ($type === T_COMMENT || $type === T_DOC_COMMENT) {
+      continue;
+    }
+    if ($type === T_VARIABLE && $text === '$bgaContainer') {
+      addError(
+        $errors,
+        "PlatformSafety",
+        "$relPath:$line references \$bgaContainer (absolute NO-GO in deployed Studio/prod code)"
+      );
+    } elseif ($type === T_STRING && in_array($text, $forbiddenPlatformTokens, true)) {
+      addError(
+        $errors,
+        "PlatformSafety",
+        "$relPath:$line references forbidden filesystem/process/reflection symbol '$text'"
+      );
+    } elseif (
+      in_array($type, [T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true) &&
+      preg_match('/Bga\\\\GameFramework\\\\Old\\\\Db/i', $text)
+    ) {
+      addError(
+        $errors,
+        "PlatformSafety",
+        "$relPath:$line references Bga\\GameFramework\\Old\\Db (absolute NO-GO in deployed Studio/prod code)"
+      );
+    } elseif (
+      ($type === T_CONSTANT_ENCAPSED_STRING || $type === T_ENCAPSED_AND_WHITESPACE) &&
+      preg_match('/\bbga_[a-z0-9_]+\b|Bga\\\\+GameFramework\\\\+Old\\\\+Db/i', $text, $m)
+    ) {
+      addError(
+        $errors,
+        "PlatformSafety",
+        "$relPath:$line references internal platform identifier '{$m[0]}' (keep bga_* table SQL in local/ only)"
+      );
+    }
+  }
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 if (!empty($errors)) {

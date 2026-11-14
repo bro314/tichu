@@ -1609,7 +1609,7 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   assertSameVal('playComboOpen', $game->gamestate->state(true, false, true)['name'], 'Collecting confirmed trick should transition to playComboOpen');
 
   // Verify two-phase collision-free swapping when target IDs overlap with existing IDs.
-  $swapResult = $game->loadBugReportSQL(0, [P2, P3, P0, P1]);
+  $swapResult = \LocalBugSqlLoader::loadBugReportSQL($game, 0, [P2, P3, P0, P1]);
   assertSameVal([P0 => P2, P1 => P3, P2 => P0, P3 => P1], $swapResult['playerMap'], 'Two-phase swap should rotate overlapping player IDs without collision');
   $swappedActive = (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 2');
   assertSameVal(P3, $swappedActive, 'Active player P1 should have swapped cleanly to P3');
@@ -1619,7 +1619,7 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   assertSameVal(ST_PLAY_COMBO, $overrideResult['stateId'], 'Explicit state override should land on ST_PLAY_COMBO');
 
   // Verify recipient & recipients JSON actionlog remapping.
-  $remappedRecipients = \Tichu::remapActionLogArg(
+  $remappedRecipients = \LocalBugSqlLoader::remapActionLogArg(
     ['recipient' => 90004, 'recipients' => [90002, 90003, 90004]],
     $result['playerMap']
   );

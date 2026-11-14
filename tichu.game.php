@@ -5,12 +5,9 @@ use Bga\GameFramework\UserException;
 use Bga\GameFramework\VisibleSystemException;
 
 require_once __DIR__ . "/modules/Constants.php";
-require_once __DIR__ . "/modules/DebugTrait.php";
 
 class Tichu extends Table
 {
-  use DebugTrait;
-
   public static $instance;
 
   public array $colors;
@@ -65,38 +62,19 @@ class Tichu extends Table
   //////////// Concurrency control
   ////////////
   //
-  // BGA runs MySQL (InnoDB) with `@@transaction_isolation = 'SERIALIZABLE'`, where every plain
-  // `SELECT` inside a transaction implicitly acquires `FOR SHARE` (S) locks. In addition, on BGA
-  // Studio (`GamePageAction::performServerAction()`), the platform calls `debugSaveState(4)`
-  // between `initGameTableObjects()` and the game action — which runs `COMMIT`, spawns an
-  // external `mysqldump` subprocess, and runs `BEGIN` to start a second transaction.
-  //
   // Two requests on the same table can overlap (two tabs auto-collecting, a bomb or Tichu call
-  // arriving while the active player plays, 4 players betting/passing at the same time).
+  // arriving while the active player plays, or 4 players betting/passing simultaneously).
   //
-  // Protocol (see AGENTS.md "Concurrency & Locking"):
-  //  1. `$this->bSelectGlobalsForUpdate = true` ensures `TableInfos::get()` in
-  //     `initGameTableObjects()` issues `SELECT ... FROM global WHERE 1 FOR UPDATE` as the very
-  //     first query of the request instead of acquiring shared (S) locks under SERIALIZABLE
-  //     (which would otherwise cause an immediate S-to-X lock-upgrade deadlock when two requests
-  //     start concurrently).
-  //  2. `initTable()` (called at the end of `setTable()`, before Studio's `debugSaveState(4)`
-  //     commits the initial transaction and spawns `mysqldump`) acquires a session-level MySQL
-  //     advisory lock (`GET_LOCK('tichu_table_<id>', 20)`) and switches the session isolation
-  //     level to `REPEATABLE-READ`. Because `GET_LOCK` is held across `COMMIT`/`BEGIN` boundaries,
-  //     overlapping requests cannot run `mysqldump` or interleave transactions while another
-  //     request is in flight.
-  //  3. Every mutating entry point calls `acquireGameLock()` BEFORE any other DB statement. It
-  //     takes an exclusive row lock (`FOR UPDATE`) on global rows 1, 2, and 30 (`lockVersion`)
-  //     to read the latest committed state and detect whether the framework's cached state /
-  //     consistent snapshot is stale (e.g. if a request waited behind an earlier request before
-  //     Studio committed and started the second transaction, or in local MVCC tests).
-  //  4. Stale requests are rejected with a "please try again" UserException (rolled back,
-  //     nothing changes), except where the action only depends on data that is read freshly
-  //     with the lock held (own player row, own cards): Tichu calls, Grand Tichu bets, passing
-  //     cards and autopass settings. Duplicate collect requests are silently ignored.
-  //  5. Every request that changes shared game data increments the version row
-  //     (`bumpGameVersion()`) so that overlapping requests can detect it.
+  // Protocol (see AGENTS.md & .agents/skills/tichu-concurrency-locks/SKILL.md):
+  //  1. `$this->bSelectGlobalsForUpdate = true` locks `global` rows at the start of the request so
+  //     concurrent requests do not trigger InnoDB SERIALIZABLE shared-to-exclusive deadlock upgrades.
+  //  2. `initTable()` acquires a session-level MySQL advisory lock (`GET_LOCK('tichu_table_<id>', 20)`)
+  //     and switches the session isolation level to `REPEATABLE-READ`.
+  //  3. Every mutating entry point calls `acquireGameLock()` BEFORE any other DB statement to lock
+  //     `global` rows 1, 2, and 30 (`lockVersion`) with `FOR UPDATE` and reject stale snapshots.
+  //  4. Out-of-turn player-local actions (Tichu bets, passing cards, autopass toggles) rely on the
+  //     row lock rather than failing on `lockVersion`; duplicate `collect` requests are ignored.
+  //  5. Every shared-state mutation calls `bumpGameVersion()` so overlapping requests detect changes.
 
   protected function initTable(): void
   {
@@ -109,17 +87,13 @@ class Tichu extends Table
       return;
     }
     $this->advisoryLockHeld = true;
-    // Only run MySQL session commands on real BGA servers (where Bga\GameFramework\Old\Db exists).
-    // Local SQLite runner and PHPUnit tests do not define Bga\GameFramework\Old\Db.
-    if (!class_exists(\Bga\GameFramework\Old\Db::class, false)) {
+    $tableId = (int) ($this->table_id ?? 0);
+    if ($tableId <= 0) {
       return;
     }
-    $tableId = (int) ($this->table_id ?? 0);
-    if ($tableId > 0) {
-      $acquired = $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
-      if ((int) $acquired !== 1) {
-        $this->logProdWarn("advisory_lock_timeout", ["acquired" => $acquired]);
-      }
+    $acquired = $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
+    if ((int) $acquired !== 1) {
+      $this->logProdWarn("advisory_lock_timeout", ["acquired" => $acquired]);
     }
     $this->DbQuery("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
   }
