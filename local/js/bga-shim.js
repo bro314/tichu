@@ -1528,8 +1528,18 @@
           this.last_packet_id = pktId;
         }
         // Keep master gamelogs updated for replay mode
+        const pktUid = pkt && Array.isArray(pkt.data) && pkt.data[0] ? pkt.data[0].uid : undefined;
         if (
-          !masterGamelogs.some((existing) => String(existing.packet_id) === String(pkt.packet_id))
+          !masterGamelogs.some((existing) => {
+            const existingUid =
+              existing && Array.isArray(existing.data) && existing.data[0]
+                ? existing.data[0].uid
+                : undefined;
+            return (
+              String(existing.packet_id) === String(pkt.packet_id) &&
+              String(existingUid ?? "") === String(pktUid ?? "")
+            );
+          })
         ) {
           masterGamelogs.push(JSON.parse(JSON.stringify(pkt)));
         }
@@ -1657,6 +1667,9 @@
           this.nextPrivateArgs = null;
         }
         game._transitionToState(newState);
+        if (window.dojo && typeof window.dojo.publish === "function") {
+          window.dojo.publish("gameStateChange", [notif]);
+        }
         return;
       }
 
@@ -1669,6 +1682,9 @@
           game.onUpdateActionButtons(game.gamedatas.gamestate.name, game.gamedatas.gamestate.args);
           game._renderDevBar();
           game._logStateAnnouncement();
+        }
+        if (window.dojo && typeof window.dojo.publish === "function") {
+          window.dojo.publish("gameStateMultipleActiveUpdate", [notif]);
         }
         return;
       }
@@ -1746,6 +1762,10 @@
       this.localOptions = initPayload.options || { gameLength: 2, playerTeams: 1, turnBased: 0 };
       this.notifqueue = new GameNotifQueue(this);
       this._botBusy = false;
+      this._ajaxInFlight = 0;
+      this._pollInFlight = false;
+      this._pollQueued = false;
+      this._abortState = null;
       this._autoBotTimer = null;
       this._autoSwitchTimer = null;
       this._otherPlayerAutoCollectTimeout = null;
@@ -2169,6 +2189,8 @@
           }
         }
       }
+      formParams.append("since", String((this.notifqueue && this.notifqueue.last_packet_id) || 0));
+      this._ajaxInFlight = (this._ajaxInFlight || 0) + 1;
 
       fetch(targetUrl, {
         method: "POST",
@@ -2180,13 +2202,16 @@
       })
         .then((r) => r.json())
         .then((payload) => {
-          if (!payload || payload.status === 0) {
+          if (!payload || payload.status === 0 || payload.status === "0" || payload.error) {
             const errMsg = (payload && payload.error) || "Action failed";
             consoleAnnounce(
               "[TICHU ERROR]",
               `${actionName} failed: ${errMsg}`,
               "font-weight:bold;color:#ff7b72",
             );
+            if (window.tt && typeof window.tt._recordActionError === "function") {
+              window.tt._recordActionError(url, errMsg);
+            }
             this.showMessage(errMsg, "error");
             if (typeof allHandler === "function") {
               allHandler.call(bind || this, true, errMsg);
@@ -2215,9 +2240,20 @@
           }
         })
         .catch((err) => {
-          this.showMessage(err.message || "Network error", "error");
+          const errMsg = (err && err.message) || "Network error";
+          if (window.tt && typeof window.tt._recordActionError === "function") {
+            window.tt._recordActionError(url, errMsg);
+          }
+          this.showMessage(errMsg, "error");
           if (typeof allHandler === "function") {
-            allHandler.call(bind || this, true, err.message);
+            allHandler.call(bind || this, true, errMsg);
+          }
+        })
+        .finally(() => {
+          this._ajaxInFlight = Math.max(0, (this._ajaxInFlight || 0) - 1);
+          if (this._ajaxInFlight === 0 && this._pollQueued) {
+            this._pollQueued = false;
+            this._pollServer();
           }
         });
     }
@@ -2417,10 +2453,35 @@
     }
 
     _syncGamedatasAfterNotif(notif) {
-      if (window.gameModel) return;
       if (!notif || !this.gamedatas) return;
       const gd = this.gamedatas;
       const args = notif.args || {};
+
+      if (notif.type === "grandTichuBet" && args.player_id !== undefined) {
+        const p = gd.players && gd.players[String(args.player_id)];
+        if (p) {
+          p.call_grand_tichu = String(args.bet);
+          if (String(args.bet) === "200") {
+            p.call_tichu = "0";
+          }
+        }
+      } else if (notif.type === "tichuBet" && args.player_id !== undefined) {
+        const p = gd.players && gd.players[String(args.player_id)];
+        if (p) {
+          p.call_tichu = String(args.bet);
+          p.call_grand_tichu = "0";
+        }
+      } else if (notif.type === "newRound" && gd.players) {
+        for (const pId of Object.keys(gd.players)) {
+          const p = gd.players[pId];
+          if (p) {
+            p.call_tichu = "-1";
+            p.call_grand_tichu = "-1";
+          }
+        }
+      }
+
+      if (window.gameModel) return;
 
       if (notif.type === "dealCards" && Array.isArray(args.cards)) {
         const total = args.cards.length === 8 ? 8 : 14;
@@ -2676,6 +2737,16 @@
 
       this.updatePageTitle(newState);
 
+      if (!window.gameModel && newState.name === "newRound" && this.gamedatas.players) {
+        for (const pId of Object.keys(this.gamedatas.players)) {
+          const p = this.gamedatas.players[pId];
+          if (p) {
+            p.call_tichu = "-1";
+            p.call_grand_tichu = "-1";
+          }
+        }
+      }
+
       if (typeof this.onEnteringState === "function") {
         this.onEnteringState(newState.name, newState);
       }
@@ -2698,6 +2769,7 @@
     }
 
     _scheduleOtherPlayerAutoCollect(stateObj) {
+      if (localStorage.getItem("tichu_local_autobot") !== "1") return;
       clearTimeout(this._otherPlayerAutoCollectTimeout);
       const st = stateObj || (this.gamedatas && this.gamedatas.gamestate);
       if (!st || st.name !== "confirmTrick" || !this.bRealtime) return;
@@ -2816,7 +2888,7 @@
         if (!this.notifqueue.isProcessing && !this._botBusy) {
           this._pollServer();
         }
-      }, 2000);
+      }, 150);
     }
 
     _broadcastSync(type) {
@@ -2828,12 +2900,20 @@
     }
 
     _pollServer() {
-      const since = this.notifqueue.last_packet_id;
+      if (this._pollInFlight || this._ajaxInFlight > 0) {
+        this._pollQueued = true;
+        return;
+      }
+      const since = (this.notifqueue && this.notifqueue.last_packet_id) || 0;
       const viewer = this.isSpectator ? 0 : this.player_id;
+      this._pollInFlight = true;
       fetch(`/local/poll?as=${encodeURIComponent(viewer)}&since=${encodeURIComponent(since)}`)
         .then((r) => r.json())
         .then((payload) => {
           if (!payload || payload.status !== 1) return;
+          if ("abort" in payload) {
+            this._abortState = payload.abort || null;
+          }
           if (Array.isArray(payload.devBarPlayers)) {
             this.devBarPlayers = payload.devBarPlayers;
           }
@@ -2842,7 +2922,14 @@
           }
           this._renderDevBar();
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          this._pollInFlight = false;
+          if (this._pollQueued) {
+            this._pollQueued = false;
+            this._pollServer();
+          }
+        });
     }
 
     _runBot(mode) {
@@ -2915,6 +3002,7 @@
       const playerTeams =
         opts.playerTeams !== undefined ? opts.playerTeams : this.localOptions.playerTeams || 1;
 
+      this._abortState = null;
       localStorage.removeItem("tichu_local_archive_mode");
       return fetch(
         `/local/new-game?as=${encodeURIComponent(this.isSpectator ? 0 : this.player_id)}`,
@@ -3673,6 +3761,7 @@
       const ui = window.gameui;
       if (!ui || !ui.notifqueue) return mode;
       const applied = ui.notifqueue.setSpeed(mode);
+      ui.instantaneousMode = applied === "instant" || applied === "fast";
       consoleAnnounce("[TICHU SPEED]", `Notification queue speed set to "${applied}"`);
       return applied;
     },
@@ -3912,6 +4001,7 @@
       if (!payload || payload.status !== 1) {
         throw new Error((payload && payload.error) || `Failed to load scenario "${name}"`);
       }
+      ui._abortState = null;
       ui._rehydrateSeatInPlace(payload);
       await ui.notifqueue.waitUntilIdle();
       return tt.status(false);
@@ -4102,8 +4192,14 @@
       } else if (seat !== undefined) {
         await ensureViewerSeat(seat);
       }
-      clearTimeout(ui.autoCollectTimeout);
-      clearTimeout(ui._otherPlayerAutoCollectTimeout);
+      if (ui && ui.autoCollectTimeout) {
+        clearTimeout(ui.autoCollectTimeout);
+        ui.autoCollectTimeout = null;
+      }
+      if (ui) {
+        clearTimeout(ui._otherPlayerAutoCollectTimeout);
+        ui.collectSent = true;
+      }
       return performActionAndDrain("collect", {});
     },
 

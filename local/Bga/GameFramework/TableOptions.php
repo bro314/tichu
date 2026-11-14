@@ -76,7 +76,8 @@ final class TableOptions {
      * @return bool if the table is Turn-based.
      */
     public function isTurnBased(): bool {
-        return $this->game->gamestate->table_globals[GAMESTATE_CLOCK_MODE] >= 10;
+        // Null-coalesce for local runner bootstrap before createNewGame() populates `global`.
+        return ($this->game->gamestate->table_globals[GAMESTATE_CLOCK_MODE] ?? 0) >= 10;
     }
 
     /**

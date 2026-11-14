@@ -32,6 +32,9 @@ class Tichu extends Table
   /** State id and active player as read with the lock held (latest committed values). */
   private int $freshStateId = 0;
   private int $freshActivePlayerId = 0;
+  /** Lock version loaded into `$this->gamestate` during Table::setTable() before initTable(). */
+  private ?int $initialLockVersion = null;
+  private int $lockedVersion = 0;
 
   function __construct()
   {
@@ -87,15 +90,23 @@ class Tichu extends Table
       return;
     }
     $this->advisoryLockHeld = true;
-    $tableId = (int) ($this->table_id ?? 0);
-    if ($tableId <= 0) {
-      return;
-    }
-    $acquired = $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
+    $this->initialLockVersion =
+      isset($this->gamestate) && is_array($this->gamestate->table_globals ?? null)
+        ? (int) $this->getGameStateValue("lockVersion", 0)
+        : null;
+    // Release any InnoDB locks acquired before initTable() (e.g. Table::setTable() locking
+    // `global`/`player` under SERIALIZABLE) before waiting on GET_LOCK, so an overlapping
+    // request inside Studio's debugSaveState(4) snapshot dump after DbCommit() cannot deadlock
+    // against us in AB-BA order across GET_LOCK and InnoDB row locks.
+    $this->DbQuery("COMMIT");
+    $this->DbQuery("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
+    $tableId = max(1, (int) ($this->table_id ?? 1));
+    $acquired = $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 10)");
     if ((int) $acquired !== 1) {
       $this->logProdWarn("advisory_lock_timeout", ["acquired" => $acquired]);
     }
-    $this->DbQuery("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
+    // Start a fresh REPEATABLE-READ snapshot now that GET_LOCK is held.
+    $this->DbQuery("COMMIT");
   }
 
   /**
@@ -116,16 +127,21 @@ class Tichu extends Table
       "SELECT global_value FROM global WHERE global_id = 2 FOR UPDATE"
     );
     $versionId = self::GLOBAL_LOCK_VERSION;
-    $currentVersion = $this->getUniqueValueFromDB(
+    $currentVersion = (int) ($this->getUniqueValueFromDB(
       "SELECT global_value FROM global WHERE global_id = $versionId FOR UPDATE"
-    );
-    $snapshotVersion = $this->getUniqueValueFromDB(
+    ) ?? 0);
+    $this->lockedVersion = $currentVersion;
+    $snapshotVersion = (int) ($this->getUniqueValueFromDB(
       "SELECT global_value FROM global WHERE global_id = $versionId"
-    );
+    ) ?? 0);
+    $loadedVersion =
+      $this->initialLockVersion ??
+      (isset($this->gamestate) ? (int) $this->getGameStateValue("lockVersion", 0) : $currentVersion);
     $this->gameLockStale =
       $this->freshStateId !== (int) $this->gamestate->getCurrentMainStateId() ||
       $this->freshActivePlayerId !== (int) $this->getActivePlayerId() ||
-      $currentVersion !== $snapshotVersion;
+      $currentVersion !== $snapshotVersion ||
+      $currentVersion !== $loadedVersion;
   }
 
   /**
@@ -153,6 +169,14 @@ class Tichu extends Table
     if ($this->DbAffectedRow() == 0) {
       // Games started before the version row existed. Safe: we hold the table lock.
       $this->DbQuery("INSERT INTO global (global_id, global_value) VALUES ($versionId, 1)");
+      $nextVersion = 1;
+    } else {
+      $nextVersion = $this->lockedVersion + 1;
+    }
+    $this->lockedVersion = $nextVersion;
+    $this->initialLockVersion = $nextVersion;
+    if (isset($this->gamestate) && is_array($this->gamestate->table_globals ?? null)) {
+      $this->gamestate->table_globals[$versionId] = $nextVersion;
     }
     $this->gameVersionBumped = true;
   }
@@ -169,6 +193,8 @@ class Tichu extends Table
     $this->gameLockHeld = false;
     $this->gameLockStale = false;
     $this->gameVersionBumped = false;
+    $this->initialLockVersion = null;
+    $this->lockedVersion = 0;
   }
 
   private function throwGameStateChanged(): void
@@ -244,12 +270,23 @@ class Tichu extends Table
       $this->gamestate->setPlayerNonMultiactive($playerId, $transition);
       return;
     }
-    $othersActive = (int) $this->getUniqueValueFromDB(
-      "SELECT COUNT(*) FROM player WHERE player_is_multiactive = 1 AND player_id <> $playerId FOR UPDATE"
+    $otherActiveIds = array_values(
+      array_map(
+        "strval",
+        $this->getObjectListFromDB(
+          "SELECT player_id FROM player WHERE player_is_multiactive = 1 AND player_id <> $playerId FOR UPDATE",
+          true
+        )
+      )
     );
-    if ($othersActive > 0) {
-      // A stale view can only contain *more* active players, so the framework won't transition.
-      $this->gamestate->setPlayerNonMultiactive($playerId, $transition);
+    if (count($otherActiveIds) > 0) {
+      // On a stale REPEATABLE-READ snapshot, GamestateMachine::setPlayerNonMultiactive() ->
+      // updateMultiactiveOrNextState() -> reflexionTimeUpdate() -> state() -> loadMultipleActive(false)
+      // reloads the stale snapshot and broadcasts a gameStateMultipleActiveUpdate notification that
+      // re-includes players who already acted in an earlier committed transaction. Update this player's
+      // row directly and broadcast the authoritative locked active player list instead.
+      $this->DbQuery("UPDATE player SET player_is_multiactive = 0 WHERE player_id = $playerId");
+      $this->notifyAllPlayers("gameStateMultipleActiveUpdate", "", $otherActiveIds);
       return;
     }
     if (!$staleTransitionSafe) {
@@ -388,7 +425,8 @@ class Tichu extends Table
 	*/
   function getGameProgression()
   {
-    $p = [5, 10, 20][$this->getGameStateValue("gameLength") - 1];
+    $gameLengthIdx = max(0, min(2, (int) $this->getGameStateValue("gameLength") - 1));
+    $p = [5, 10, 20][$gameLengthIdx];
     return (int) round(min(100, PlayerManager::getHighestScore() / $p));
   }
 
@@ -776,11 +814,13 @@ class Tichu extends Table
     }
 
     $lastTichuCall = LogManager::getLastAction("tichuCall", false);
+    $currentRound = (int) (LogManager::getCurrentRoundAndTrick()["round"] ?? 0);
     $now = time();
     if ($bet == 200) {
       if (
         !$confirmed &&
         $lastTichuCall != null &&
+        (int) ($lastTichuCall["round"] ?? -1) === $currentRound &&
         $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
       ) {
         NotificationManager::confirmTichu($player_id, true);
@@ -848,10 +888,12 @@ class Tichu extends Table
       throw new UserException(clienttranslate("You cannot call Tichu anymore"));
     }
     $lastTichuCall = LogManager::getLastAction("tichuCall", false);
+    $currentRound = (int) (LogManager::getCurrentRoundAndTrick()["round"] ?? 0);
     $now = time();
     if (
       !$confirmed &&
       $lastTichuCall != null &&
+      (int) ($lastTichuCall["round"] ?? -1) === $currentRound &&
       $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
     ) {
       NotificationManager::confirmTichu($player_id, false);
@@ -1213,12 +1255,13 @@ class Tichu extends Table
       ]);
     }
 
+    $starterId = 0;
     if ($isFirstTrickOfRound) {
       $card = array_values($deck->getCardsOfType(TYPE_MAHJONG, 1))[0];
       $mahjongOwnerId = $card["location_arg"];
       $this->setGameStateValue("mahjongOwner", $mahjongOwnerId);
       $this->gamestate->changeActivePlayer($mahjongOwnerId);
-      $this->giveExtraTime($mahjongOwnerId);
+      $starterId = (int) $mahjongOwnerId;
       $notify = clienttranslate('A new round starts. ${player_name} has the Mahjong');
     } else {
       //this is not the first trick
@@ -1230,7 +1273,7 @@ class Tichu extends Table
       if (isset($hand_count[$lastWinner])) {
         //winner of last trick is still in play
         $this->gamestate->changeActivePlayer($lastWinner);
-        $this->giveExtraTime($lastWinner);
+        $starterId = (int) $lastWinner;
 
         $notify = clienttranslate(
           '${player_name} has won the previous trick and starts a new one.'
@@ -1243,7 +1286,7 @@ class Tichu extends Table
         }
         $nextPlayerId = $nextPlayers[0]["id"];
         $this->gamestate->changeActivePlayer($nextPlayerId);
-        $this->giveExtraTime($nextPlayerId);
+        $starterId = (int) $nextPlayerId;
         $notify = clienttranslate('${player_name} is the next player and starts a new trick.');
       }
     }
@@ -1252,6 +1295,9 @@ class Tichu extends Table
     ]);
 
     $this->gamestate->nextState("firstCombo");
+    // Grant extra time after leaving the "game" state so clients receive gameStateChange
+    // (with reflexion.total populated) before updateReflexionTime.
+    $this->giveExtraTime($starterId);
   }
 
   /*
@@ -1306,8 +1352,8 @@ class Tichu extends Table
         $this->gamestate->nextState("endRound");
       } elseif ($lastCombo->hasDragon()) {
         $this->gamestate->changeActivePlayer($lastComboPlayer);
-        $this->giveExtraTime($lastComboPlayer);
         $this->gamestate->nextState("chooseDragonGift");
+        $this->giveExtraTime($lastComboPlayer);
       } else {
         $this->incStat(1, "tricks_win", $lastComboPlayer);
         $trickValue = CardManager::getTrickValue($deck->getCardsInLocation("combos"));
@@ -1335,8 +1381,8 @@ class Tichu extends Table
         }
       }
       $this->gamestate->changeActivePlayer($next);
-      $this->giveExtraTime($next);
       $this->gamestate->nextState("playComboOpen");
+      $this->giveExtraTime($next);
       return;
     }
 
@@ -1403,20 +1449,20 @@ class Tichu extends Table
       // trick is complete because all other players passed
       $dragon = $lastCombo->hasDragon();
       $this->gamestate->changeActivePlayer($lastComboPlayer);
-      $this->giveExtraTime($lastComboPlayer);
       LogManager::insert($lastComboPlayer, "confirm", [
         "nextPlayer" => $next,
         "dragon" => $dragon,
       ]);
       $this->gamestate->nextState("confirmTrick");
+      $this->giveExtraTime($lastComboPlayer);
     } else {
       // Continue the current trick play
       // => go to next player with cards in hand
 
       $this->gamestate->changeActivePlayer($next);
-      $this->giveExtraTime($next);
 
       $this->gamestate->nextState("nextPlayer");
+      $this->giveExtraTime($next);
     }
   }
 

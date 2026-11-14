@@ -103,7 +103,7 @@ echo "Uploading ${#FILES[@]} file(s) to ${USER}@${HOST}:${REMOTE_PATH}: ${FILES[
 
 OUTPUT=$(/usr/bin/expect -c "
 set timeout 30
-spawn sftp -P ${PORT} -o StrictHostKeyChecking=no ${USER}@${HOST}
+spawn sftp -P ${PORT} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 ${USER}@${HOST}
 expect \"Password:\"
 send \"${PW}\r\"
 expect \"sftp>\"
@@ -118,7 +118,7 @@ if [[ -z "$AFTER_CONNECT" ]]; then
   echo "Error: SFTP did not connect cleanly." >&2
   exit 1
 fi
-if printf "%s\n" "$AFTER_CONNECT" | grep -qE "Permission denied|not found|Failure|Couldn't"; then
+if printf "%s\n" "$AFTER_CONNECT" | grep -qE "Permission denied|not found|Failure|Couldn't|Connection reset|Broken pipe|Connection closed|not open|timed out"; then
   echo "Error: SFTP upload failed (see errors above)." >&2
   exit 1
 fi

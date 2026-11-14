@@ -5029,6 +5029,21 @@ abstract class Table extends Old\APP_GameClass
     ///////////////////////////////////////////////////////////////////////////////////////////
     //// Local Runner Integration Helpers
 
+    /**
+     * Local-only adapter code (originally introduced in commit a0c9be14) emulating BGA's
+     * production `GamePage` / `GamePageAction` request lifecycle and `Notify` WebSocket delivery
+     * against local MySQL 8.0. None of the helpers below exist on BGA Studio or Production;
+     * upstream framework methods above this marker are kept unmodified so local concurrency
+     * matches Studio/Prod.
+     *
+     * Key emulation invariants:
+     * - `beginPlayerAction()` reloads `o_tableinfos` and calls `loadStateMachine()` BEFORE
+     *   `$this->initTable()` (`COMMIT` -> `GET_LOCK`), mirroring BGA's production `Table::setTable()`
+     *   ordering, and then starts a fresh `REPEATABLE-READ` consistent snapshot.
+     * - `getNotificationsSince()` groups `gamelog` rows by `gamelog_move_id` and interleaves
+     *   private-channel rows into public-channel rows by their `"synchro"` index, emulating
+     *   BGA's production `Notify` WebSocket delivery order (e.g., `dealCards` after `newRound`).
+     */
     public bool $inPlayerAction = false;
     private static bool $localSchemaEnsured = false;
 
@@ -5127,14 +5142,6 @@ abstract class Table extends Old\APP_GameClass
             $this->sendNotifications();
         }
         $this->nbrZombieTurnCycle = 0;
-        global $bgaContainer;
-        /** @var \Bga\GameFramework\Old\Db $db */
-        $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
-
-        $db->query("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
-        $db->query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
-        $this->inPlayerAction = true;
-
         TableInfos::$tables_infos = [];
         $this->players = [];
         if ($this->o_tableinfos !== null) {
@@ -5143,6 +5150,14 @@ abstract class Table extends Old\APP_GameClass
         if ($this->gamestate !== null) {
             $this->gamestate->loadStateMachine($this, $this->gamename, (int) ($this->table_id ?? 1));
         }
+        $this->initTable();
+        global $bgaContainer;
+        /** @var \Bga\GameFramework\Old\Db $db */
+        $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+
+        $db->query("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
+        $db->query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
+        $this->inPlayerAction = true;
     }
 
     public function endPlayerAction(bool $rollback = false): void
@@ -5342,68 +5357,126 @@ abstract class Table extends Old\APP_GameClass
             $this->sendNotifications();
         }
 
-        $sql = 'SELECT gamelog_packet_id, gamelog_move_id, gamelog_player, UNIX_TIMESTAMP(gamelog_time) AS created_at, gamelog_notification FROM gamelog WHERE gamelog_packet_id > ' . (int) $lastPacketId;
+        $sql = 'SELECT gamelog_packet_id, gamelog_move_id, gamelog_player, UNIX_TIMESTAMP(gamelog_time) AS created_at, gamelog_notification FROM gamelog WHERE (gamelog_packet_id > ' . (int) $lastPacketId . ' OR (gamelog_move_id IS NOT NULL AND gamelog_move_id IN (SELECT gamelog_move_id FROM (SELECT DISTINCT gamelog_move_id FROM gamelog WHERE gamelog_packet_id > ' . (int) $lastPacketId . ' AND gamelog_move_id IS NOT NULL) AS m)))';
         if (!$allChannels && $viewerPlayerId !== null) {
             $sql .= ' AND (gamelog_player IS NULL OR gamelog_player = ' . (int) $viewerPlayerId . ')';
         }
         $sql .= ' ORDER BY gamelog_packet_id ASC';
 
         $rows = self::getObjectListFromDB($sql);
+        $groups = [];
+        foreach ($rows as $row) {
+            $groupKey = $row['gamelog_move_id'] !== null
+                ? 'm:' . $row['gamelog_move_id']
+                : 'r:' . $row['gamelog_packet_id'];
+            if (!isset($groups[$groupKey])) {
+                $groups[$groupKey] = [];
+            }
+            $groups[$groupKey][] = $row;
+        }
+
         $packets = [];
         $lastMoveId = '1';
 
-        foreach ($rows as $row) {
-            $packetId = (string) $row['gamelog_packet_id'];
-            if ($row['gamelog_move_id'] !== null) {
-                $lastMoveId = (string) $row['gamelog_move_id'];
+        foreach ($groups as $groupRows) {
+            $groupMaxPacketIdNum = 0;
+            foreach ($groupRows as $row) {
+                $pid = (int) $row['gamelog_packet_id'];
+                if ($pid > $groupMaxPacketIdNum) {
+                    $groupMaxPacketIdNum = $pid;
+                }
             }
-            $moveId = $row['gamelog_move_id'] !== null ? (string) $row['gamelog_move_id'] : $lastMoveId;
-            $channel = $row['gamelog_player'] === null
-                ? '/table/t' . ($this->table_id ?? 1)
-                : '/player/p' . (int) $row['gamelog_player'];
-            $time = (string) ($row['created_at'] ?? time());
+            $groupMaxPacketId = (string) $groupMaxPacketIdNum;
 
-            $notifs = json_decode((string) $row['gamelog_notification'], true);
-            if (!is_array($notifs)) {
-                continue;
-            }
+            $publicNotifs = [];
+            $privateNotifs = [];
 
-            foreach ($notifs as $notif) {
-                if (!is_array($notif)) {
+            foreach ($groupRows as $row) {
+                $packetId = (string) $row['gamelog_packet_id'];
+                if ($row['gamelog_move_id'] !== null) {
+                    $lastMoveId = (string) $row['gamelog_move_id'];
+                }
+                $moveId = $row['gamelog_move_id'] !== null ? (string) $row['gamelog_move_id'] : $lastMoveId;
+                $isPublicRow = $row['gamelog_player'] === null;
+                $channel = $isPublicRow
+                    ? '/table/t' . ($this->table_id ?? 1)
+                    : '/player/p' . (int) $row['gamelog_player'];
+                $time = (string) ($row['created_at'] ?? time());
+
+                $notifs = json_decode((string) $row['gamelog_notification'], true);
+                if (!is_array($notifs)) {
                     continue;
                 }
-                $type = (string) ($notif['type'] ?? '');
-                $args = is_array($notif['args'] ?? null) ? $notif['args'] : [];
 
-                if (!$allChannels && $viewerPlayerId !== null && $row['gamelog_player'] === null) {
-                    if (
-                        $type === 'gameStateChange' &&
-                        !empty($args['_notified_privately']) &&
-                        in_array((int) $viewerPlayerId, array_map('intval', (array) $args['_notified_privately']), true)
-                    ) {
+                foreach ($notifs as $notif) {
+                    if (!is_array($notif)) {
                         continue;
                     }
-                }
+                    $type = (string) ($notif['type'] ?? '');
+                    $args = is_array($notif['args'] ?? null) ? $notif['args'] : [];
 
-                if ($allChannels && $row['gamelog_player'] !== null && $type === 'gameStateChange') {
-                    continue;
-                }
+                    if (!$allChannels && $viewerPlayerId !== null && $isPublicRow) {
+                        if (
+                            $type === 'gameStateChange' &&
+                            !empty($args['_notified_privately']) &&
+                            in_array((int) $viewerPlayerId, array_map('intval', (array) $args['_notified_privately']), true)
+                        ) {
+                            continue;
+                        }
+                    }
 
-                unset($args['_notified_privately']);
-                $notif['args'] = $args;
-                if (!isset($notif['h'])) {
-                    $notif['h'] = substr(md5((string) ($notif['uid'] ?? $packetId)), 0, 6);
-                }
+                    if ($allChannels && !$isPublicRow && $type === 'gameStateChange') {
+                        continue;
+                    }
 
-                $packets[] = [
-                    'packet_id' => $packetId,
-                    'packet_type' => 'single',
-                    'move_id' => $moveId,
-                    'channel' => $channel,
-                    'table_id' => (int) ($this->table_id ?? 1),
-                    'time' => $time,
-                    'data' => [$notif],
-                ];
+                    $synchro = (int) ($notif['synchro'] ?? 0);
+                    unset($args['_notified_privately']);
+                    $notif['args'] = $args;
+                    if (!isset($notif['h'])) {
+                        $notif['h'] = substr(md5((string) ($notif['uid'] ?? $packetId)), 0, 6);
+                    }
+
+                    $pkt = [
+                        'packet_id' => $groupMaxPacketId,
+                        'packet_type' => 'single',
+                        'move_id' => $moveId,
+                        'channel' => $channel,
+                        'table_id' => (int) ($this->table_id ?? 1),
+                        'time' => $time,
+                        'data' => [$notif],
+                    ];
+
+                    if ($isPublicRow) {
+                        $publicNotifs[] = $pkt;
+                    } else {
+                        $privateNotifs[] = [
+                            'synchro' => $synchro,
+                            'packet' => $pkt,
+                        ];
+                    }
+                }
+            }
+
+            if (count($privateNotifs) > 1) {
+                usort(
+                    $privateNotifs,
+                    static fn (array $a, array $b): int => $a['synchro'] <=> $b['synchro']
+                );
+            }
+
+            $privIdx = 0;
+            $privCount = count($privateNotifs);
+            $pubCount = count($publicNotifs);
+            for ($i = 0; $i < $pubCount; $i++) {
+                while ($privIdx < $privCount && $privateNotifs[$privIdx]['synchro'] <= $i) {
+                    $packets[] = $privateNotifs[$privIdx]['packet'];
+                    $privIdx++;
+                }
+                $packets[] = $publicNotifs[$i];
+            }
+            while ($privIdx < $privCount) {
+                $packets[] = $privateNotifs[$privIdx]['packet'];
+                $privIdx++;
             }
         }
 

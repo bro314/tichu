@@ -89,8 +89,11 @@ When `npm run local` is running at `http://127.0.0.1:8080`, you can play interac
 await tt.runSuite({ speed: "instant" }); // Run all 7 deterministic UI + backend scenarios
 await tt.runRound({ speed: "fast" }); // Watch a full round play out in the UI
 await tt.runGame({ speed: "instant" }); // Play a complete game to 1000 points
+await tt.startAutoPlayMe({ timeoutMs: 1500000, staggerMs: 250, stopOnIssue: true }); // Drive current seat autonomously (local or Studio)
 tt.help(); // List all console test runner commands
 ```
+
+> **Local Framework Boundary**: Upstream framework classes in [`local/Bga/GameFramework/`](./local/Bga/GameFramework) (including `GamestateMachine.php` and `Table.php` above `//// Local Runner Integration Helpers`) are kept unmodified so local MySQL 8.0 concurrency and state-machine behavior match BGA Studio/Production. Local-only BGA request/notification emulation (`beginPlayerAction()` mirroring `Table::setTable()` ordering and `"synchro"`-interleaved `gamelog` delivery) lives strictly under `//// Local Runner Integration Helpers` in [`local/Bga/GameFramework/Table.php`](./local/Bga/GameFramework/Table.php), plus a bootstrap `?? 0` guard in [`local/Bga/GameFramework/TableOptions.php`](./local/Bga/GameFramework/TableOptions.php).
 
 ## Project Structure
 
@@ -117,8 +120,8 @@ tt.help(); // List all console test runner commands
 
 ## Syncing & Deploying to BGA Studio
 
-1. **SFTP Sync**: Run `npm run deploy:sftp` (or `npm run deploy:sftp:all`) to upload `tichu.js` and modified deployable game files to `/tichu/` on `1.studio.boardgamearena.com:2022` via `local/sftp-sync.sh` (using credentials in `.vscode/bga-credentials.json` or `.vscode/sftp.json`).
-2. **Testing on Studio**: Test multiplayer flows using BGA Studio's multi-account session switcher at `https://studio.boardgamearena.com`.
+1. **SFTP Sync**: Run `npm run deploy:sftp` (or `npm run deploy:sftp:all`) to upload `tichu.js` and modified deployable game files to `/tichu/` on `1.studio.boardgamearena.com:2022` via `local/sftp-sync.sh` (using credentials in `.vscode/bga-credentials.json` or `.vscode/sftp.json`, with SSH keepalives and connection-error detection).
+2. **Testing on Studio**: Test single- or 4-player multiplayer flows using BGA Studio's multi-account sessions at `https://studio.boardgamearena.com` (`#studio-test-bar` / `window.tt`, including independent 4-tab `startAutoPlayMe` runs to `gameEnd`).
    - Restart the test table if you modify `dbmodel.sql`.
    - Reload game configurations in the BGA Studio Control Panel if you modify `gameinfos.inc.php`, `gameoptions.inc.php`, `states.inc.php`, or `stats.inc.php`.
 3. **Deploying to Production**: Build a new release from the BGA Studio Control Panel once all changes are synced and verified.

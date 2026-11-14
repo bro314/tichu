@@ -101,6 +101,25 @@ function parseRankToken(tok: any): number | null {
   return null;
 }
 
+function getAllowedPhoenixValues(ui: any): number[] {
+  const gsArgs = ui?.gamedatas?.gamestate?.args;
+  const candidates = [
+    ui?.allowedValues,
+    (window as any).gameModel?.getState?.()?.phoenixAllowedValues,
+    gsArgs?._private?.values,
+    gsArgs?._private?.active?.values,
+    gsArgs?.values,
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    const raw = candidates[i];
+    if (Array.isArray(raw) && raw.length > 0) {
+      const nums = raw.map(Number).filter((v: number) => !isNaN(v) && v >= 2 && v <= 14);
+      if (nums.length > 0) return nums;
+    }
+  }
+  return [];
+}
+
 function parseCardSpecToken(rawToken: any): any {
   if (rawToken && typeof rawToken === "object") {
     const c = normalizeCardObj(rawToken);
@@ -302,14 +321,433 @@ function pickDefaultPlayCardsFromHand(ui: any): NormalizedCard[] {
   return [hand[0]!];
 }
 
+function getTeamRelations(players: any[], myPlayerId: number) {
+  const myIdx = players.findIndex((p: any) => Number(p.id) === myPlayerId);
+  const myPlayer = myIdx >= 0 ? players[myIdx] : null;
+  const myTeam = myPlayer ? Number(myPlayer.team) : 0;
+  const partner =
+    players.find((p: any) => Number(p.id) !== myPlayerId && Number(p.team) === myTeam) ||
+    (myIdx >= 0 && players.length >= 4 ? players[(myIdx + 2) % players.length] : null);
+  const opps = players.filter(
+    (p: any) => Number(p.id) !== myPlayerId && Number(p.id) !== Number(partner?.id ?? -1),
+  );
+  return { myIdx, myPlayer, myTeam, partner, opps };
+}
+
+function normalizeRealHand(handCards: any[]): NormalizedCard[] {
+  const res: NormalizedCard[] = [];
+  for (let i = 0; i < (handCards || []).length; i++) {
+    const c = normalizeCardObj(handCards[i]);
+    if (c && c.id && c.id !== "0") res.push(c);
+  }
+  return res;
+}
+
+function comboRankStrength(combo: any): number {
+  if (!combo || !Array.isArray(combo.cards) || combo.cards.length === 0) return 0;
+  if (typeof combo.getFirstValue === "function") {
+    const v = Number(combo.getFirstValue());
+    if (!isNaN(v)) return v;
+  }
+  const c0 = combo.cards[0];
+  return c0 ? Number(c0.type_arg || 0) : 0;
+}
+
+function findAllRealBombsInHand(handCards: any[], cv: any): any[] {
+  const hand = normalizeRealHand(handCards);
+  if (hand.length < 4 || !cv || !cv.Combo) return [];
+  const bombs: any[] = [];
+  const seenKeys: Record<string, boolean> = {};
+  const addBomb = (cards: NormalizedCard[]) => {
+    try {
+      const c = new cv.Combo(cards);
+      if (c && c.type === 7) {
+        const key = c.cards
+          .map((x: any) => String(x.id))
+          .sort()
+          .join(",");
+        if (!seenKeys[key]) {
+          seenKeys[key] = true;
+          bombs.push(c);
+        }
+      }
+    } catch (_e) {}
+  };
+
+  // 1. 4-of-a-kind bombs
+  const byRank: Record<number, NormalizedCard[]> = {};
+  for (let i = 0; i < hand.length; i++) {
+    const card = hand[i]!;
+    if (card.type_arg < 2) continue;
+    if (!byRank[card.type_arg]) byRank[card.type_arg] = [];
+    byRank[card.type_arg]!.push(card);
+  }
+  const rankKeys = Object.keys(byRank);
+  for (let i = 0; i < rankKeys.length; i++) {
+    const group = byRank[Number(rankKeys[i])]!;
+    if (group.length === 4) {
+      addBomb(group);
+    }
+  }
+
+  // 2. Straight flush bombs (5+ consecutive cards of same suit)
+  for (let suit = 1; suit <= 4; suit++) {
+    const suitCards = hand
+      .filter((c) => c.type === suit && c.type_arg >= 2)
+      .sort((a, b) => a.type_arg - b.type_arg);
+    if (suitCards.length < 5) continue;
+    let runStart = 0;
+    while (runStart < suitCards.length) {
+      let runEnd = runStart;
+      while (
+        runEnd + 1 < suitCards.length &&
+        suitCards[runEnd + 1]!.type_arg === suitCards[runEnd]!.type_arg + 1
+      ) {
+        runEnd++;
+      }
+      const runLen = runEnd - runStart + 1;
+      if (runLen >= 5) {
+        for (let s = runStart; s <= runEnd - 4; s++) {
+          for (let e = s + 4; e <= runEnd; e++) {
+            addBomb(suitCards.slice(s, e + 1));
+          }
+        }
+      }
+      runStart = runEnd + 1;
+    }
+  }
+
+  bombs.sort((a, b) => {
+    if (a.canBeat(b)) return 1;
+    if (b.canBeat(a)) return -1;
+    return a.cards.length - b.cards.length;
+  });
+  return bombs;
+}
+
+function getBombCardIdSet(bombs: any[]): Record<string, boolean> {
+  const ids: Record<string, boolean> = {};
+  for (let i = 0; i < bombs.length; i++) {
+    const cards = bombs[i]?.cards || [];
+    for (let j = 0; j < cards.length; j++) {
+      ids[String(cards[j].id)] = true;
+    }
+  }
+  return ids;
+}
+
+function comboBreaksBomb(combo: any, handLen: number, bombIds: Record<string, boolean>): boolean {
+  if (!combo || combo.type === 7) return false;
+  if (combo.cards.length === handLen) return false;
+  for (let i = 0; i < combo.cards.length; i++) {
+    if (bombIds[String(combo.cards[i].id)]) return true;
+  }
+  return false;
+}
+
+function findSmartPassCards(
+  handCards: any[],
+  cv: any,
+): [NormalizedCard, NormalizedCard, NormalizedCard] {
+  const hand = normalizeRealHand(handCards);
+  const bombs = findAllRealBombsInHand(hand, cv);
+  const bombIds = getBombCardIdSet(bombs);
+
+  const rankCounts: Record<number, number> = {};
+  for (let i = 0; i < hand.length; i++) {
+    const r = hand[i]!.type_arg;
+    rankCounts[r] = (rankCounts[r] || 0) + 1;
+  }
+
+  // Pick partner card (slot 1): highest card not breaking a bomb (prefer Dragon/Phoenix/Ace/King).
+  const scorePartner = (c: NormalizedCard): number => {
+    let score = 0;
+    if (c.type_arg === 1 && c.type === 1)
+      score = 200; // Dragon
+    else if (c.type_arg === 1 && c.type === 2)
+      score = 190; // Phoenix
+    else if (c.type_arg === 1 && c.type === 4)
+      score = 20; // Mahjong
+    else if (c.type_arg === 1 && c.type === 3)
+      score = -100; // Dog (avoid gifting Dog unless forced)
+    else score = c.type_arg * 10;
+    if ((rankCounts[c.type_arg] || 0) === 1 && c.type_arg >= 2) score += 3;
+    if (bombIds[c.id]) score -= 80;
+    return score;
+  };
+  const partnerCandidates = hand.slice().sort((a, b) => scorePartner(b) - scorePartner(a));
+  const partnerCard = partnerCandidates[0]!;
+
+  // Pick 2 opponent cards (slots 0 & 2): low singletons 2..7, avoid Dog/Dragon/Phoenix/Ace, avoid 5/10 if possible.
+  const remaining = hand.filter((c) => c.id !== partnerCard.id);
+  const scoreOpponent = (c: NormalizedCard): number => {
+    if (c.type_arg === 1) {
+      if (c.type === 4) return 25; // Mahjong ok if low cards scarce
+      if (c.type === 3) return 40; // Dog prefer not to give opponent, but better than Ace/Dragon
+      return 1000; // Never give Phoenix or Dragon unless forced
+    }
+    let penalty = 0;
+    const freq = rankCounts[c.type_arg] || 1;
+    if (freq > 1) penalty += freq * 18;
+    if (c.type_arg === 5 || c.type_arg === 10 || c.type_arg === 13) penalty += 14;
+    if (c.type_arg === 14) penalty += 200;
+    if (bombIds[c.id]) penalty += 150;
+    return c.type_arg * 5 + penalty;
+  };
+  remaining.sort((a, b) => scoreOpponent(a) - scoreOpponent(b));
+  const opp0 = remaining[0]!;
+  const opp1 = remaining[1]!;
+  return [opp0, partnerCard, opp1];
+}
+
+function generateLegalCombos(handCards: any[], lastCombo: any, wish: number, cv: any): any[] {
+  const hand = normalizeRealHand(handCards);
+  if (hand.length === 0 || !cv || !cv.Combo) return [];
+
+  const seen: Record<string, boolean> = {};
+  const results: any[] = [];
+  const isOpen = !lastCombo || lastCombo.type === 99;
+  const targetType = isOpen ? null : Number(lastCombo.type);
+  const targetLen = isOpen ? null : Number(lastCombo.cards?.length || 0);
+
+  const tryAdd = (cards: NormalizedCard[]) => {
+    if (wish >= 2 && wish <= 14) {
+      let hasWish = false;
+      for (let i = 0; i < cards.length; i++) {
+        if (cards[i]!.type_arg === wish) {
+          hasWish = true;
+          break;
+        }
+      }
+      if (!hasWish) return;
+    }
+    try {
+      const c = new cv.Combo(cards, null, null, null, lastCombo);
+      if (!c || c.type === 99) return;
+      if (!isOpen && !c.canBeat(lastCombo)) return;
+      const key = `${c.type}:${c.cards
+        .map((x: any) => x.id)
+        .sort()
+        .join(",")}`;
+      if (!seen[key]) {
+        seen[key] = true;
+        results.push(c);
+      }
+    } catch (_e) {}
+  };
+
+  const phoenix = hand.find((c) => c.type === 2 && c.type_arg === 1) || null;
+  const normalsByRank: Record<number, NormalizedCard[]> = {};
+  for (let i = 0; i < hand.length; i++) {
+    const card = hand[i]!;
+    if (card.type_arg >= 2) {
+      if (!normalsByRank[card.type_arg]) normalsByRank[card.type_arg] = [];
+      normalsByRank[card.type_arg]!.push(card);
+    }
+  }
+  const ranks = Object.keys(normalsByRank)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  // Singles (also Dog when open)
+  if (isOpen || targetType === 1) {
+    for (let i = 0; i < hand.length; i++) {
+      tryAdd([hand[i]!]);
+    }
+  }
+
+  // Pairs
+  if (isOpen || (targetType === 2 && targetLen === 2)) {
+    for (let i = 0; i < ranks.length; i++) {
+      const r = ranks[i]!;
+      const group = normalsByRank[r]!;
+      if (group.length >= 2) tryAdd([group[0]!, group[1]!]);
+      if (phoenix) tryAdd([phoenix, group[0]!]);
+    }
+  }
+
+  // Trips
+  if (isOpen || (targetType === 3 && targetLen === 3)) {
+    for (let i = 0; i < ranks.length; i++) {
+      const r = ranks[i]!;
+      const group = normalsByRank[r]!;
+      if (group.length >= 3) tryAdd([group[0]!, group[1]!, group[2]!]);
+      if (phoenix && group.length >= 2) tryAdd([phoenix, group[0]!, group[1]!]);
+    }
+  }
+
+  // Full houses (5 cards)
+  if (isOpen || (targetType === 4 && targetLen === 5)) {
+    const tripSets: Array<{ rank: number; cards: NormalizedCard[] }> = [];
+    const pairSets: Array<{ rank: number; cards: NormalizedCard[] }> = [];
+    for (let i = 0; i < ranks.length; i++) {
+      const r = ranks[i]!;
+      const group = normalsByRank[r]!;
+      if (group.length >= 3) tripSets.push({ rank: r, cards: group.slice(0, 3) });
+      if (group.length >= 2) pairSets.push({ rank: r, cards: group.slice(0, 2) });
+    }
+    for (let t = 0; t < tripSets.length; t++) {
+      for (let p = 0; p < pairSets.length; p++) {
+        if (tripSets[t]!.rank !== pairSets[p]!.rank) {
+          tryAdd([...tripSets[t]!.cards, ...pairSets[p]!.cards]);
+        }
+      }
+    }
+    // Pair + Pair + Phoenix -> triggers ambiguous phoenixPlay!
+    if (phoenix && pairSets.length >= 2) {
+      for (let i = 0; i < pairSets.length; i++) {
+        for (let j = i + 1; j < pairSets.length; j++) {
+          tryAdd([phoenix, ...pairSets[i]!.cards, ...pairSets[j]!.cards]);
+        }
+      }
+    }
+    // Natural Trip + Singleton + Phoenix -> Phoenix completes pair
+    if (phoenix && tripSets.length >= 1) {
+      for (let t = 0; t < tripSets.length; t++) {
+        for (let rIdx = 0; rIdx < ranks.length; rIdx++) {
+          const r = ranks[rIdx]!;
+          if (r !== tripSets[t]!.rank) {
+            tryAdd([phoenix, ...tripSets[t]!.cards, normalsByRank[r]![0]!]);
+          }
+        }
+      }
+    }
+  }
+
+  // Running pairs (even length >= 4)
+  if (isOpen || targetType === 5) {
+    const minRun = targetLen ? targetLen / 2 : 2;
+    const maxRun = targetLen ? targetLen / 2 : Math.floor(hand.length / 2);
+    for (let runPairs = minRun; runPairs <= maxRun; runPairs++) {
+      if (runPairs < 2) continue;
+      for (let start = 2; start <= 15 - runPairs; start++) {
+        const end = start + runPairs - 1;
+        const missingSingles: number[] = [];
+        let ok = true;
+        const collected: NormalizedCard[] = [];
+        for (let r = start; r <= end; r++) {
+          const cnt = normalsByRank[r]?.length || 0;
+          if (cnt >= 2) {
+            collected.push(normalsByRank[r]![0]!, normalsByRank[r]![1]!);
+          } else if (cnt === 1 && phoenix && missingSingles.length === 0) {
+            missingSingles.push(r);
+            collected.push(phoenix, normalsByRank[r]![0]!);
+          } else {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) tryAdd(collected);
+      }
+    }
+  }
+
+  // Straights (length >= 5, ranks 1..14)
+  if (isOpen || targetType === 6) {
+    const mahjong = hand.find((c) => c.type === 4 && c.type_arg === 1) || null;
+    const rankRep: Record<number, NormalizedCard> = {};
+    if (mahjong) rankRep[1] = mahjong;
+    for (let i = 0; i < ranks.length; i++) {
+      const r = ranks[i]!;
+      // Prefer cards not in a bomb if multiple suits exist
+      rankRep[r] = normalsByRank[r]![0]!;
+    }
+    const minLen = targetLen || 5;
+    const maxLen = targetLen || Math.min(14, hand.length);
+    for (let len = minLen; len <= maxLen; len++) {
+      if (len < 5) continue;
+      for (let start = 1; start <= 15 - len; start++) {
+        const end = start + len - 1;
+        const collected: NormalizedCard[] = [];
+        let gaps = 0;
+        for (let r = start; r <= end; r++) {
+          if (rankRep[r]) {
+            collected.push(rankRep[r]!);
+          } else if (r >= 2 && phoenix && gaps === 0) {
+            gaps++;
+            collected.push(phoenix);
+          } else {
+            gaps = 99;
+            break;
+          }
+        }
+        if (gaps <= 1 && collected.length === len) {
+          tryAdd(collected);
+        }
+      }
+    }
+  }
+
+  // Bombs
+  const bombs = findAllRealBombsInHand(handCards, cv);
+  for (let i = 0; i < bombs.length; i++) {
+    tryAdd(bombs[i]!.cards);
+  }
+
+  return results;
+}
+
 export function initStudioTestHelper(gameuiInstance: any): void {
   const win = window as any;
-  if (win.tt) return;
+  if (win.__tichuStudioHelperInitialized) return;
   const host = String((window.location && window.location.hostname) || "");
-  if (host.indexOf("studio.boardgamearena.com") === -1) return;
+  const isStudioHost = host.indexOf("studio.boardgamearena.com") !== -1;
+  const isLocalHost = host === "127.0.0.1" || host === "localhost";
+  if (!isStudioHost && !isLocalHost) return;
+
+  const currentUi = win.gameui || gameuiInstance;
+  if (!currentUi || !currentUi.gamedatas) {
+    if (!win.__tichuStudioRetryTimer) {
+      let attempts = 0;
+      win.__tichuStudioRetryTimer = window.setInterval(() => {
+        attempts++;
+        const readyUi = win.gameui || gameuiInstance;
+        if ((readyUi && readyUi.gamedatas) || attempts >= 100) {
+          clearInterval(win.__tichuStudioRetryTimer);
+          win.__tichuStudioRetryTimer = null;
+          if (readyUi && readyUi.gamedatas) {
+            initStudioTestHelper(readyUi);
+          }
+        }
+      }, 50);
+    }
+    return;
+  }
+  win.__tichuStudioHelperInitialized = true;
+  const existingTt = win.tt && typeof win.tt === "object" ? win.tt : null;
+  const origLocalSetSpeed =
+    existingTt && typeof existingTt.setSpeed === "function"
+      ? existingTt.setSpeed.bind(existingTt)
+      : null;
+  const origLocalSwitchSeat =
+    existingTt && typeof existingTt.switchSeat === "function"
+      ? existingTt.switchSeat.bind(existingTt)
+      : null;
 
   let consoleVerbose = true;
   let speedMode: "normal" | "fast" | "instant" = "normal";
+
+  const cornerCases = {
+    grandTichuBets: 0,
+    tichuBets: 0,
+    resetPassTested: false,
+    dogLeads: 0,
+    mahjongLeads: 0,
+    multiCardLeads: 0,
+    wishesMade: 0,
+    wishesFulfilled: 0,
+    partnerPasses: 0,
+    phoenixAmbiguousPlays: 0,
+    phoenixCancelTested: false,
+    bombsPlayed: 0,
+    bombCancelTested: false,
+    dragonGifts: 0,
+  };
+  let passedOppRanksRound = -1;
+  let passedOppRanks: number[] = [];
+  let lastCanceledBombSig = "";
+  const lastGrandTichuBetRoundByPlayer: Record<number, number> = {};
+  const lastGiveCardsRoundByPlayer: Record<number, number> = {};
 
   interface ConsoleIssue {
     ts: string;
@@ -319,6 +757,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   const consoleIssues: ConsoleIssue[] = [];
+  const actionErrorLog: Array<{ ts: string; url: string; state: string; error: string }> = [];
 
   function formatConsoleArg(arg: any): string {
     if (typeof arg === "string") return arg;
@@ -332,8 +771,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   function recordConsoleIssue(level: "error" | "warn", source: string, args: any[]) {
-    const message = args.map(formatConsoleArg).join(" ").trim();
+    const message = args.map(formatConsoleArg).join(" ").replace(/%c/g, "").trim();
     if (!message) return;
+    // Ignore BGA Studio's benign cancelled background wakeup XHR when state changes mid-request
+    if (/wakeup\.html/i.test(message) && /(?:HTTP code 0|status:\s*0)/i.test(message)) return;
     if (consoleIssues.length >= 200) {
       consoleIssues.shift();
     }
@@ -363,6 +804,15 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           return origWarn.apply(this, args);
         };
       }
+      const origLog = targetWin.console?.log;
+      if (typeof origLog === "function") {
+        targetWin.console.log = function (...args: any[]) {
+          if (args.some((a) => typeof a === "string" && a.indexOf("[TICHU ERROR]") !== -1)) {
+            recordConsoleIssue("error", `${prefix}.console.log`, args);
+          }
+          return origLog.apply(this, args);
+        };
+      }
       targetWin.addEventListener("error", (ev: any) => {
         const msg = ev?.error ? formatConsoleArg(ev.error) : ev?.message || "Unknown window error";
         recordConsoleIssue("error", `${prefix}.window.error`, [msg]);
@@ -375,7 +825,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     }
   }
 
-  hookWindowConsole(win, "iframe");
+  hookWindowConsole(win, isLocalHost ? "local" : "iframe");
   try {
     if (window.parent && window.parent !== window) {
       hookWindowConsole(window.parent, "parent");
@@ -393,6 +843,55 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
   function getUi(): any {
     return (window as any).gameui || gameuiInstance;
+  }
+
+  async function postLocalAbort(reason: string, details: any) {
+    if (!isLocalHost) {
+      const tid = Number(getUi()?.table_id || 0);
+      if (tid) {
+        try {
+          localStorage.setItem(
+            `tichu_studio_abort_${tid}`,
+            JSON.stringify({
+              playerId: Number(getUi()?.player_id || 0),
+              reason,
+              timestamp: Date.now(),
+            }),
+          );
+        } catch (_e) {}
+      }
+      return;
+    }
+    try {
+      await fetch("/local/abort", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerId: Number(getUi()?.player_id || 0),
+          reason,
+          details,
+          timestamp: Date.now(),
+        }),
+      });
+    } catch (_e) {}
+  }
+
+  function isConfirmTichuVisible(): boolean {
+    const confirmBtn = document.getElementById("confirmTichu");
+    return Boolean(
+      confirmBtn &&
+      confirmBtn.offsetParent !== null &&
+      !confirmBtn.classList.contains("hide") &&
+      confirmBtn.style.display !== "none",
+    );
+  }
+
+  function getConfirmTichuBetValue(): number {
+    const confirmBtn = document.getElementById("confirmTichu");
+    if (confirmBtn?.getAttribute("data-grand") === "1") return 200;
+    if (confirmBtn?.getAttribute("data-grand") === "0") return 100;
+    const stName = getUi()?.gamedatas?.gamestate?.name;
+    return stName === "grandTichuBets" ? 200 : 100;
   }
 
   function getSortedPlayers(): any[] {
@@ -449,11 +948,128 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     const sitecoreRunning = Number(
       ((window as any).g_sitecore && (window as any).g_sitecore.ajaxcall_running) || 0,
     );
+    const uiAjaxRunning = Number(ui.ajaxcall_running || 0);
+    let ifaceLocked = Boolean(typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked());
+    const ajaxBusy = Number(ui._ajaxInFlight || 0) > 0;
     const nq = ui.notifqueue;
-    const queueLen = nq && Array.isArray(nq.queue) ? nq.queue.length : 0;
-    const waitingSync = Boolean(nq && nq.waiting_from_notifend !== null);
+    const qLen = nq && Array.isArray(nq.queue) ? nq.queue.length : 0;
+    const waitingSync = Boolean(
+      nq &&
+      ((nq.waiting_from_notifend !== null && nq.waiting_from_notifend !== undefined) ||
+        nq.isProcessing),
+    );
     const resyncing = Boolean(nq && nq.notificationResendInProgress);
-    return actionsRunning > 0 || sitecoreRunning > 0 || queueLen > 0 || waitingSync || resyncing;
+    if (
+      ifaceLocked &&
+      actionsRunning === 0 &&
+      sitecoreRunning === 0 &&
+      uiAjaxRunning === 0 &&
+      !ajaxBusy &&
+      qLen === 0 &&
+      !waitingSync &&
+      !resyncing &&
+      (ui.interface_status === "queued" || ui.interface_status === "dispatched") &&
+      ui.interface_locked_by_id
+    ) {
+      const lockUuid = ui.interface_locked_by_id;
+      const dj = typeof dojo !== "undefined" ? dojo : (window as any).dojo;
+      if (dj && typeof dj.publish === "function") {
+        dj.publish("lockInterface", [{ status: "updated", uuid: lockUuid, bIsTableMsg: true }]);
+      }
+      if (
+        typeof ui.isInterfaceLocked === "function" &&
+        ui.isInterfaceLocked() &&
+        typeof ui.unlockInterface === "function"
+      ) {
+        ui.unlockInterface(lockUuid);
+      }
+      ifaceLocked = Boolean(typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked());
+    }
+    return Boolean(
+      actionsRunning > 0 ||
+      sitecoreRunning > 0 ||
+      uiAjaxRunning > 0 ||
+      ifaceLocked ||
+      ajaxBusy ||
+      qLen > 0 ||
+      waitingSync ||
+      resyncing,
+    );
+  }
+
+  async function withStudioActionLock<T>(
+    tableId: number,
+    ownerId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    if (isLocalHost || !tableId) {
+      return fn();
+    }
+    const lockKey = `tichu_studio_action_lock_${tableId}`;
+    const cooldownKey = `tichu_studio_action_cooldown_${tableId}`;
+    const lockTtlMs = 8000;
+    const maxWaitMs = 12000;
+    const cooldownMs = 400;
+    const waitStart = Date.now();
+    let acquired = false;
+    let waitedForContention = false;
+
+    while (Date.now() - waitStart < maxWaitMs) {
+      try {
+        const now = Date.now();
+        const cooldownUntil = Number(localStorage.getItem(cooldownKey) || 0);
+        if (cooldownUntil > now) {
+          waitedForContention = true;
+          await new Promise((r) => setTimeout(r, Math.min(80, cooldownUntil - now)));
+          continue;
+        }
+        const existingRaw = localStorage.getItem(lockKey);
+        if (existingRaw) {
+          const parsed = JSON.parse(existingRaw);
+          if (parsed && Number(parsed.expiresAt || 0) > now && parsed.owner !== ownerId) {
+            waitedForContention = true;
+            await new Promise((r) => setTimeout(r, 40 + Math.floor(Math.random() * 50)));
+            continue;
+          }
+        }
+        localStorage.setItem(
+          lockKey,
+          JSON.stringify({ owner: ownerId, expiresAt: Date.now() + lockTtlMs }),
+        );
+        await new Promise((r) => setTimeout(r, 15));
+        const confirmRaw = localStorage.getItem(lockKey);
+        const confirmParsed = confirmRaw ? JSON.parse(confirmRaw) : null;
+        if (confirmParsed && confirmParsed.owner === ownerId) {
+          acquired = true;
+          break;
+        }
+      } catch (_e) {
+        break;
+      }
+      waitedForContention = true;
+      await new Promise((r) => setTimeout(r, 30 + Math.floor(Math.random() * 40)));
+    }
+
+    try {
+      if (waitedForContention) {
+        await new Promise((r) => setTimeout(r, 150));
+        await waitUntilIdle(3000, 30);
+      }
+      return await fn();
+    } finally {
+      if (acquired) {
+        try {
+          localStorage.setItem(cooldownKey, String(Date.now() + cooldownMs));
+          const curRaw = localStorage.getItem(lockKey);
+          if (curRaw) {
+            const cur = JSON.parse(curRaw);
+            if (cur && cur.owner === ownerId) {
+              localStorage.removeItem(lockKey);
+            }
+          }
+        } catch (_e) {}
+      }
+    }
   }
 
   function nextMicrotaskTick(): Promise<void> {
@@ -463,15 +1079,22 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   async function waitLitUpdates(): Promise<void> {
     await nextMicrotaskTick();
     try {
-      const els = queryDeepAll(
+      const parentEls = queryDeepAll(
         "tichu-hand, tichu-status, tichu-player-panel, tichu-last-played, tichu-pass-area, tichu-action-bar",
       );
-      const promises: Promise<any>[] = [];
-      for (let i = 0; i < els.length; i++) {
-        const uc = (els[i] as any)?.updateComplete;
-        if (uc && typeof uc.then === "function") promises.push(uc);
+      const p1: Promise<any>[] = [];
+      for (let i = 0; i < parentEls.length; i++) {
+        const uc = (parentEls[i] as any)?.updateComplete;
+        if (uc && typeof uc.then === "function") p1.push(uc);
       }
-      if (promises.length > 0) await Promise.all(promises);
+      if (p1.length > 0) await Promise.all(p1);
+      const childEls = queryDeepAll("tichu-stock, tichu-card");
+      const p2: Promise<any>[] = [];
+      for (let i = 0; i < childEls.length; i++) {
+        const uc = (childEls[i] as any)?.updateComplete;
+        if (uc && typeof uc.then === "function") p2.push(uc);
+      }
+      if (p2.length > 0) await Promise.all(p2);
     } catch (_e) {}
     await nextMicrotaskTick();
   }
@@ -722,6 +1345,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       if (mode === "instant") {
         (document.querySelector("tichu-animation-layer") as any)?.cancelAll?.();
       }
+      if (origLocalSetSpeed && origLocalSetSpeed !== tt.setSpeed) {
+        origLocalSetSpeed(mode);
+      }
       if (ui) {
         ui.instantaneousMode = mode === "instant" || mode === "fast";
         const nq = ui.notifqueue;
@@ -749,6 +1375,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     },
 
     waitUntilIdle,
+
+    state(logToConsole = true) {
+      return tt.status(logToConsole);
+    },
 
     status(logToConsole = true) {
       const ui = getUi();
@@ -882,13 +1512,31 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       if (!overall) {
         throw new Error("[ASSERT_UI FAILED] #overall-content element missing from DOM");
       }
+      if (
+        isLocalHost &&
+        stateName &&
+        overall.className.indexOf("gamestate_") !== -1 &&
+        !overall.classList.contains(`gamestate_${stateName}`)
+      ) {
+        throw new Error(
+          `[ASSERT_UI FAILED] #overall-content classList "${overall.className}" does not contain "gamestate_${stateName}"`,
+        );
+      }
 
       const myHandItems = queryDeepAll("#myhand .stockitem:not(.to_be_destroyed)");
       if (!ui.isSpectator && stateName !== "endRound" && stateName !== "newRound") {
-        const stagedPassCount = Array.isArray(ui.cardsToPass)
+        const legacyStaged = Array.isArray(ui.cardsToPass)
           ? ui.cardsToPass.filter(Boolean).length
           : 0;
-        const expectedHandDom = Math.max(0, (gd.hand || []).length - stagedPassCount);
+        const gmState = (window as any).gameModel?.getState?.();
+        const modelStaged = Array.isArray(gmState?.passSlots)
+          ? gmState.passSlots.filter((s: any) => s && s.givenCard).length
+          : 0;
+        const stagedPassCount = Math.max(legacyStaged, modelStaged);
+        const expectedHandDom =
+          gmState && Array.isArray(gmState.hand)
+            ? gmState.hand.length
+            : Math.max(0, (gd.hand || []).length - stagedPassCount);
         if (myHandItems.length !== expectedHandDom) {
           throw new Error(
             `[ASSERT_UI FAILED] #myhand .stockitem count (${myHandItems.length}) !== expected hand size (${expectedHandDom}, gamedatas.hand=${(gd.hand || []).length}, staged=${stagedPassCount})`,
@@ -932,6 +1580,23 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             `[ASSERT_UI FAILED] Invalid handcount "${hcNodes[0]!.textContent}" for player ${pId}`,
           );
         }
+        if (
+          isLocalHost &&
+          !ui.isSpectator &&
+          pId === Number(ui.player_id) &&
+          stateName !== "endRound" &&
+          stateName !== "newRound" &&
+          stateName !== "giveCards" &&
+          stateName !== "showPassedCards" &&
+          stateName !== "acceptPassedCards"
+        ) {
+          const actualHandLen = (gd.hand || []).length;
+          if (numVal !== actualHandLen) {
+            throw new Error(
+              `[ASSERT_UI FAILED] Viewer .handcount.${pId} (${numVal}) !== gamedatas.hand.length (${actualHandLen})`,
+            );
+          }
+        }
       }
 
       return {
@@ -955,7 +1620,14 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           : Number(ui.player_id);
 
       const prevTestUser = ui.forceTestUser;
-      if (targetPlayerId && targetPlayerId !== Number(ui.player_id)) {
+      if (
+        isLocalHost &&
+        targetPlayerId &&
+        (ui.isSpectator || targetPlayerId !== Number(ui.player_id)) &&
+        origLocalSwitchSeat
+      ) {
+        await origLocalSwitchSeat(targetPlayerId);
+      } else if (targetPlayerId && targetPlayerId !== Number(ui.player_id)) {
         ui.forceTestUser = targetPlayerId;
       }
 
@@ -965,7 +1637,44 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         "#f0883e",
       );
 
-      try {
+      const studioTableId = Number(ui.table_id || ui.gamedatas?.table_id || 0);
+      const preStateName = String(ui.gamedatas?.gamestate?.name || "");
+      const preActivePlayer = String(ui.gamedatas?.gamestate?.active_player || "");
+      const turnSensitiveActions = new Set([
+        "pass",
+        "playCombo",
+        "collect",
+        "choosePhoenix",
+        "cancelPhoenix",
+        "makeAWish",
+        "chooseDragonGift",
+      ]);
+      const runAjax = async () => {
+        if (
+          (typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked()) ||
+          Number(ui.ajaxcall_running || 0) > 0 ||
+          isQueueBusy()
+        ) {
+          await waitUntilIdle(3000, 30);
+        }
+        if (
+          !isLocalHost &&
+          preStateName &&
+          ui.gamedatas?.gamestate &&
+          turnSensitiveActions.has(actionName)
+        ) {
+          const curStateName = String(ui.gamedatas.gamestate.name || "");
+          const curActivePlayer = String(ui.gamedatas.gamestate.active_player || "");
+          if (
+            curStateName !== preStateName ||
+            (actionName !== "pass" && curActivePlayer !== preActivePlayer) ||
+            (actionName === "pass" &&
+              preActivePlayer === String(targetPlayerId) &&
+              curActivePlayer !== preActivePlayer)
+          ) {
+            throw new Error("The game changed while your action was being processed");
+          }
+        }
         await new Promise<void>((resolve, reject) => {
           ui.ajaxcall(
             `/tichu/tichu/${actionName}.html`,
@@ -978,6 +1687,15 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             },
           );
         });
+      };
+
+      try {
+        if (!isLocalHost && studioTableId > 0) {
+          const lockOwner = `${targetPlayerId}:${actionName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+          await withStudioActionLock(studioTableId, lockOwner, runAjax);
+        } else {
+          await runAjax();
+        }
       } finally {
         ui.forceTestUser = prevTestUser;
       }
@@ -1021,14 +1739,21 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return tt.ajax("confirmTichu", { bet: Number(bet) }, seat);
     },
 
-    async giveCards(cards?: any) {
+    async giveCards(cards?: any, seat?: any) {
       const ui = getUi();
+      if (isLocalHost && seat !== undefined && seat !== null && origLocalSwitchSeat) {
+        const targetId = resolvePlayerId(seat);
+        if (ui.isSpectator || targetId !== Number(ui.player_id)) {
+          await origLocalSwitchSeat(targetId);
+        }
+      }
       const gd = ui.gamedatas;
 
-      if (typeof ui.onResetPassCards === "function" && Array.isArray(ui.cardsToPass)) {
-        if (ui.cardsToPass.some(Boolean)) {
-          ui.onResetPassCards();
-        }
+      const gmSlots = (window as any).gameModel?.getState?.()?.passSlots;
+      const hasModelStaged = Array.isArray(gmSlots) && gmSlots.some((s: any) => s && s.givenCard);
+      const hasLegacyStaged = Array.isArray(ui.cardsToPass) && ui.cardsToPass.some(Boolean);
+      if (typeof ui.onResetPassCards === "function" && (hasLegacyStaged || hasModelStaged)) {
+        ui.onResetPassCards();
       }
 
       const chosenCards =
@@ -1057,13 +1782,21 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
       const toGiveStr = chosenCards.map((c) => c.id).join(";") + ";";
       try {
-        return await tt.ajax("giveTheCards", { cards: toGiveStr });
+        return await tt.ajax("giveTheCards", { cards: toGiveStr }, seat);
       } catch (err) {
         if (typeof ui.onResetPassCards === "function") {
           ui.onResetPassCards();
         }
         throw err;
       }
+    },
+
+    async passCards(cards?: any, seat?: any) {
+      return tt.giveCards(cards, seat);
+    },
+
+    async acceptCards(seat?: any) {
+      return tt.ajax("acceptCards", {}, seat);
     },
 
     async passAllCards(cards?: any) {
@@ -1085,8 +1818,14 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return tt.status(false);
     },
 
-    async play(cards?: any) {
+    async play(cards?: any, seat?: any) {
       const ui = getUi();
+      if (isLocalHost && seat !== undefined && seat !== null && origLocalSwitchSeat) {
+        const targetId = resolvePlayerId(seat);
+        if (ui.isSpectator || targetId !== Number(ui.player_id)) {
+          await origLocalSwitchSeat(targetId);
+        }
+      }
       const gd = ui.gamedatas;
 
       const chosenCards =
@@ -1106,7 +1845,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }
 
       const cardIdStr = chosenCards.map((c) => c.id).join(";");
-      return tt.ajax("playCombo", { cards: cardIdStr });
+      return tt.ajax("playCombo", { cards: cardIdStr }, seat);
     },
 
     async pass(onlyOnce = true, seat?: any) {
@@ -1119,7 +1858,13 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     async collect(seat?: any) {
       const ui = getUi();
-      clearTimeout(ui.autoCollectTimeout);
+      if (ui && ui.autoCollectTimeout) {
+        clearTimeout(ui.autoCollectTimeout);
+        ui.autoCollectTimeout = null;
+      }
+      if (ui) {
+        clearTimeout(ui._otherPlayerAutoCollectTimeout);
+      }
       const st = ui && ui.gamedatas && ui.gamedatas.gamestate;
       const targetSeat =
         seat !== undefined && seat !== null
@@ -1129,7 +1874,16 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             : undefined;
       const isViewerCollect =
         ui && (!targetSeat || Number(resolvePlayerId(targetSeat)) === Number(ui.player_id));
-      if (isViewerCollect) {
+      if (isViewerCollect && ui.collectSent) {
+        await waitUntilIdle(5000, 30);
+        if (ui.gamedatas?.gamestate?.name !== "confirmTrick") {
+          return tt.status(false);
+        }
+        if (!isQueueBusy()) {
+          ui.collectSent = false;
+        }
+      }
+      if (isViewerCollect && ui) {
         ui.collectSent = true;
       }
       try {
@@ -1166,8 +1920,11 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     async choosePhoenix(rank?: any, seat?: any) {
       const ui = getUi();
       let parsedRank = rank !== undefined ? parseRankToken(rank) : null;
-      if (!parsedRank && Array.isArray(ui.allowedValues) && ui.allowedValues.length > 0) {
-        parsedRank = Number(ui.allowedValues[0]);
+      if (!parsedRank) {
+        const allowed = getAllowedPhoenixValues(ui);
+        if (allowed.length > 0) {
+          parsedRank = allowed[0]!;
+        }
       }
       if (!parsedRank) {
         throw new Error(`Invalid Phoenix value "${rank}"`);
@@ -1208,6 +1965,12 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     async bomb(cards?: any, seat?: any) {
       const ui = getUi();
+      if (isLocalHost && seat !== undefined && seat !== null && origLocalSwitchSeat) {
+        const targetId = resolvePlayerId(seat);
+        if (ui.isSpectator || targetId !== Number(ui.player_id)) {
+          await origLocalSwitchSeat(targetId);
+        }
+      }
       const curState = ui.gamedatas && ui.gamedatas.gamestate && ui.gamedatas.gamestate.name;
       if (curState !== "playBomb") {
         await tt.ajax("playBomb", { cards: "" }, seat);
@@ -1215,7 +1978,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           return tt.status(false);
         }
       }
-      return tt.play(cards);
+      return tt.play(cards, seat);
     },
 
     async cancelBomb(seat?: any) {
@@ -1423,7 +2186,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return { ok: true, stoppedTableId: tid };
     },
 
-    async expressStartNew() {
+    async expressStartNew({ gameLength = 2 }: { gameLength?: number } = {}) {
       const ui = getUi();
       const oldTableId = Number((ui && ui.table_id) || 0);
       const gameId = Number((ui && ui.game_id) || 1386);
@@ -1442,6 +2205,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         throw new Error((cJson && cJson.error) || "createnew failed");
       }
       const newTableId = Number(cJson.data.table);
+      await fetch(
+        `/table/table/changeoption.html?table=${newTableId}&id=100&value=${Number(gameLength) || 2}&noerrortracking=true&dojo.preventCache=${Date.now()}`,
+        { headers, credentials: "same-origin" },
+      ).catch(() => {});
       const sJson = await fetch(
         `/tablemanager/tablemanager/expressStart.html?table=${newTableId}&noerrortracking=true&dojo.preventCache=${Date.now()}`,
         { headers, credentials: "same-origin" },
@@ -1481,7 +2248,34 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     clearConsoleIssues() {
       consoleIssues.length = 0;
+      actionErrorLog.length = 0;
+      autoPlayCtrl.actionErrors.length = 0;
       return [];
+    },
+
+    _recordActionError(url: string, err: string) {
+      const ui = getUi();
+      const stateName = String(ui?.gamedatas?.gamestate?.name || autoPlayCtrl.lastState || "");
+      const errText = String(err || "AJAX error");
+      const entry = {
+        ts: new Date().toISOString(),
+        url: String(url || ""),
+        state: stateName,
+        error: errText,
+      };
+      if (actionErrorLog.length >= 200) {
+        actionErrorLog.shift();
+      }
+      actionErrorLog.push(entry);
+      if (autoPlayCtrl.running) {
+        autoPlayCtrl.actionErrors.push({
+          ts: entry.ts,
+          state: stateName,
+          error: url ? `${url}: ${errText}` : errText,
+        });
+      }
+      recordConsoleIssue("error", "ajax.error", [url ? `${url}: ${errText}` : errText]);
+      return entry;
     },
 
     async actMyTurn() {
@@ -1502,85 +2296,564 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }
 
       let assertionsPassed = 0;
+      const handCards = ui.gamedatas.hand || [];
+      if (cur.state.name === "grandTichuBets") {
+        // Dismiss any leftover end-of-round popin modal before acting or asserting UI.
+        document.querySelectorAll(".bga-popin-underlay").forEach((el) => el.remove());
+        if (handCards.length !== 8) {
+          return { acted: false, reason: "waiting_8_cards", status: cur, assertionsPassed };
+        }
+      }
+      if (cur.isMyTurn && cur.state.name === "giveCards" && handCards.length < 14) {
+        return { acted: false, reason: "waiting_14_cards", status: cur, assertionsPassed };
+      }
+
       tt.assertUI();
       assertionsPassed++;
 
+      const myPlayerId = Number(ui.player_id);
+      const { myIdx, partner, opps } = getTeamRelations(cur.players || [], myPlayerId);
+      const cv = (window as any).__tichuComboValidator;
+      const gmState = (window as any).gameModel?.getState?.();
+      const rawLast = gmState?.trickLastCombo ?? ui.gamedatas.lastCombo;
+      const hasTableCombo = Boolean(
+        rawLast && rawLast.type !== undefined && Number(rawLast.type) !== 99,
+      );
+      const lastCombo =
+        cv?.Combo && hasTableCombo ? cv.Combo.fromLastComboState(rawLast) : cv?.Combo?.noCombo;
+      const lastPlayerId = Number(
+        ui.gamedatas.lastComboPlayer || gmState?.trickLastCombo?.playerId || 0,
+      );
+      const wish = Number(ui.gamedatas.mahjongWish || 0);
+      const mustWish =
+        cv?.Hand &&
+        wish >= 2 &&
+        wish <= 14 &&
+        new cv.Hand(handCards).canFulFillWish(wish, lastCombo)
+          ? wish
+          : 0;
+      const currentBombTrickSig = `${cur.round}:${cur.trick}:${lastPlayerId}:${lastCombo?.type ?? 99}:${lastCombo?.cards?.length || 0}:${(lastCombo?.cards || []).map((c: any) => c.id).join(",")}`;
+
+      // Handle confirmTichu 60s prompt if active state OR #confirmTichu button is visible.
+      if (cur.state.name === "confirmTichu" || isConfirmTichuVisible()) {
+        const betVal = getConfirmTichuBetValue();
+        await tt.confirmTichu(betVal);
+        if (betVal === 200) {
+          lastGrandTichuBetRoundByPlayer[myPlayerId] = Number(cur.round || 0);
+        }
+        await waitUntilIdle(5000, 30);
+        await waitLitUpdates();
+        const after = tt.status(false);
+        if (after && after.state.name !== "endRound" && after.state.name !== "newRound") {
+          tt.assertUI();
+          assertionsPassed++;
+        }
+        return {
+          acted: true,
+          stateBefore: cur.state.name,
+          action: `confirmTichu(${betVal})`,
+          status: after,
+          assertionsPassed,
+        };
+      }
+
+      // Out-of-turn bomb interrupt when opponent holds a valuable/dangerous trick in playCombo.
       if (!cur.isMyTurn) {
+        if (
+          cur.state.name === "playCombo" &&
+          !ui.isSpectator &&
+          handCards.length >= 4 &&
+          cv?.Combo &&
+          cv?.Hand &&
+          lastCombo &&
+          lastCombo.type !== 99 &&
+          lastCombo.type !== 0 &&
+          lastPlayerId > 0 &&
+          lastPlayerId !== myPlayerId &&
+          lastPlayerId !== Number(partner?.id ?? -1) &&
+          currentBombTrickSig !== lastCanceledBombSig &&
+          (Number(cur.trickPoints || 0) >= 10 ||
+            opps.some((o: any) => o.handCount > 0 && o.handCount <= 4))
+        ) {
+          const bombs = findAllRealBombsInHand(handCards, cv).filter(
+            (b) =>
+              b.canBeat(lastCombo) &&
+              (!mustWish || b.cards.some((c: any) => Number(c.type_arg) === mustWish)),
+          );
+          if (bombs.length > 0) {
+            await new Promise((r) => setTimeout(r, (Math.max(0, myIdx) + 1) * 25));
+            await waitUntilIdle(2000, 20);
+            const recheck = tt.status(false);
+            const recheckGmState = (window as any).gameModel?.getState?.();
+            const recheckLastPlayerId = Number(
+              ui.gamedatas.lastComboPlayer || recheckGmState?.trickLastCombo?.playerId || 0,
+            );
+            if (
+              recheck &&
+              recheck.state.name === "playCombo" &&
+              !recheck.isMyTurn &&
+              recheck.round === cur.round &&
+              recheck.trick === cur.trick &&
+              recheckLastPlayerId === lastPlayerId &&
+              currentBombTrickSig !== lastCanceledBombSig
+            ) {
+              lastCanceledBombSig = currentBombTrickSig;
+              await tt.bomb();
+              await waitUntilIdle(5000, 30);
+              await waitLitUpdates();
+              const after = tt.status(false);
+              if (after && after.state.name !== "endRound" && after.state.name !== "newRound") {
+                tt.assertUI();
+                assertionsPassed++;
+              }
+              return {
+                acted: true,
+                stateBefore: cur.state.name,
+                action: "playBomb(interrupt)",
+                status: after,
+                assertionsPassed,
+              };
+            }
+          }
+        }
         return { acted: false, reason: "not_my_turn", status: cur, assertionsPassed };
       }
 
       let actionDesc = "";
       switch (cur.state.name) {
         case "grandTichuBets": {
-          if ((ui.gamedatas.hand || []).length !== 8) {
-            if (ui.notifqueue && !ui.notifqueue.notificationResendInProgress) {
-              ui.notifqueue.resynchronizeNotifications?.(false);
-            }
+          if (handCards.length !== 8) {
             return { acted: false, reason: "waiting_8_cards", status: cur, assertionsPassed };
           }
-          await tt.betGrandTichu(0);
-          actionDesc = "grandTichuBet(0)";
+          const curRound = Number(cur.round || 0);
+          const prevGtRound = lastGrandTichuBetRoundByPlayer[myPlayerId] ?? -1;
+          if (curRound < prevGtRound) {
+            delete lastGrandTichuBetRoundByPlayer[myPlayerId];
+          }
+          const myGtVal = Number(ui.gamedatas?.players?.[myPlayerId]?.call_grand_tichu ?? -1);
+          if (myGtVal >= 0 || lastGrandTichuBetRoundByPlayer[myPlayerId] === curRound) {
+            return { acted: false, reason: "already_bet_gt", status: cur, assertionsPassed };
+          }
+          const aces = handCards.filter((c: any) => Number(c.type_arg) === 14).length;
+          const kings = handCards.filter((c: any) => Number(c.type_arg) === 13).length;
+          const hasDragon = handCards.some(
+            (c: any) => Number(c.type) === 1 && Number(c.type_arg) === 1,
+          );
+          const hasPhoenix = handCards.some(
+            (c: any) => Number(c.type) === 2 && Number(c.type_arg) === 1,
+          );
+          const hasBomb = cv?.Combo ? findAllRealBombsInHand(handCards, cv).length > 0 : false;
+          const partnerBet = Boolean(
+            partner && (Number(partner.grandTichu) === 200 || Number(partner.tichu) === 100),
+          );
+          const shouldBetGt =
+            !partnerBet &&
+            (hasBomb || (hasDragon && hasPhoenix) || (hasDragon && aces + kings >= 2));
+          if (shouldBetGt) {
+            await tt.betGrandTichu(200);
+            await waitUntilIdle(5000, 30);
+            await waitLitUpdates();
+            if (isConfirmTichuVisible()) {
+              await tt.confirmTichu(200);
+              await waitUntilIdle(5000, 30);
+              await waitLitUpdates();
+            }
+            const afterGtVal = Number(ui.gamedatas?.players?.[myPlayerId]?.call_grand_tichu ?? -1);
+            if (afterGtVal >= 0) {
+              lastGrandTichuBetRoundByPlayer[myPlayerId] = curRound;
+            }
+            cornerCases.grandTichuBets++;
+            actionDesc = "grandTichuBet(200)";
+          } else {
+            await tt.betGrandTichu(0);
+            lastGrandTichuBetRoundByPlayer[myPlayerId] = curRound;
+            actionDesc = "grandTichuBet(0)";
+          }
           break;
         }
         case "giveCards": {
-          if ((ui.gamedatas.hand || []).length < 14) {
-            if (ui.notifqueue && !ui.notifqueue.notificationResendInProgress) {
-              ui.notifqueue.resynchronizeNotifications?.(false);
-            }
+          if (handCards.length < 14) {
             return { acted: false, reason: "waiting_14_cards", status: cur, assertionsPassed };
           }
-          await tt.giveCards();
-          actionDesc = "giveCards(3)";
+          const curRound = Number(cur.round || 0);
+          const prevGiveRound = lastGiveCardsRoundByPlayer[myPlayerId] ?? -1;
+          if (curRound < prevGiveRound) {
+            delete lastGiveCardsRoundByPlayer[myPlayerId];
+          }
+          if (lastGiveCardsRoundByPlayer[myPlayerId] === curRound) {
+            return { acted: false, reason: "already_gave_cards", status: cur, assertionsPassed };
+          }
+          if (myIdx === 0 && !cornerCases.resetPassTested) {
+            const sample = normalizeRealHand(handCards).slice(0, 3);
+            if (sample.length === 3 && ui.playerHand && typeof ui.onGiveCard === "function") {
+              for (let i = 0; i < 3; i++) {
+                ui.playerHand.unselectAll();
+                ui.playerHand.selectItem(String(sample[i]!.id));
+                ui.onGiveCard(i);
+              }
+              await waitLitUpdates();
+              if (typeof ui.onResetPassCards === "function") {
+                ui.onResetPassCards();
+              } else {
+                (window as any).gameModel?.resetPassCards?.();
+              }
+              ui.cardsToPass = [];
+              await waitLitUpdates();
+              const postSlots = (window as any).gameModel?.getState?.()?.passSlots;
+              const stillStagedInModel =
+                Array.isArray(postSlots) && postSlots.some((s: any) => s && s.givenCard);
+              const stillStagedInDom =
+                queryDeepAll("tichu-pass-area tichu-card.given-card").length > 0;
+              if (stillStagedInModel || stillStagedInDom) {
+                recordConsoleIssue("error", "resetPassCards", [
+                  "passArea did not clear after onResetPassCards",
+                ]);
+              }
+            }
+            cornerCases.resetPassTested = true;
+          }
+          const [opp0Card, partnerCard, opp1Card] = findSmartPassCards(handCards, cv);
+          passedOppRanksRound = Number(cur.round);
+          passedOppRanks = [opp0Card.type_arg, opp1Card.type_arg].filter((r) => r >= 2 && r <= 14);
+          const ids = [opp0Card, partnerCard, opp1Card].map((c) => `#${c.id}`);
+          await tt.giveCards(ids);
+          lastGiveCardsRoundByPlayer[myPlayerId] = curRound;
+          actionDesc = `giveCards(${[opp0Card, partnerCard, opp1Card].map((c) => formatCardCode(c)).join(",")})`;
           break;
         }
-        case "showPassedCards": {
-          await tt.ajax("acceptCards", {});
+        case "showPassedCards":
+        case "acceptPassedCards": {
+          await tt.acceptCards();
           actionDesc = "acceptCards";
           break;
         }
         case "playComboOpen":
         case "playCombo": {
-          const handCards = ui.gamedatas.hand || [];
           if (handCards.length === 0) {
             throw new Error(`isMyTurn=true in ${cur.state.name} with 0 cards in hand`);
           }
-          const cv = (window as any).__tichuComboValidator;
           if (!cv || !cv.Hand || !cv.Combo) {
             throw new Error("__tichuComboValidator is missing on window");
           }
+
+          // Pre-first-card Tichu bet on 14 cards when strong and no GT/partner bet yet.
+          const myP = (cur.players || []).find((p: any) => Number(p.id) === myPlayerId);
+          const myGt = Number(myP?.grandTichu ?? -1);
+          const myTi = Number(myP?.tichu ?? -1);
+          const partnerBet = Boolean(
+            partner && (Number(partner.grandTichu) === 200 || Number(partner.tichu) === 100),
+          );
+          if (handCards.length === 14 && myGt === 0 && myTi === -1 && !partnerBet) {
+            const hasBomb = findAllRealBombsInHand(handCards, cv).length > 0;
+            const hasDragon = handCards.some(
+              (c: any) => Number(c.type) === 1 && Number(c.type_arg) === 1,
+            );
+            const hasPhoenix = handCards.some(
+              (c: any) => Number(c.type) === 2 && Number(c.type_arg) === 1,
+            );
+            const aces = handCards.filter((c: any) => Number(c.type_arg) === 14).length;
+            if (hasBomb || (hasDragon && (hasPhoenix || aces >= 2))) {
+              await tt.betTichu();
+              cornerCases.tichuBets++;
+              await waitUntilIdle(5000, 30);
+              await waitLitUpdates();
+              if (isConfirmTichuVisible()) {
+                await tt.confirmTichu(100);
+                await waitUntilIdle(5000, 30);
+                await waitLitUpdates();
+              }
+            }
+          }
+
           const hand = new cv.Hand(handCards);
-          const gmState = (window as any).gameModel?.getState?.();
-          const rawLast = gmState?.trickLastCombo ?? ui.gamedatas.lastCombo;
-          const lastCombo =
-            cur.state.name === "playComboOpen"
-              ? cv.Combo.noCombo
-              : cv.Combo.fromLastComboState(rawLast);
-          const wish = Number(ui.gamedatas.mahjongWish || 0);
-          const mustWish =
-            wish >= 2 && wish <= 14 && hand.canFulFillWish(wish, lastCombo) ? wish : 0;
-          const playable = hand.findPlayableCombo(lastCombo, mustWish);
-          if (playable !== null) {
-            const ids = playable.cards.map((c: any) => `#${c.id}`).join(";");
+          const effectiveLast = cur.state.name === "playComboOpen" ? cv.Combo.noCombo : lastCombo;
+          const activeWish =
+            wish >= 2 && wish <= 14 && hand.canFulFillWish(wish, effectiveLast) ? wish : 0;
+
+          if (cur.state.name === "playComboOpen") {
+            const rawCandidates = generateLegalCombos(handCards, cv.Combo.noCombo, activeWish, cv);
+            const bombs = findAllRealBombsInHand(handCards, cv);
+            const bombIds = getBombCardIdSet(bombs);
+            const preferClean = (list: any[]) => {
+              const clean = list.filter((c) => !comboBreaksBomb(c, handCards.length, bombIds));
+              return clean.length > 0 ? clean : list;
+            };
+
+            let chosen: any = null;
+            const onePlay = rawCandidates.find((c) => c.cards.length === handCards.length) || null;
+            if (onePlay) {
+              chosen = onePlay;
+            }
+            if (!chosen && !activeWish) {
+              const dogCombo = rawCandidates.find((c) => c.type === 0) || null;
+              if (
+                dogCombo &&
+                partner &&
+                Number(partner.handCount) > 0 &&
+                ((Number(cur.trick) + cornerCases.dogLeads + myIdx) % 2 === 0 ||
+                  handCards.length <= 4)
+              ) {
+                chosen = dogCombo;
+                cornerCases.dogLeads++;
+              }
+            }
+            if (!chosen) {
+              const mjAll = preferClean(
+                rawCandidates.filter((c) =>
+                  c.cards.some((x: any) => Number(x.type) === 4 && Number(x.type_arg) === 1),
+                ),
+              );
+              if (mjAll.length > 0) {
+                const mjStraight = mjAll.find((c) => c.type === 6);
+                chosen = mjStraight || mjAll.find((c) => c.type === 1) || mjAll[0]!;
+                cornerCases.mahjongLeads++;
+              }
+            }
+            if (!chosen) {
+              const ambigList = preferClean(rawCandidates).filter(
+                (c) => c.type !== 7 && Array.isArray(c.phoenixValue) && c.phoenixValue.length > 1,
+              );
+              if (
+                ambigList.length > 0 &&
+                (!cornerCases.phoenixAmbiguousPlays ||
+                  (Number(cur.round) + Number(cur.trick)) % 4 === 0)
+              ) {
+                chosen = ambigList[0]!;
+              }
+            }
+            if (!chosen) {
+              const nonBombs = rawCandidates.filter(
+                (c) => c.type !== 7 && (c.type !== 0 || (partner && Number(partner.handCount) > 0)),
+              );
+              const pool = nonBombs.length > 0 ? nonBombs : rawCandidates;
+              const rotations: number[][] = [
+                [4, 5, 6, 3, 2, 1],
+                [6, 4, 5, 2, 3, 1],
+                [5, 3, 4, 6, 2, 1],
+                [2, 6, 3, 4, 5, 1],
+                [3, 2, 6, 4, 5, 1],
+              ];
+              const order = rotations[(Number(cur.round) + Number(cur.trick) + myIdx) % 5]!;
+              for (let f = 0; f < order.length; f++) {
+                const famType = order[f]!;
+                const famList = preferClean(pool.filter((c) => c.type === famType));
+                if (famList.length === 0) continue;
+                famList.sort((a, b) => {
+                  const scoreSingle = (c: any): number => {
+                    if (c.type !== 1) return comboRankStrength(c);
+                    const card = c.cards[0];
+                    if (card && Number(card.type_arg) === 1 && Number(card.type) === 1) return 1000;
+                    if (card && Number(card.type_arg) === 1 && Number(card.type) === 2) return 990;
+                    if (card && Number(card.type_arg) === 14) return 500;
+                    return comboRankStrength(c);
+                  };
+                  return scoreSingle(a) - scoreSingle(b);
+                });
+                const pickIdx = Number(cur.trick) > 2 && famList.length > 2 ? 1 : 0;
+                chosen = famList[pickIdx]!;
+                break;
+              }
+            }
+            if (!chosen) {
+              chosen = hand.findPlayableCombo(cv.Combo.noCombo, activeWish);
+            }
+            if (!chosen) {
+              throw new Error("No playable combo found in playComboOpen");
+            }
+            if (chosen.cards.length > 1) {
+              cornerCases.multiCardLeads++;
+            }
+            if (Array.isArray(chosen.phoenixValue) && chosen.phoenixValue.length > 1) {
+              cornerCases.phoenixAmbiguousPlays++;
+            }
+            const ids = chosen.cards.map((c: any) => `#${c.id}`).join(";");
             await tt.play(ids);
-            actionDesc = `play(${playable.cards.map((c: any) => formatCardCode(c)).join(",")})`;
-          } else if (cur.state.name === "playCombo") {
-            await tt.pass(true);
-            actionDesc = "pass(once)";
+            actionDesc = `play(${chosen.cards.map((c: any) => formatCardCode(c)).join(",")})`;
+            break;
+          }
+
+          // playCombo (following)
+          const rawCandidates = generateLegalCombos(handCards, effectiveLast, activeWish, cv);
+          const bombs = findAllRealBombsInHand(handCards, cv);
+          const bombIds = getBombCardIdSet(bombs);
+          const preferClean = (list: any[]) => {
+            const clean = list.filter((c) => !comboBreaksBomb(c, handCards.length, bombIds));
+            return clean.length > 0 ? clean : list;
+          };
+          const partnerOwnsTrick = Boolean(partner && Number(partner.id) === lastPlayerId);
+          const onePlay = rawCandidates.find((c) => c.cards.length === handCards.length) || null;
+
+          let chosen: any = null;
+          let shouldPass = false;
+
+          if (onePlay) {
+            chosen = onePlay;
+          } else if (partnerOwnsTrick && !activeWish) {
+            shouldPass = true;
+            cornerCases.partnerPasses++;
           } else {
-            throw new Error("No playable combo found in playComboOpen");
+            const nonBombs = rawCandidates.filter((c) => c.type !== 7);
+            const bombBeaters = rawCandidates.filter((c) => c.type === 7);
+
+            if (nonBombs.length > 0) {
+              const ambig = !activeWish
+                ? preferClean(nonBombs).filter(
+                    (c) => Array.isArray(c.phoenixValue) && c.phoenixValue.length > 1,
+                  )
+                : [];
+              if (ambig.length > 0 && !cornerCases.phoenixAmbiguousPlays) {
+                chosen = ambig[0]!;
+              } else {
+                const clean = preferClean(nonBombs);
+                clean.sort((a, b) => {
+                  const score = (c: any): number => {
+                    let s = comboRankStrength(c);
+                    if (
+                      c.type === 1 &&
+                      c.cards[0] &&
+                      Number(c.cards[0].type_arg) === 1 &&
+                      Number(c.cards[0].type) === 1
+                    ) {
+                      s += 1000;
+                    } else if (
+                      c.type === 1 &&
+                      c.cards[0] &&
+                      Number(c.cards[0].type_arg) === 1 &&
+                      Number(c.cards[0].type) === 2
+                    ) {
+                      s += 950;
+                    }
+                    return s;
+                  };
+                  return score(a) - score(b);
+                });
+                const candidate = clean[0]!;
+                const usesDragonOrPhoenixSingle =
+                  candidate.type === 1 &&
+                  candidate.cards[0] &&
+                  Number(candidate.cards[0].type_arg) === 1 &&
+                  (Number(candidate.cards[0].type) === 1 || Number(candidate.cards[0].type) === 2);
+                const highAceOnZero =
+                  candidate.type === 1 &&
+                  candidate.cards[0] &&
+                  Number(candidate.cards[0].type_arg) === 14 &&
+                  comboRankStrength(effectiveLast) >= 13;
+                if (
+                  !activeWish &&
+                  Number(cur.trickPoints || 0) === 0 &&
+                  handCards.length > 4 &&
+                  opps.every((o: any) => o.handCount === 0 || o.handCount > 5) &&
+                  (usesDragonOrPhoenixSingle || highAceOnZero)
+                ) {
+                  shouldPass = true;
+                } else {
+                  chosen = candidate;
+                }
+              }
+            } else if (bombBeaters.length > 0) {
+              if (
+                activeWish ||
+                Number(cur.trickPoints || 0) >= 10 ||
+                opps.some((o: any) => o.handCount > 0 && o.handCount <= 4)
+              ) {
+                chosen = bombBeaters[0]!;
+                cornerCases.bombsPlayed++;
+              } else {
+                shouldPass = true;
+              }
+            } else if (activeWish > 0) {
+              chosen = hand.findPlayableCombo(effectiveLast, activeWish);
+              if (!chosen) shouldPass = true;
+            } else {
+              shouldPass = true;
+            }
+          }
+
+          if (
+            lastPlayerId > 0 &&
+            lastPlayerId !== myPlayerId &&
+            lastPlayerId !== Number(partner?.id ?? -1) &&
+            (Number(cur.trickPoints || 0) >= 10 ||
+              opps.some((o: any) => o.handCount > 0 && o.handCount <= 4))
+          ) {
+            await new Promise((r) => setTimeout(r, 160));
+            await waitUntilIdle(2000, 20);
+            const recheck = tt.status(false);
+            if (!recheck || !recheck.isMyTurn || recheck.state.name !== "playCombo") {
+              return {
+                acted: false,
+                reason: "interrupted_by_bomb",
+                status: recheck || cur,
+                assertionsPassed,
+              };
+            }
+          }
+
+          if (shouldPass || !chosen) {
+            await tt.pass(true);
+            actionDesc = partnerOwnsTrick ? "pass(partner)" : "pass(once)";
+          } else {
+            if (activeWish > 0) {
+              cornerCases.wishesFulfilled++;
+            }
+            if (Array.isArray(chosen.phoenixValue) && chosen.phoenixValue.length > 1) {
+              cornerCases.phoenixAmbiguousPlays++;
+            }
+            const ids = chosen.cards.map((c: any) => `#${c.id}`).join(";");
+            await tt.play(ids);
+            actionDesc = `play(${chosen.cards.map((c: any) => formatCardCode(c)).join(",")})`;
           }
           break;
         }
         case "mahjongPlay": {
-          const handRanks = new Set((ui.gamedatas.hand || []).map((c: any) => Number(c.type_arg)));
-          const wishRank = Number(cur.round) === 1 && !handRanks.has(8) ? 8 : 15;
+          const handRanks = new Set(handCards.map((c: any) => Number(c.type_arg)));
+          let wishRank = 0;
+          if (passedOppRanksRound === Number(cur.round) && passedOppRanks.length > 0) {
+            for (let i = 0; i < passedOppRanks.length; i++) {
+              const r = passedOppRanks[i]!;
+              if (!handRanks.has(r) && r >= 2 && r <= 14) {
+                wishRank = r;
+                break;
+              }
+            }
+            if (!wishRank) {
+              wishRank = passedOppRanks[0] || 0;
+            }
+          }
+          if (!wishRank) {
+            const wishPool = [2, 5, 8, 10, 11, 13, 14, 15];
+            const startIdx =
+              (Number(cur.round) + Number(cur.trick) + Math.max(0, myIdx)) % wishPool.length;
+            for (let offset = 0; offset < wishPool.length; offset++) {
+              const cand = wishPool[(startIdx + offset) % wishPool.length]!;
+              if (cand === 15 || !handRanks.has(cand)) {
+                wishRank = cand;
+                break;
+              }
+            }
+            if (!wishRank) wishRank = 15;
+          }
           await tt.wish(wishRank);
+          cornerCases.wishesMade++;
           actionDesc = `wish(${wishRank})`;
           break;
         }
         case "phoenixPlay": {
-          await tt.choosePhoenix();
-          actionDesc = "choosePhoenix";
+          if (!cornerCases.phoenixCancelTested) {
+            cornerCases.phoenixCancelTested = true;
+            await tt.cancelPhoenix();
+            actionDesc = "cancelPhoenix(test)";
+          } else {
+            const allowed = getAllowedPhoenixValues(ui);
+            const chosenRank =
+              allowed.length > 0
+                ? allowed[
+                    (Number(cur.round) + Number(cur.trick) + Math.max(0, myIdx)) % allowed.length
+                  ]!
+                : undefined;
+            await tt.choosePhoenix(chosenRank);
+            actionDesc = `choosePhoenix(${chosenRank ?? "default"})`;
+          }
           break;
         }
         case "confirmTrick": {
@@ -1589,13 +2862,46 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           break;
         }
         case "chooseDragonGift": {
-          await tt.giveDragon(0);
-          actionDesc = "giveDragon(0)";
+          const players = cur.players || [];
+          const opp0 = myIdx >= 0 && players.length === 4 ? players[(myIdx + 1) % 4] : null;
+          const opp1 = myIdx >= 0 && players.length === 4 ? players[(myIdx + 3) % 4] : null;
+          let enemyIndex = (Number(cur.round) + Number(cur.trick)) % 2;
+          if (opp0 && opp1) {
+            const c0 = Number(opp0.handCount ?? 0);
+            const c1 = Number(opp1.handCount ?? 0);
+            if (c0 > c1) enemyIndex = 0;
+            else if (c1 > c0) enemyIndex = 1;
+          }
+          await tt.giveDragon(enemyIndex);
+          cornerCases.dragonGifts++;
+          actionDesc = `giveDragon(${enemyIndex})`;
           break;
         }
         case "playBomb": {
-          await tt.cancelBomb();
-          actionDesc = "cancelBomb";
+          if (!cornerCases.bombCancelTested) {
+            cornerCases.bombCancelTested = true;
+            lastCanceledBombSig = currentBombTrickSig;
+            await tt.cancelBomb();
+            actionDesc = "cancelBomb(test)";
+          } else {
+            const bombs = cv?.Combo
+              ? findAllRealBombsInHand(handCards, cv).filter(
+                  (b) =>
+                    (!lastCombo || lastCombo.type === 99 || b.canBeat(lastCombo)) &&
+                    (!mustWish || b.cards.some((c: any) => Number(c.type_arg) === mustWish)),
+                )
+              : [];
+            if (bombs.length > 0) {
+              const ids = bombs[0]!.cards.map((c: any) => `#${c.id}`).join(";");
+              await tt.play(ids);
+              cornerCases.bombsPlayed++;
+              actionDesc = `playBomb(${bombs[0]!.cards.map((c: any) => formatCardCode(c)).join(",")})`;
+            } else {
+              lastCanceledBombSig = currentBombTrickSig;
+              await tt.cancelBomb();
+              actionDesc = "cancelBomb(fallback)";
+            }
+          }
           break;
         }
         default:
@@ -1622,6 +2928,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     autoPlayStatus() {
       const cur = tt.status(false);
       const issues = tt.getConsoleIssues();
+      const errs = autoPlayCtrl.running ? autoPlayCtrl.actionErrors : actionErrorLog;
       return {
         running: autoPlayCtrl.running,
         tableId: cur?.tableId ?? autoPlayCtrl.tableId,
@@ -1642,9 +2949,15 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         })),
         consoleIssueCount: issues.length,
         consoleIssues: issues,
-        actionErrors: autoPlayCtrl.actionErrors,
+        actionErrorCount: errs.length,
+        actionErrors: errs,
+        cornerCases: { ...cornerCases },
         elapsedMs: autoPlayCtrl.startedAt ? Date.now() - autoPlayCtrl.startedAt : 0,
       };
+    },
+
+    getAutoPlayStatus() {
+      return tt.autoPlayStatus();
     },
 
     stopAutoPlayMe(reason = "stopped_by_user") {
@@ -1660,56 +2973,35 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     startAutoPlayMe({
       timeoutMs = 600000,
       staggerMs = 350,
-    }: { timeoutMs?: number; staggerMs?: number } = {}) {
-      if (autoPlayCtrl.running) {
-        tt.stopAutoPlayMe("restarted");
-      }
-      tt.setSpeed("instant");
-      const ui = getUi();
-      const initStatus = tt.status(false);
-      if (!ui || !initStatus) {
-        throw new Error("Game UI not ready for startAutoPlayMe");
-      }
-      const players = getSortedPlayers();
-      const myPlayerId = Number(ui.player_id);
-      const mySeat = players.findIndex((p: any) => Number(p.id) === myPlayerId);
-
-      autoPlayCtrl.running = true;
-      autoPlayCtrl.stopRequested = false;
-      autoPlayCtrl.stopReason = "";
-      autoPlayCtrl.tableId = initStatus.tableId;
-      autoPlayCtrl.player = initStatus.viewer;
-      autoPlayCtrl.playerId = myPlayerId;
-      autoPlayCtrl.seat = mySeat;
-      autoPlayCtrl.movesPlayed = 0;
-      autoPlayCtrl.assertionsPassed = 0;
-      autoPlayCtrl.actionErrors = [];
-      autoPlayCtrl.moveHistory = [];
-      autoPlayCtrl.startedAt = Date.now();
-      autoPlayCtrl.lastRound = initStatus.round;
-      autoPlayCtrl.lastTrick = initStatus.trick;
-      autoPlayCtrl.lastState = initStatus.state.name;
-
-      logAnnounce(
-        "[TICHU AUTOPLAY]",
-        `▶ Starting real-player loop for ${initStatus.viewer} (seat ${mySeat}) on Table #${initStatus.tableId}`,
-        "#3fb950",
-      );
-
+      stopOnIssue = true,
+    }: { timeoutMs?: number; staggerMs?: number; stopOnIssue?: boolean } = {}) {
       return new Promise((resolve) => {
+        const myRunId = ++autoPlayRunSeq;
+        const isSuperseded = () => autoPlayCtrl.runId !== myRunId;
+        const stallTimeoutMs = isLocalHost ? 30000 : 90000;
+        const outEl = document.getElementById("tt_test_output");
+        let ui: any = null;
+        let myPlayerId = 0;
+        let mySeat = -1;
+        let initStatus: any = null;
         let ticking = false;
         let finished = false;
         let lastProgressAt = Date.now();
+        let lastProgressSig = "";
         let lastResyncAt = 0;
+        let waitingCardsSince = 0;
+        let waitingSeatResynced = false;
         let multiactiveKey = "";
         let multiactiveSeenAt = 0;
+        let prevTickStateName = "";
+        let lastActedKey = "";
+        let lastActedAt = 0;
         let intervalId: number | null = null;
         const dojoSubs: any[] = [];
         const mc = typeof MessageChannel !== "undefined" ? new MessageChannel() : null;
 
-        const outEl = document.getElementById("tt_test_output");
         const writeLiveOutput = (cur: any) => {
-          if (!outEl || finished) return;
+          if (!outEl || finished || isSuperseded()) return;
           const issues = tt.getConsoleIssues();
           outEl.setAttribute("data-done", "0");
           outEl.setAttribute("data-status", "running");
@@ -1727,7 +3019,8 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             scores: cur?.players?.map((p: any) => p.score) ?? [],
             consoleIssueCount: issues.length,
             actionErrorCount: autoPlayCtrl.actionErrors.length,
-            elapsedMs: Date.now() - autoPlayCtrl.startedAt,
+            cornerCases: { ...cornerCases },
+            elapsedMs: autoPlayCtrl.startedAt ? Date.now() - autoPlayCtrl.startedAt : 0,
           });
         };
 
@@ -1751,14 +3044,20 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               mc.port2.close();
             } catch (_e) {}
           }
-          autoPlayCtrl.running = false;
-          autoPlayCtrl.kick = () => {};
+          if (autoPlayCtrl.runId === myRunId) {
+            autoPlayCtrl.running = false;
+            autoPlayCtrl.kick = () => {};
+          }
         };
 
-        const finish = (okOverride?: boolean, extraError?: string) => {
+        const finish = (okOverride?: boolean, extraError?: string, extraStack?: string) => {
           if (finished) return;
           finished = true;
           cleanup();
+          if (isSuperseded()) {
+            resolve({ ok: false, superseded: true, runId: myRunId });
+            return;
+          }
           const cur = tt.status(false);
           const issues = tt.getConsoleIssues();
           if (extraError) {
@@ -1766,6 +3065,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               ts: new Date().toISOString(),
               state: cur?.state?.name || autoPlayCtrl.lastState,
               error: extraError,
+              ...(extraStack ? { stack: extraStack } : {}),
             });
           }
           const ok =
@@ -1776,6 +3076,8 @@ export function initStudioTestHelper(gameuiInstance: any): void {
                 autoPlayCtrl.actionErrors.length === 0;
           const summary = {
             ok,
+            ...(extraError ? { error: extraError } : {}),
+            ...(extraStack ? { stack: extraStack } : {}),
             tableId: cur?.tableId ?? autoPlayCtrl.tableId,
             player: autoPlayCtrl.player,
             playerId: autoPlayCtrl.playerId,
@@ -1795,10 +3097,17 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             consoleIssueCount: issues.length,
             consoleIssues: issues,
             actionErrors: autoPlayCtrl.actionErrors,
+            cornerCases: { ...cornerCases },
             stopReason: autoPlayCtrl.stopReason || undefined,
-            elapsedMs: Date.now() - autoPlayCtrl.startedAt,
+            elapsedMs: autoPlayCtrl.startedAt ? Date.now() - autoPlayCtrl.startedAt : 0,
             moveHistory: autoPlayCtrl.moveHistory.slice(-25),
           };
+          if (outEl) {
+            outEl.setAttribute("data-status", ok ? "pass" : "fail");
+            outEl.setAttribute("data-done", "1");
+            outEl.style.color = ok ? "#3fb950" : "#f85149";
+            outEl.textContent = JSON.stringify(summary);
+          }
           logAnnounce(
             "[TICHU AUTOPLAY]",
             `${ok ? "✔ DONE" : "✘ FINISHED WITH ISSUES"} — ${summary.player}: moves=${summary.movesPlayed}, assertions=${summary.assertionsPassed}, issues=${summary.consoleIssueCount}, errors=${summary.actionErrors.length}`,
@@ -1806,6 +3115,71 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           );
           resolve(summary);
         };
+
+        try {
+          autoPlayCtrl.runId = myRunId;
+          if (autoPlayCtrl.running) {
+            tt.stopAutoPlayMe("restarted");
+          }
+          actionErrorLog.length = 0;
+          consoleIssues.length = 0;
+          tt.setSpeed("instant");
+          ui = getUi();
+          initStatus = tt.status(false);
+          if (!ui || !initStatus) {
+            throw new Error("Game UI not ready for startAutoPlayMe");
+          }
+          const players = getSortedPlayers();
+          myPlayerId = Number(ui.player_id);
+          mySeat = players.findIndex((p: any) => Number(p.id) === myPlayerId);
+          prevTickStateName = initStatus.state.name;
+          delete lastGrandTichuBetRoundByPlayer[myPlayerId];
+          delete lastGiveCardsRoundByPlayer[myPlayerId];
+
+          autoPlayCtrl.running = true;
+          autoPlayCtrl.runId = myRunId;
+          autoPlayCtrl.stopRequested = false;
+          autoPlayCtrl.stopReason = "";
+          autoPlayCtrl.tableId = initStatus.tableId;
+          autoPlayCtrl.player = initStatus.viewer;
+          autoPlayCtrl.playerId = myPlayerId;
+          autoPlayCtrl.seat = mySeat;
+          autoPlayCtrl.movesPlayed = 0;
+          autoPlayCtrl.assertionsPassed = 0;
+          autoPlayCtrl.actionErrors = [];
+          autoPlayCtrl.moveHistory = [];
+          autoPlayCtrl.startedAt = Date.now();
+          autoPlayCtrl.lastRound = initStatus.round;
+          autoPlayCtrl.lastTrick = initStatus.trick;
+          autoPlayCtrl.lastState = initStatus.state.name;
+          if (ui) {
+            delete ui._abortState;
+          }
+          if (!isLocalHost && initStatus.tableId) {
+            try {
+              localStorage.removeItem(`tichu_studio_abort_${initStatus.tableId}`);
+            } catch (_e) {}
+          }
+
+          logAnnounce(
+            "[TICHU AUTOPLAY]",
+            `▶ Starting real-player loop for ${initStatus.viewer} (seat ${mySeat}) on Table #${initStatus.tableId}`,
+            "#3fb950",
+          );
+        } catch (initErr: any) {
+          const msg = (initErr && initErr.message) || String(initErr);
+          const stack = initErr && initErr.stack ? String(initErr.stack) : undefined;
+          autoPlayCtrl.stopReason = `init_error:${msg}`;
+          if (stopOnIssue) {
+            void postLocalAbort(msg, {
+              playerId: Number(getUi()?.player_id || 0),
+              stack,
+              state: getUi()?.gamedatas?.gamestate?.name || "",
+            });
+          }
+          finish(false, msg, stack);
+          return;
+        }
 
         const checkPrevpacketBuffer = () => {
           const nq = ui?.notifqueue;
@@ -1819,16 +3193,90 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             const age = now - Number(nq.prevpacketBuffer[i]?.bufferedAt || now);
             if (age > oldestAge) oldestAge = age;
           }
-          if (oldestAge > 350 && now - lastResyncAt > 500) {
+          const thresholdMs = isLocalHost ? 350 : 2500;
+          if (oldestAge > thresholdMs && now - lastResyncAt > 500) {
             lastResyncAt = now;
-            nq.resynchronizeNotifications?.(false);
+            let fromPacketId: number | null = null;
+            for (let i = 0; i < nq.prevpacketBuffer.length; i++) {
+              const a = nq.prevpacketBuffer[i];
+              const prevMap = a?.notifs?.prevpacket;
+              if (!prevMap || typeof prevMap !== "object") continue;
+              for (const s of Object.keys(prevMap)) {
+                const r =
+                  typeof nq.resolvePrevpacketChannelKey === "function"
+                    ? nq.resolvePrevpacketChannelKey(s, a.notifs, a.channelKey)
+                    : null;
+                if (
+                  r &&
+                  nq.channelLastAppliedPacketId &&
+                  nq.channelLastAppliedPacketId[r] !== undefined
+                ) {
+                  const l = Number(
+                    nq.getLastAppliedPacketIdForChannel?.(r) ?? nq.channelLastAppliedPacketId[r],
+                  );
+                  if (Number(prevMap[s]) > l) {
+                    const d = l + 1;
+                    if (fromPacketId === null || d < fromPacketId) {
+                      fromPacketId = d;
+                    }
+                  }
+                }
+              }
+            }
+            if (fromPacketId === null && nq.last_packet_id !== undefined) {
+              fromPacketId = Number(nq.last_packet_id) + 1;
+            }
+            nq.resynchronizeNotifications?.(false, fromPacketId ?? undefined);
           }
         };
 
+        const readSharedAbort = () => {
+          if (ui?._abortState) {
+            const ts = Number(ui._abortState?.timestamp || 0);
+            if (ts && ts < autoPlayCtrl.startedAt) {
+              delete ui._abortState;
+            } else {
+              return;
+            }
+          }
+          if (isLocalHost || !autoPlayCtrl.tableId) return;
+          try {
+            const key = `tichu_studio_abort_${autoPlayCtrl.tableId}`;
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              const ts = Number(parsed?.timestamp || 0);
+              if (ts && ts < autoPlayCtrl.startedAt) {
+                localStorage.removeItem(key);
+              } else {
+                ui._abortState = parsed;
+              }
+            }
+          } catch (_e) {}
+        };
+
+        const isTransientTurnRaceError = (msg: string): boolean =>
+          /This is not your turn|This game action is impossible right now|The game changed while your action was being processed|You cannot pass now|You can't play a bomb right now|You can't bomb before the trick starts/i.test(
+            msg,
+          );
+
         const tick = async () => {
+          if (isSuperseded()) {
+            finish(false, "superseded");
+            return;
+          }
           if (ticking || finished) return;
           if (autoPlayCtrl.stopRequested) {
             finish(false, autoPlayCtrl.stopReason || "stopped");
+            return;
+          }
+          readSharedAbort();
+          if (ui._abortState) {
+            autoPlayCtrl.stopReason = `shared_abort:${ui._abortState.reason || "issue"}`;
+            finish(
+              false,
+              `Shared abort from P${ui._abortState.playerId ?? "?"}: ${ui._abortState.reason || "issue"}`,
+            );
             return;
           }
           if (Date.now() - autoPlayCtrl.startedAt > timeoutMs) {
@@ -1842,15 +3290,52 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               return;
             }
             await waitLitUpdates();
+            if (isSuperseded() || finished) {
+              finish(false, "superseded");
+              return;
+            }
+            readSharedAbort();
+            if (ui._abortState) {
+              autoPlayCtrl.stopReason = `shared_abort:${ui._abortState.reason || "issue"}`;
+              finish(
+                false,
+                `Shared abort from P${ui._abortState.playerId ?? "?"}: ${ui._abortState.reason || "issue"}`,
+              );
+              return;
+            }
+
+            if (stopOnIssue) {
+              const curIssues = tt.getConsoleIssues();
+              if (curIssues.length > 0 || autoPlayCtrl.actionErrors.length > 0) {
+                const reason =
+                  autoPlayCtrl.actionErrors[0]?.error ||
+                  curIssues[0]?.message ||
+                  "console_or_action_issue";
+                autoPlayCtrl.stopReason = `issue:${reason}`;
+                await postLocalAbort(reason, {
+                  playerId: myPlayerId,
+                  consoleIssues: curIssues,
+                  actionErrors: autoPlayCtrl.actionErrors,
+                  state: autoPlayCtrl.lastState,
+                });
+                finish(false, `Stopped on issue: ${reason}`);
+                return;
+              }
+            }
+
             const cur = tt.status(false);
             if (!cur) return;
 
-            const stateSig = `${cur.round}:${cur.trick}:${cur.state.name}:${cur.activePlayerId}:${cur.multiactiveIds.join(",")}`;
-            if (
-              cur.round !== autoPlayCtrl.lastRound ||
-              cur.trick !== autoPlayCtrl.lastTrick ||
-              cur.state.name !== autoPlayCtrl.lastState
-            ) {
+            if (cur.state.name !== prevTickStateName) {
+              lastActedKey = "";
+              prevTickStateName = cur.state.name;
+              waitingCardsSince = 0;
+              waitingSeatResynced = false;
+            }
+
+            const stateSig = `${cur.round}:${cur.trick}:${cur.state.name}:${cur.activePlayerId}:${cur.multiactiveIds.join(",")}:${(ui.gamedatas?.hand || []).length}:${isConfirmTichuVisible() ? 1 : 0}`;
+            if (stateSig !== lastProgressSig) {
+              lastProgressSig = stateSig;
               lastProgressAt = Date.now();
             }
             autoPlayCtrl.lastRound = cur.round;
@@ -1863,7 +3348,83 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               return;
             }
 
-            if (cur.state.type === "multipleactiveplayer" && cur.isMyTurn) {
+            if (Date.now() - lastProgressAt > stallTimeoutMs) {
+              const reason = `Stalled for >${Math.round(stallTimeoutMs / 1000)}s in state ${cur.state.name} (round=${cur.round}, trick=${cur.trick}, active=${cur.activePlayerId}, multi=${cur.multiactiveIds.join(",")}, hand=${(ui.gamedatas?.hand || []).length})`;
+              autoPlayCtrl.stopReason = reason;
+              if (stopOnIssue) {
+                await postLocalAbort(reason, {
+                  playerId: myPlayerId,
+                  state: cur.state.name,
+                  round: cur.round,
+                  trick: cur.trick,
+                  activePlayerId: cur.activePlayerId,
+                  multiactiveIds: cur.multiactiveIds,
+                  handCount: (ui.gamedatas?.hand || []).length,
+                });
+              }
+              finish(false, reason);
+              return;
+            }
+
+            const confirmNowVisible = cur.state.name === "confirmTichu" || isConfirmTichuVisible();
+            if (!cur.isMyTurn && !confirmNowVisible) {
+              waitingCardsSince = 0;
+              waitingSeatResynced = false;
+              // Check out-of-turn bomb opportunity in playCombo.
+              if (
+                cur.state.name === "playCombo" &&
+                !ui.isSpectator &&
+                (ui.gamedatas?.hand || []).length >= 4
+              ) {
+                const issuesBefore = consoleIssues.length;
+                const actionLogBefore = actionErrorLog.length;
+                const ctrlErrBefore = autoPlayCtrl.actionErrors.length;
+                try {
+                  const bombRes = await tt.actMyTurn();
+                  autoPlayCtrl.assertionsPassed += bombRes.assertionsPassed || 0;
+                  if (bombRes.acted) {
+                    lastActedKey = "";
+                    autoPlayCtrl.movesPlayed++;
+                    lastProgressAt = Date.now();
+                    autoPlayCtrl.moveHistory.push({
+                      move: autoPlayCtrl.movesPlayed,
+                      round: cur.round,
+                      trick: cur.trick,
+                      state: bombRes.stateBefore || cur.state.name,
+                      action: bombRes.action || "",
+                    });
+                    if (autoPlayCtrl.moveHistory.length > 50) {
+                      autoPlayCtrl.moveHistory.shift();
+                    }
+                    writeLiveOutput(bombRes.status || tt.status(false));
+                    scheduleKick();
+                    return;
+                  }
+                } catch (bombErr: any) {
+                  const msg = (bombErr && bombErr.message) || String(bombErr);
+                  if (isTransientTurnRaceError(msg)) {
+                    consoleIssues.length = issuesBefore;
+                    actionErrorLog.length = actionLogBefore;
+                    autoPlayCtrl.actionErrors.length = ctrlErrBefore;
+                    return;
+                  }
+                  throw bombErr;
+                }
+              }
+
+              if (
+                Date.now() - lastProgressAt > 15000 &&
+                Date.now() - lastResyncAt > 5000 &&
+                ui.notifqueue &&
+                !ui.notifqueue.notificationResendInProgress
+              ) {
+                lastResyncAt = Date.now();
+                ui.notifqueue.resynchronizeNotifications?.(false);
+              }
+              return;
+            }
+
+            if (cur.state.type === "multipleactiveplayer" && cur.isMyTurn && !confirmNowVisible) {
               const key = `${cur.round}:${cur.state.name}`;
               if (multiactiveKey !== key) {
                 multiactiveKey = key;
@@ -1879,19 +3440,13 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               multiactiveKey = "";
             }
 
-            if (!cur.isMyTurn) {
-              if (
-                Date.now() - lastProgressAt > 15000 &&
-                Date.now() - lastResyncAt > 5000 &&
-                ui.notifqueue &&
-                !ui.notifqueue.notificationResendInProgress
-              ) {
-                lastResyncAt = Date.now();
-                ui.notifqueue.resynchronizeNotifications?.(false);
-              }
+            if (lastActedKey && lastActedKey === stateSig && Date.now() - lastActedAt < 1500) {
               return;
             }
 
+            const loopIssuesBefore = consoleIssues.length;
+            const loopActionLogBefore = actionErrorLog.length;
+            const loopCtrlErrBefore = autoPlayCtrl.actionErrors.length;
             let actedOk = false;
             let lastErr: any = null;
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -1899,6 +3454,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
                 const res = await tt.actMyTurn();
                 autoPlayCtrl.assertionsPassed += res.assertionsPassed || 0;
                 if (res.acted) {
+                  waitingCardsSince = 0;
+                  waitingSeatResynced = false;
+                  lastActedKey = stateSig;
+                  lastActedAt = Date.now();
                   autoPlayCtrl.movesPlayed++;
                   lastProgressAt = Date.now();
                   autoPlayCtrl.moveHistory.push({
@@ -1914,34 +3473,114 @@ export function initStudioTestHelper(gameuiInstance: any): void {
                   writeLiveOutput(res.status || tt.status(false));
                   actedOk = true;
                 } else if (res.reason === "waiting_8_cards" || res.reason === "waiting_14_cards") {
+                  if (!waitingCardsSince) {
+                    waitingCardsSince = Date.now();
+                  }
+                  const waitedMs = Date.now() - waitingCardsSince;
+                  if (waitedMs > 12000) {
+                    const reason = `Stuck waiting for cards in ${cur.state.name} (reason=${res.reason}, hand=${(ui.gamedatas?.hand || []).length})`;
+                    autoPlayCtrl.stopReason = reason;
+                    if (stopOnIssue) {
+                      await postLocalAbort(reason, {
+                        playerId: myPlayerId,
+                        state: cur.state.name,
+                        round: cur.round,
+                        trick: cur.trick,
+                        handCount: (ui.gamedatas?.hand || []).length,
+                        waitReason: res.reason,
+                      });
+                    }
+                    finish(false, reason);
+                    return;
+                  }
+                  if (
+                    waitedMs > 1500 &&
+                    Date.now() - lastResyncAt > 2000 &&
+                    ui.notifqueue &&
+                    !ui.notifqueue.notificationResendInProgress
+                  ) {
+                    lastResyncAt = Date.now();
+                    ui.notifqueue.resynchronizeNotifications?.(false);
+                  }
+                  if (waitedMs > 3000 && !waitingSeatResynced && isLocalHost) {
+                    waitingSeatResynced = true;
+                    await ui._switchSeatInPlace?.(myPlayerId);
+                  }
                   setTimeout(scheduleKick, 120);
                   actedOk = true;
                 } else {
+                  waitingCardsSince = 0;
+                  waitingSeatResynced = false;
                   actedOk = true;
                 }
                 break;
               } catch (err: any) {
                 lastErr = err;
                 const msg = (err && err.message) || String(err);
+                const stack = err && err.stack ? String(err.stack) : undefined;
                 autoPlayCtrl.actionErrors.push({
                   ts: new Date().toISOString(),
                   state: cur.state.name,
                   error: `attempt ${attempt + 1} (${stateSig}): ${msg}`,
+                  ...(stack ? { stack } : {}),
                 });
-                if (attempt < 2) {
-                  await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+                if (stopOnIssue && msg.indexOf("[ASSERT_UI FAILED]") !== -1) {
+                  break;
+                }
+                if (attempt < 2 && isTransientTurnRaceError(msg)) {
+                  consoleIssues.length = loopIssuesBefore;
+                  actionErrorLog.length = loopActionLogBefore;
+                  autoPlayCtrl.actionErrors.length = loopCtrlErrBefore;
+                  await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
                   await waitUntilIdle(5000, 30);
                   const recheck = tt.status(false);
-                  if (!recheck || !recheck.isMyTurn || recheck.state.name === "gameEnd") {
+                  if (
+                    !recheck ||
+                    !recheck.isMyTurn ||
+                    recheck.state.name !== cur.state.name ||
+                    recheck.round !== cur.round ||
+                    recheck.trick !== cur.trick ||
+                    recheck.state.name === "gameEnd"
+                  ) {
                     actedOk = true;
                     break;
                   }
+                } else {
+                  break;
                 }
               }
             }
             if (!actedOk && lastErr) {
-              finish(false, (lastErr && lastErr.message) || String(lastErr));
+              const msg = (lastErr && lastErr.message) || String(lastErr);
+              const stack = lastErr && lastErr.stack ? String(lastErr.stack) : undefined;
+              if (stopOnIssue) {
+                await postLocalAbort(msg, {
+                  playerId: myPlayerId,
+                  stack,
+                  consoleIssues: tt.getConsoleIssues(),
+                  actionErrors: autoPlayCtrl.actionErrors,
+                  state: cur.state.name,
+                });
+              }
+              finish(false, msg, stack);
               return;
+            }
+            if (stopOnIssue) {
+              const postIssues = tt.getConsoleIssues();
+              if (postIssues.length > 0 || autoPlayCtrl.actionErrors.length > 0) {
+                const reason =
+                  autoPlayCtrl.actionErrors[0]?.error ||
+                  postIssues[0]?.message ||
+                  "console_or_action_issue";
+                await postLocalAbort(reason, {
+                  playerId: myPlayerId,
+                  consoleIssues: postIssues,
+                  actionErrors: autoPlayCtrl.actionErrors,
+                  state: tt.status(false)?.state?.name || cur.state.name,
+                });
+                finish(false, `Stopped on issue: ${reason}`);
+                return;
+              }
             }
             const afterCur = tt.status(false);
             if (afterCur && (afterCur.state.name === "gameEnd" || afterCur.state.id === 99)) {
@@ -1949,7 +3588,18 @@ export function initStudioTestHelper(gameuiInstance: any): void {
               return;
             }
           } catch (outerErr: any) {
-            finish(false, (outerErr && outerErr.message) || String(outerErr));
+            const msg = (outerErr && outerErr.message) || String(outerErr);
+            const stack = outerErr && outerErr.stack ? String(outerErr.stack) : undefined;
+            if (stopOnIssue) {
+              await postLocalAbort(msg, {
+                playerId: myPlayerId,
+                stack,
+                consoleIssues: tt.getConsoleIssues(),
+                actionErrors: autoPlayCtrl.actionErrors,
+                state: autoPlayCtrl.lastState,
+              });
+            }
+            finish(false, msg, stack);
           } finally {
             ticking = false;
           }
@@ -1957,6 +3607,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
         let kickQueued = false;
         const scheduleKick = () => {
+          if (isSuperseded()) {
+            finish(false, "superseded");
+            return;
+          }
           if (finished || kickQueued) return;
           kickQueued = true;
           const runKick = () => {
@@ -1999,8 +3653,11 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     },
   };
 
+  let autoPlayRunSeq = 0;
+
   const autoPlayCtrl = {
     running: false,
+    runId: 0,
     stopRequested: false,
     stopReason: "",
     tableId: 0,
@@ -2009,7 +3666,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     seat: -1,
     movesPlayed: 0,
     assertionsPassed: 0,
-    actionErrors: [] as Array<{ ts: string; state: string; error: string }>,
+    actionErrors: [] as Array<{ ts: string; state: string; error: string; stack?: string }>,
     moveHistory: [] as Array<{
       move: number;
       round: number;
@@ -2468,7 +4125,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       outToggleBtn.addEventListener("click", toggleOutputExpanded);
     }
 
-    const runTask = async (label: string, fn: () => Promise<any> | any) => {
+    const runTask = async (label: string, fn: () => Promise<any> | any, abortOnCatch = false) => {
       hasJsonValue = false;
       outEl.setAttribute("data-done", "0");
       outEl.setAttribute("data-status", "running");
@@ -2484,9 +4141,20 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         outEl.style.color = isFail ? "#f85149" : "#3fb950";
         renderOutputText();
       } catch (err: any) {
+        const msg = (err && err.message) || String(err);
+        const stack = err && err.stack ? String(err.stack) : undefined;
+        if (abortOnCatch) {
+          await postLocalAbort(msg, {
+            playerId: Number(getUi()?.player_id || 0),
+            command: label,
+            stack,
+            state: getUi()?.gamedatas?.gamestate?.name || "",
+          });
+        }
         lastJsonValue = {
           ok: false,
-          error: (err && err.message) || String(err),
+          error: msg,
+          ...(stack ? { stack } : {}),
         };
         hasJsonValue = true;
         outEl.setAttribute("data-status", "fail");
@@ -2503,45 +4171,70 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }
     };
 
-    bind("tt_btn_smoke", "runSmokeTest", () => tt.runSmokeTest({ tricks: 3, speed: "instant" }));
-    bind("tt_btn_round", "runRound", () => tt.runRound({ speed: "instant" }));
-    bind("tt_btn_game", "runGame", () => tt.runGame({ speed: "instant" }));
-    bind("tt_btn_gt_all", "betAllGrandTichu", () => tt.betAllGrandTichu([0, 0, 0, 0]));
-    bind("tt_btn_pass_all", "passAllCards", () => tt.passAllCards());
-    bind("tt_btn_step1", "step(1)", () => tt.step(1));
-    bind("tt_btn_others", "actForOthers", () => tt.actForOthers());
+    const activeTt = () => (window as any).tt || tt;
+    bind("tt_btn_smoke", "runSmokeTest", () =>
+      activeTt().runSmokeTest({ tricks: 3, speed: "instant" }),
+    );
+    bind("tt_btn_round", "runRound", () => activeTt().runRound({ speed: "instant" }));
+    bind("tt_btn_game", "runGame", () => activeTt().runGame({ speed: "instant" }));
+    bind("tt_btn_gt_all", "betAllGrandTichu", () => activeTt().betAllGrandTichu([0, 0, 0, 0]));
+    bind("tt_btn_pass_all", "passAllCards", () => activeTt().passAllCards());
+    bind("tt_btn_step1", "step(1)", () => activeTt().step(1));
+    bind("tt_btn_others", "actForOthers", () => activeTt().actForOthers());
     bind("tt_btn_assert", "assertUI + status", () => ({
-      ui: tt.assertUI(),
-      status: tt.status(false),
+      ui: activeTt().assertUI(),
+      status: activeTt().status(false),
     }));
-    bind("tt_btn_new", "expressStartNew", () => tt.expressStartNew());
-    bind("tt_btn_stop", "expressStop", () => tt.expressStop());
+    bind("tt_btn_new", "expressStartNew", () => activeTt().expressStartNew());
+    bind("tt_btn_stop", "expressStop", () => activeTt().expressStop());
 
     const cmdBtn = document.getElementById("tt_cmd_run");
     const cmdInput = document.getElementById("tt_cmd_input") as HTMLInputElement | null;
     if (cmdBtn && cmdInput) {
+      let lastCmdRaw = "";
+      let lastCmdAt = 0;
       const executeCmd = () => {
         const raw = (cmdInput.value || "").trim();
         if (!raw) return;
+        const now = Date.now();
+        if (raw === lastCmdRaw && now - lastCmdAt < 800) {
+          return;
+        }
+        lastCmdRaw = raw;
+        lastCmdAt = now;
         const colonIdx = raw.indexOf(":");
         const method = (colonIdx === -1 ? raw : raw.slice(0, colonIdx)).trim();
         const argRaw = colonIdx === -1 ? undefined : raw.slice(colonIdx + 1).trim();
-        runTask(raw, async () => {
-          const fn = (tt as any)[method];
-          if (typeof fn !== "function") {
-            throw new Error(`Unknown tt method: "${method}"`);
-          }
-          if (argRaw === undefined || argRaw === "") {
-            return await fn.call(tt);
-          }
-          let parsedArg: any = argRaw;
+        let parsedArg: any = undefined;
+        let hasParsedArg = false;
+        if (argRaw !== undefined && argRaw !== "") {
+          hasParsedArg = true;
+          parsedArg = argRaw;
           try {
             parsedArg = JSON.parse(argRaw);
           } catch (_e) {
             // Keep string if not JSON
           }
-          return await fn.call(tt, parsedArg);
-        });
+        }
+        const abortOnCatch =
+          parsedArg && typeof parsedArg === "object" && "stopOnIssue" in parsedArg
+            ? Boolean(parsedArg.stopOnIssue)
+            : method === "startAutoPlayMe";
+        runTask(
+          raw,
+          async () => {
+            const curTt = (window as any).tt || tt;
+            const fn = curTt[method];
+            if (typeof fn !== "function") {
+              throw new Error(`Unknown tt method: "${method}"`);
+            }
+            if (!hasParsedArg) {
+              return await fn.call(curTt);
+            }
+            return await fn.call(curTt, parsedArg);
+          },
+          abortOnCatch,
+        );
       };
       cmdBtn.addEventListener("click", executeCmd);
       cmdInput.addEventListener("keydown", (e) => {
@@ -2553,14 +4246,78 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     }
   }
 
+  let mergedTt: any = tt;
+  if (existingTt) {
+    // Preserve local bga-shim.js multi-tab/scenario/runner methods while merging Studio driver methods.
+    const preservedLocal: Record<string, any> = {};
+    for (const k of [
+      "newGame",
+      "loadScenario",
+      "switchSeat",
+      "runScenario",
+      "runSuite",
+      "runRound",
+      "runGame",
+      "step",
+      "actForOthers",
+      "help",
+      "cancelAutopass",
+    ]) {
+      if (typeof existingTt[k] === "function") {
+        preservedLocal[k] = existingTt[k];
+      }
+    }
+    const studioOverlay: Record<string, any> = {
+      state: tt.state,
+      status: tt.status,
+      hand: tt.hand,
+      assertUI: tt.assertUI,
+      getConsoleIssues: tt.getConsoleIssues,
+      clearConsoleIssues: tt.clearConsoleIssues,
+      _recordActionError: tt._recordActionError,
+      betGrandTichu: tt.betGrandTichu,
+      betTichu: tt.betTichu,
+      confirmTichu: tt.confirmTichu,
+      giveCards: tt.giveCards,
+      passCards: tt.passCards,
+      acceptCards: tt.acceptCards,
+      play: tt.play,
+      pass: tt.pass,
+      wish: tt.wish,
+      choosePhoenix: tt.choosePhoenix,
+      cancelPhoenix: tt.cancelPhoenix,
+      giveDragon: tt.giveDragon,
+      collect: tt.collect,
+      bomb: tt.bomb,
+      cancelBomb: tt.cancelBomb,
+      actMyTurn: tt.actMyTurn,
+      startAutoPlayMe: tt.startAutoPlayMe,
+      stopAutoPlayMe: tt.stopAutoPlayMe,
+      autoPlayStatus: tt.autoPlayStatus,
+      getAutoPlayStatus: tt.getAutoPlayStatus,
+      setSpeed: tt.setSpeed,
+      setVerbose: tt.setVerbose,
+      waitUntilIdle: tt.waitUntilIdle,
+    };
+    mergedTt = Object.assign(existingTt, studioOverlay, preservedLocal);
+    if (typeof (tt as any).showBar === "function") {
+      mergedTt.showBar = (tt as any).showBar;
+    }
+  }
+
+  win.tt = mergedTt;
+  win.tichuTest = mergedTt;
+
   mountStudioTestBar();
 
-  win.tt = tt;
-  win.tichuTest = tt;
+  if (typeof (tt as any).showBar === "function") {
+    mergedTt.showBar = (tt as any).showBar;
+  }
+
   try {
     if (window.parent && window.parent !== window) {
-      (window.parent as any).tt = tt;
-      (window.parent as any).tichuTest = tt;
+      (window.parent as any).tt = mergedTt;
+      (window.parent as any).tichuTest = mergedTt;
       (window.parent as any).gameui = getUi();
     }
   } catch (_e) {
@@ -2568,7 +4325,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   logAnnounce(
-    "[TICHU STUDIO READY]",
+    isLocalHost ? "[TICHU LOCAL READY]" : "[TICHU STUDIO READY]",
     "Console runner `window.tt` & `#studio-test-bar` attached. Type `tt.help()` or click `🧪 Smoke Test`.",
     "#3fb950",
   );

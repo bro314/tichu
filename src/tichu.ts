@@ -33,6 +33,7 @@ export class Tichu {
   allLastCombos: Record<number, Combo | undefined> = {};
   stateName = "";
   active_player?: string;
+  private pendingConfirmTichu: { grand: boolean; msg: string; titleSave: string } | null = null;
   debugBreadcrumbs: Array<{
     ts: string;
     cat: "state" | "action" | "notif" | "warn";
@@ -40,6 +41,7 @@ export class Tichu {
     detail?: Record<string, unknown>;
   }> = [];
   versionWarningShown = false;
+  private lastReflexionTotal: Record<string, number> = {};
 
   playerHand = {
     getAllItems: () => {
@@ -125,35 +127,54 @@ export class Tichu {
     },
   };
 
-  get allowedValues(): number[] {
-    return window.gameModel?.getState().phoenixAllowedValues ?? [];
-  }
+  declare allowedValues: number[];
+  declare clockwise: boolean;
+  declare cardsToPass: (number | null)[];
 
-  set allowedValues(vals: number[]) {
-    window.gameModel?.setPhoenixAllowedValues(Array.isArray(vals) ? vals.map(Number) : []);
-  }
-
-  get clockwise(): boolean {
-    return window.gameModel ? window.gameModel.getState().clockwise : true;
-  }
-
-  set clockwise(val: boolean) {
-    window.gameModel?.setClockwise(Boolean(val));
-  }
-
-  get cardsToPass(): (number | null)[] {
-    if (!window.gameModel) return [];
-    const slots = window.gameModel.getState().passSlots;
-    const handIds = new Set((this.gamedatas?.hand || []).map((c: any) => Number(c.id)));
-    return slots.map((s) => {
-      if (!s.givenCard) return null;
-      const idNum = Number(s.givenCard.id);
-      return handIds.has(idNum) ? idNum : null;
+  /** Define live getters/setters as enumerable own descriptors so Dojo `declare` preserves them. */
+  installLegacyAccessors(target: any = this): void {
+    if (!target || typeof target !== "object") return;
+    const self = this;
+    Object.defineProperties(target, {
+      allowedValues: {
+        configurable: true,
+        enumerable: true,
+        get(): number[] {
+          return window.gameModel?.getState().phoenixAllowedValues ?? [];
+        },
+        set(vals: number[]) {
+          window.gameModel?.setPhoenixAllowedValues(Array.isArray(vals) ? vals.map(Number) : []);
+        },
+      },
+      clockwise: {
+        configurable: true,
+        enumerable: true,
+        get(): boolean {
+          return window.gameModel ? window.gameModel.getState().clockwise : true;
+        },
+        set(val: boolean) {
+          window.gameModel?.setClockwise(Boolean(val));
+        },
+      },
+      cardsToPass: {
+        configurable: true,
+        enumerable: true,
+        get(): (number | null)[] {
+          if (!window.gameModel) return [];
+          const slots = window.gameModel.getState().passSlots;
+          const ui = this && this.gamedatas ? this : self;
+          const handIds = new Set((ui.gamedatas?.hand || []).map((c: any) => Number(c.id)));
+          return slots.map((s) => {
+            if (!s.givenCard) return null;
+            const idNum = Number(s.givenCard.id);
+            return handIds.has(idNum) ? idNum : null;
+          });
+        },
+        set(_val: (number | null)[]) {
+          // Compatibility setter for test harnesses
+        },
+      },
     });
-  }
-
-  set cardsToPass(_val: (number | null)[]) {
-    // Compatibility setter for test harnesses
   }
 
   isReadOnly(): boolean {
@@ -454,8 +475,172 @@ export class Tichu {
     }
   }
 
+  private ensureGamestateReflexion(stateObj?: any): void {
+    const recordTotal = (total: unknown) => {
+      if (total && typeof total === "object" && !Array.isArray(total)) {
+        for (const [pId, val] of Object.entries(total as Record<string, unknown>)) {
+          const n = Number(val);
+          if (Number.isFinite(n)) {
+            this.lastReflexionTotal[pId] = n;
+          }
+        }
+      }
+    };
+    const isPlainObj = (v: unknown): v is Record<string, any> =>
+      Boolean(v && typeof v === "object" && !Array.isArray(v));
+    const apply = (target: any) => {
+      if (!target || typeof target !== "object") return;
+      // Normalize PHP empty-array [] or missing reflexion to a plain object so dojo.clone preserves .total
+      const rx = isPlainObj(target.reflexion) ? target.reflexion : (target.reflexion = {});
+      recordTotal(rx.total);
+
+      const playerIds = new Set<string>(Object.keys(this.lastReflexionTotal));
+      if (this.gamedatas?.players) {
+        for (const pId of Object.keys(this.gamedatas.players)) {
+          playerIds.add(String(pId));
+        }
+      }
+      if (
+        target.active_player !== undefined &&
+        target.active_player !== null &&
+        target.active_player !== "" &&
+        Number(target.active_player) !== 0
+      ) {
+        playerIds.add(String(target.active_player));
+      }
+      if (Array.isArray(target.multiactive)) {
+        for (const mId of target.multiactive) {
+          if (mId !== undefined && mId !== null && mId !== "" && Number(mId) !== 0) {
+            playerIds.add(String(mId));
+          }
+        }
+      }
+
+      playerIds.forEach((pId) => {
+        if (this.lastReflexionTotal[pId] === undefined) {
+          this.lastReflexionTotal[pId] = 0;
+        }
+      });
+
+      if (!isPlainObj(rx.total)) {
+        rx.total = { ...this.lastReflexionTotal };
+      } else {
+        for (const [pId, val] of Object.entries(this.lastReflexionTotal)) {
+          if (rx.total[pId] === undefined) {
+            rx.total[pId] = val;
+          }
+        }
+      }
+
+      if (!isPlainObj(rx.initial)) {
+        rx.initial = {};
+      }
+      if (!isPlainObj(rx.initial_ts)) {
+        rx.initial_ts = {};
+      }
+      const now = Date.now();
+      for (const [pId, val] of Object.entries(rx.total)) {
+        if (rx.initial[pId] === undefined) {
+          rx.initial[pId] = Number.isFinite(Number(val)) ? Number(val) : 0;
+        }
+        if (rx.initial_ts[pId] === undefined) {
+          rx.initial_ts[pId] = now;
+        }
+      }
+    };
+    if (stateObj) {
+      apply(stateObj);
+    }
+    if (this.gamedatas?.gamestate && this.gamedatas.gamestate !== stateObj) {
+      apply(this.gamedatas.gamestate);
+    }
+  }
+
+  private releaseOrphanedNotificationLock() {
+    if (typeof this.isInterfaceLocked !== "function" || !this.isInterfaceLocked()) {
+      return;
+    }
+    const ifaceStatus = (this as any).interface_status;
+    if (ifaceStatus !== "queued" && ifaceStatus !== "dispatched") {
+      return;
+    }
+    const actionsRunning = Number((this as any).bga?.actions?.ajaxcall_running || 0);
+    const uiAjaxRunning = Number((this as any).ajaxcall_running || 0);
+    const sitecoreRunning = Number((window as any).g_sitecore?.ajaxcall_running || 0);
+    if (actionsRunning > 0 || uiAjaxRunning > 0 || sitecoreRunning > 0) {
+      return;
+    }
+    const nq = this.notifqueue as any;
+    const qLen = nq && Array.isArray(nq.queue) ? nq.queue.length : 0;
+    const waitingSync = Boolean(
+      nq &&
+      ((nq.waiting_from_notifend !== null && nq.waiting_from_notifend !== undefined) ||
+        nq.isProcessing),
+    );
+    const resyncing = Boolean(nq && nq.notificationResendInProgress);
+    if (qLen > 0 || waitingSync || resyncing) {
+      return;
+    }
+    const lockUuid = (this as any).interface_locked_by_id;
+    const dj = typeof dojo !== "undefined" ? dojo : (window as any).dojo;
+    if (dj && typeof dj.publish === "function" && lockUuid) {
+      dj.publish("lockInterface", [{ status: "updated", uuid: lockUuid, bIsTableMsg: true }]);
+    }
+    if (this.isInterfaceLocked() && typeof (this as any).unlockInterface === "function") {
+      (this as any).unlockInterface(lockUuid);
+    }
+  }
+
+  onNotificationPacketDispatched() {
+    const parentMethod =
+      typeof ebg !== "undefined"
+        ? (ebg as any)?.core?.gamegui?.prototype?.onNotificationPacketDispatched
+        : null;
+    const res =
+      typeof parentMethod === "function" ? parentMethod.apply(this, arguments) : undefined;
+    this.releaseOrphanedNotificationLock();
+    return res;
+  }
+
+  ntf_gameStateChange(notif: any) {
+    if (notif?.args && Array.isArray(notif.args.args)) {
+      notif.args.args = {};
+    }
+    if (this.pendingConfirmTichu !== null && notif?.args) {
+      const nextName = notif.args.name;
+      if (nextName === "newRound" || nextName === "endRound" || nextName === "gameEnd") {
+        this.pendingConfirmTichu = null;
+      } else {
+        this.pendingConfirmTichu.titleSave = notif.args.descriptionmyturn ?? "";
+        notif.args.descriptionmyturn = this.pendingConfirmTichu.msg;
+      }
+    }
+    this.ensureGamestateReflexion(notif?.args);
+    const parentMethod =
+      typeof ebg !== "undefined"
+        ? (ebg as any)?.core?.gamegui?.prototype?.ntf_gameStateChange
+        : null;
+    const res = typeof parentMethod === "function" ? parentMethod.call(this, notif) : undefined;
+    this.ensureGamestateReflexion(this.gamedatas?.gamestate);
+    setTimeout(() => this.releaseOrphanedNotificationLock(), 0);
+    return res;
+  }
+
+  ntf_updateReflexionTime(notif: any) {
+    this.ensureGamestateReflexion();
+    const parentMethod =
+      typeof ebg !== "undefined"
+        ? (ebg as any)?.core?.gamegui?.prototype?.ntf_updateReflexionTime
+        : null;
+    const res = typeof parentMethod === "function" ? parentMethod.call(this, notif) : undefined;
+    this.ensureGamestateReflexion();
+    return res;
+  }
+
   setup(gamedatas: Gamedatas) {
+    this.installLegacyAccessors(this);
     this.gamedatas = gamedatas;
+    this.ensureGamestateReflexion(gamedatas?.gamestate);
     this.rehydrateModel();
 
     if (typeof ResizeObserver !== "undefined") {
@@ -500,7 +685,57 @@ export class Tichu {
     this.stateName = stateName;
     this.active_player = stateObject?.active_player;
     if (this.gamedatas && stateObject) {
+      // Preserve reflexion.total / initial / initial_ts populated on the cloned gamestate by
+      // BGA's ntf_gameStateChange -> updateReflexionTime(!0) before replacing gamestate.
+      const prevRx = (this.gamedatas.gamestate as any)?.reflexion;
+      if (prevRx && typeof prevRx === "object" && !Array.isArray(prevRx)) {
+        const nextRx =
+          stateObject.reflexion &&
+          typeof stateObject.reflexion === "object" &&
+          !Array.isArray(stateObject.reflexion)
+            ? stateObject.reflexion
+            : (stateObject.reflexion = {});
+        if (prevRx.total && typeof prevRx.total === "object" && !Array.isArray(prevRx.total)) {
+          nextRx.total = {
+            ...prevRx.total,
+            ...(nextRx.total && typeof nextRx.total === "object" && !Array.isArray(nextRx.total)
+              ? nextRx.total
+              : {}),
+          };
+        }
+        if (
+          prevRx.initial &&
+          typeof prevRx.initial === "object" &&
+          !Array.isArray(prevRx.initial)
+        ) {
+          nextRx.initial = {
+            ...prevRx.initial,
+            ...(nextRx.initial &&
+            typeof nextRx.initial === "object" &&
+            !Array.isArray(nextRx.initial)
+              ? nextRx.initial
+              : {}),
+          };
+        }
+        if (
+          prevRx.initial_ts &&
+          typeof prevRx.initial_ts === "object" &&
+          !Array.isArray(prevRx.initial_ts)
+        ) {
+          nextRx.initial_ts = {
+            ...prevRx.initial_ts,
+            ...(nextRx.initial_ts &&
+            typeof nextRx.initial_ts === "object" &&
+            !Array.isArray(nextRx.initial_ts)
+              ? nextRx.initial_ts
+              : {}),
+          };
+        }
+      }
+      this.ensureGamestateReflexion(stateObject);
       this.gamedatas.gamestate = stateObject;
+    } else {
+      this.ensureGamestateReflexion(stateObject);
     }
     const overall = document.getElementById("overall-content");
     if (overall && stateName) {
@@ -574,7 +809,9 @@ export class Tichu {
     this.enableAllPlayerPanels();
     if (this.gamedatas) {
       this.gamedatas.capturedCards = [];
-      this.gamedatas.hand = [];
+      if (!Array.isArray(this.gamedatas.hand) || this.gamedatas.hand.length !== 8) {
+        this.gamedatas.hand = [];
+      }
       this.gamedatas.currentTrick = [];
       this.gamedatas.currentTrickValue = 0;
       this.gamedatas.firstoutplayer = 0;
@@ -673,11 +910,14 @@ export class Tichu {
   }
 
   onEnteringStatePhoenixPlay(args?: any) {
+    const gsArgs = (this.gamedatas?.gamestate as any)?.args;
     const rawValues =
       args?._private?.values ??
+      args?._private?.active?.values ??
       args?.values ??
-      (this.gamedatas?.gamestate as any)?.args?._private?.values ??
-      (this.gamedatas?.gamestate as any)?.args?.values ??
+      gsArgs?._private?.values ??
+      gsArgs?._private?.active?.values ??
+      gsArgs?.values ??
       [];
     const values = Array.isArray(rawValues) ? rawValues.map(Number) : [];
     window.gameModel?.enterPhoenixPlay(values);
@@ -737,6 +977,9 @@ export class Tichu {
 
   onUpdateActionButtons(stateName: string, args: any) {
     this.stateName = stateName;
+    if (stateName === "newRound" || stateName === "endRound" || stateName === "gameEnd") {
+      this.pendingConfirmTichu = null;
+    }
     document
       .getElementById("game_play_area")
       ?.classList.toggle("isCurrentPlayerActive", this.isCurrentPlayerActive());
@@ -749,6 +992,11 @@ export class Tichu {
         : undefined,
       isCurrentPlayerActive: this.isCurrentPlayerActive(),
     });
+
+    if (this.pendingConfirmTichu !== null) {
+      this.renderConfirmTichuButtons();
+      return;
+    }
 
     if (this.isCurrentPlayerActive() && !this.isReadOnly()) {
       switch (stateName) {
@@ -1355,7 +1603,15 @@ export class Tichu {
     } else {
       this.notifqueue.setSynchronousDuration(1);
     }
-    this.onUpdateActionButtons(this.stateName, {});
+    if (playerId === Number(this.player_id)) {
+      const titleSave = this.pendingConfirmTichu?.titleSave;
+      this.pendingConfirmTichu = null;
+      if (titleSave !== undefined && this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+        this.updatePageTitle();
+      }
+    }
+    this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
   }
 
   notif_tichuBet(notif: TypedNotif<"tichuBet">) {
@@ -1374,28 +1630,59 @@ export class Tichu {
     } else {
       this.notifqueue.setSynchronousDuration(1);
     }
-    this.onUpdateActionButtons(this.stateName, {});
+    if (playerId === Number(this.player_id)) {
+      const titleSave = this.pendingConfirmTichu?.titleSave;
+      this.pendingConfirmTichu = null;
+      if (titleSave !== undefined && this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+        this.updatePageTitle();
+      }
+    }
+    this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
+  }
+
+  renderConfirmTichuButtons() {
+    if (!this.pendingConfirmTichu) return;
+    const { grand, titleSave } = this.pendingConfirmTichu;
+    this.removeActionButtons();
+    const s = grand ? "grand " : "";
+    this.addActionButton("cancelTichu", _("no " + s + "tichu"), () => {
+      this.pendingConfirmTichu = null;
+      if (this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+      }
+      this.updatePageTitle();
+      if (grand) {
+        this.onGrandTichuBet(Bet.NO_BET);
+        return;
+      }
+      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
+    });
+    this.addActionButton("confirmTichu", _("confirm"), () => {
+      this.pendingConfirmTichu = null;
+      if (this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+      }
+      this.updatePageTitle();
+      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
+      this.takeAction("confirmTichu", { bet: grand ? Bet.GRAND_TICHU : Bet.TICHU });
+    });
+    document.getElementById("confirmTichu")?.setAttribute("data-grand", grand ? "1" : "0");
   }
 
   notif_confirmTichu(notif: TypedNotif<"confirmTichu">) {
     this.traceNotif("confirmTichu", notif);
-    const titleSave = this.gamedatas.gamestate.descriptionmyturn;
-    const s = notif.args.grand ? "grand " : "";
-    this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
+    const currentDesc = this.gamedatas?.gamestate?.descriptionmyturn ?? "";
+    this.pendingConfirmTichu = {
+      grand: Boolean(notif.args.grand),
+      msg: notif.args.msg,
+      titleSave: this.pendingConfirmTichu?.titleSave ?? currentDesc,
+    };
+    if (this.gamedatas?.gamestate) {
+      this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
+    }
     this.updatePageTitle();
-    this.removeActionButtons();
-    this.addActionButton("cancelTichu", _("no " + s + "tichu"), () => {
-      if (notif.args.grand) {
-        this.onGrandTichuBet(Bet.NO_BET);
-        return;
-      }
-      this.gamedatas.gamestate.descriptionmyturn = titleSave;
-      this.updatePageTitle();
-      this.onUpdateActionButtons(this.stateName, {});
-    });
-    this.addActionButton("confirmTichu", _("confirm"), () =>
-      this.takeAction("confirmTichu", { bet: notif.args.grand ? Bet.GRAND_TICHU : Bet.TICHU }),
-    );
+    this.renderConfirmTichuButtons();
   }
 
   notif_mahjongWishGranted(notif: TypedNotif<"mahjongWishGranted">) {
@@ -1457,5 +1744,10 @@ define(["dojo", "dojo/_base/declare", "ebg/core/gamegui", "ebg/counter"], functi
   // @ts-ignore
   declare,
 ) {
-  return declare("bgagame.tichu", ebg.core.gamegui, new Tichu());
+  Tichu.prototype.installLegacyAccessors(Tichu.prototype);
+  const DeclaredClass = declare("bgagame.tichu", ebg.core.gamegui, new Tichu());
+  if (DeclaredClass && DeclaredClass.prototype) {
+    Tichu.prototype.installLegacyAccessors(DeclaredClass.prototype);
+  }
+  return DeclaredClass;
 });

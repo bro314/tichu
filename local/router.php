@@ -87,15 +87,18 @@ ob_end_clean();
 
 $game = new \Tichu();
 
-// Auto-initialize MySQL database if missing or empty
-$needsInit = false;
-try {
-  $needsInit = $game->getPlayersNumber() === 0;
-} catch (\Throwable $e) {
-  $needsInit = true;
-}
-if ($needsInit) {
-  $game->createNewGame();
+// Auto-initialize MySQL database if missing or empty (only for page/state/action requests;
+// never on /local/poll, /local/abort, /local/new-game, or /local/scenario so resets cannot race).
+if (!in_array($uri, ['/local/poll', '/local/abort', '/local/new-game', '/local/scenario'], true)) {
+  $needsInit = false;
+  try {
+    $needsInit = $game->getPlayersNumber() === 0;
+  } catch (\Throwable $e) {
+    $needsInit = true;
+  }
+  if ($needsInit) {
+    $game->createNewGame();
+  }
 }
 
 // Parse JSON body if present on POST requests
@@ -110,7 +113,11 @@ if (is_string($rawBody) && $rawBody !== '') {
 $requestParams = array_merge($_GET, $_POST, $jsonBody);
 
 // 3. Determine Current Viewer Player ($viewerPlayerId)
-$basicPlayers = $game->loadPlayersBasicInfos();
+try {
+  $basicPlayers = $game->loadPlayersBasicInfos();
+} catch (\Throwable $e) {
+  $basicPlayers = [];
+}
 $defaultPlayerId = !empty($basicPlayers) ? (int) array_key_first($basicPlayers) : 2385074;
 
 $rawPlayerId = null;
@@ -148,16 +155,31 @@ if (isset($_GET['as']) && !headers_sent()) {
  * Helper: Build summary of all 4 players for the Top Local Dev Bar.
  */
 if (!function_exists('buildDevBarPlayers')) {
-  function buildDevBarPlayers(\Tichu $game, int $viewerPlayerId): array
+  function buildDevBarPlayers(\Tichu $game, int $viewerPlayerId, ?array $gamestate = null): array
   {
     $basic = $game->loadPlayersBasicInfos();
     $players = \PlayerManager::getPlayers();
     $handCounts = \CardManager::getDeck()->countCardsByLocationArgs('hand');
+    $state = $gamestate ?? $game->gamestate->state(true, false, true);
+    $stateType = (string) ($state['type'] ?? '');
+    $activePlayer = (int) ($state['active_player'] ?? 0);
+    $multiactiveSet = [];
+    if ($stateType === 'multipleactiveplayer') {
+      foreach ($state['multiactive'] ?? [] as $mId) {
+        $multiactiveSet[(string) $mId] = true;
+      }
+    }
 
     $list = [];
     foreach ($basic as $pId => $bRow) {
       $pIdInt = (int) $pId;
       $pRow = $players[$pId] ?? [];
+      $isActive = false;
+      if ($stateType === 'multipleactiveplayer') {
+        $isActive = isset($multiactiveSet[(string) $pIdInt]);
+      } elseif ($stateType === 'activeplayer') {
+        $isActive = $activePlayer === $pIdInt;
+      }
       $list[] = [
         'id' => $pIdInt,
         'no' => (int) ($bRow['player_no'] ?? 0),
@@ -166,7 +188,7 @@ if (!function_exists('buildDevBarPlayers')) {
         'team' => (int) ($pRow['team'] ?? $bRow['player_team'] ?? 0),
         'score' => (int) ($bRow['player_score'] ?? 0),
         'handCount' => (int) ($handCounts[$pId] ?? 0),
-        'isActive' => $game->gamestate->isPlayerActive($pIdInt),
+        'isActive' => $isActive,
         'call_grand_tichu' => (int) ($pRow['call_grand_tichu'] ?? -1),
         'call_tichu' => (int) ($pRow['call_tichu'] ?? -1),
         'pass' => (int) ($pRow['pass'] ?? 0),
@@ -205,6 +227,8 @@ if (!function_exists('sendJsonResponse')) {
   }
 }
 
+$abortFile = __DIR__ . '/.mysql/abort.json';
+
 // 4. AJAX Game Action Endpoint: /tichu/tichu/<action>.html
 if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
   $actionName = $matches[1];
@@ -221,7 +245,11 @@ if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
     }
     $actionObj->$actionName();
 
-    $notifications = $game->getNotificationsSince($lastPacketId, $viewerPlayerId, false);
+    $sincePacketId =
+      isset($requestParams['since']) && $requestParams['since'] !== ''
+        ? (int) $requestParams['since']
+        : $lastPacketId;
+    $notifications = $game->getNotificationsSince($sincePacketId, $viewerPlayerId, false);
     $newLastPacketId = getCurrentMaxPacketId();
     $gamestate = $game->gamestate->state($viewerPlayerId);
 
@@ -232,7 +260,7 @@ if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
         'notifications' => $notifications,
         'gamestate' => $gamestate,
         'last_packet_id' => $newLastPacketId,
-        'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+        'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamestate),
       ],
     ]);
   } catch (\Throwable $e) {
@@ -249,6 +277,28 @@ if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
 
 // GET /local/poll?as=<playerId>&since=<lastPacketId>
 if ($uri === '/local/poll') {
+  $abortData = null;
+  if (is_file($abortFile)) {
+    $decodedAbort = json_decode((string) file_get_contents($abortFile), true);
+    if (is_array($decodedAbort)) {
+      $abortData = $decodedAbort;
+    }
+  }
+  $hasPlayers = false;
+  try {
+    $hasPlayers = $game->getPlayersNumber() > 0;
+  } catch (\Throwable $e) {
+    $hasPlayers = false;
+  }
+  if (!$hasPlayers) {
+    return sendJsonResponse([
+      'status' => 1,
+      'notifications' => [],
+      'gamestate' => null,
+      'last_packet_id' => 0,
+      'abort' => $abortData,
+    ]);
+  }
   $since = isset($requestParams['since'])
     ? (int) $requestParams['since']
     : getCurrentMaxPacketId();
@@ -265,7 +315,66 @@ if ($uri === '/local/poll') {
     'notifications' => $notifications,
     'gamestate' => $gamestate,
     'last_packet_id' => $lastPacketId,
-    'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+    'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamestate),
+    'abort' => $abortData,
+  ]);
+}
+
+// POST /local/abort
+if ($uri === '/local/abort') {
+  if (!empty($requestParams['clear'])) {
+    if (is_file($abortFile)) {
+      @unlink($abortFile);
+    }
+    return sendJsonResponse([
+      'ok' => true,
+      'cleared' => true,
+    ]);
+  }
+
+  if (is_file($abortFile)) {
+    $existing = json_decode((string) file_get_contents($abortFile), true);
+    if (is_array($existing)) {
+      return sendJsonResponse([
+        'ok' => true,
+        'abort' => $existing,
+      ]);
+    }
+  }
+
+  $details = $requestParams['details'] ?? null;
+  if ($details === null) {
+    $extra = [];
+    foreach (['consoleIssues', 'actionErrors', 'state'] as $key) {
+      if (isset($requestParams[$key])) {
+        $extra[$key] = $requestParams[$key];
+      }
+    }
+    $details = $extra !== [] ? $extra : null;
+  }
+
+  $abortData = [
+    'playerId' => isset($requestParams['playerId'])
+      ? $requestParams['playerId']
+      : ($isSpectator ? 0 : $viewerPlayerId),
+    'reason' => (string) ($requestParams['reason'] ?? 'Issue detected'),
+    'details' => $details,
+    'timestamp' => (int) ($requestParams['timestamp'] ?? round(microtime(true) * 1000)),
+  ];
+
+  $abortDir = dirname($abortFile);
+  if (!is_dir($abortDir)) {
+    @mkdir($abortDir, 0775, true);
+  }
+  file_put_contents(
+    $abortFile,
+    json_encode($abortData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
+    LOCK_EX
+  );
+
+  return sendJsonResponse([
+    'ok' => true,
+    'abort' => $abortData,
   ]);
 }
 
@@ -281,7 +390,7 @@ if ($uri === '/local/state') {
     'bRealtime' => !$game->bga->tableOptions->isTurnBased(),
     'gamedatas' => $gamedatas,
     'gamelogs' => $gamelogs,
-    'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+    'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamedatas['gamestate'] ?? null),
     'options' => [
       'gameLength' => (int) $game->getGameStateValue('gameLength', 2),
       'playerTeams' => (int) $game->getGameStateValue('playerTeams', 1),
@@ -292,6 +401,9 @@ if ($uri === '/local/state') {
 
 // POST /local/new-game
 if ($uri === '/local/new-game') {
+  if (is_file($abortFile)) {
+    @unlink($abortFile);
+  }
   try {
     $options = [
       'gameLength' => (int) ($requestParams['gameLength'] ?? $requestParams[100] ?? 2),
@@ -312,7 +424,7 @@ if ($uri === '/local/new-game') {
       'bRealtime' => !$game->bga->tableOptions->isTurnBased(),
       'gamedatas' => $gamedatas,
       'gamelogs' => $gamelogs,
-      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamedatas['gamestate'] ?? null),
       'last_packet_id' => $lastPacketId,
       'options' => $options,
     ]);
@@ -326,7 +438,10 @@ if ($uri === '/local/new-game') {
 }
 
 // POST /local/test-scenario
-if ($uri === '/local/test-scenario') {
+if ($uri === '/local/test-scenario' || $uri === '/local/scenario') {
+  if (is_file($abortFile)) {
+    @unlink($abortFile);
+  }
   try {
     $scenario = (string) ($requestParams['scenario'] ?? 'grand_tichu');
     $gamedatas = \LocalTichuScenarios::setupScenario(
@@ -348,7 +463,7 @@ if ($uri === '/local/test-scenario') {
       'bRealtime' => !$game->bga->tableOptions->isTurnBased(),
       'gamedatas' => $gamedatas,
       'gamelogs' => $gamelogs,
-      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamedatas['gamestate'] ?? null),
       'last_packet_id' => $lastPacketId,
     ]);
   } catch (\Throwable $e) {
@@ -401,7 +516,7 @@ if ($uri === '/local/bot') {
       'notifications' => $notifications,
       'gamestate' => $gamestate,
       'last_packet_id' => $newLastPacketId,
-      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId),
+      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamestate),
     ]);
   } catch (\Throwable $e) {
     $game->endPlayerAction(true);
@@ -423,7 +538,7 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
 
   $gamedatas = $game->getFullClientPayload($viewerPlayerId);
   $gamelogs = $game->getAllGamelogsForReplay();
-  $devBarPlayers = buildDevBarPlayers($game, $viewerPlayerId);
+  $devBarPlayers = buildDevBarPlayers($game, $viewerPlayerId, $gamedatas['gamestate'] ?? null);
 
   $bootstrapData = [
     'playerId' => $viewerPlayerId,

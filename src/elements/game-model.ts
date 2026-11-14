@@ -615,11 +615,13 @@ export class GameModel {
 
   enterNewRound(): void {
     const prev = this.getState();
+    const preserveInitialDeal = prev.hand.length === 8;
     const players: Record<string, LivePlayer> = {};
     const lastCombos: Record<string, LastComboState> = {};
     for (const [pid, player] of Object.entries(prev.players)) {
       players[pid] = {
         ...player,
+        handcount: preserveInitialDeal ? 8 : 0,
         capturedPoints: 0,
         passedCardReady: false,
         callTichu: -1,
@@ -646,7 +648,7 @@ export class GameModel {
         description: "",
       },
       capturedCards: [],
-      hand: [],
+      hand: preserveInitialDeal ? prev.hand : [],
       selectedCardIds: [],
       currentTrick: [],
       currentTrickValue: 0,
