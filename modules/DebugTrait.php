@@ -559,10 +559,23 @@ trait DebugTrait
    */
   public static function remapActionLogArg(array $arg, array $idMap): array
   {
-    $playerKeys = ["active", "nextPlayer", "player", "player_id", "playerId", "firstout_id"];
+    $playerKeys = [
+      "active",
+      "nextPlayer",
+      "player",
+      "player_id",
+      "playerId",
+      "firstout_id",
+      "recipient",
+    ];
     foreach ($arg as $k => $v) {
       if (in_array((string) $k, $playerKeys, true)) {
         $arg[$k] = self::remapIdValue($v, $idMap);
+      } elseif ((string) $k === "recipients" && is_array($v)) {
+        $arg[$k] = array_map(
+          static fn($item) => self::remapIdValue($item, $idMap),
+          $v
+        );
       } elseif (is_array($v)) {
         $arg[$k] = self::remapActionLogArg($v, $idMap);
       }

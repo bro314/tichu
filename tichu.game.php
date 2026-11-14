@@ -116,7 +116,10 @@ class Tichu extends Table
     }
     $tableId = (int) ($this->table_id ?? 0);
     if ($tableId > 0) {
-      $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
+      $acquired = $this->getUniqueValueFromDB("SELECT GET_LOCK('tichu_table_{$tableId}', 20)");
+      if ((int) $acquired !== 1) {
+        $this->logProdWarn("advisory_lock_timeout", ["acquired" => $acquired]);
+      }
     }
     $this->DbQuery("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
   }
@@ -196,10 +199,30 @@ class Tichu extends Table
 
   private function throwGameStateChanged(): void
   {
+    $this->logProdWarn("stale_lock_rejected", [
+      "snapshotState" => (int) $this->gamestate->getCurrentMainStateId(),
+      "snapshotActive" => (int) $this->getActivePlayerId(),
+    ]);
     throw new UserException(
       clienttranslate(
         "The game changed while your action was being processed. Please check and try again."
       )
+    );
+  }
+
+  /**
+   * Emit a structured warning to BGA's production error log (`game_err_tichu.log`).
+   * Only call on unexpected invariant violations, lock anomalies, or zombie fallbacks.
+   *
+   * @param array<string, mixed> $context
+   */
+  private function logProdWarn(string $event, array $context = []): void
+  {
+    $tableId = (int) ($this->table_id ?? 0);
+    $json = json_encode($context);
+    $suffix = $json !== false && $json !== "[]" && $json !== "{}" ? " " . $json : "";
+    $this->warn(
+      "[tichu:{$event}] table={$tableId} state={$this->freshStateId} active={$this->freshActivePlayerId}{$suffix}"
     );
   }
 
@@ -505,6 +528,10 @@ class Tichu extends Table
     $trickValue = CardManager::getTrickValue($cardsCaptured);
 
     $deck->moveAllCardsInLocation("combos", "captured", null, $dragonGivenToId);
+    LogManager::insert($trickWinner, "chooseDragonGift", [
+      "recipient" => (int) $dragonGivenToId,
+      "trickValue" => (int) $trickValue,
+    ]);
 
     NotificationManager::log(clienttranslate('${player_name} wins the trick'), [
       "player_name" => $players[$trickWinner]["name"],
@@ -566,6 +593,14 @@ class Tichu extends Table
     foreach ($card_ids as $idx => $cardId) {
       CardManager::getDeck()->moveCard($cardId, "temporary", $nextPlayers[$idx]["id"]);
     }
+    LogManager::insert($player_id, "giveCards", [
+      "cards" => array_values(array_map("intval", $card_ids)),
+      "recipients" => [
+        (int) $nextPlayers[0]["id"],
+        (int) $nextPlayers[1]["id"],
+        (int) $nextPlayers[2]["id"],
+      ],
+    ]);
     NotificationManager::passCards($player_id, $card_ids);
 
     // legacy: $this->gamestate->setPlayerNonMultiactive($player_id, "showPassedCards");
@@ -780,6 +815,7 @@ class Tichu extends Table
       $this->incStat(1, "grandtichu_number", $player_id);
     }
     PlayerManager::grandTichuBet($player_id, $bet);
+    LogManager::insert($player_id, "grandTichuBet", ["bet" => (int) $bet]);
     NotificationManager::grandTichuBet($player_id, $player["name"], $bet);
     // stDealLastCards() only deals from the deck, which nobody else touches in this state.
     $this->setPlayerNonMultiactiveSafe((int) $player_id, "dealLastCards", true);
@@ -979,6 +1015,10 @@ class Tichu extends Table
     NotificationManager::acceptCards($player_id);
 
     $deck = CardManager::getDeck();
+    $acceptedCards = array_values($deck->getCardsInLocation("temporary", $player_id));
+    LogManager::insert($player_id, "acceptCards", [
+      "cards" => array_map(static fn($c) => (int) $c["id"], $acceptedCards),
+    ]);
     $deck->moveAllCardsInLocation("temporary", "hand", $player_id, $player_id);
   }
 
@@ -1001,6 +1041,7 @@ class Tichu extends Table
       $textValue = $this->values_label[$wish];
       $msg = clienttranslate('${player_name} owns the Mahjong and wants a ${text_value}');
     }
+    LogManager::insert($this->getActivePlayerId(), "mahjongWish", ["wish" => (int) $wish]);
     NotificationManager::wishMade(
       $this->getActivePlayerId(),
       $this->getActivePlayerName(),
@@ -1025,6 +1066,7 @@ class Tichu extends Table
     }
     $action = LogManager::getLastAction("confirm");
     if ($action === null) {
+      $this->logProdWarn("collect_missing_confirm_log");
       return;
     }
     $pId = $action["player"];
@@ -1188,6 +1230,13 @@ class Tichu extends Table
     NotificationManager::autopass(0);
 
     $deck = CardManager::getDeck();
+    $totalCards = (int) $this->getUniqueValueFromDB("SELECT COUNT(*) FROM card");
+    if ($totalCards !== 56) {
+      $this->logProdWarn("card_count_mismatch", [
+        "totalCards" => $totalCards,
+        "where" => "stNewTrick",
+      ]);
+    }
 
     if ($isFirstTrickOfRound) {
       $card = array_values($deck->getCardsOfType(TYPE_MAHJONG, 1))[0];
@@ -1583,6 +1632,10 @@ class Tichu extends Table
   function stChangePlayer()
   {
     $action = LogManager::getLastAction("changePlayer");
+    if ($action === null || !isset($action["player"], $action["arg"]["transition"])) {
+      $this->logProdWarn("change_player_missing_log");
+      return;
+    }
     $this->gamestate->changeActivePlayer($action["player"]);
     $this->gamestate->nextState($action["arg"]["transition"]);
   }
@@ -1606,6 +1659,14 @@ class Tichu extends Table
     $player_name = $player["name"] ?? $this->getActivePlayerName();
     NotificationManager::log(clienttranslate('${player_name} makes a zombie turn'), [
       "player_name" => $player_name,
+    ]);
+    $this->logProdWarn("zombie_turn", [
+      "player" => (int) $active_player,
+      "state" => (string) $statename,
+    ]);
+    LogManager::insert((int) $active_player, "zombieTurn", [
+      "state" => (string) $statename,
+      "type" => (string) ($state["type"] ?? ""),
     ]);
     if ($state["type"] === "activeplayer") {
       switch ($statename) {
@@ -1734,6 +1795,10 @@ class Tichu extends Table
       }
       $this->giveTheCards($card_ids, $player_idm);
     } else {
+      $this->logProdWarn("zombie_give_cards_short_hand", [
+        "player" => (int) $player_idm,
+        "count" => count($cards),
+      ]);
       $this->gamestate->setPlayerNonMultiactive($player_idm, "acceptPassedCards");
     }
   }

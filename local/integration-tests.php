@@ -255,6 +255,14 @@ function test_grand_tichu_and_tichu_bets_and_confirmation_threshold(): void
   assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Should transition to playComboOpen in Trick 1');
   assertSameVal(1, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Trick should now be 1');
 
+  // Verify P0's Grand Tichu bet, passing, and card acceptance were recorded in actionlog
+  $gtLog = \LogManager::getLastAction('grandTichuBet', false);
+  assertTrueVal($gtLog !== null, 'grandTichuBet action should be recorded in actionlog');
+  $giveLog = \LogManager::getLastAction('giveCards', false);
+  assertTrueVal($giveLog !== null && count($giveLog['arg']['recipients'] ?? []) === 3, 'giveCards action should record cards and 3 recipients');
+  $acceptLog = \LogManager::getLastAction('acceptCards', false);
+  assertTrueVal($acceptLog !== null && count($acceptLog['arg']['cards'] ?? []) === 3, 'acceptCards action should record 3 accepted cards');
+
   // P3 calls Tichu (100) in playComboOpen (log_trick = 1) right after P2's tichuCall in grandTichuBets (log_trick = 0):
   // Must still trigger confirmTichu across the newTrick boundary!
   callAction($game, P3, 'tichuBet', ['bet' => '100']);
@@ -355,6 +363,8 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
   // P0 wishes for a 9
   callAction($game, P0, 'makeAWish', ['wish' => 9]);
   assertSameVal(9, (int) $game->getGameStateValue('mahjongWish'), 'mahjongWish global should be 9');
+  $wishLog = \LogManager::getLastAction('mahjongWish', false);
+  assertTrueVal($wishLog !== null && (int) ($wishLog['arg']['wish'] ?? 0) === 9, 'mahjongWish should be recorded in actionlog');
 
   $state = $game->gamestate->state(P1);
   assertSameVal('playCombo', $state['name'], 'After making wish, state should be playCombo');
@@ -732,6 +742,8 @@ function test_dragon_trick_win_and_choose_dragon_gift(): void
   assertSameVal(35, (int) $afterGiftPayload['capturedpoints'][P3], 'P3 should have 35 captured points from the Dragon gift');
   assertSameVal(0, (int) $afterGiftPayload['capturedpoints'][P0], 'P0 should have 0 captured points');
   assertSameVal(1.0, (float) $game->getStat('tricks_win', P0), 'P0 tricks_win stat should be 1');
+  $dragonLog = \LogManager::getLastAction('chooseDragonGift', false);
+  assertTrueVal($dragonLog !== null && (int) ($dragonLog['arg']['recipient'] ?? 0) === P3 && (int) ($dragonLog['arg']['trickValue'] ?? 0) === 35, 'chooseDragonGift should record recipient and trickValue in actionlog');
 }
 
 // ============================================================================
@@ -1605,6 +1617,14 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   // Verify optional state override parameter.
   $overrideResult = importBugSqlFile($fixturePath, ST_PLAY_COMBO);
   assertSameVal(ST_PLAY_COMBO, $overrideResult['stateId'], 'Explicit state override should land on ST_PLAY_COMBO');
+
+  // Verify recipient & recipients JSON actionlog remapping.
+  $remappedRecipients = \Tichu::remapActionLogArg(
+    ['recipient' => 90004, 'recipients' => [90002, 90003, 90004]],
+    $result['playerMap']
+  );
+  assertSameVal(P3, $remappedRecipients['recipient'], 'remapActionLogArg should remap recipient');
+  assertSameVal([P1, P2, P3], $remappedRecipients['recipients'], 'remapActionLogArg should remap recipients list');
 }
 
 $tests = [
