@@ -397,6 +397,7 @@ class Tichu extends Table
     $roundAndTrick = LogManager::getCurrentRoundAndTrick();
     $result["round"] = $roundAndTrick["round"];
     $result["trick"] = $roundAndTrick["trick"];
+    $result["gameVersion"] = intval($this->getGameStateValue("game_db_version", 0));
 
     return $result;
   }

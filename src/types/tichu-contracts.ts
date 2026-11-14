@@ -116,6 +116,7 @@ export interface TichuGamedatas {
   currentTrick: CardData[];
   currentTrickValue: number;
   firstoutplayer: number;
+  gameVersion?: number;
   hand: CardData[];
   handcount: Record<number, number>;
   lastCombo?: TichuCombo & { player?: string | number };

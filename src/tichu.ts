@@ -33,6 +33,13 @@ export class Tichu {
   allLastCombos: Record<number, Combo | undefined> = {};
   stateName = "";
   active_player?: string;
+  debugBreadcrumbs: Array<{
+    ts: string;
+    cat: "state" | "action" | "notif" | "warn";
+    name: string;
+    detail?: Record<string, unknown>;
+  }> = [];
+  versionWarningShown = false;
 
   playerHand = {
     getAllItems: () => {
@@ -155,6 +162,96 @@ export class Tichu {
       typeof g_replayFrom !== "undefined" ||
       (typeof g_archive_mode !== "undefined" && g_archive_mode),
     );
+  }
+
+  recordBreadcrumb(
+    cat: "state" | "action" | "notif" | "warn",
+    name: string,
+    detail?: Record<string, unknown>,
+  ): void {
+    const entry: {
+      ts: string;
+      cat: "state" | "action" | "notif" | "warn";
+      name: string;
+      detail?: Record<string, unknown>;
+    } = {
+      ts: new Date().toISOString(),
+      cat,
+      name,
+      ...(detail ? { detail } : {}),
+    };
+    this.debugBreadcrumbs.push(entry);
+    if (this.debugBreadcrumbs.length > 50) {
+      this.debugBreadcrumbs.shift();
+    }
+    if (typeof window !== "undefined") {
+      (window as any).__tichuBreadcrumbs = this.debugBreadcrumbs;
+      if (cat === "warn") {
+        window.console?.warn?.("[tichu]", name, detail ?? "");
+      } else {
+        window.console?.debug?.("[tichu]", cat, name, detail ?? "");
+      }
+    }
+  }
+
+  checkVersion(serverVersion?: number | string): boolean {
+    const srv = Number(serverVersion ?? 0);
+    const cli = Number(this.gamedatas?.gameVersion ?? 0);
+    if (srv > 0 && cli > 0 && srv !== cli) {
+      if (!this.versionWarningShown) {
+        this.versionWarningShown = true;
+        this.recordBreadcrumb("warn", "version_mismatch", {
+          clientVersion: cli,
+          serverVersion: srv,
+        });
+        this.showMessage(
+          _("A new version of Tichu was deployed. Please refresh your browser page (F5)."),
+          "info",
+        );
+      }
+      return false;
+    }
+    return true;
+  }
+
+  verifyClientHandInvariant(context: string): void {
+    if (this.isSpectator || this.isReadOnly() || !this.gamedatas) return;
+    if (context !== "playComboOpen" && context !== "playCombo" && context !== "playBomb") return;
+    const actual = (this.gamedatas.hand || []).length;
+    const expected = Number(this.gamedatas.handcount?.[this.player_id] ?? -1);
+    if (expected >= 0 && actual !== expected) {
+      this.recordBreadcrumb("warn", "hand_count_mismatch", { context, actual, expected });
+    }
+  }
+
+  getDebugSnapshot(): Record<string, unknown> {
+    return {
+      gameVersion: this.gamedatas?.gameVersion ?? 0,
+      playerId: this.player_id,
+      isSpectator: this.isSpectator,
+      isReadOnly: this.isReadOnly(),
+      stateName: this.stateName,
+      stateId: this.gamedatas?.gamestate?.id ?? null,
+      activePlayer: this.active_player ?? null,
+      round: this.gamedatas?.round ?? 0,
+      trick: this.gamedatas?.trick ?? 0,
+      mahjongWish: this.gamedatas?.mahjongWish ?? 0,
+      firstOutPlayer: this.gamedatas?.firstoutplayer ?? 0,
+      handCardIds: (this.gamedatas?.hand || []).map((c) => String(c.id)),
+      handCounts: { ...(this.gamedatas?.handcount || {}) },
+      currentTrickIds: (this.gamedatas?.currentTrick || []).map((c) => String(c.id)),
+      lastCombo: this.gamedatas?.lastCombo ?? null,
+      prefs: this.readPrefs(),
+      breadcrumbs: [...this.debugBreadcrumbs],
+    };
+  }
+
+  private traceNotif(type: string, notif: any): void {
+    this.checkVersion(notif?.gameVersion ?? notif?.args?.gameVersion);
+    this.recordBreadcrumb("notif", type, {
+      move: notif?.move_id ?? notif?.packet_id,
+      player: notif?.args?.player_id,
+    });
   }
 
   areAnimationsActive(): boolean {
@@ -385,9 +482,21 @@ export class Tichu {
 
     this.setupNotifications();
     initStudioTestHelper(this);
+    if (typeof window !== "undefined") {
+      (window as any).tichuDebugSnapshot = () => this.getDebugSnapshot();
+    }
+    this.recordBreadcrumb("state", "setup", {
+      gameVersion: gamedatas.gameVersion ?? 0,
+      state: gamedatas.gamestate?.name ?? "",
+    });
   }
 
   onEnteringState(stateName: string, stateObject: any) {
+    this.recordBreadcrumb("state", stateName, {
+      id: stateObject?.id,
+      active: stateObject?.active_player,
+      multiactive: stateObject?.multiactive,
+    });
     this.stateName = stateName;
     this.active_player = stateObject?.active_player;
     if (this.gamedatas && stateObject) {
@@ -458,6 +567,7 @@ export class Tichu {
         this.onEnteringStateEndRound(args);
         break;
     }
+    this.verifyClientHandInvariant(stateName);
   }
 
   onEnteringStateNewRound(_args?: any) {
@@ -1013,6 +1123,7 @@ export class Tichu {
       : [args: TichuActionMap[K], onSuccess?: (result: any) => void]
   ) {
     const payload = { ...(args ?? {}), lock: true };
+    this.recordBreadcrumb("action", String(action), payload as Record<string, unknown>);
     this.ajaxcall("/tichu/tichu/" + action + ".html", payload, this, (result: any) => {
       onSuccess?.(result);
     });
@@ -1054,6 +1165,7 @@ export class Tichu {
   }
 
   notif_dealCards(notif: TypedNotif<"dealCards">) {
+    this.traceNotif("dealCards", notif);
     const cards = notif.args.cards || [];
     const animate = this.shouldAnimate();
     const layer = animate ? this.getAnimationLayer() : null;
@@ -1089,6 +1201,7 @@ export class Tichu {
   }
 
   notif_passCards(notif: TypedNotif<"passCards">) {
+    this.traceNotif("passCards", notif);
     const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
     if (!Array.isArray(ids)) return;
     if (this.gamedatas?.hand) {
@@ -1099,6 +1212,7 @@ export class Tichu {
   }
 
   notif_acceptCards(notif: TypedNotif<"acceptCards">) {
+    this.traceNotif("acceptCards", notif);
     clearTimeout(this.autoAcceptTimeout);
     window.gameModel?.setAcceptingCardsCountdown(false);
     const cards = notif.args.cards || [];
@@ -1126,6 +1240,7 @@ export class Tichu {
   }
 
   notif_playCombo(notif: TypedNotif<"playCombo">) {
+    this.traceNotif("playCombo", notif);
     const playerId = Number(notif.args.player_id);
     const cards = notif.args.cards || [];
     const comboName = notif.args.combo_name || "";
@@ -1179,6 +1294,7 @@ export class Tichu {
   }
 
   notif_pass(notif: TypedNotif<"pass">) {
+    this.traceNotif("pass", notif);
     const playerId = Number(notif.args.player_id);
     if (this.allLastCombos) {
       delete this.allLastCombos[playerId];
@@ -1187,6 +1303,7 @@ export class Tichu {
   }
 
   notif_captureCards(notif: TypedNotif<"captureCards">) {
+    this.traceNotif("captureCards", notif);
     const playerId = Number(notif.args.player_id);
     const trickValue = Number(notif.args.trick_value || 0);
     const animate = this.shouldAnimate();
@@ -1207,6 +1324,7 @@ export class Tichu {
   }
 
   notif_grandTichuBet(notif: TypedNotif<"grandTichuBet">) {
+    this.traceNotif("grandTichuBet", notif);
     const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
     if (this.gamedatas?.players?.[playerId]) {
@@ -1227,6 +1345,7 @@ export class Tichu {
   }
 
   notif_tichuBet(notif: TypedNotif<"tichuBet">) {
+    this.traceNotif("tichuBet", notif);
     const playerId = Number(notif.args.player_id);
     const bet = String(notif.args.bet) as Bet;
     if (this.gamedatas?.players?.[playerId]) {
@@ -1245,6 +1364,7 @@ export class Tichu {
   }
 
   notif_confirmTichu(notif: TypedNotif<"confirmTichu">) {
+    this.traceNotif("confirmTichu", notif);
     const titleSave = this.gamedatas.gamestate.descriptionmyturn;
     const s = notif.args.grand ? "grand " : "";
     this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
@@ -1264,7 +1384,8 @@ export class Tichu {
     );
   }
 
-  notif_mahjongWishGranted(_notif: TypedNotif<"mahjongWishGranted">) {
+  notif_mahjongWishGranted(notif: TypedNotif<"mahjongWishGranted">) {
+    this.traceNotif("mahjongWishGranted", notif);
     if (this.gamedatas) {
       this.gamedatas.mahjongWish = 0;
     }
@@ -1272,6 +1393,7 @@ export class Tichu {
   }
 
   notif_wishMade(notif: TypedNotif<"wishMade">) {
+    this.traceNotif("wishMade", notif);
     const wish = Number(notif.args.wish);
     if (this.gamedatas) {
       this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? wish : 0;
@@ -1280,6 +1402,7 @@ export class Tichu {
   }
 
   notif_playerGoOut(notif: TypedNotif<"playerGoOut">) {
+    this.traceNotif("playerGoOut", notif);
     const playerId = Number(notif.args.player_id);
     const firstOutId = Number(notif.args.firstout_id);
     if (playerId === firstOutId && this.gamedatas) {
@@ -1290,6 +1413,7 @@ export class Tichu {
   }
 
   notif_newScores(notif: TypedNotif<"newScores">) {
+    this.traceNotif("newScores", notif);
     const newScores = notif.args.newScores || {};
     for (const player_id in newScores) {
       const pId = Number(player_id);
@@ -1302,6 +1426,7 @@ export class Tichu {
   }
 
   notif_autopass(notif: TypedNotif<"autopass">) {
+    this.traceNotif("autopass", notif);
     if (!this.isReadOnly() && this.gamedatas?.players?.[this.player_id]) {
       this.gamedatas.players[this.player_id]!.pass = notif.args.autopass;
     }
