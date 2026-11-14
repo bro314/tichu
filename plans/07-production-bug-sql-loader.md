@@ -49,14 +49,14 @@ And Tichu's `local/mysql-ctl.sh` + `local/bga-backend.php` already run against a
 ## 4. Decisions & Alternatives for You
 
 1. **Where to support loading bug dumps**:
-   - **Option A (Recommended — Both!)**:
+   - **Option A (CONFIRMED)**:
      1. Add `modules/DebugTrait.php` with `loadBugReportSQL(int $reportId, array $studioPlayers)` (and optional `#[Debug(reload: true)]` helpers like `debugEndRound()` / `debugGiveDragon()`) for BGA Studio;
      2. Also add `local/import-bug-sql.php` CLI script so you can import a downloaded BGA bug `.sql` dump directly into `local/mysql-ctl.sh` (`ebd_tichu_1` MySQL 8.0) without needing SFTP/Studio at all!
    - **Option B**: Studio `loadBugReportSQL` only. _Slower_ — requires uploading `.sql` via SFTP to Studio before inspecting.
 2. **Handling `global_id = 1` when bug dump ended at state `99` (`ST_GAME_END`)**:
-   - **Option A (Recommended)**: Notice if `global_id = 1` is `99` (`ST_GAME_END`), log a clear note and reset it to `ST_CONFIRM_TRICK` (`60`) or the pre-end state (or let a flag `--state=60` override) so BGA Studio's client UI actually renders the table instead of just the End-of-Game podium!
+   - **Option A (CONFIRMED)**: Notice if `global_id = 1` is `99` (`ST_GAME_END`), log a clear note and reset it to `ST_CONFIRM_TRICK` (`60`) or the pre-end state (or let a flag `--state=60` override) so BGA Studio's client UI actually renders the table instead of just the End-of-Game podium!
 3. **Production safety of `DebugTrait`**:
-   - **Option A (Recommended)**: Studio automatically strips or restricts `debug*` methods in production, AND keep every method prefixed cleanly (`debug_*` / `#[Debug(reload: true)]`) with NO risky `TRUNCATE` or side effects unless intentionally invoked in Studio debug UI. Notice also: `loadBugReportSQL` is only ever executed in Studio (`bug_<id>.sql` doesn't exist in prod).
+   - **Option A (CONFIRMED)**: Studio automatically strips or restricts `debug*` methods in production, AND keep every method prefixed cleanly (`debug_*` / `#[Debug(reload: true)]`) with NO risky `TRUNCATE` or side effects unless intentionally invoked in Studio debug UI. Notice also: `loadBugReportSQL` is only ever executed in Studio (`bug_<id>.sql` doesn't exist in prod).
 
 ---
 
@@ -103,15 +103,9 @@ And Tichu's `local/mysql-ctl.sh` + `local/bga-backend.php` already run against a
 
 ### Verification Checklist
 
-- [ ] Sanitized fixture `.sql` test remaps all 4 players cleanly across `player`, `global`, `card.card_location_arg`, `card.card_passed_from`, `actionlog.log_player`, `actionlog.log_arg` JSON, `stats`, and `gamelog`.
-- [ ] Importing the fixture into local MySQL 8.0 (`ebd_tichu_1`) allows opening `http://127.0.0.1:8080` (`npm run local`) and viewing `getAllDatas()` with zero PHP warnings or missing player errors.
-- [ ] `composer phpstan` (if Plan 01 installed) + `npm test` + `npm run build` pass cleanly.
-- [ ] `local/sftp-sync.sh` verified to include `modules/DebugTrait.php`.
+- [x] Sanitized fixture `.sql` test remaps all 4 players cleanly across `player`, `global`, `card.card_location_arg`, `card.card_passed_from`, `actionlog.log_player`, `actionlog.log_arg` JSON, `stats`, and `gamelog`.
+- [x] Importing the fixture into local MySQL 8.0 (`ebd_tichu_1`) allows opening `http://127.0.0.1:8080` (`npm run local`) and viewing `getAllDatas()` with zero PHP warnings or missing player errors.
+- [x] `composer phpstan` (if Plan 01 installed) + `npm test` + `npm run build` pass cleanly.
+- [x] `local/sftp-sync.sh` verified to include `modules/DebugTrait.php`.
+- [ ] Test on some actual bug reports.
 
-### Kickoff Prompt for a Fresh Agent
-
-```text
-Read /Users/brohlfs/git/tichu/AGENTS.md, /Users/brohlfs/git/tichu/dbmodel.sql, /Users/brohlfs/git/tichu/modules/managers/LogManager.php, /Users/brohlfs/git/tichu/local/bga-std-schema.sql, and /Users/brohlfs/git/tichu/plans/07-production-bug-sql-loader.md.
-Confirm Section 4 choices (Option A defaults: both Studio DebugTrait + local/import-bug-sql.php) and execute Steps 1–4.
-Verify with a sanitized fixture SQL integration test + `npm run local` smoke load, and check `local/sftp-sync.sh` includes `modules/DebugTrait.php`.
-```

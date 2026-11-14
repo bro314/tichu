@@ -4,8 +4,13 @@ use Bga\GameFramework\Table;
 use Bga\GameFramework\UserException;
 use Bga\GameFramework\VisibleSystemException;
 
+require_once __DIR__ . "/modules/Constants.php";
+require_once __DIR__ . "/modules/DebugTrait.php";
+
 class Tichu extends Table
 {
+  use DebugTrait;
+
   public static $instance;
 
   public array $colors;

@@ -21,6 +21,7 @@
 
 require_once "modules/Combo.php";
 require_once "modules/Constants.php";
+require_once "modules/DebugTrait.php";
 require_once "modules/Hand.php";
 require_once "modules/Utils.php";
 require_once "modules/managers/CardManager.php";

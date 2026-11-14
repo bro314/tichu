@@ -18,6 +18,7 @@ require_once $projectRoot . '/tichu.action.php';
 require_once $projectRoot . '/tichu.view.php';
 require_once __DIR__ . '/bot.php';
 require_once __DIR__ . '/scenarios.php';
+require_once __DIR__ . '/import-bug-sql.php';
 ob_end_clean();
 
 const P0 = \LocalTichuScenarios::P0; // 2385074 (Team 0)
@@ -1461,6 +1462,151 @@ function test_table_lock_version_and_duplicate_requests(): void
   assertSameVal(1, $version(), 'The lock version row must be re-created for running games');
 }
 
+function test_production_bug_sql_loader_and_player_id_remapping(): void {
+  $fixturePath = __DIR__ . '/fixtures/bug_fixture.sql';
+  $result = importBugSqlFile($fixturePath);
+
+  assertSameVal(ST_GAME_END, $result['previousStateId'], 'Fixture should originate from ST_GAME_END');
+  assertSameVal(ST_CONFIRM_TRICK, $result['stateId'], 'Completed game fixture should reopen to ST_CONFIRM_TRICK');
+  assertSameVal(P1, $result['activePlayerId'], 'Active player 90002 should remap to P1');
+
+  $expectedMap = [
+    90001 => P0,
+    90002 => P1,
+    90003 => P2,
+    90004 => P3,
+  ];
+  assertSameVal($expectedMap, $result['playerMap'], 'Player ID map should match player_no 1..4 order');
+
+  $players = \APP_DbObject::getObjectListFromDB(
+    'SELECT player_id, player_no, player_is_multiactive FROM player ORDER BY player_no ASC'
+  );
+  assertSameVal(4, count($players), 'Four players should exist after fixture import');
+  assertSameVal([P0, P1, P2, P3], array_map(fn($r) => (int) $r['player_id'], $players), 'Players should be remapped in seat order');
+  foreach ($players as $row) {
+    assertSameVal(0, (int) $row['player_is_multiactive'], 'Multiactive flags must be cleared when reopening into ST_CONFIRM_TRICK');
+  }
+
+  $multiactiveRows = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT COUNT(*) FROM playermultiactive WHERE ma_is_multiactive = 1'
+  );
+  assertSameVal(0, $multiactiveRows, 'playermultiactive must be cleared when reopening into non-multiactive state');
+
+  // Verify global values: remapped player IDs vs preserved non-player values.
+  $globals = \APP_DbObject::getCollectionFromDb('SELECT global_id, global_value FROM global', true);
+  assertSameVal((string) ST_CONFIRM_TRICK, (string) $globals['1'], 'global_id 1 should be ST_CONFIRM_TRICK');
+  assertSameVal((string) P1, (string) $globals['2'], 'GAMESTATE_ACTIVE_PLAYER should remap 90002 -> P1');
+  assertSameVal((string) P0, (string) $globals['5'], 'GAMESTATE_ADMIN_PLAYER should remap 90001 -> P0');
+  assertSameVal((string) P0, (string) $globals['21'], 'firstOutPlayer should remap 90001 -> P0');
+  assertSameVal((string) P2, (string) $globals['27'], 'mahjongOwner should remap 90003 -> P2');
+  assertSameVal((string) P3, (string) $globals['302'], 'neutralized player global should remap 90004 -> P3');
+  assertSameVal('9', (string) $globals['26'], 'mahjongWish non-player global must stay 9');
+  assertSameVal('17', (string) $globals['30'], 'GLOBAL_LOCK_VERSION non-player global must stay 17');
+
+  // Verify no production IDs remain anywhere across the 7 surfaces.
+  $oldIds = ['90001', '90002', '90003', '90004'];
+  $dumpChecks = [
+    'global' => \APP_DbObject::getObjectListFromDB('SELECT global_id, global_value FROM global'),
+    'card' => \APP_DbObject::getObjectListFromDB('SELECT card_id, card_location, card_location_arg, card_passed_from FROM card'),
+    'actionlog' => \APP_DbObject::getObjectListFromDB('SELECT log_id, log_player, log_action, log_arg FROM actionlog'),
+    'gamelog' => \APP_DbObject::getObjectListFromDB('SELECT gamelog_packet_id, gamelog_player, gamelog_current_player, gamelog_notification FROM gamelog'),
+    'stats' => \APP_DbObject::getObjectListFromDB('SELECT stats_type, stats_player_id, stats_value FROM stats'),
+    'bga_user_preferences' => (function (): array {
+      global $bgaContainer;
+      /** @var \Bga\GameFramework\Old\Db $db */
+      $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+      return $db->getObjectList('SELECT pgp_player, pgp_preference_id, pgp_value FROM bga_user_preferences');
+    })(),
+    'replaysavepoint' => \APP_DbObject::getObjectListFromDB('SELECT rsp_player_id, rsp_move_id, rsp_gamedatas FROM replaysavepoint'),
+  ];
+  foreach ($dumpChecks as $table => $rows) {
+    $json = json_encode($rows);
+    assertTrueVal(is_string($json), "Failed to encode {$table} rows");
+    foreach ($oldIds as $oldId) {
+      assertTrueVal(!str_contains($json, $oldId), "Old production ID {$oldId} must not remain in {$table}");
+    }
+  }
+
+  // Verify card ownership, passed_from, and non-player combo card location_arg values.
+  $p0CapturedCount = (int) \APP_DbObject::getUniqueValueFromDB(
+    "SELECT COUNT(*) FROM card WHERE card_location = 'captured' AND card_location_arg = " . P0
+  );
+  assertTrueVal($p0CapturedCount > 0, 'P0 (firstOutPlayer) should own captured cards');
+  $p1HandCount = (int) \APP_DbObject::getUniqueValueFromDB(
+    "SELECT COUNT(*) FROM card WHERE card_location = 'hand' AND card_location_arg = " . P1
+  );
+  assertTrueVal($p1HandCount > 0, 'P1 should hold cards in hand');
+  $comboZeroCount = (int) \APP_DbObject::getUniqueValueFromDB(
+    "SELECT COUNT(*) FROM card WHERE card_location = 'combos' AND card_location_arg = 0"
+  );
+  assertSameVal(2, $comboZeroCount, 'Combos cards should preserve card_location_arg = 0');
+  $passedFromP0 = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT COUNT(*) FROM card WHERE card_passed_from = ' . P0
+  );
+  assertTrueVal($passedFromP0 > 0, 'card_passed_from should remap 90001 -> P0');
+
+  // Verify actionlog preserves HTML-encoded apostrophe and timestamp while remapping JSON player keys.
+  $logs = \APP_DbObject::getObjectListFromDB('SELECT log_player, log_action, log_arg FROM actionlog ORDER BY log_id ASC');
+  $tichuTimestampFound = false;
+  $escapedComboFound = false;
+  $changePlayerRemapped = false;
+  $confirmRemapped = false;
+  foreach ($logs as $log) {
+    $arg = json_decode((string) $log['log_arg'], true);
+    if ($log['log_action'] === 'tichuCall') {
+      assertSameVal(P0, (int) $log['log_player'], 'tichuCall log_player should remap to P0');
+      assertSameVal(1700000000, $arg, 'tichuCall scalar timestamp must not be altered');
+      $tichuTimestampFound = true;
+    }
+    if ($log['log_action'] === 'combo') {
+      $comboDesc = $arg['description'] ?? '';
+      if (is_string($comboDesc) && str_contains($comboDesc, 'Pair of 2&#39;s')) {
+        assertSameVal(P0, (int) $log['log_player'], 'Pair of 2s combo log_player should remap to P0');
+        $escapedComboFound = true;
+      }
+    }
+    if ($log['log_action'] === 'changePlayer') {
+      assertSameVal(P2, (int) $log['log_player'], 'changePlayer log_player should remap to P2');
+      assertSameVal(P0, (int) ($arg['active'] ?? 0), 'changePlayer active should remap to P0');
+      $changePlayerRemapped = true;
+    }
+    if ($log['log_action'] === 'confirm') {
+      assertSameVal(P1, (int) ($arg['nextPlayer'] ?? 0), 'confirm nextPlayer should remap to P1');
+      $confirmRemapped = true;
+    }
+  }
+  assertTrueVal($tichuTimestampFound, 'Fixture should contain tichuCall entry with preserved timestamp');
+  assertTrueVal($escapedComboFound, 'Fixture should preserve HTML semicolon inside Pair of 2&#39;s');
+  assertTrueVal($changePlayerRemapped, 'Fixture should remap changePlayer active & log_player');
+  assertTrueVal($confirmRemapped, 'Fixture should remap confirm nextPlayer');
+
+  // Verify Tichu instance loads cleanly, produces valid client payload & gamelogs, and can collect the trick.
+  $game = new \Tichu();
+  $payloadP0 = $game->getFullClientPayload(P0);
+  $payloadP1 = $game->getFullClientPayload(P1);
+  assertSameVal(ST_CONFIRM_TRICK, (int) $payloadP0['gamestate']['id'], 'Payload gamestate should be ST_CONFIRM_TRICK');
+  assertSameVal((string) P1, (string) $payloadP1['gamestate']['active_player'], 'Payload active_player should be P1');
+  assertTrueVal(isset($payloadP0['players'][P0], $payloadP1['players'][P1]), 'Payload players must contain remapped IDs');
+
+  $gamelogs = $game->getAllGamelogsForReplay();
+  assertTrueVal(count($gamelogs) >= 4, 'Gamelog packets should be preserved');
+  $gamelogJson = json_encode($gamelogs);
+  assertTrueVal(is_string($gamelogJson) && str_contains($gamelogJson, (string) P0) && str_contains($gamelogJson, (string) P3), 'Gamelog packets should contain remapped IDs');
+
+  callAction($game, P1, 'collect');
+  assertSameVal('playComboOpen', $game->gamestate->state(true, false, true)['name'], 'Collecting confirmed trick should transition to playComboOpen');
+
+  // Verify two-phase collision-free swapping when target IDs overlap with existing IDs.
+  $swapResult = $game->loadBugReportSQL(0, [P2, P3, P0, P1]);
+  assertSameVal([P0 => P2, P1 => P3, P2 => P0, P3 => P1], $swapResult['playerMap'], 'Two-phase swap should rotate overlapping player IDs without collision');
+  $swappedActive = (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 2');
+  assertSameVal(P3, $swappedActive, 'Active player P1 should have swapped cleanly to P3');
+
+  // Verify optional state override parameter.
+  $overrideResult = importBugSqlFile($fixturePath, ST_PLAY_COMBO);
+  assertSameVal(ST_PLAY_COMBO, $overrideResult['stateId'], 'Explicit state override should land on ST_PLAY_COMBO');
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -1476,6 +1622,7 @@ $tests = [
   'test_zombie_turns_across_all_states',
   'test_action_and_parameter_validation_and_card_to_str',
   'test_table_lock_version_and_duplicate_requests',
+  'test_production_bug_sql_loader_and_player_id_remapping',
 ];
 
 echo "====================================================================\n";

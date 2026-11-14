@@ -10,6 +10,7 @@
     "test:contracts": "php local/check-contracts.php",
     "phpstan": "php -d memory_limit=512M ./vendor/bin/phpstan analyse",
     "test:race": "bash local/mysql-ctl.sh ensure && php local/race-tests.php",
+    "bug:import": "bash local/mysql-ctl.sh ensure && php local/import-bug-sql.php",
     "test": "npm run test:unit && npm run test:validator && npm run test:integration",
     "local": "bash local/mysql-ctl.sh ensure && php -S 127.0.0.1:8080 local/router.php",
     "mysql:start": "bash local/mysql-ctl.sh start",
