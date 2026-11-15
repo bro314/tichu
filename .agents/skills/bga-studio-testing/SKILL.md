@@ -203,13 +203,128 @@ When loaded on `studio.boardgamearena.com` (never on `boardgamearena.com` produc
 | `#tt_btn_new`      | `🔄 New Express Table` | `await tt.expressStartNew()`           | ~1.2s            | Express-stops the current table, creates a new table, and Express-starts it.                                                                               |
 | `#tt_btn_stop`     | `⏹ Express Stop`       | `await tt.expressStop()`               | ~0.4s            | Express-stops the current table (or quits/cancels if unstarted).                                                                                           |
 
-You can also run arbitrary commands via `#tt_cmd_input` + `#tt_cmd_run` (e.g., `status`, `assertUI`, `clearConsoleIssues`, `startAutoPlayMe:{"timeoutMs":1500000,"staggerMs":250,"stopOnIssue":true}`, `wish:8`, `dragon:2385075`, `pass`, `play:[12,15]`) and read the JSON result from `#tt_test_output` (`data-done="1"`, `data-status="pass" | "fail"`). Click `#tt_cmd_run` **only once** per command and wait for `#tt_cmd_status` to contain `Done`.
+You can also run arbitrary commands via `#tt_cmd_input` + `#tt_cmd_run` (e.g., `status`, `assertUI`, `clearConsoleIssues`, `expressStartNew:{"gameLength":2}`, `startAutoPlayMe:{"timeoutMs":1500000,"staggerMs":250,"stopOnIssue":true}`, `wish:8`, `dragon:2385075`, `pass`, `play:[12,15]`) and wait for `#tt_test_output[data-done="1"]` (`data-status="pass" | "fail"`) to read the JSON result. Click `#tt_cmd_run` **only once** per command (never press `Enter` and click `#tt_cmd_run` together).
 
 For 4-player independent tab automation (`startAutoPlayMe`), `studio-test.ts` serializes AJAX actions per tab (`withStudioActionLock`), checks turn/state currency before sending (`runAjax`), retries transient bomb-interrupt vs. pass races (`isTransientTurnRaceError`), waits for Dojo `phoenixAllowedValues` or falls back to `getAllowedPhoenixValues()`, uses a `2500ms` Studio `checkPrevpacketBuffer` threshold before `resynchronizeNotifications`, and clears orphaned `lockInterface` states in `isQueueBusy()`.
 
 ---
 
-## 6. Studio Debugging Helpers, Refresh Rules & Gotchas
+## 6. 4-Subagent 4-Tab Autonomous Validation (`startAutoPlayMe`)
+
+To test true 4-player concurrent gameplay without bots or zombie turns, spawn **4 independent `browser` subagents** (`Model: "flash"`, one browser tab per seat: `P0`=`2385074`, `P1`=`2385075`, `P2`=`2385076`, `P3`=`2385077`). Each tab runs `window.tt.startAutoPlayMe(...)` exclusively for its own seat with `captureScreenshot: false`, variable legal play + corner-case probing (Grand Tichu, Tichu bets, `resetPass`, Dog/Mahjong leads, wishes, Phoenix ambiguous/cancel, bomb play/cancel, Dragon gift), continuous JS console monitoring, and per-move `assertUI()` checks until **`state 99` (`gameEnd` at 1000+ points)**.
+
+### A. Local 4-Tab Validation (`http://127.0.0.1:8080`)
+
+1. **Ensure the local server is running cleanly and reset a fresh 1000-point game** (`gameLength=2` is the default):
+   ```bash
+   curl -sI http://127.0.0.1:8080/ | head -n 1
+   curl -s -X POST http://127.0.0.1:8080/local/new-game -H "Content-Type: application/json" -d '{"gameLength":2}' | head -c 200
+   ```
+2. **Spawn all 4 `browser` subagents in parallel (`Model: "flash"`, `captureScreenshot: false`)**, each on its own seat URL (`http://127.0.0.1:8080/?as=2385074`, `2385075`, `2385076`, `2385077`). On local, `#studio-test-bar` is in the top-level `page` (**no** `iframe`):
+   ```javascript
+   // Local 4-tab runner snippet (substitute <SEAT_ID>: 2385074 | 2385075 | 2385076 | 2385077)
+   await page.goto("http://127.0.0.1:8080/?as=<SEAT_ID>", { waitUntil: "domcontentloaded" });
+   const input = page.locator("#tt_cmd_input");
+   const runBtn = page.locator("#tt_cmd_run");
+   const out = page.locator("#tt_test_output");
+   await input.waitFor({ state: "visible", timeout: 15000 });
+
+   // Clear pre-existing console noise, then launch autoplay once
+   await input.fill("clearConsoleIssues");
+   await runBtn.click();
+   await page
+     .locator('#tt_test_output[data-done="1"]')
+     .waitFor({ state: "attached", timeout: 15000 });
+
+   await input.fill('startAutoPlayMe:{"timeoutMs":600000,"staggerMs":120,"stopOnIssue":true}');
+   await runBtn.click(); // Click ONCE only
+
+   // Wait until state 99 (gameEnd) or abort; re-wait if a single webview call hits its step timeout
+   for (let i = 0; i < 6; i++) {
+     try {
+       await page
+         .locator('#tt_test_output[data-done="1"]')
+         .waitFor({ state: "attached", timeout: 180000 });
+       break;
+     } catch (_e) {
+       const done = await out.getAttribute("data-done");
+       if (done === "1") break;
+     }
+   }
+   return {
+     url: page.url(),
+     status: await out.getAttribute("data-status"),
+     output: JSON.parse(await out.innerText()),
+   };
+   ```
+3. Typical full 1000-point 4-tab local run finishes in ~2–5 minutes (`staggerMs: 120` prevents slamming single-process `php -S` and avoids cross-tab turn-race storms).
+
+### B. BGA Studio 4-Tab Validation (`https://studio.boardgamearena.com`)
+
+1. **Build, verify, and upload via SFTP**:
+   ```bash
+   PATH="/opt/homebrew/bin:$PATH" npm run build && PATH="/opt/homebrew/bin:$PATH" npm run test:contracts && PATH="/opt/homebrew/bin:$PATH" npm run phpstan && PATH="/opt/homebrew/bin:$PATH" npm run deploy:sftp
+   ```
+2. **Create a 1000-point Studio table via `P0` (`dashwood0`, `2385074`)**:
+   - Have `P0` log in once as `dashwood0` (if not already authenticated), clean up any dangling open table via `CANCEL` / `Express stop`, click Studio's **Express start** once to enter `/tableview`, then use `#studio-test-bar` inside `iframe` to run `expressStartNew:{"gameLength":2}` (note: Studio's built-in **Express start** button defaults to option `100 = 1` = **500 pts**, whereas `expressStartNew` sets `id=100&value=2` = **1000 pts**!). Read `newTableId` from `#tt_test_output`.
+3. **Launch all 4 `browser` subagents in parallel on `table=<NEW_TABLE_ID>&as=<SEAT_ID>`** (`2385074`..`2385077`). Wait **~1s–3s** or stagger slightly if desired; inside Studio `/tableview`, always use `const frame = page.frameLocator("iframe")`:
+   ```javascript
+   // Studio 4-tab runner snippet (substitute <TABLE_ID> and <SEAT_ID>: 2385074..2385077)
+   await page.goto("https://studio.boardgamearena.com/tableview?table=<TABLE_ID>&as=<SEAT_ID>", {
+     waitUntil: "domcontentloaded",
+   });
+   const frame = page.frameLocator("iframe");
+   const input = frame.locator("#tt_cmd_input");
+   const runBtn = frame.locator("#tt_cmd_run");
+   const out = frame.locator("#tt_test_output");
+   await input.waitFor({ state: "visible", timeout: 25000 });
+
+   await input.fill("clearConsoleIssues");
+   await runBtn.click();
+   await frame
+     .locator('#tt_test_output[data-done="1"]')
+     .waitFor({ state: "attached", timeout: 15000 });
+
+   await input.fill('startAutoPlayMe:{"timeoutMs":1500000,"staggerMs":250,"stopOnIssue":true}');
+   await runBtn.click(); // Click ONCE only
+
+   // Full 1000-point Studio games take ~15-25 min; loop waits cleanly across timeouts
+   for (let i = 0; i < 12; i++) {
+     try {
+       await frame
+         .locator('#tt_test_output[data-done="1"]')
+         .waitFor({ state: "attached", timeout: 180000 });
+       break;
+     } catch (_e) {
+       const done = await out.getAttribute("data-done");
+       if (done === "1") break;
+     }
+   }
+   return {
+     url: page.url(),
+     status: await out.getAttribute("data-status"),
+     output: JSON.parse(await out.innerText()),
+   };
+   ```
+4. **In-Place Hot-Reload Recovery During a Studio Run**: If an issue is found mid-game (e.g., Round 13 or 19) and your fix does not change `dbmodel.sql` or `states.inc.php`, run `npm run build && npm run deploy:sftp`, then tell all 4 subagents to `await page.reload({ waitUntil: "domcontentloaded" })`, re-run `clearConsoleIssues`, and re-run `startAutoPlayMe` on the exact same `table=<TABLE_ID>&as=<SEAT_ID>` — resuming from the exact in-progress round and trick instead of restarting from `0–0`.
+5. **Cleanup**: Once all 4 subagents report `state 99` (`gameEnd`), navigate `P0` to `/table?table=<TABLE_ID>` (and any bootstrap tables) and click **Express stop** if still active.
+
+### C. What Did Not Work Easily (4-Subagent Testing Lessons Learned)
+
+- **Wrong completion selector (`#tt_cmd_status` / `#tt_cmd_output` do not exist)**: `#studio-test-bar` renders a single `<pre id="tt_test_output">` with `data-done="0"|"1"` and `data-status="running"|"pass"|"fail"`. Instructing subagents to wait on non-existent `#tt_cmd_status` forces expensive fallback DOM inspection steps.
+- **Double-clicking `#tt_cmd_run` or pressing `Enter` + clicking**: Every new `startAutoPlayMe` invocation increments `autoPlayRunSeq`, calls `stopAutoPlayMe("restarted")`, marks the prior run `superseded`, and resets move/assertion counters (`studio-test.ts` debounces identical triggers within `800ms`, but later clicks still abort the live run).
+- **`webview_browser` per-call timeouts vs. 20-minute Studio games**: A single `waitFor` call exceeding ~3–5 minutes times out in the `webview_browser` tool even though `startAutoPlayMe` is still running (`#tt_test_output` has `data-done="0"` and `"running":true`). Never reload or re-click `#tt_cmd_run` while `data-done="0"` — simply wait for `#tt_test_output[data-done="1"]` again in a loop (or across follow-up turns).
+- **Shared cookie jar on Studio (`&as=` vs. multi-account logins)**: All 4 `browser` subagent tabs share one Chromium session. Logging in as `dashwood1` in tab 2 overwrites `dashwood0`'s cookie in tab 1. Always stay authenticated as `dashwood0` and vary only `&as=2385074`..`2385077`.
+- **Option `100` (`gameLength`) mismatch between Studio "Express start" (500 pts) and 1000-pt validation**: Studio's native **Express start** button starts at 500 points (`option 100 = 1`), ending games twice as fast with half the corner-case coverage. Use `tt.expressStartNew({ gameLength: 2 })` (`expressStartNew:{"gameLength":2}`).
+- **Local vs. Studio iframe boundary**: On `127.0.0.1:8080`, locators live on `page`; on `studio.boardgamearena.com/tableview`, locators live inside `page.frameLocator("iframe")`.
+- **Cross-tab abort isolation (`stopOnIssue: true`)**: When one seat hits an error, `postLocalAbort` (`POST /local/abort` on local; `localStorage` `tichu_studio_abort_<tableId>` on Studio) halts all 4 subagents immediately so later turns do not overwrite the failing state.
+- **Real concurrency/Studio bugs uncovered by 4-tab runs**:
+  - **Studio `debugSaveState(4)` AB-BA deadlock**: Fixed in [`tichu.game.php`](file:///Users/brohlfs/git/tichu/tichu.game.php) by committing before `GET_LOCK` and again afterward in `acquireAdvisoryLock()`, plus validating `$initialLockVersion` and keeping [`local/Bga/GameFramework/GamestateMachine.php`](file:///Users/brohlfs/git/tichu/local/Bga/GameFramework/GamestateMachine.php) unmodified (handling stale multiactive snapshots in `setPlayerNonMultiactiveSafe()`).
+  - **Studio client lifecycle quirks**: Fixed `giveExtraTime()` ordering after `nextState()`, `ensureGamestateReflexion()`, empty PHP `args` -> `{}`, enumerable `installLegacyAccessors()`, `confirmTichu` <-> `updatePageTitle` recursion, `GameModel.enterNewRound()` 8-card deal preservation, and orphaned `"Updating game situation ..."` `lockInterface` release in `onNotificationPacketDispatched()`.
+
+---
+
+## 7. Studio Debugging Helpers, Refresh Rules & Gotchas
 
 - **Server SQL & Request Logs**: Navigate to `https://studio.boardgamearena.com/1/tichu/tichu/logaccess.html?table=<TABLE_ID>` to inspect full server-side request/SQL logs and PHP stack traces.
 - **`debug_<name>()` Methods**: Any `public function debug_<name>()` defined on `Tichu` in `tichu.game.php` automatically gets a clickable button in the Studio debug panel (`#toggleDebugFunctionsPanel`, DOM ID `debug_<name>`) for setting up test states or dumping data. Guard with `if ($this->getBgaEnvironment() !== 'studio') return;` or remove before release.
@@ -231,7 +346,7 @@ For 4-player independent tab automation (`startAutoPlayMe`), `studio-test.ts` se
 
 ---
 
-## 7. Local Testing & Local BGA Runner (`tests/` & `local/`)
+## 8. Local Testing & Local BGA Runner (`tests/` & `local/`)
 
 Tichu has three fast local testing tiers that run without needing a BGA Studio connection (plus the opt-in race stress test documented in [tichu-concurrency-locks](../tichu-concurrency-locks/SKILL.md)):
 

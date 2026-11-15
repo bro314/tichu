@@ -89,9 +89,11 @@ When `npm run local` is running at `http://127.0.0.1:8080`, you can play interac
 await tt.runSuite({ speed: "instant" }); // Run all 7 deterministic UI + backend scenarios
 await tt.runRound({ speed: "fast" }); // Watch a full round play out in the UI
 await tt.runGame({ speed: "instant" }); // Play a complete game to 1000 points
-await tt.startAutoPlayMe({ timeoutMs: 1500000, staggerMs: 250, stopOnIssue: true }); // Drive current seat autonomously (local or Studio)
+await tt.startAutoPlayMe({ timeoutMs: 1500000, staggerMs: 250, stopOnIssue: true }); // Drive current seat autonomously (local or Studio; open 4 tabs via ?as=2385074..2385077)
 tt.help(); // List all console test runner commands
 ```
+
+> **4-Tab Autonomous Playtesting**: To run 4 independent seats (`2385074`–`2385077`) simultaneously up to 1000 points without zombie turns, open 4 tabs via `?as=<player_id>` (Local) or `expressStartNew:{"gameLength":2}` + `/tableview?table=<id>&as=<player_id>` (Studio) and run `startAutoPlayMe` in each; see [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md) for the exact repeatable playbook and pitfall guide.
 
 > **Local Framework Boundary**: Upstream framework classes in [`local/Bga/GameFramework/`](./local/Bga/GameFramework) (including `GamestateMachine.php` and `Table.php` above `//// Local Runner Integration Helpers`) are kept unmodified so local MySQL 8.0 concurrency and state-machine behavior match BGA Studio/Production. Local-only BGA request/notification emulation (`beginPlayerAction()` mirroring `Table::setTable()` ordering and `"synchro"`-interleaved `gamelog` delivery) lives strictly under `//// Local Runner Integration Helpers` in [`local/Bga/GameFramework/Table.php`](./local/Bga/GameFramework/Table.php), plus a bootstrap `?? 0` guard in [`local/Bga/GameFramework/TableOptions.php`](./local/Bga/GameFramework/TableOptions.php).
 

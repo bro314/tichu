@@ -134,5 +134,5 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 ### Context Hygiene
 
 - Delegate `bga-platform/` (`main.js` 193k lines, `ly_metasite.js`, `ly_studio.js`) and `_ide_helper.php` analysis to `research` (`Model: "flash"`).
-- Read [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md) before invoking `browser` (`captureScreenshot: false`, no `page.evaluate`/`waitForFunction`).
+- Read [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md) before invoking `browser` (`captureScreenshot: false`, no `page.evaluate`/`waitForFunction`, wait on `#tt_test_output[data-done="1"]` — see Section 6 for the full 4-subagent 4-tab Local & Studio playbook).
 - Combine related edits in one turn and suggest `/compact` once a conversation exceeds ~150 steps.
