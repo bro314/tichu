@@ -843,7 +843,28 @@ namespace {
                         }
                     }
                     $db = new \Bga\GameFramework\Old\Db($g_config['db_name']);
-                    $db->connect();
+                    try {
+                        $db->connect();
+                    } catch (\Bga\Exceptions\Services\Db\UnableToFindDatabaseException $e) {
+                        $bootstrapDb = @new \mysqli(
+                            $g_config['db_host'],
+                            $g_config['db_user'],
+                            $g_config['db_password'],
+                            null,
+                            $g_config['db_port'] ?? null,
+                            $g_config['db_socket'] ?? null
+                        );
+                        if ($bootstrapDb && !$bootstrapDb->connect_errno) {
+                            $safeDbName = str_replace('`', '``', (string) $g_config['db_name']);
+                            $bootstrapDb->query(
+                                "CREATE DATABASE IF NOT EXISTS `{$safeDbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+                            );
+                            $bootstrapDb->close();
+                            $db->connect();
+                        } else {
+                            throw $e;
+                        }
+                    }
                     return $db;
                 case \Bga\Services\Notify::class:
                     return new \Bga\Services\Notify();

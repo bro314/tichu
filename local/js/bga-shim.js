@@ -2904,7 +2904,7 @@
         this._pollQueued = true;
         return;
       }
-      const since = (this.notifqueue && this.notifqueue.last_packet_id) || 0;
+      const since = Number((this.notifqueue && this.notifqueue.last_packet_id) || 0);
       const viewer = this.isSpectator ? 0 : this.player_id;
       this._pollInFlight = true;
       fetch(`/local/poll?as=${encodeURIComponent(viewer)}&since=${encodeURIComponent(since)}`)
@@ -2918,6 +2918,13 @@
           if (!payload || payload.status !== 1) return;
           if ("abort" in payload) {
             this._abortState = payload.abort || null;
+          }
+          if (
+            payload.reset === true ||
+            (typeof payload.last_packet_id === "number" && payload.last_packet_id < since)
+          ) {
+            this._switchSeatInPlace(currentViewer);
+            return;
           }
           if (Array.isArray(payload.devBarPlayers)) {
             this.devBarPlayers = payload.devBarPlayers;

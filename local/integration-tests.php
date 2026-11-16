@@ -11,6 +11,10 @@
 $suiteStart = microtime(true);
 $projectRoot = dirname(__DIR__);
 
+if (getenv('TICHU_MYSQL_DB') === false || getenv('TICHU_MYSQL_DB') === '') {
+  putenv('TICHU_MYSQL_DB=ebd_tichu_test');
+}
+
 ob_start();
 require_once __DIR__ . '/bga-backend.php';
 require_once $projectRoot . '/tichu.game.php';

@@ -1159,6 +1159,7 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
   const savedWindow = g.window;
   const savedDocument = g.document;
   const savedSession = g.sessionStorage;
+  const savedLocal = g.localStorage;
   const savedCSS = g.CSS;
 
   try {
@@ -1175,6 +1176,17 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
       },
       removeItem: (k: string) => {
         sessionMap.delete(k);
+      },
+    };
+
+    const localMap = new Map<string, string>();
+    const localMock = {
+      getItem: (k: string) => (localMap.has(k) ? localMap.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        localMap.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        localMap.delete(k);
       },
     };
 
@@ -1236,6 +1248,7 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
 
     g.CSS = { escape: (s: string) => String(s) };
     g.sessionStorage = sessionMock;
+    g.localStorage = localMock;
     g.document = {
       getElementById: () => null,
       querySelector: () => null,
@@ -1346,10 +1359,33 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
     assert.equal(showMessages.length, 1);
     assert.equal(showMessages[0]!.type, "error");
     assert.equal(scheduledTimers.filter((t) => !t.cleared && t.id > pending[0]!.id).length, 0);
+
+    // 8. Cross-tab Auto-Bot ownership: if another tab owns Auto-Bot for a different seat,
+    //    this tab automatically disables its tichu_autobot flag and does not schedule actForOthers().
+    scheduledTimers.length = 0;
+    sessionMock.setItem("tichu_autobot", "1");
+    localMock.setItem(
+      "tichu_autobot_owner_0",
+      JSON.stringify({ tabId: "other-tab", playerId: 2385075, updatedAt: Date.now() }),
+    );
+    const perfBeforeConflict = perfCalls.length;
+    tt.onQueueDrained();
+    assert.equal(
+      sessionMock.getItem("tichu_autobot"),
+      "0",
+      "Auto-Bot should disable when another seat tab owns Auto-Bot",
+    );
+    assert.equal(
+      scheduledTimers.filter((t) => !t.cleared).length,
+      0,
+      "No Auto-Bot timer should be scheduled when another seat tab owns Auto-Bot",
+    );
+    assert.equal(perfCalls.length, perfBeforeConflict);
   } finally {
     g.window = savedWindow;
     g.document = savedDocument;
     g.sessionStorage = savedSession;
+    g.localStorage = savedLocal;
     g.CSS = savedCSS;
   }
 });

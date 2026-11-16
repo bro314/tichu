@@ -313,10 +313,23 @@ if ($uri === '/local/poll') {
       'abort' => $abortData,
     ]);
   }
+  $currentMaxPacketId = getCurrentMaxPacketId();
   $since = isset($requestParams['since'])
     ? (int) $requestParams['since']
-    : getCurrentMaxPacketId();
+    : $currentMaxPacketId;
   $notifPlayerId = $isSpectator ? 0 : $viewerPlayerId;
+  if ($since > $currentMaxPacketId) {
+    $gamestate = stateForViewer($game, $notifPlayerId);
+    return sendJsonResponse([
+      'status' => 1,
+      'reset' => true,
+      'notifications' => [],
+      'gamestate' => $gamestate,
+      'last_packet_id' => $currentMaxPacketId,
+      'devBarPlayers' => buildDevBarPlayers($game, $viewerPlayerId, $gamestate),
+      'abort' => $abortData,
+    ]);
+  }
   $notifications = $game->getNotificationsSince($since, $notifPlayerId, false);
   $lastPacketId = getCurrentMaxPacketId();
   $gamestate = stateForViewer($game, $notifPlayerId);

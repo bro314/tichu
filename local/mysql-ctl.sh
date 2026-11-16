@@ -43,7 +43,8 @@ is_running() {
 
 ensure_db() {
   "${MYSQL}" --no-defaults --socket="${SOCK_PATH}" -u root -e \
-    "CREATE DATABASE IF NOT EXISTS \`${DEFAULT_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+    "CREATE DATABASE IF NOT EXISTS \`${DEFAULT_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+     CREATE DATABASE IF NOT EXISTS \`ebd_tichu_test\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
 }
 
 start_mysql() {

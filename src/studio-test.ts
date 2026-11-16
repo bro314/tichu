@@ -733,6 +733,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   let autoBotConsecutiveErrors = 0;
   let autoBotConsecutiveNoOps = 0;
   let autoBotLastSignature = "";
+  const autoBotTabId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   function safeSessionGet(key: string): string | null {
     try {
@@ -762,20 +763,92 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     } catch (_e) {}
   }
 
+  function safeLocalRemove(key: string): void {
+    try {
+      if (typeof localStorage !== "undefined") localStorage.removeItem(key);
+    } catch (_e) {}
+  }
+
+  interface AutoBotOwner {
+    tabId: string;
+    playerId: number;
+    updatedAt: number;
+  }
+
+  function getAutoBotOwnerKey(): string {
+    const ui = getUi();
+    const tableId = Number(
+      ui?.table_id || ui?.gamedatas?.table_id || (win as any).bgaGameData?.tableId || 0,
+    );
+    return isLocalHost ? "tichu_autobot_owner_local" : `tichu_autobot_owner_${tableId}`;
+  }
+
+  function readAutoBotOwner(): AutoBotOwner | null {
+    const raw = safeLocalGet(getAutoBotOwnerKey());
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return {
+          tabId: String(parsed.tabId || ""),
+          playerId: Number(parsed.playerId || 0),
+          updatedAt: Number(parsed.updatedAt || 0),
+        };
+      }
+    } catch (_e) {}
+    return null;
+  }
+
+  function writeAutoBotOwner(playerId: number): void {
+    safeLocalSet(
+      getAutoBotOwnerKey(),
+      JSON.stringify({
+        tabId: autoBotTabId,
+        playerId: Number(playerId || 0),
+        updatedAt: Date.now(),
+      }),
+    );
+  }
+
   function resetAutoBotFailures(): void {
     autoBotConsecutiveErrors = 0;
     autoBotConsecutiveNoOps = 0;
   }
 
   function getAutoBotEnabled(): boolean {
-    return safeSessionGet("tichu_autobot") === "1";
+    if (safeSessionGet("tichu_autobot") !== "1") return false;
+    const ui = getUi();
+    const myId = ui?.isSpectator ? 0 : Number(ui?.player_id || 0);
+    const owner = readAutoBotOwner();
+    if (owner) {
+      if (owner.tabId === autoBotTabId) {
+        if (myId > 0 && owner.playerId !== myId) {
+          writeAutoBotOwner(myId);
+        }
+        return true;
+      }
+      if (owner.playerId > 0 && myId > 0 && owner.playerId !== myId) {
+        safeSessionSet("tichu_autobot", "0");
+        clearAutoBotTimer();
+        return false;
+      }
+    }
+    return true;
   }
 
   function setAutoBotEnabled(enabled: boolean): void {
     safeSessionSet("tichu_autobot", enabled ? "1" : "0");
     if (enabled) {
+      const ui = getUi();
+      const myId = ui?.isSpectator ? 0 : Number(ui?.player_id || 0);
+      writeAutoBotOwner(myId);
       resetAutoBotFailures();
       autoBotLastSignature = "";
+    } else {
+      const owner = readAutoBotOwner();
+      if (owner && owner.tabId === autoBotTabId) {
+        safeLocalRemove(getAutoBotOwnerKey());
+      }
     }
   }
 
@@ -906,7 +979,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
   function scheduleAutoBot(): void {
     clearAutoBotTimer();
-    if (!getAutoBotEnabled()) return;
+    if (!getAutoBotEnabled()) {
+      (win.tt || tt).scheduleRefreshBar?.();
+      return;
+    }
     if (botBusy || autoPlayCtrl.running || activeTaskCount > 0) return;
 
     const ui = getUi();
@@ -934,6 +1010,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     const activeIds = getActivePlayerIds(ui);
     const myId = Number(ui.player_id);
+    if (!(myId > 0)) return;
     const otherActive = activeIds.some((id) => id > 0 && id !== myId);
     if (!otherActive) return;
 
@@ -954,7 +1031,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     autoBotTimer = window.setTimeout(async () => {
       autoBotTimer = null;
-      if (!getAutoBotEnabled()) return;
+      if (!getAutoBotEnabled()) {
+        (win.tt || tt).refreshBar?.();
+        return;
+      }
       if (botBusy || autoPlayCtrl.running || activeTaskCount > 0) return;
       if (isQueueBusy()) {
         scheduleAutoBot();
@@ -964,8 +1044,13 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       const curSt = curUi?.gamedatas?.gamestate;
       if (!curUi || !curSt || curSt.name === "gameEnd" || Number(curSt.id) === 99) return;
       if (curUi.isSpectator) return;
-      const curActiveIds = getActivePlayerIds(curUi);
       const curMyId = Number(curUi.player_id);
+      if (!(curMyId > 0)) return;
+      if (!getAutoBotEnabled()) {
+        (win.tt || tt).refreshBar?.();
+        return;
+      }
+      const curActiveIds = getActivePlayerIds(curUi);
       if (!curActiveIds.some((id) => id > 0 && id !== curMyId)) return;
 
       const sigBefore = getAutoBotProgressSignature(curUi);
@@ -5315,7 +5400,33 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   win.tt = mergedTt;
   win.tichuTest = mergedTt;
 
+  if (safeSessionGet("tichu_autobot") === "1") {
+    const initUi = getUi();
+    const initMyId = initUi?.isSpectator ? 0 : Number(initUi?.player_id || 0);
+    const existingOwner = readAutoBotOwner();
+    if (
+      initMyId > 0 &&
+      (!existingOwner || existingOwner.playerId === initMyId || existingOwner.playerId === 0)
+    ) {
+      writeAutoBotOwner(initMyId);
+    } else {
+      getAutoBotEnabled();
+    }
+  }
+
   mountStudioTestBar();
+
+  if (typeof win.addEventListener === "function" && !win.__tichuAutoBotStorageBound) {
+    win.__tichuAutoBotStorageBound = true;
+    win.addEventListener("storage", (e: StorageEvent) => {
+      if (e && e.key === getAutoBotOwnerKey()) {
+        if (!getAutoBotEnabled()) {
+          clearAutoBotTimer();
+        }
+        (win.tt || tt).refreshBar?.();
+      }
+    });
+  }
 
   try {
     if (window.parent && window.parent !== window) {
