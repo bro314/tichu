@@ -1444,6 +1444,7 @@ export function analyzeSelection(params: {
 }): ComboValidationResult {
   const { selectedCards, handCards, lastCombo, stateName, mahjongWish } = params;
   const isPlayBombState = stateName === "playBomb";
+  const defaultButtonLabel = isPlayBombState ? "Play Bomb" : "Play";
 
   if (selectedCards.length === 0) {
     return {
@@ -1452,7 +1453,7 @@ export function analyzeSelection(params: {
       type: NO_COMBO,
       description: "",
       cleanDescription: "",
-      buttonLabel: isPlayBombState ? "Play Bomb (Select bomb)" : "Play (Select cards)",
+      buttonLabel: defaultButtonLabel,
       reason: "empty",
       tooltip: isPlayBombState
         ? "Select a bomb from your hand to play"
@@ -1473,7 +1474,7 @@ export function analyzeSelection(params: {
       type: INVALID_COMBO,
       description: "",
       cleanDescription: "",
-      buttonLabel: "Invalid combo",
+      buttonLabel: defaultButtonLabel,
       reason: "invalid_combo",
       tooltip: "Selected cards do not form a valid Tichu combination",
       requiresPhoenixChoice: false,
@@ -1487,7 +1488,7 @@ export function analyzeSelection(params: {
       type: combo.type,
       description: combo.description,
       cleanDescription,
-      buttonLabel: "Must play a bomb",
+      buttonLabel: defaultButtonLabel,
       reason: "not_a_bomb",
       tooltip: "Select a 4-of-a-kind or straight flush bomb",
       requiresPhoenixChoice: false,
@@ -1504,7 +1505,7 @@ export function analyzeSelection(params: {
       type: combo.type,
       description: combo.description,
       cleanDescription,
-      buttonLabel: "Dog can only be led",
+      buttonLabel: defaultButtonLabel,
       reason: "dog_not_lead",
       tooltip: "The Dog can only be played when leading a trick",
       requiresPhoenixChoice: false,
@@ -1520,7 +1521,7 @@ export function analyzeSelection(params: {
       type: combo.type,
       description: combo.description,
       cleanDescription,
-      buttonLabel: `Must beat ${targetDesc}`,
+      buttonLabel: defaultButtonLabel,
       reason: "cannot_beat",
       tooltip: `Your ${cleanDescription || "combo"} does not beat ${targetDesc}`,
       requiresPhoenixChoice: false,
@@ -1539,7 +1540,7 @@ export function analyzeSelection(params: {
           type: combo.type,
           description: combo.description,
           cleanDescription,
-          buttonLabel: `Must play wished ${rankLabel}`,
+          buttonLabel: defaultButtonLabel,
           reason: "must_fulfill_wish",
           tooltip: `You must fulfill the active Mahjong wish (${rankLabel})`,
           requiresPhoenixChoice: false,
@@ -1554,7 +1555,7 @@ export function analyzeSelection(params: {
     type: combo.type,
     description: combo.description,
     cleanDescription,
-    buttonLabel: `Play ${cleanDescription}`,
+    buttonLabel: defaultButtonLabel,
     reason: null,
     tooltip: requiresPhoenixChoice
       ? `Play ${cleanDescription} (choose Phoenix value next)`
@@ -1588,7 +1589,7 @@ export function validatePassAction(
 
       return {
         canPass: false,
-        buttonLabel: `Must fulfill wish (${rankLabel})`,
+        buttonLabel: "Pass",
         reason: "must_fulfill_wish",
         tooltip,
         requiredComboType: requiredType,

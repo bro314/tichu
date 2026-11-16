@@ -659,7 +659,20 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(emptyRes.isValid, false);
   assert.equal(emptyRes.reason, "empty");
-  assert.equal(emptyRes.buttonLabel, "Play (Select cards)");
+  assert.equal(emptyRes.buttonLabel, "Play");
+  assert.equal(emptyRes.tooltip, "Select cards from your hand to play");
+
+  const emptyBombRes = analyzeSelection({
+    selectedCards: [],
+    handCards: hand,
+    lastCombo: Combo.noCombo,
+    stateName: "playBomb",
+    mahjongWish: 0,
+  });
+  assert.equal(emptyBombRes.isValid, false);
+  assert.equal(emptyBombRes.reason, "empty");
+  assert.equal(emptyBombRes.buttonLabel, "Play Bomb");
+  assert.equal(emptyBombRes.tooltip, "Select a bomb from your hand to play");
 
   // Invalid combo
   const invalidRes = analyzeSelection({
@@ -671,7 +684,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(invalidRes.isValid, false);
   assert.equal(invalidRes.reason, "invalid_combo");
-  assert.equal(invalidRes.buttonLabel, "Invalid combo");
+  assert.equal(invalidRes.buttonLabel, "Play");
+  assert.equal(invalidRes.tooltip, "Selected cards do not form a valid Tichu combination");
 
   // Dog when not leading
   const dogFollowRes = analyzeSelection({
@@ -683,6 +697,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(dogFollowRes.isValid, false);
   assert.equal(dogFollowRes.reason, "dog_not_lead");
+  assert.equal(dogFollowRes.buttonLabel, "Play");
+  assert.equal(dogFollowRes.tooltip, "The Dog can only be played when leading a trick");
 
   // Non-bomb in playBomb state
   const nonBombInterrupt = analyzeSelection({
@@ -694,7 +710,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(nonBombInterrupt.isValid, false);
   assert.equal(nonBombInterrupt.reason, "not_a_bomb");
-  assert.equal(nonBombInterrupt.buttonLabel, "Must play a bomb");
+  assert.equal(nonBombInterrupt.buttonLabel, "Play Bomb");
+  assert.equal(nonBombInterrupt.tooltip, "Select a 4-of-a-kind or straight flush bomb");
 
   // Cannot beat lastCombo
   const loseRes = analyzeSelection({
@@ -706,7 +723,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(loseRes.isValid, false);
   assert.equal(loseRes.reason, "cannot_beat");
-  assert.equal(loseRes.buttonLabel, "Must beat Pair of Kings");
+  assert.equal(loseRes.buttonLabel, "Play");
+  assert.equal(loseRes.tooltip, "Your Pair of Queens does not beat Pair of Kings");
 
   // Valid combo (entities decoded for label)
   const validPairRes = analyzeSelection({
@@ -717,7 +735,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
     mahjongWish: 0,
   });
   assert.equal(validPairRes.isValid, true);
-  assert.equal(validPairRes.buttonLabel, "Play Pair of Queens");
+  assert.equal(validPairRes.buttonLabel, "Play");
+  assert.equal(validPairRes.tooltip, "Play Pair of Queens");
 
   const validBombRes = analyzeSelection({
     selectedCards: [A5, B5, C5, D5],
@@ -727,7 +746,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
     mahjongWish: 0,
   });
   assert.equal(validBombRes.isValid, true);
-  assert.equal(validBombRes.buttonLabel, "Play Bomb of four 5s");
+  assert.equal(validBombRes.buttonLabel, "Play Bomb");
+  assert.equal(validBombRes.tooltip, "Play Bomb of four 5s");
 
   // Mahjong wish violation when wish CAN be fulfilled
   const wishViolation = analyzeSelection({
@@ -739,7 +759,8 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
   });
   assert.equal(wishViolation.isValid, false);
   assert.equal(wishViolation.reason, "must_fulfill_wish");
-  assert.equal(wishViolation.buttonLabel, "Must play wished 5");
+  assert.equal(wishViolation.buttonLabel, "Play");
+  assert.equal(wishViolation.tooltip, "You must fulfill the active Mahjong wish (5)");
 
   // Allowed when wish CANNOT be fulfilled (only single 5 against Ace, no bomb)
   const wishAllowed = analyzeSelection({
@@ -760,20 +781,20 @@ test("SmartPlayUX::validatePassAction wish guard and combo-specific tooltips", (
   // Fulfillable as single
   const singleWish = validatePassAction([A7, B9], new Combo([A3]), 7);
   assert.equal(singleWish.canPass, false);
-  assert.equal(singleWish.buttonLabel, "Must fulfill wish (7)");
+  assert.equal(singleWish.buttonLabel, "Pass");
   assert.match(singleWish.tooltip, /7/);
 
   // Fulfillable ONLY as a bomb (wish is 5 over high Pair of Aces)
   const bombWish = validatePassAction([A5, B5, C5, D5, B9], new Combo([AA, BA]), 5);
   assert.equal(bombWish.canPass, false);
-  assert.equal(bombWish.buttonLabel, "Must fulfill wish (5)");
+  assert.equal(bombWish.buttonLabel, "Pass");
   assert.equal(bombWish.requiredComboType, BOMB_COMBO);
   assert.match(bombWish.tooltip, /bomb/i);
 
   // Fulfillable ONLY as a pair (wish is 12 over Pair of 10s, with Queen + Phoenix)
   const pairWish = validatePassAction([AQ, PH], new Combo([A0, B0]), 12);
   assert.equal(pairWish.canPass, false);
-  assert.equal(pairWish.buttonLabel, "Must fulfill wish (Queen)");
+  assert.equal(pairWish.buttonLabel, "Pass");
   assert.equal(pairWish.requiredComboType, PAIR_COMBO);
   assert.match(pairWish.tooltip, /pair/i);
 
