@@ -23,7 +23,7 @@ class Combo
   /*
    * If a type is given, the members will just be set with the arguments. it can still be validated with checkType()
    * If no type is given, it will first sort the cards by value and color,
-   * so the special cards will come first(by order of the types, see constants.php), then all the 2's, etc
+   * so the special cards will come first(by order of the types, see constants.php), then all the 2s, etc
    * then, it will go through each combotype and check, whether the combo is of that type, until it gets a hit.
    * Bomb has to be checked before straight, of course
    * when a combotype is valid, the respective checkFunction returns an array containing

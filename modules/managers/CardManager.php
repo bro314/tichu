@@ -153,7 +153,7 @@ class CardManager
         return "Ace";
       default:
         if ($plural) {
-          return strval($val) . "&#39;s";
+          return strval($val) . "s";
         }
         return strval($val);
     }

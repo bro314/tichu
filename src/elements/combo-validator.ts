@@ -74,7 +74,7 @@ function getDoubles(values: number[]): number[] {
 }
 
 /**
- * Mirrors `CardManager::cardToStr` (preserving HTML `&#39;s` entity for parity).
+ * Mirrors `CardManager::cardToStr`.
  */
 export function cardToStr(cardOrVal: TichuCard | number, plural = false): string {
   const isCardObj = typeof cardOrVal === "object" && cardOrVal !== null;
@@ -105,12 +105,12 @@ export function cardToStr(cardOrVal: TichuCard | number, plural = false): string
     case 14:
       return plural ? "Aces" : "Ace";
     default:
-      return plural ? `${val}&#39;s` : String(val);
+      return plural ? `${val}s` : String(val);
   }
 }
 
 export function decodeHtmlEntities(text: string): string {
-  return text.replace(/&#39;/g, "'");
+  return text.replace(/(\d)(?:&#39;|')s\b/g, "$1s").replace(/&#39;/g, "'");
 }
 
 export function rankToDisplayName(rank: number, plural = false): string {
