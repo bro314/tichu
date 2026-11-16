@@ -1808,8 +1808,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         cur = (await tt.giveCards(cards))!;
       }
       if (cur.state.name === "giveCards") {
-        const remaining = cur.multiactiveIds.length || 3;
-        cur = (await tt.step(remaining))!;
+        cur = (await (isLocalHost ? (win.tt || tt).actForOthers() : tt.step(1)))!;
       }
       if (!getUi().instantaneousMode) {
         await new Promise((r) => setTimeout(r, 2100));
@@ -2048,7 +2047,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           stepsRun++;
         }
         if (cur.state.name === "grandTichuBets") {
-          cur = (await tt.step(cur.multiactiveIds.length || 3))!;
+          cur = (await (isLocalHost ? (win.tt || tt).actForOthers() : tt.step(1)))!;
           stepsRun++;
         }
         checkUI();
@@ -4276,10 +4275,12 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       clearConsoleIssues: tt.clearConsoleIssues,
       _recordActionError: tt._recordActionError,
       betGrandTichu: tt.betGrandTichu,
+      betAllGrandTichu: tt.betAllGrandTichu,
       betTichu: tt.betTichu,
       confirmTichu: tt.confirmTichu,
       giveCards: tt.giveCards,
       passCards: tt.passCards,
+      passAllCards: tt.passAllCards,
       acceptCards: tt.acceptCards,
       play: tt.play,
       pass: tt.pass,
@@ -4290,6 +4291,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       collect: tt.collect,
       bomb: tt.bomb,
       cancelBomb: tt.cancelBomb,
+      runSmokeTest: tt.runSmokeTest,
       actMyTurn: tt.actMyTurn,
       startAutoPlayMe: tt.startAutoPlayMe,
       stopAutoPlayMe: tt.stopAutoPlayMe,
