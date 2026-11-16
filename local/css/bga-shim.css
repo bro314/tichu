@@ -3,10 +3,257 @@
  * Emulates BGA Studio layout, buttons, stocks, popin dialogs, player panels, and logs.
  */
 
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 300;
+  src: url("/local/css/font/roboto/Roboto-Light.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 400;
+  src: url("/local/css/font/roboto/Roboto-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: italic;
+  font-weight: 400;
+  src: url("/local/css/font/roboto/Roboto-Italic.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 500;
+  src: url("/local/css/font/roboto/Roboto-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 700;
+  src: url("/local/css/font/roboto/Roboto-Bold.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: italic;
+  font-weight: 700;
+  src: url("/local/css/font/roboto/Roboto-BoldItalic.woff2") format("woff2");
+}
+@font-face {
+  font-display: swap;
+  font-family: Roboto;
+  font-style: normal;
+  font-weight: 900;
+  src: url("/local/css/font/roboto/Roboto-Black.woff2") format("woff2");
+}
+
+:root {
+  --palette-bga-blue: #014090;
+  --palette-bga-primary: #0b72b5;
+  --palette-bga-gray-50: #f4f4f4;
+  --palette-bga-gray-100: #ddd;
+  --palette-bga-gray-141: #8d8d8d;
+  --palette-bga-gray-171: #ababab;
+  --palette-bga-gray-200: #bfbfbf;
+  --palette-bga-gray-204: #ccc;
+  --palette-bga-gray-211: #d3d3d3;
+  --palette-bga-gray-233: #e9e9e9;
+  --palette-bga-gray-244: #f4f4f4;
+  --palette-bga-gray-300: #a4a4a4;
+  --palette-bga-gray-400: #8c8c8c;
+  --palette-bga-gray-500: #767676;
+  --palette-bga-gray-600: #616161;
+  --palette-bga-gray-700: #4d4d4d;
+  --palette-bga-gray-800: #3a3a3a;
+  --palette-bga-gray-900: #242424;
+  --palette-bga-gray-950: #0d0d0d;
+  --palette-bga-link: #1a57a7;
+  --palette-bga-link-active: #7705a7;
+  --palette-bga-link-red: #ba0b00;
+  --palette-bga-main-bgcolor: #f4f4f4;
+  --palette-bga-whitebg: var(--palette-bga-gray-244);
+  --palette-bga-alert: #edbab7;
+  --palette-bga-input-red: #e4343c;
+  --palette-main-bg: url("/local/img/layout/back-main.jpg");
+
+  --bga-color-white: #fff;
+  --bga-color-black: #000;
+  --bga-surface-legacy-beige: #ebd5bd;
+  --bga-surface-legacy-beige-light: #f5eade;
+
+  --bga-button-primary: linear-gradient(180deg, var(--palette-bga-primary) 0%, #244587 100%)
+    no-repeat border-box;
+  --bga-button-primary-hover: linear-gradient(180deg, #0692ea, #244587) no-repeat border-box;
+  --bga-button-primary-active: linear-gradient(180deg, #244587 0%, var(--palette-bga-primary) 100%)
+    no-repeat border-box;
+  --bga-button-primary-border: linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box;
+  --bga-button-primary-border-active: linear-gradient(180deg, #5b6095, #809ac0) no-repeat border-box;
+
+  --bga-button-secondary: linear-gradient(180deg, var(--palette-bga-gray-244) 0%, #cacaca 100%)
+    no-repeat border-box;
+  --bga-button-secondary-hover: linear-gradient(180deg, #fefefe, #cacaca) no-repeat border-box;
+  --bga-button-secondary-active: linear-gradient(
+      180deg,
+      #cacaca 0%,
+      var(--palette-bga-gray-244) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-border: linear-gradient(180deg, #fff, #dedede) no-repeat border-box;
+  --bga-button-secondary-border-hover: linear-gradient(180deg, #fff, #e8e8e8) no-repeat border-box;
+  --bga-button-secondary-border-active: linear-gradient(180deg, #e8e8e8, #fff) no-repeat border-box;
+  --bga-button-secondary-outline: var(--palette-bga-gray-171);
+  --bga-button-secondary-text: var(--palette-bga-blue);
+
+  --bga-button-alert: linear-gradient(180deg, #e42421, #86211f) no-repeat border-box;
+  --bga-button-alert-hover: linear-gradient(180deg, #ff6247, #86211f) no-repeat border-box;
+  --bga-button-alert-active: linear-gradient(180deg, #86211f, #e42421) no-repeat border-box;
+  --bga-button-alert-border: linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box;
+  --bga-button-alert-border-active: linear-gradient(180deg, #863534, #e44e2a) no-repeat border-box;
+
+  --game-bga-button-primary: var(--bga-button-primary);
+  --game-bga-button-primary-active: var(--bga-button-primary-active);
+  --game-bga-button-primary-border: var(--bga-button-primary-border);
+  --game-bga-button-primary-border-active: var(--bga-button-primary-border-active);
+  --game-bga-button-primary-hover: var(--bga-button-primary-hover);
+  --game-bga-button-secondary: var(--bga-button-secondary);
+  --game-bga-button-secondary-active: var(--bga-button-secondary-active);
+  --game-bga-button-secondary-border: var(--bga-button-secondary-border);
+  --game-bga-button-secondary-border-active: var(--bga-button-secondary-border-active);
+  --game-bga-button-secondary-border-hover: var(--bga-button-secondary-border-hover);
+  --game-bga-button-secondary-hover: var(--bga-button-secondary-hover);
+  --game-bga-button-secondary-outline: var(--bga-button-secondary-outline);
+  --game-bga-button-secondary-text: var(--bga-button-secondary-text);
+  --game-bga-button-alert: var(--bga-button-alert);
+  --game-bga-button-alert-active: var(--bga-button-alert-active);
+  --game-bga-button-alert-border: var(--bga-button-alert-border);
+  --game-bga-button-alert-border-active: var(--bga-button-alert-border-active);
+  --game-bga-button-alert-hover: var(--bga-button-alert-hover);
+  --game-bga-color-black: var(--bga-color-black);
+  --game-bga-color-white: var(--bga-color-white);
+  --game-bga-text-shadow-color-black: var(--bga-color-black);
+  --game-bga-text-shadow-color-white: var(--bga-color-white);
+  --game-bga-player-panel-color: #000;
+  --game-bga-player-panel-background: var(--bga-surface-legacy-beige);
+  --game-bga-player-panel-background-disabled: #dac6af;
+  --game-bga-player-panel-background-enlighted: #faf5ef;
+  --game-bga-surface-legacy-beige: var(--bga-surface-legacy-beige);
+  --game-palette-bga-blue: var(--palette-bga-blue);
+  --game-palette-bga-link-active: var(--palette-bga-link-active);
+  --game-palette-bga-main-bgcolor: var(--palette-bga-main-bgcolor);
+  --game-palette-bga-gray-50: var(--palette-bga-gray-50);
+  --game-palette-bga-gray-100: var(--palette-bga-gray-100);
+  --game-palette-bga-gray-141: var(--palette-bga-gray-141);
+  --game-palette-bga-gray-171: var(--palette-bga-gray-171);
+  --game-palette-bga-gray-200: var(--palette-bga-gray-200);
+  --game-palette-bga-gray-204: var(--palette-bga-gray-204);
+  --game-palette-bga-gray-211: var(--palette-bga-gray-211);
+  --game-palette-bga-gray-233: var(--palette-bga-gray-233);
+  --game-palette-bga-gray-244: var(--palette-bga-gray-244);
+  --game-palette-bga-gray-300: var(--palette-bga-gray-300);
+  --game-palette-bga-gray-400: var(--palette-bga-gray-400);
+  --game-palette-bga-gray-500: var(--palette-bga-gray-500);
+  --game-palette-bga-gray-600: var(--palette-bga-gray-600);
+  --game-palette-bga-gray-700: var(--palette-bga-gray-700);
+  --game-palette-bga-gray-800: var(--palette-bga-gray-800);
+  --game-palette-bga-gray-900: var(--palette-bga-gray-900);
+  --game-palette-bga-gray-950: var(--palette-bga-gray-950);
+  --game-palette-bga-alert: var(--palette-bga-alert);
+  --game-palette-bga-link: var(--palette-bga-link);
+  --game-palette-bga-link-red: var(--palette-bga-link-red);
+  --game-palette-bga-whitebg: var(--palette-bga-whitebg);
+}
+
+html.dark,
+html[data-theme="dark"] {
+  --palette-bga-gray-50: #282a33;
+  --palette-bga-gray-100: #2c2f3b;
+  --palette-bga-gray-141: #8f96a3;
+  --palette-bga-gray-171: #aeb6c2;
+  --palette-bga-gray-200: #2f3241;
+  --palette-bga-gray-204: #353842;
+  --palette-bga-gray-211: #383a42;
+  --palette-bga-gray-233: #3c4054;
+  --palette-bga-gray-244: #40434d;
+  --palette-bga-gray-300: #474b56;
+  --palette-bga-gray-400: #aeb6c2;
+  --palette-bga-gray-500: #b8c0cc;
+  --palette-bga-gray-600: #c2c8d1;
+  --palette-bga-gray-700: #cbd0d8;
+  --palette-bga-gray-800: #d1d5db;
+  --palette-bga-gray-900: #d9dde3;
+  --palette-bga-gray-950: #e5e7eb;
+  --palette-bga-link: #738fc8;
+  --palette-bga-link-active: #bfdbfe;
+  --palette-bga-link-red: #bf817d;
+  --palette-bga-main-bgcolor: #202126;
+  --palette-main-bg: url("/local/img/layout/back-mainb.png");
+  --bga-color-white: #fff;
+  --bga-color-black: #d1d5db;
+  --bga-surface-legacy-beige: var(--palette-bga-gray-233);
+  --bga-surface-legacy-beige-light: var(--palette-bga-gray-244);
+  --bga-button-primary: linear-gradient(180deg, var(--palette-bga-primary) 0%, #315777 100%)
+    no-repeat border-box;
+  --bga-button-primary-hover: linear-gradient(180deg, #6ec9f1, #315777) no-repeat border-box;
+  --bga-button-primary-active: linear-gradient(180deg, #315777 0%, var(--palette-bga-primary) 100%)
+    no-repeat border-box;
+  --bga-button-secondary: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-244) 0%,
+      var(--palette-bga-gray-200) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-hover: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-300) 0%,
+      var(--palette-bga-gray-200) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-active: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-200) 0%,
+      var(--palette-bga-gray-244) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-border: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-300) 0%,
+      var(--palette-bga-gray-200) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-border-hover: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-244) 0%,
+      var(--palette-bga-gray-200) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-border-active: linear-gradient(
+      180deg,
+      var(--palette-bga-gray-200) 0%,
+      var(--palette-bga-gray-300) 100%
+    )
+    no-repeat border-box;
+  --bga-button-secondary-outline: var(--palette-bga-gray-400);
+  --bga-button-secondary-text: var(--bga-color-white);
+  --game-bga-player-panel-color: var(--palette-bga-gray-950);
+  --game-bga-player-panel-background-disabled: #3c4054;
+  --game-bga-player-panel-background-enlighted: var(--game-palette-bga-whitebg);
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  background: var(--palette-main-bg);
+  color: #000;
 }
 
 html,
@@ -14,15 +261,20 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  font-family:
-    "Roboto",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Arial,
-    sans-serif;
-  font-size: 14px;
-  color: #1f2328;
+}
+
+body {
+  font-family: Roboto, Arial, sans-serif;
+  font-size: 16px;
+}
+
+html.dark #ebd-body,
+html.dark #overall-content,
+html.dark body,
+html[data-theme="dark"] #ebd-body,
+html[data-theme="dark"] #overall-content,
+html[data-theme="dark"] body {
+  color: var(--game-palette-bga-gray-950);
 }
 
 h1,
@@ -42,6 +294,11 @@ fieldset,
 legend {
   margin: 0;
   padding: 0;
+}
+
+img {
+  border: 0;
+  margin: 0;
 }
 
 h1 {
@@ -82,6 +339,35 @@ a {
 }
 a:hover {
   text-decoration: underline;
+}
+
+.imgtext {
+  position: relative;
+  top: 3px;
+}
+
+.textalign {
+  display: inline-block;
+  height: 22px;
+  position: relative;
+  width: 32px;
+}
+
+.textalign_inner {
+  left: 0;
+  position: absolute;
+  top: 0;
+}
+
+.roundedbox {
+  background-color: var(--game-palette-bga-gray-244, var(--palette-bga-gray-244));
+  padding: 5px;
+  position: relative;
+}
+
+.roundedbox .roundedboxinner {
+  height: 100%;
+  position: relative;
 }
 
 /* ============================================================================
@@ -166,111 +452,226 @@ a:hover {
 
 #overall-content {
   margin-top: 10px;
+  overflow: hidden;
+  min-width: 320px;
+  position: relative;
+}
+
+#active_player_statusbar {
+  height: 18px;
+}
+
+#active_player_statusbar_icon {
+  top: -3px;
 }
 
 #page-title {
-  background: rgba(246, 248, 250, 0.94);
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  padding: 6px 16px;
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-shadow: 0 3px 8px #0000004d;
+  font-size: 110%;
+  font-weight: 700;
+  line-height: 32px;
+  text-align: center;
 }
 
+#gameaction_status_wrap,
 #maintitlebar_content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  min-height: 42px;
+}
+
+#page-title.fixed-page-title {
+  position: fixed;
+  top: 0;
   width: 100%;
-  font-size: 16px;
-  font-weight: 700;
-  color: #1f2328;
+  z-index: 948;
 }
 
 #generalactions {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: inline;
+}
+
+#page-title .action-button {
+  display: inline-block;
+}
+
+button.action-button {
+  width: unset;
+}
+
+#page-title .action-button,
+#page-title .bgabutton {
+  line-height: normal;
+  margin-bottom: 2px;
+  margin-top: 0;
+}
+
+@media (hover: none) {
+  #page-title .action-button,
+  #page-title .bgabutton {
+    margin-bottom: 8px;
+    margin-top: 8px;
+  }
+}
+
+#page-title,
+.current_player_is_active #page-title,
+.gamestate_gameEnd #page-title {
+  background-color: var(--game-palette-bga-gray-244);
+}
+
+.playername,
+a:link.playername,
+a:visited.playername {
+  color: #199c97;
+  font-weight: 700;
 }
 
 /* ============================================================================
  * 4. BGA Action Buttons (.bgabutton)
  * ============================================================================ */
 
+.action-button {
+  margin-left: 10px;
+}
+
 .bgabutton {
   display: inline-block;
-  padding: 6px 12px;
-  font-size: 14px;
   font-weight: 700;
-  line-height: 16px;
   border-radius: 6px;
+  box-shadow: 0 1px #000;
+  color: #fff;
   cursor: pointer;
-  text-decoration: none !important;
+  font-size: 14px;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  overflow: hidden;
+  padding: 6px 12px;
+  text-overflow: ellipsis;
+  text-shadow: #0006 0 1px 0;
   user-select: none;
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  box-shadow: 0 1px 0 #000;
-  text-shadow: rgba(0, 0, 0, 0.4) 0 1px 0;
   vertical-align: middle;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 10px;
-  margin-bottom: 10px;
-  transition:
-    filter 0.12s ease,
-    transform 0.06s ease;
 }
 
-#page-title .action-button,
-#page-title .bgabutton {
-  line-height: 16px;
-  margin-top: 0;
-  margin-bottom: 2px;
+.bgabutton,
+.notouch-device .bgabutton:hover {
+  text-decoration: none;
 }
 
-.bgabutton:hover {
-  filter: brightness(1.07);
-  text-decoration: none !important;
+a.bgabutton {
+  color: #fff;
 }
 
-.bgabutton:active {
-  transform: translateY(1px);
+.bgabutton.disabled {
+  background: linear-gradient(to bottom, #888, #787878);
+  pointer-events: none;
 }
 
-.bgabutton_blue,
-.bgabutton_primary {
-  color: #ffffff !important;
-  background: linear-gradient(180deg, #4871b6 0%, #3b5f9c 100%);
-  border-color: #2f4d80;
+.bgabutton:disabled {
+  background: linear-gradient(to bottom, #888, #787878) !important;
+  cursor: not-allowed;
 }
 
 .bgabutton_red,
 .bgabutton_alert {
-  color: #ffffff !important;
-  background: linear-gradient(180deg, #c92727 0%, #b01e1e 100%);
-  border-color: #8f1616;
+  background: var(--game-bga-button-alert), var(--game-bga-button-alert-border);
+  color: var(--game-bga-color-white);
+}
+
+.notouch-device .bgabutton_red:hover,
+.notouch-device .bgabutton_alert:hover {
+  background: var(--game-bga-button-alert-hover), var(--game-bga-button-alert-border);
+}
+
+.bgabutton_red:active,
+.bgabutton_alert:active {
+  background: var(--game-bga-button-alert-active), var(--game-bga-button-alert-border-active);
+}
+
+.bgabutton_blue,
+.bgabutton_primary {
+  background: var(--game-bga-button-primary), var(--game-bga-button-primary-border);
+  color: var(--game-bga-color-white);
+}
+
+.notouch-device .bgabutton_blue:hover,
+.notouch-device .bgabutton_primary:hover {
+  background: var(--game-bga-button-primary-hover), var(--game-bga-button-primary-border);
+}
+
+.bgabutton_blue:active,
+.bgabutton_primary:active {
+  background: var(--game-bga-button-primary-active), var(--game-bga-button-primary-border-active);
 }
 
 .bgabutton_green {
-  color: #ffffff !important;
-  background: linear-gradient(180deg, #89a538 0%, #748d2d 100%);
-  border-color: #5d7223;
+  background: linear-gradient(to bottom, #799332, #89a538);
+  border: 1px solid #697f2b;
+}
+
+.notouch-device .bgabutton_green:hover {
+  background: #89a538;
+  color: #fff;
+}
+
+.bgabutton_green:active {
+  background: #697f2b;
+  border-top-color: #697f2b;
+}
+
+.bgabutton_darkgray {
+  background: linear-gradient(to bottom, #888, #787878);
+  border: 1px solid #505050;
+}
+
+.notouch-device .bgabutton_darkgray:hover {
+  background-color: #787878;
+  color: #fff;
+}
+
+.bgabutton_darkgray:active {
+  background: #696969;
+  border-top-color: #696969;
 }
 
 .bgabutton_gray,
 .bgabutton_secondary {
-  color: #1f2328 !important;
-  background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 100%);
-  border-color: #9ca3af;
+  background: var(--game-bga-button-secondary), var(--game-bga-button-secondary-border);
+  color: var(--game-bga-button-secondary-text);
+  padding: 5px 11px;
+  position: relative;
+  text-shadow: none;
 }
 
-.bgabutton.disabled {
-  opacity: 0.5;
+.bgabutton_gray:after,
+.bgabutton_secondary:after {
+  border: 1px solid var(--game-bga-button-secondary-outline);
+  border-radius: 5px;
+  content: " ";
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   pointer-events: none;
+  position: absolute;
+}
+
+.notouch-device .bgabutton_gray:hover,
+.notouch-device .bgabutton_secondary:hover {
+  background: var(--game-bga-button-secondary-hover), var(--game-bga-button-secondary-border-hover);
+  color: var(--game-bga-button-secondary-text);
+}
+
+.bgabutton_gray:active,
+.bgabutton_secondary:active {
+  background:
+    var(--game-bga-button-secondary-active), var(--game-bga-button-secondary-border-active);
+}
+
+.bgabutton_gray:active,
+a.bgabutton_gray,
+.bgabutton_secondary:active,
+a.bgabutton_secondary {
+  color: var(--game-bga-button-secondary-text);
 }
 
 /* ============================================================================
@@ -278,7 +679,10 @@ a:hover {
  * ============================================================================ */
 
 #page-content {
-  padding: 0 10px 24px 10px;
+  clear: left;
+  margin-bottom: 5px;
+  min-height: 400px;
+  position: relative;
 }
 
 #main-game-layout {
@@ -361,20 +765,6 @@ a:hover {
 .icon16_point {
   color: #d97706;
   font-size: 15px;
-}
-
-.ha_board {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding-top: 4px;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  font-weight: 600;
-}
-
-.ha_board .count {
-  margin-right: 8px;
 }
 
 #logs_wrap {

@@ -936,6 +936,12 @@ export class Tichu {
   onEnteringStateChooseDragonGift(args?: any) {
     const enemies = args?.enemies ?? (this.gamedatas?.gamestate as any)?.args?.enemies;
     if (!this.isCurrentPlayerActive() || !enemies) return;
+    if (
+      document.getElementById("giveDragonBefore_button") ||
+      document.getElementById("giveDragonAfter_button")
+    ) {
+      return;
+    }
     const left = this.clockwise ? 0 : 1;
     const right = this.clockwise ? 1 : 0;
     const leftLabel = typeof enemies[left] === "object" ? enemies[left].name : enemies[left];
@@ -970,6 +976,7 @@ export class Tichu {
   onLeavingState(stateName: string) {
     clearTimeout(this.autoAcceptTimeout);
     clearTimeout(this.autoCollectTimeout);
+    this.collectSent = false;
     window.gameModel?.setAcceptingCardsCountdown(false);
     window.gameModel?.setCollectingTrickCountdown(false);
     const overall = document.getElementById("overall-content");
@@ -980,6 +987,9 @@ export class Tichu {
 
   onUpdateActionButtons(stateName: string, args: any) {
     this.stateName = stateName;
+    if (stateName !== "confirmTrick") {
+      this.collectSent = false;
+    }
     if (stateName === "newRound" || stateName === "endRound" || stateName === "gameEnd") {
       this.pendingConfirmTichu = null;
     }

@@ -1051,6 +1051,86 @@ test("Tichu studio adapter regressions: legacy accessors, reflexion/args, confir
   assert.equal(publishedTopics[pubBefore]?.topic, "lockInterface");
   assert.equal(publishedTopics[pubBefore]?.args?.[0]?.status, "updated");
   assert.equal(publishedTopics[pubBefore]?.args?.[0]?.uuid, "lock-123");
+
+  // 5. confirmTrick trick-2+ auto-collect under Studio hook order
+  // (onLeavingState -> onUpdateActionButtons -> onEnteringState)
+  const g = globalThis as any;
+  const savedGameModel = g.window.gameModel;
+  const savedSetTimeout = g.window.setTimeout;
+  try {
+    const model = new GameModel();
+    model.hydrateFromGamedatas(
+      {
+        players: {
+          "2385074": {
+            id: "2385074",
+            name: "p0",
+            color: "000000",
+            no: 1,
+            score: "0",
+            call_grand_tichu: "0",
+          } as any,
+          "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" } as any,
+        },
+        playerorder: ["2385074", "2385075"],
+        gamestate: {
+          id: "75",
+          name: "confirmTrick",
+          type: "activeplayer",
+          active_player: "2385074",
+          args: {},
+        } as any,
+        round: 1,
+        trick: 2,
+        hand: [],
+      },
+      "2385074",
+      false,
+      true,
+    );
+    g.window.gameModel = model;
+
+    let scheduledAutoCollectDelay: number | null = null;
+    g.window.setTimeout = (_fn: () => void, delay = 0) => {
+      scheduledAutoCollectDelay = Number(delay);
+      return 777;
+    };
+
+    const collectUi = new declaredClass();
+    collectUi.player_id = 2385074;
+    collectUi.isSpectator = false;
+    collectUi.bRealtime = true;
+    collectUi.collectSent = true;
+    collectUi.isCurrentPlayerActive = () => true;
+    collectUi.getActivePlayerId = () => 2385074;
+    collectUi.removeActionButtons = () => {};
+    collectUi.gamedatas = {
+      players: {
+        "2385074": { id: "2385074", name: "p0", score: "0", call_grand_tichu: "0" },
+      },
+      gamestate: {
+        id: "75",
+        name: "confirmTrick",
+        type: "activeplayer",
+        active_player: "2385074",
+        args: {},
+      },
+      hand: [],
+    };
+
+    collectUi.onLeavingState("confirmTrick");
+    collectUi.onLeavingState("playCombo");
+    collectUi.onUpdateActionButtons("confirmTrick", {});
+    collectUi.onEnteringState("confirmTrick", collectUi.gamedatas.gamestate);
+
+    assert.equal(collectUi.collectSent, false);
+    assert.equal(model.getState().collectingTrickCountdown, true);
+    assert.equal(scheduledAutoCollectDelay, 2000);
+    assert.equal(collectUi.autoCollectTimeout, 777);
+  } finally {
+    g.window.gameModel = savedGameModel;
+    g.window.setTimeout = savedSetTimeout;
+  }
 });
 
 test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot timers", async () => {

@@ -60,6 +60,7 @@
   // 1. BGA Global Variables & Helper Functions
   // ==========================================================================
 
+  window.g_themeurl = "/local/";
   window.g_gamethemeurl = "/";
   localStorage.removeItem("tichu_local_archive_mode");
   const initialGamestate = (initPayload.gamedatas && initPayload.gamedatas.gamestate) || {};
@@ -1782,9 +1783,10 @@
 
       this.statusBar = {
         setTitle: (title, args) => {
+          this._syncActivePlayerStatusBar(this.isCurrentPlayerActive());
           const formatted = this.format_string_recursive(title, args || {});
           const el = document.getElementById("pagemaintitletext");
-          if (el) el.innerHTML = formatted;
+          if (el) el.innerHTML = formatted === "" ? "&nbsp;" : formatted;
         },
         addActionButton: (label, callback, params = {}) => {
           const id = params.id || "status_btn_" + Math.random().toString(36).slice(2, 8);
@@ -1956,6 +1958,28 @@
       });
     }
 
+    getPlayerNameTextShadowStyle(color) {
+      const raw = String(color || "000000");
+      const hex = raw.startsWith("#") ? raw.slice(1) : raw;
+      const expanded =
+        hex.length === 3
+          ? hex
+              .split("")
+              .map((c) => c + c)
+              .join("")
+          : hex;
+      const lum =
+        (0.299 * parseInt(expanded.slice(0, 2), 16) +
+          0.587 * parseInt(expanded.slice(2, 4), 16) +
+          0.114 * parseInt(expanded.slice(4, 6), 16)) /
+        255;
+      const shadowColor =
+        lum > 0.6
+          ? "var(--game-bga-text-shadow-color-black)"
+          : "var(--game-bga-text-shadow-color-white)";
+      return `text-shadow: 0 0 1px ${shadowColor}, 0 0 2px ${shadowColor}, 0 0 3px ${shadowColor};`;
+    }
+
     getFormattedPlayerName(playerId, params) {
       const p = this.gamedatas && this.gamedatas.players && this.gamedatas.players[playerId];
       if (!p) return "Player " + playerId;
@@ -1963,8 +1987,10 @@
         params && params.replaceByYou && Number(playerId) === Number(this.player_id)
           ? window._("You")
           : p.name;
+      const color = p.color || "000000";
+      const shadow = this.getPlayerNameTextShadowStyle(color);
       return (
-        '<span style="font-weight:700;color:#' + (p.color || "000000") + '">' + label + "</span>"
+        '<span class="playername" style="color: #' + color + ";" + shadow + '">' + label + "</span>"
       );
     }
 
@@ -1996,17 +2022,29 @@
       });
     }
 
+    _syncActivePlayerStatusBar(isActive) {
+      const active = Boolean(isActive);
+      const statusbar = document.getElementById("active_player_statusbar");
+      if (statusbar) {
+        statusbar.style.display = active ? "inline-block" : "none";
+      }
+      if (document.body) {
+        document.body.classList.toggle("current_player_is_active", active);
+      }
+    }
+
     updatePageTitle(state) {
       const st = state || (this.gamedatas && this.gamedatas.gamestate);
       if (!st) return;
 
       const isMyTurn = this.isCurrentPlayerActive();
+      this._syncActivePlayerStatusBar(isMyTurn);
       const rawDesc =
         isMyTurn && st.descriptionmyturn ? st.descriptionmyturn : st.description || "";
       const formatted = this.format_string_recursive(rawDesc, st.args || {});
       const titleEl = document.getElementById("pagemaintitletext");
       if (titleEl) {
-        titleEl.innerHTML = formatted;
+        titleEl.innerHTML = formatted === "" ? "&nbsp;" : formatted;
       }
     }
 
@@ -2025,7 +2063,8 @@
       btn.id = id;
       btn.href = "#";
       const btnColor = color || "blue";
-      btn.className = "bgabutton bgabutton_" + btnColor + (blinking ? " blinking" : "");
+      btn.className =
+        "action-button bgabutton bgabutton_" + btnColor + (blinking ? " blinking" : "");
       btn.innerHTML = String(label ?? "");
 
       const handler =
@@ -2668,20 +2707,14 @@
       }
       this._hydrateInitialLogs();
 
-      // 3. Enter current state and update action buttons
+      // 3. Update title + action buttons before entering state (matching BGA Studio lifecycle order)
       if (st && st.name) {
         this.updatePageTitle(st);
-        if (typeof this.onEnteringState === "function") {
-          this.onEnteringState(st.name, st);
-        }
         if (typeof this.onUpdateActionButtons === "function") {
           this.onUpdateActionButtons(st.name, st.args);
         }
-        if (
-          st.name === "chooseDragonGift" &&
-          typeof this.onEnteringStateChooseDragonGift === "function"
-        ) {
-          this.onEnteringStateChooseDragonGift(st.args);
+        if (typeof this.onEnteringState === "function") {
+          this.onEnteringState(st.name, st);
         }
       }
 
@@ -2767,20 +2800,11 @@
         }
       }
 
-      if (typeof this.onEnteringState === "function") {
-        this.onEnteringState(newState.name, newState);
-      }
       if (typeof this.onUpdateActionButtons === "function") {
         this.onUpdateActionButtons(newState.name, newState.args);
       }
-      // Note: Tichu.prototype.onEnteringStateChooseDragonGift adds the two Dragon Gift buttons
-      // inside onEnteringState, which onUpdateActionButtons's removeActionButtons() clears.
-      // Re-invoking onEnteringStateChooseDragonGift ensures those buttons remain in #generalactions.
-      if (
-        newState.name === "chooseDragonGift" &&
-        typeof this.onEnteringStateChooseDragonGift === "function"
-      ) {
-        this.onEnteringStateChooseDragonGift(newState.args);
+      if (typeof this.onEnteringState === "function") {
+        this.onEnteringState(newState.name, newState);
       }
 
       this._renderDevBar();
@@ -4477,17 +4501,11 @@
       const initialState = instance.gamedatas && instance.gamedatas.gamestate;
       if (initialState) {
         instance.updatePageTitle(initialState);
-        if (typeof instance.onEnteringState === "function") {
-          instance.onEnteringState(initialState.name, initialState);
-        }
         if (typeof instance.onUpdateActionButtons === "function") {
           instance.onUpdateActionButtons(initialState.name, initialState.args);
         }
-        if (
-          initialState.name === "chooseDragonGift" &&
-          typeof instance.onEnteringStateChooseDragonGift === "function"
-        ) {
-          instance.onEnteringStateChooseDragonGift(initialState.args);
+        if (typeof instance.onEnteringState === "function") {
+          instance.onEnteringState(initialState.name, initialState);
         }
       }
 

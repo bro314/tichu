@@ -346,7 +346,6 @@ export class TichuActionBar extends LitElement {
     const canCollect =
       this.isCurrentPlayerActive &&
       this.stateName === "confirmTrick" &&
-      !this.isRealtime &&
       !this.collectingTrickCountdown;
 
     if (canCollect) {

@@ -20,21 +20,10 @@ export class TichuPlayerPanel extends LitElement {
         :host {
           display: block;
           clear: both;
+          color: var(--game-bga-player-panel-color, #000);
         }
         .ha_board {
           clear: both;
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          padding-top: 4px;
-          font-weight: 600;
-          color: #1f2328;
-        }
-        .ha_board .count {
-          margin-right: 8px;
-        }
-        .ha_board .icon:not(.hand):not(.star) {
-          margin-right: 4px;
         }
       `,
     ];
@@ -106,55 +95,17 @@ export class TichuPlayerPanel extends LitElement {
     const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
     const isPassReady = Boolean(p?.passedCardReady);
 
+    // prettier-ignore
     return html`
       <div class="ha_board">
-        <div class="icon hand" title=${t("Cards in hand")}></div>
-        &#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${t("Cards in hand")}
-          >${handcount}</span
-        >
-        <div class="icon star" title=${t("Points captured")}></div>
-        &#x00D7;<span
-          id="pointcount_${id}"
-          class="count pointcount ${id}"
-          title=${t("Points captured")}
-          >${capturedPoints}</span
-        >
-        <div
-          id="grandtichublack_${id}"
-          class="icon grandtichublack ${id}"
-          style="display: ${showGrandTichuBlack ? "inline-block" : "none"}"
-          title=${t("Grand Tichu bet yet to be made")}
-        ></div>
-        <div
-          id="grandtichucolor_${id}"
-          class="icon grandtichucolor ${id}"
-          style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-          title=${t("Grand Tichu bet")}
-        ></div>
-        <div
-          id="tichublack_${id}"
-          class="icon tichublack ${id}"
-          style="display: ${showTichuBlack ? "inline-block" : "none"}"
-          title=${t("Tichu bet yet to be made")}
-        ></div>
-        <div
-          id="tichucolor_${id}"
-          class="icon tichucolor ${id}"
-          style="display: ${showTichuColor ? "inline-block" : "none"}"
-          title=${t("Tichu bet")}
-        ></div>
-        <div
-          id="firstoutcolor_${id}"
-          class="icon firstoutcolor ${id}"
-          style="display: ${isFirstOut ? "inline-block" : "none"}"
-          title=${t("First player out")}
-        ></div>
-        <div
-          id="cardback_${id}"
-          class="icon cardback ${id}"
-          style="display: ${isPassReady ? "inline-block" : "none"}"
-          title=${t("has passed")}
-        ></div>
+        <div class="icon hand" title=${t("Cards in hand")}></div>&#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${t("Cards in hand")}>${handcount}</span>
+        <div class="icon star" title=${t("Points captured")}></div>&#x00D7;<span id="pointcount_${id}" class="count pointcount ${id}" title=${t("Points captured")}>${capturedPoints}</span>
+        <div id="grandtichublack_${id}" class="icon grandtichublack ${id}" style="display: ${showGrandTichuBlack ? "inline-block" : "none"}" title=${t("Grand Tichu bet yet to be made")}></div>
+        <div id="grandtichucolor_${id}" class="icon grandtichucolor ${id}" style="display: ${showGrandTichuColor ? "inline-block" : "none"}" title=${t("Grand Tichu bet")}></div>
+        <div id="tichublack_${id}" class="icon tichublack ${id}" style="display: ${showTichuBlack ? "inline-block" : "none"}" title=${t("Tichu bet yet to be made")}></div>
+        <div id="tichucolor_${id}" class="icon tichucolor ${id}" style="display: ${showTichuColor ? "inline-block" : "none"}" title=${t("Tichu bet")}></div>
+        <div id="firstoutcolor_${id}" class="icon firstoutcolor ${id}" style="display: ${isFirstOut ? "inline-block" : "none"}" title=${t("First player out")}></div>
+        <div id="cardback_${id}" class="icon cardback ${id}" style="display: ${isPassReady ? "inline-block" : "none"}" title=${t("has passed")}></div>
       </div>
     `;
   }

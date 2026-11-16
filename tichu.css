@@ -156,13 +156,14 @@ a.themelink .bg3 {
 .player-board {
   background-color: transparent;
   border-radius: 0;
-  box-shadow: var(--elevation);
+  box-shadow: none;
   padding: 0;
 }
 .player_board_inner {
   position: relative;
   background-color: var(--bg-color-lighter);
   border-radius: var(--border-radius);
+  box-shadow: var(--elevation);
   margin-right: 4px;
   padding: 5px 3px;
 }

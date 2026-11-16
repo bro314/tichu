@@ -573,6 +573,23 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   }
   $overallClassAttr = implode(' ', $overallClasses);
 
+  $isViewerActive = false;
+  if (!$isSpectator) {
+    $initialState = $gamedatas['gamestate'] ?? [];
+    $initialStateType = (string) ($initialState['type'] ?? '');
+    if ($initialStateType === 'activeplayer') {
+      $isViewerActive = (int) ($initialState['active_player'] ?? 0) === $viewerPlayerId;
+    } elseif ($initialStateType === 'multipleactiveplayer') {
+      $multi = is_array($initialState['multiactive'] ?? null) ? $initialState['multiactive'] : [];
+      foreach ($multi as $mId) {
+        if ((int) $mId === $viewerPlayerId) {
+          $isViewerActive = true;
+          break;
+        }
+      }
+    }
+  }
+
   if (!headers_sent()) {
     header('Content-Type: text/html; charset=utf-8');
   }
@@ -586,21 +603,29 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   <link rel="stylesheet" href="/local/css/bga-shim.css">
   <link rel="stylesheet" href="/tichu.css">
 </head>
-<body class="theme0">
+<body id="ebd-body" class="notouch-device theme0<?php echo $isViewerActive ? ' current_player_is_active' : ''; ?>">
   <div id="local-dev-bar"></div>
   <div id="local-toast-container"></div>
 
   <div id="overall-content" class="<?php echo htmlspecialchars($overallClassAttr, ENT_QUOTES, 'UTF-8'); ?>">
     <div id="topbar"></div>
 
-    <div id="page-title">
-      <div id="maintitlebar_content">
+    <div id="page-title" class="roundedbox">
+      <div id="maintitlebar_content" class="roundedboxinner">
         <div id="pagemaintitle_wrap">
-          <span id="pagemaintitletext"></span>
+          <span id="active_player_statusbar" class="textalign" style="display: <?php echo $isViewerActive ? 'inline-block' : 'none'; ?>;">
+            <img id="active_player_statusbar_icon" class="textalign_inner" src="/local/img/layout/active_player.gif" alt="" />
+          </span>
+          <span id="pagemaintitletext">&nbsp;</span>
+          <div id="generalactions"></div>
         </div>
-        <div id="generalactions"></div>
+        <div id="gameaction_status_wrap" style="display: none;">
+          <span id="gameaction_status"></span>
+          <span id="synchronous_notif_icon" style="display: none;"></span>
+        </div>
       </div>
     </div>
+    <div id="after-page-title"></div>
 
     <div id="page-content">
       <div id="main-game-layout">
