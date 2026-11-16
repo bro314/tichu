@@ -23,6 +23,8 @@ import {
   validatePassAction,
 } from "../src/elements/combo-validator";
 import { hasBomb } from "../src/elements/utils";
+import { GameModel } from "../src/elements/game-model";
+import { Bet } from "../src/types/tichu-contracts";
 
 let nextCardId = 1;
 function card(type: number, typeArg: number): TichuCard {
@@ -825,4 +827,228 @@ test("SmartPlayUX::canFinishHandInOnePlay prompt trigger", () => {
   const phTrigger = canFinishHandInOnePlay(phHand, [A7], lastStraight, 0, "playCombo");
   assert.ok(phTrigger !== null);
   assert.equal(phTrigger.type, STRAIGHT_COMBO);
+});
+
+// =========================================================================
+// Studio & Local Client Runtime Regressions (GameModel + Tichu adapter)
+// =========================================================================
+
+test("GameModel::enterNewRound preserves 8-card initial deal", () => {
+  const model = new GameModel();
+  model.hydrateFromGamedatas(
+    {
+      players: {
+        "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" } as any,
+        "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" } as any,
+        "2385076": { id: "2385076", name: "p2", color: "000000", no: 3, score: "0" } as any,
+        "2385077": { id: "2385077", name: "p3", color: "ff0000", no: 4, score: "0" } as any,
+      },
+      playerorder: ["2385074", "2385075", "2385076", "2385077"],
+      gamestate: {
+        id: "20",
+        name: "grandTichuBets",
+        type: "multipleactiveplayer",
+        args: {},
+      } as any,
+      round: 1,
+      trick: 0,
+      hand: [],
+    },
+    "2385074",
+    false,
+    true,
+  );
+
+  // Deal 8 cards arriving prior to enterNewRound() must stay intact.
+  const eightCards = [A2, B3, C4, D5, A6, B7, C8, D9];
+  model.dealCards(eightCards);
+  assert.equal(model.getState().hand.length, 8);
+
+  model.enterNewRound();
+  assert.equal(model.getState().hand.length, 8);
+  assert.equal(model.getState().players["2385074"]?.handcount, 8);
+
+  // Non-8-card leftover hand resets cleanly to empty on enterNewRound().
+  model.setHand([A2, B3]);
+  model.enterNewRound();
+  assert.equal(model.getState().hand.length, 0);
+  assert.equal(model.getState().players["2385074"]?.handcount, 0);
+});
+
+function loadTichuAdapterForNodeTests() {
+  const g = globalThis as any;
+  const publishedTopics: Array<{ topic: string; args: any[] }> = [];
+  const parentGameStateCalls: any[] = [];
+  const parentReflexionCalls: any[] = [];
+
+  if (!g.window) g.window = g;
+  if (!g.document) {
+    g.document = {
+      getElementById: () => null,
+      querySelector: () => null,
+    };
+  }
+  g._ = (s: string) => s;
+
+  const baseProto = {
+    ntf_gameStateChange(notif: any) {
+      parentGameStateCalls.push(notif);
+    },
+    ntf_updateReflexionTime(notif: any) {
+      parentReflexionCalls.push(notif);
+    },
+  };
+  g.ebg = {
+    core: {
+      gamegui: Object.assign(function GameGui() {}, { prototype: baseProto }),
+    },
+    counter: function Counter() {},
+  };
+  g.dojo = {
+    publish(topic: string, args: any[] = []) {
+      publishedTopics.push({ topic, args });
+    },
+    subscribe() {
+      return {};
+    },
+    unsubscribe() {},
+  };
+
+  let declaredClass: any = null;
+  const declareMock = (_name: string, _base: any, props: any) => {
+    const Ctor: any = function DeclaredTichu() {};
+    Ctor.prototype = Object.create(baseProto);
+    const proto = Object.getPrototypeOf(props);
+    if (proto && proto !== Object.prototype) {
+      for (const key of Object.getOwnPropertyNames(proto)) {
+        if (key === "constructor") continue;
+        const desc = Object.getOwnPropertyDescriptor(proto, key);
+        if (desc && typeof desc.value === "function") {
+          Ctor.prototype[key] = desc.value;
+        }
+      }
+    }
+    // Mimic Dojo declare's safeMixin copying enumerable properties (including installLegacyAccessors) via `for..in`.
+    for (const key in props) {
+      const desc = Object.getOwnPropertyDescriptor(props, key);
+      if (desc && (desc.get || desc.set)) {
+        Object.defineProperty(Ctor.prototype, key, desc);
+      } else {
+        Ctor.prototype[key] = props[key];
+      }
+    }
+    declaredClass = Ctor;
+    return Ctor;
+  };
+  g.define = (_deps: string[], factory: (dojoArg: any, declareArg: any) => any) => {
+    return factory(g.dojo, declareMock);
+  };
+
+  const { Tichu } = require("../src/tichu");
+  return { Tichu, declaredClass, publishedTopics, parentGameStateCalls, parentReflexionCalls };
+}
+
+test("Tichu studio adapter regressions: legacy accessors, reflexion/args, confirmTichu recursion, orphaned lock", () => {
+  const { Tichu, declaredClass, publishedTopics, parentGameStateCalls } =
+    loadTichuAdapterForNodeTests();
+  const ui = new declaredClass();
+  ui.player_id = 2385074;
+  ui.gamedatas = {
+    players: {
+      2385074: { id: "2385074", name: "p0", score: "0" },
+      2385075: { id: "2385075", name: "p1", score: "0" },
+    },
+    gamestate: {
+      id: "60",
+      name: "playCombo",
+      type: "activeplayer",
+      active_player: "2385074",
+      descriptionmyturn: "Your turn",
+      args: {},
+    },
+    hand: [],
+  };
+
+  // 1. Enumerable legacy accessors survive Dojo declare mixin
+  for (const prop of ["allowedValues", "clockwise", "cardsToPass"]) {
+    const desc = Object.getOwnPropertyDescriptor(Tichu.prototype, prop);
+    assert.ok(desc, `${prop} descriptor must exist on Tichu.prototype`);
+    assert.equal(desc.enumerable, true, `${prop} must be enumerable for Dojo declare`);
+    assert.equal(prop in ui, true, `${prop} must exist on declared instance`);
+  }
+
+  // 2. Empty PHP args: [] normalized to {} and reflexion maps initialized on ntf_gameStateChange
+  const gsNotif = {
+    args: {
+      name: "playCombo",
+      args: [],
+      reflexion: { total: [] },
+    },
+  };
+  ui.ntf_gameStateChange(gsNotif);
+  assert.equal(Array.isArray(gsNotif.args.args), false);
+  assert.deepEqual(gsNotif.args.args, {});
+  assert.equal(typeof gsNotif.args.reflexion.total["2385074"], "number");
+  assert.equal(typeof gsNotif.args.reflexion.initial["2385074"], "number");
+  assert.equal(typeof gsNotif.args.reflexion.initial_ts["2385074"], "number");
+  assert.equal(parentGameStateCalls.length, 1);
+
+  // 3. confirmTichu <-> updatePageTitle <-> onUpdateActionButtons mutual recursion guard
+  let actionButtonsRenders = 0;
+  ui.stateName = "playCombo";
+  ui.removeActionButtons = () => {};
+  ui.addActionButton = () => {};
+  ui.playLaserSound = () => {};
+  ui.notifqueue = {
+    queue: [],
+    waiting_from_notifend: "wait-1",
+    notificationResendInProgress: false,
+    setSynchronousDuration() {},
+  };
+  ui.onUpdateActionButtons = (_state: string, _args: any) => {
+    actionButtonsRenders++;
+    if (actionButtonsRenders > 20) {
+      throw new RangeError("Simulated stack overflow");
+    }
+    ui.renderConfirmTichuButtons();
+  };
+  // Mimic ly_studio.js:22688 updatePageTitle() synchronously invoking onUpdateActionButtons().
+  ui.updatePageTitle = () => {
+    ui.onUpdateActionButtons(ui.stateName, ui.gamedatas.gamestate.args || {});
+  };
+
+  ui.notif_confirmTichu({
+    args: { grand: false, msg: "Confirm Tichu?" },
+  });
+  assert.equal(actionButtonsRenders, 1);
+
+  ui.notif_tichuBet({
+    args: { player_id: 2385074, bet: Bet.TICHU },
+  });
+  assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "Your turn");
+
+  // 4. Orphaned "Updating game situation ..." lockInterface release
+  let locked = true;
+  ui.isInterfaceLocked = () => locked;
+  ui.unlockInterface = (uuid?: string) => {
+    if (uuid === ui.interface_locked_by_id) locked = false;
+  };
+  ui.bga = { actions: { ajaxcall_running: 0 } };
+  ui.ajaxcall_running = 0;
+  ui.interface_status = "queued";
+  ui.interface_locked_by_id = "lock-123";
+
+  // Must NOT unlock while waiting on a synchronous notification
+  ui.onNotificationPacketDispatched();
+  assert.equal(locked, true);
+
+  // Must unlock once notifqueue & AJAX are idle
+  ui.notifqueue.waiting_from_notifend = null;
+  const pubBefore = publishedTopics.length;
+  ui.onNotificationPacketDispatched();
+  assert.equal(locked, false);
+  assert.equal(publishedTopics.length, pubBefore + 1);
+  assert.equal(publishedTopics[pubBefore]?.topic, "lockInterface");
+  assert.equal(publishedTopics[pubBefore]?.args?.[0]?.status, "updated");
+  assert.equal(publishedTopics[pubBefore]?.args?.[0]?.uuid, "lock-123");
 });

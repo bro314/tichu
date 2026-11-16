@@ -52,7 +52,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 | `src/elements/tichu-*.ts` (16 Lit Shadow DOM elements)                                                                              | `game`, `animation-layer`, `player-panel`, `value-choice`, `last-played`, `pass-area`, `action-bar`, `hand`, `played-cards`, `trick-modal`, `status`, `replay`, `player`, `stock`, `card`, `score-board` |
 | `tests/` (`stubs.php`, `TestUtils.php`, `ComboTest.php`, `HandTest.php`, `combo-validator.test.ts`)                                 | PHPUnit unit test suite (~15ms) and TS client combo/hand parity tests (~130ms)                                                                                                                           |
 | `local/` (`Bga/GameFramework/`, `mysql-ctl.sh`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`)                        | Local BGA PHP 8 + MySQL 8.0 runner (`ebd_tichu_1`), rule bot, and deterministic test scenarios                                                                                                           |
-| `local/` (`integration-tests.php`, `check-contracts.php`, `race-tests.php`, `import-bug-sql.php`, `sftp-sync.sh`, `js/bga-shim.js`) | 15-suite backend integration tests, static contract check, multi-worker race stress test, bug SQL CLI importer/inspector, SFTP sync, frontend shim                                                       |
+| `local/` (`integration-tests.php`, `check-contracts.php`, `race-tests.php`, `import-bug-sql.php`, `sftp-sync.sh`, `js/bga-shim.js`) | 16-suite backend integration tests, static contract check, multi-worker race stress test, bug SQL CLI importer/inspector, SFTP sync, frontend shim                                                       |
 | `docs/`, `plans/`, `img/`                                                                                                           | Ecosystem reference, plans (`00`–`14`), sprite sheets (`tichu-cards.png`, `tiki-cards.png`, `tichu-icons*.png`), `tichu_laser.mp3`/`.ogg`                                                                |
 
 ---
@@ -117,7 +117,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 - **PATH & Build**: Ensure `/opt/homebrew/bin` is on `PATH`. Always run `npm run build` (`npm test && npm run compile && npm run bundle`) after editing `.ts` or `.php` files.
 - **Test & Dev Commands**:
-  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand` validator tests (`npm run test:validator`, ~130ms) + 15-suite MySQL 8.0 integration tests (~2.7s)
+  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand` + Studio client runtime tests (`npm run test:validator`, ~130ms) + 16-suite MySQL 8.0 integration tests (~2.7s)
   - `npm run test:contracts` — static cross-stack contract checks (`php local/check-contracts.php`)
   - `npm run phpstan` — PHP static analysis (`phpstan.neon`)
   - `npm run test:race` — multi-worker MySQL 8.0 concurrency stress test (~70s, opt-in)

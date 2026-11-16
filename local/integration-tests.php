@@ -1474,6 +1474,166 @@ function test_table_lock_version_and_duplicate_requests(): void
   assertSameVal(1, $version(), 'The lock version row must be re-created for running games');
 }
 
+function test_stale_snapshot_multiactive_and_notif_ordering(): void
+{
+  global $g_config;
+
+  $game = new \Tichu();
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+
+  // 1. "synchro" notification interleaving: gameStateChange(newRound) -> private dealCards -> gameStateChange(grandTichuBets).
+  $initialPackets = $game->getNotificationsSince(0, P0);
+  $initialEvents = [];
+  foreach ($initialPackets as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      $type = (string) ($notif['type'] ?? '');
+      $stateName = $type === 'gameStateChange' ? ((string) ($notif['args']['name'] ?? '')) : '';
+      $initialEvents[] = $stateName !== '' ? "{$type}:{$stateName}" : $type;
+    }
+  }
+  $newRoundIdx = array_search('gameStateChange:newRound', $initialEvents, true);
+  $dealCardsIdx = array_search('dealCards', $initialEvents, true);
+  $gtBetsIdx = array_search('gameStateChange:grandTichuBets', $initialEvents, true);
+  assertTrueVal(
+    $newRoundIdx !== false && $dealCardsIdx !== false && $gtBetsIdx !== false,
+    'Initial packets must include gameStateChange:newRound, dealCards, and gameStateChange:grandTichuBets'
+  );
+  assertTrueVal(
+    $newRoundIdx < $dealCardsIdx && $dealCardsIdx < $gtBetsIdx,
+    'synchro interleaving must deliver gameStateChange:newRound -> dealCards -> gameStateChange:grandTichuBets'
+  );
+
+  // 2. Stale-snapshot multiactive handling (setPlayerNonMultiactiveSafe):
+  // P0 bets first; now P1, P2, P3 are multiactive.
+  callAction($game, P0, 'grandTichuBet', ['bet' => '0']);
+
+  // Open P3's request snapshot (sees P1, P2, P3 active and lockVersion = 1), then commit P2 acting on a second connection.
+  $otherDb = new \mysqli(
+    (string) ($g_config['db_host'] ?? 'localhost'),
+    (string) ($g_config['db_user'] ?? 'root'),
+    (string) ($g_config['db_password'] ?? ''),
+    (string) ($g_config['db_name'] ?? 'ebd_tichu_1'),
+    0,
+    (string) ($g_config['db_socket'] ?? '')
+  );
+  assertTrueVal(!$otherDb->connect_errno, 'Failed to open secondary MySQL connection: ' . $otherDb->connect_error);
+
+  try {
+    $beforeStalePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog');
+    $game->setCurrentPlayerId(P3);
+    $game->beginPlayerAction();
+
+    $otherDb->query('UPDATE player SET player_call_grand_tichu = 0, player_is_multiactive = 0 WHERE player_id = ' . P2);
+    $otherDb->query('UPDATE global SET global_value = global_value + 1 WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION);
+
+    $game->grandTichuBet(0);
+    $game->endPlayerAction(false);
+
+    $stalePackets = $game->getNotificationsSince($beforeStalePkt, P0);
+    $multiActiveUpdates = [];
+    foreach ($stalePackets as $pkt) {
+      foreach ($pkt['data'] ?? [] as $notif) {
+        if (($notif['type'] ?? '') === 'gameStateMultipleActiveUpdate') {
+          $multiActiveUpdates[] = $notif['args'] ?? [];
+        }
+      }
+    }
+    assertSameVal(1, count($multiActiveUpdates), 'Expected one gameStateMultipleActiveUpdate from stale grandTichuBet');
+    assertSameVal(
+      [strval(P1)],
+      $multiActiveUpdates[0],
+      'Stale-snapshot setPlayerNonMultiactiveSafe must only broadcast remaining active P1 (never stale P2)'
+    );
+
+    // P1 finishes betting -> deals remaining 6 cards -> transitions to ST_GIVE_CARDS (40).
+    callAction($game, P1, 'grandTichuBet', ['bet' => '0']);
+    assertSameVal('giveCards', $game->gamestate->state(true, false, true)['name'], 'Should enter giveCards');
+
+    $pickThree = static function (int $playerId): array {
+      $cards = array_values(\CardManager::getDeck()->getCardsInLocation('hand', $playerId));
+      return array_slice(array_map(static fn($c) => (int) $c['id'], $cards), 0, 3);
+    };
+    callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $pickThree(P0))]);
+    callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $pickThree(P1))]);
+
+    // P2 and P3 remain multiactive. Start P3's snapshot, then commit P2 passing on $otherDb so P3 becomes last passer on a stale snapshot.
+    $p2Cards = $pickThree(P2);
+    $p2Recipients = array_map(static fn($p) => (int) $p['id'], \PlayerManager::getNextPlayers(P2, true));
+    $p3Cards = $pickThree(P3);
+    $game->setCurrentPlayerId(P3);
+    $game->beginPlayerAction();
+
+    foreach ($p2Cards as $idx => $cid) {
+      $recId = $p2Recipients[$idx];
+      $otherDb->query(
+        "UPDATE card SET card_location = 'temporary', card_location_arg = {$recId}, card_passed_from = " .
+          P2 .
+          " WHERE card_id = {$cid}"
+      );
+    }
+    $otherDb->query('UPDATE player SET player_is_multiactive = 0 WHERE player_id = ' . P2);
+    $otherDb->query('UPDATE global SET global_value = global_value + 1 WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION);
+
+    assertThrowsUserException(
+      static fn() => $game->giveTheCards($p3Cards),
+      'game changed',
+      'Last passer in giveCards on a stale snapshot (staleTransitionSafe = false) must throw UserException'
+    );
+    $game->endPlayerAction(true);
+
+    // Rollback must preserve P3 hand in 'hand' and remain in giveCards; retrying fresh as last passer P3 succeeds.
+    assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P3), 'Rollback must keep P3 cards in hand');
+    assertSameVal('giveCards', $game->gamestate->state(true, false, true)['name'], 'State must remain giveCards');
+
+    $beforeTrickPkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog');
+    callAction($game, P3, 'giveTheCards', ['cards' => implode(';', $p3Cards)]);
+
+    // stAcceptPassedCards() runs automatically -> stNewTrick() -> playComboOpen -> play 1 card -> stNextPlayer()
+    $afterOpenState = $game->gamestate->state(true, false, true);
+    assertSameVal('playComboOpen', $afterOpenState['name'], 'Should reach playComboOpen after last passer retries');
+    $starterId = (int) $afterOpenState['active_player'];
+    $starterCards = array_values(\CardManager::getDeck()->getCardsInLocation('hand', $starterId));
+    $mahjongId = null;
+    foreach ($starterCards as $c) {
+      if ((int) $c['type'] === TYPE_MAHJONG && (int) $c['type_arg'] === 1) {
+        $mahjongId = (int) $c['id'];
+        break;
+      }
+    }
+    $leadCard = $mahjongId ?? (int) $starterCards[0]['id'];
+    callAction($game, $starterId, 'playCombo', ['cards' => (string) $leadCard]);
+    if ($mahjongId !== null && $game->gamestate->state(true, false, true)['name'] === 'mahjongPlay') {
+      callAction($game, $starterId, 'makeAWish', ['wish' => '15']);
+    }
+
+    // 3. giveExtraTime() vs nextState() ordering: in every move with updateReflexionTime, gameStateChange must precede it.
+    $trickPackets = $game->getNotificationsSince($beforeTrickPkt, $starterId);
+    $seenReflexionNotif = false;
+    $eventsByMove = [];
+    foreach ($trickPackets as $pkt) {
+      $moveId = (string) ($pkt['move_id'] ?? '');
+      foreach ($pkt['data'] ?? [] as $notif) {
+        $eventsByMove[$moveId][] = $notif['type'] ?? '';
+      }
+    }
+    foreach ($eventsByMove as $moveId => $types) {
+      $gsIdx = array_search('gameStateChange', $types, true);
+      foreach ($types as $idx => $type) {
+        if ($type === 'updateReflexionTime') {
+          $seenReflexionNotif = true;
+          assertTrueVal(
+            $gsIdx !== false && $gsIdx < $idx,
+            "In move {$moveId}, gameStateChange must arrive before updateReflexionTime"
+          );
+        }
+      }
+    }
+    assertTrueVal($seenReflexionNotif, 'Expected updateReflexionTime notification in real-time play');
+  } finally {
+    $otherDb->close();
+  }
+}
+
 function test_production_bug_sql_loader_and_player_id_remapping(): void {
   $fixturePath = __DIR__ . '/fixtures/bug_fixture.sql';
   $result = importBugSqlFile($fixturePath);
@@ -1650,6 +1810,7 @@ $tests = [
   'test_zombie_turns_across_all_states',
   'test_action_and_parameter_validation_and_card_to_str',
   'test_table_lock_version_and_duplicate_requests',
+  'test_stale_snapshot_multiactive_and_notif_ordering',
   'test_production_bug_sql_loader_and_player_id_remapping',
 ];
 

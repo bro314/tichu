@@ -354,8 +354,8 @@ Tichu has three fast local testing tiers that run without needing a BGA Studio c
    - Tests pure card/combo/hand logic in [`modules/Combo.php`](file:///Users/brohlfs/git/tichu/modules/Combo.php) and [`modules/Hand.php`](file:///Users/brohlfs/git/tichu/modules/Hand.php) using [`tests/stubs.php`](file:///Users/brohlfs/git/tichu/tests/stubs.php) and [`tests/TestUtils.php`](file:///Users/brohlfs/git/tichu/tests/TestUtils.php).
    - Add corresponding test cases in [`tests/ComboTest.php`](file:///Users/brohlfs/git/tichu/tests/ComboTest.php) or [`tests/HandTest.php`](file:///Users/brohlfs/git/tichu/tests/HandTest.php) when editing combo/hand logic.
 
-2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~2.7s)**:
-   - Runs 15 full-stack PHP + MySQL 8.0 InnoDB (`ebd_tichu_1` via [`local/mysql-ctl.sh`](file:///Users/brohlfs/git/tichu/local/mysql-ctl.sh)) test suites directly against the real `local/Bga/GameFramework/` classes (`Table`, `GamestateMachine`, `Deck`, `Old\Db`, `Stats`, `Notify`, `Logs`) and `Tichu`, `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
+2. **Backend Integration Tests (`npm run test:integration` / `php local/integration-tests.php`, ~2.8s)**:
+   - Runs 16 full-stack PHP + MySQL 8.0 InnoDB (`ebd_tichu_1` via [`local/mysql-ctl.sh`](file:///Users/brohlfs/git/tichu/local/mysql-ctl.sh)) test suites directly against the real `local/Bga/GameFramework/` classes (`Table`, `GamestateMachine`, `Deck`, `Old\Db`, `Stats`, `Notify`, `Logs`) and `Tichu`, `CardManager`, `LogManager`, `PlayerManager`, `LocalTichuBot`, and `LocalTichuScenarios`:
      - Game setup & Grand Tichu (`setupNewGame`, 8-card deal, `TEAM_RANDOM` & team color assignment, `grandTichuBet`, 6-card deal)
      - Out-of-turn Tichu bet (`tichuBet` before playing first card, `tichuCall` confirmation across trick boundaries, rejection after playing a card or duplicate bets)
      - Passing 3 cards (`giveTheCards`, invalid/duplicate card rejection & rollback via real `Deck::getCards`, `stAcceptPassedCards`, `bombs_completed_by_partner` stat, Mahjong leader)

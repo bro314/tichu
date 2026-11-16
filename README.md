@@ -58,10 +58,10 @@ npm test
 # Run only PHPUnit unit tests (Combo & Hand logic, ~15ms)
 npm run test:unit
 
-# Run only TypeScript client Combo & Hand parity + Smart Play UX unit tests (~130ms)
+# Run only TypeScript client Combo/Hand parity, Smart Play UX, & Studio adapter runtime regression tests (~130ms)
 npm run test:validator
 
-# Run only MySQL 8.0 + BGA Framework backend integration tests (15 end-to-end suites)
+# Run only MySQL 8.0 + BGA Framework backend integration tests (16 end-to-end suites)
 npm run test:integration
 
 # Import a BGA production bug SQL dump into local MySQL 8.0 (remaps all 7 player_id surfaces) and inspect state
@@ -117,7 +117,7 @@ tt.help(); // List all console test runner commands
 | `src/elements/`                      | Lit + RxJS web components (`<tichu-game>`, `<tichu-animation-layer>`, `<tichu-player-panel>`, `<tichu-last-played>`, `<tichu-pass-area>`, `<tichu-action-bar>`, `<tichu-hand>`, `<tichu-value-choice>`, `<tichu-played-cards>`, `<tichu-trick-modal>`, `<tichu-status>`, `<tichu-replay>`, `<tichu-player>`, `<tichu-stock>`, `<tichu-card>`, `<tichu-score-board>`) and zero-DOM client `Combo`/`Hand` validator (`combo-validator.ts`)                                                                                                                           |
 | `tichu.css`                          | Stylesheet including theme variables, card sprite positioning, and responsive layout scaling                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `tests/` & `phpstan.neon`            | PHPUnit test suite (`ComboTest.php`, `HandTest.php`), TypeScript client validator parity suite (`combo-validator.test.ts`), BGA stubs, and PHPStan static analysis config                                                                                                                                                                                                                                                                                                                                                                                          |
-| `local/`                             | Self-contained local BGA runner executing the real `local/Bga/GameFramework/` PHP classes against an isolated MySQL 8.0 InnoDB instance (`mysql-ctl.sh`, `bga-std-schema.sql`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), production bug SQL importer/inspector (`import-bug-sql.php`, `fixtures/bug_fixture.sql`), 15-suite backend integration, contract, & race stress tests (`integration-tests.php`, `check-contracts.php`, `race-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
+| `local/`                             | Self-contained local BGA runner executing the real `local/Bga/GameFramework/` PHP classes against an isolated MySQL 8.0 InnoDB instance (`mysql-ctl.sh`, `bga-std-schema.sql`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`), SFTP sync script (`sftp-sync.sh`), production bug SQL importer/inspector (`import-bug-sql.php`, `fixtures/bug_fixture.sql`), 16-suite backend integration, contract, & race stress tests (`integration-tests.php`, `check-contracts.php`, `race-tests.php`), and frontend shim (`js/bga-shim.js`, `css/bga-shim.css`) |
 | `.agents/skills/`, `docs/`, `plans/` | Progressive-disclosure [agent skills](./.agents/skills) (Studio testing, concurrency locks, release QA, bug triage), [open-source BGA ecosystem reference](./docs/BGA_OPEN_SOURCE_ECOSYSTEM.md), and prioritized implementation plans (`00`–`14`)                                                                                                                                                                                                                                                                                                                  |
 
 ## Syncing & Deploying to BGA Studio
