@@ -150,17 +150,22 @@ await page.waitForURL(/tableview\?table=/, { timeout: 20000 });
 const tableId = new URL(page.url()).searchParams.get("table");
 await page.waitForTimeout(2000);
 
-// 3. Run the fast smoke test inside the game iframe (~1.8s)
+// 3. Expand the Tests drawer if collapsed, then run the fast smoke test inside the game iframe (~1.8s)
 const frame = page.frameLocator("iframe");
+const testsToggle = frame.locator("#tt_btn_collapse");
 for (let i = 0; i < 5; i++) {
   try {
-    await frame.locator("#tt_btn_smoke").waitFor({ state: "visible", timeout: 15000 });
+    await testsToggle.waitFor({ state: "visible", timeout: 15000 });
     break;
   } catch (e) {
     if (i === 4) throw e;
     await page.waitForTimeout(1000);
   }
 }
+if ((await testsToggle.getAttribute("aria-expanded")) !== "true") {
+  await testsToggle.click();
+}
+await frame.locator("#tt_btn_smoke").waitFor({ state: "visible", timeout: 5000 });
 await frame.locator("#tt_btn_smoke").click();
 await frame
   .locator('#tt_test_output[data-done="1"][data-status="pass"]')
@@ -186,26 +191,29 @@ return {
 
 ---
 
-## 5. Studio Test Bar (`#studio-test-bar`) & `window.tt` (`src/studio-test.ts`)
+## 5. Unified Studio & Local Test Bar (`#studio-test-bar`) & `window.tt` (`src/studio-test.ts`)
 
-When loaded on `studio.boardgamearena.com` (never on `boardgamearena.com` production — double-guarded on client hostname and `$this->getBgaEnvironment() === 'studio'` on server), [`src/studio-test.ts`](file:///Users/brohlfs/git/tichu/src/studio-test.ts) mounts `#studio-test-bar` at the top of `#game_play_area_wrap` and exposes `window.tt` (`window.tichuTest`):
+When loaded on `studio.boardgamearena.com` or `127.0.0.1`/`localhost` (never on `boardgamearena.com` production — double-guarded on client hostname and `$this->getBgaEnvironment() === 'studio'` on server), [`src/studio-test.ts`](file:///Users/brohlfs/git/tichu/src/studio-test.ts) mounts a single unified `#studio-test-bar` (inside `#local-dev-bar` on localhost; before `#game_play_area_wrap` inside the iframe on BGA Studio) and exposes `window.tt` (`window.tichuTest`):
 
-| Button ID          | Label                  | `window.tt` Method                     | Typical Duration | Description                                                                                                                                                |
-| :----------------- | :--------------------- | :------------------------------------- | :--------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `#tt_btn_smoke`    | `🧪 Smoke Test`        | `await tt.runSmokeTest()`              | **~1.8s**        | Batch-executes Grand Tichu bets (all 4 players), passes 3 cards (all 4 players), accepts cards, plays 2 tricks, and runs `tt.assertUI()` after each phase. |
-| `#tt_btn_round`    | `🏁 Run Round`         | `await tt.runRound({ maxMoves: 250 })` | **~8.3s**        | Plays a complete round from deal to scoring using server-side batched bot turns (`debug_bgaPlayMoves`).                                                    |
-| `#tt_btn_game`     | `🏆 Run Game`          | `await tt.runGame({ maxRounds: 15 })`  | **~60–90s**      | Plays a complete multi-round game to 1000 points (`gameEnd`).                                                                                              |
-| `#tt_btn_gt_all`   | `⚡ GT Bet All 4`      | `await tt.grandTichuAll()`             | ~0.4s            | Submits Grand Tichu `"no bet"` for all 4 seats in one server call (`debug_bgaGrandTichuAll`).                                                              |
-| `#tt_btn_pass_all` | `🃏 Pass 3 + Bots`     | `await tt.giveCardsAll()`              | ~0.5s            | Passes 3 lowest cards for all 4 seats in one server call (`debug_bgaGiveCardsAll`).                                                                        |
-| `#tt_btn_step1`    | `🤖 Step 1`            | `await tt.stepBot()`                   | ~0.3s            | Executes 1 rule-compliant bot move on the server (`debug_bgaStepBot`).                                                                                     |
-| `#tt_btn_others`   | `🤖 Act for Others`    | `await tt.actForOthers()`              | ~0.5s            | Advances bots until it is the viewing player's turn (`debug_bgaActForOthers`).                                                                             |
-| `#tt_btn_assert`   | `✔ Assert UI`          | `await tt.assertUI()`                  | ~0.2s            | Verifies client `gamedatas`, hand Stock counts, table combo Stock, and Mahjong wish badge against server state (`debug_bgaState`).                         |
-| `#tt_btn_new`      | `🔄 New Express Table` | `await tt.expressStartNew()`           | ~1.2s            | Express-stops the current table, creates a new table, and Express-starts it.                                                                               |
-| `#tt_btn_stop`     | `⏹ Express Stop`       | `await tt.expressStop()`               | ~0.4s            | Express-stops the current table (or quits/cancels if unstarted).                                                                                           |
+- **Row 1 (always visible)**: Brand (`🀄 Tichu Local` / `🀄 Tichu Studio`), `Seat:` links (`target="_blank"`, `/?as=<id>` on localhost / `/tableview?table=<id>&as=<id>` on Studio) with live hand counts & turn pulse badges, `State`, `#tt_btn_others`, `#tt_btn_step1`, `#devbar_autobot` (per-tab `sessionStorage.tichu_autobot`), `#devbar_tiki` (pref `103`), localhost-only `#devbar_exposed` & `#devbar_mute`, `#devbar_replay` (at `gameEnd`), `#devbar_new_game` (local) / `#tt_btn_new` + `#tt_btn_stop` (Studio), and `#tt_btn_collapse` (`🧪 Tests ▸/▾`).
+- **Row 2 (`#tt_bar_body`, collapsed by default unless `?tt=1` is in the URL or `sessionStorage.tichu_tt_drawer === "1"`)**: Automated test buttons, local-only `#tt_scenario_select` + `#tt_btn_load_scenario`, command runner (`#tt_cmd_input` + `#tt_cmd_run`), and `#tt_test_output[data-done="1"]`.
+
+| Button ID          | Label               | `window.tt` Method                     | Typical Duration | Description                                                                                                                                            |
+| :----------------- | :------------------ | :------------------------------------- | :--------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `#tt_btn_smoke`    | `🧪 Smoke Test`     | `await tt.runSmokeTest()`              | **~1.8s**        | Completes Grand Tichu bets, passes 3 cards for all 4 players, plays tricks, and runs `tt.assertUI()` after each phase.                                 |
+| `#tt_btn_round`    | `🏁 Run Round`      | `await tt.runRound()`                  | **~3–8s**        | Plays a complete round from deal to scoring using `debug_botStep` (local) or `debug_bgaPlayMoves` (Studio).                                            |
+| `#tt_btn_game`     | `🏆 Run Game`       | `await tt.runGame()`                   | **~15–90s**      | Plays a complete multi-round game to `gameEnd` (state `99`).                                                                                           |
+| `#tt_btn_gt_all`   | `⚡ GT Bet All 4`   | `await tt.betAllGrandTichu([0,0,0,0])` | ~0.4s            | Submits Grand Tichu `"no bet"` for all 4 active seats.                                                                                                 |
+| `#tt_btn_pass_all` | `🃏 Pass 3 + Bots`  | `await tt.passAllCards()`              | ~0.5s            | Passes 3 default low cards for the viewer and invokes `tt.actForOthers()` (`debug_botOthers`) for the other 3 seats.                                   |
+| `#tt_btn_step1`    | `🤖 Step 1`         | `await tt.step(1)`                     | ~0.3s            | Executes 1 rule-compliant bot move on the server (`debug_botStep`) for whoever is currently active (including the viewer, e.g. cancelling `playBomb`). |
+| `#tt_btn_others`   | `🤖 Act for Others` | `await tt.actForOthers()`              | ~0.5s            | Advances rule-compliant bots (`debug_botOthers`) for the other 3 players until your turn.                                                              |
+| `#tt_btn_assert`   | `✔ Assert UI`       | `tt.assertUI()` + `tt.status(false)`   | ~0.2s            | Verifies live DOM (`#myhand`, `<tichu-status>`, `.handcount.*`, `#overall-content`) matches `gamedatas` and prints status JSON.                        |
+| `#tt_btn_new`      | `🔄 New Table`      | `await tt.expressStartNew()`           | ~1.2s            | (Studio) Express-stops the current table, creates a new table, Express-starts it, and navigates there (button click).                                  |
+| `#tt_btn_stop`     | `⏹ Express Stop`    | `await tt.expressStop()`               | ~0.4s            | (Studio) Express-stops the current table (or quits/cancels if unstarted).                                                                              |
 
 You can also run arbitrary commands via `#tt_cmd_input` + `#tt_cmd_run` (e.g., `status`, `assertUI`, `clearConsoleIssues`, `expressStartNew:{"gameLength":2}`, `startAutoPlayMe:{"timeoutMs":1500000,"staggerMs":250,"stopOnIssue":true}`, `wish:8`, `dragon:2385075`, `pass`, `play:[12,15]`) and wait for `#tt_test_output[data-done="1"]` (`data-status="pass" | "fail"`) to read the JSON result. Click `#tt_cmd_run` **only once** per command (never press `Enter` and click `#tt_cmd_run` together).
 
-For 4-player independent tab automation (`startAutoPlayMe`), `studio-test.ts` serializes AJAX actions per tab (`withStudioActionLock`), checks turn/state currency before sending (`runAjax`), retries transient bomb-interrupt vs. pass races (`isTransientTurnRaceError`), waits for Dojo `phoenixAllowedValues` or falls back to `getAllowedPhoenixValues()`, uses a `2500ms` Studio `checkPrevpacketBuffer` threshold before `resynchronizeNotifications`, and clears orphaned `lockInterface` states in `isQueueBusy()`.
+For 4-player independent tab automation (`startAutoPlayMe`), `studio-test.ts` serializes AJAX actions per tab (`withStudioActionLock`), checks turn/state currency before sending (`runAjax`), retries transient bomb-interrupt vs. pass races (`isTransientTurnRaceError`), waits for Dojo `phoenixAllowedValues` or falls back to `getAllowedPhoenixValues()`, uses a `2500ms` Studio `checkPrevpacketBuffer` threshold before `resynchronizeNotifications`, repairs orphaned `lockInterface` states in `repairOrphanedInterfaceLock()` (called by `waitUntilIdle()`, keeping `isQueueBusy()` pure), and auto-disables `Auto-Bot` with exponential backoff after 3 consecutive errors or no-op retries.
 
 ---
 
@@ -223,10 +231,15 @@ To test true 4-player concurrent gameplay without bots or zombie turns, spawn **
 2. **Spawn all 4 `browser` subagents in parallel (`Model: "flash"`, `captureScreenshot: false`)**, each on its own seat URL (`http://127.0.0.1:8080/?as=2385074`, `2385075`, `2385076`, `2385077`). On local, `#studio-test-bar` is in the top-level `page` (**no** `iframe`):
    ```javascript
    // Local 4-tab runner snippet (substitute <SEAT_ID>: 2385074 | 2385075 | 2385076 | 2385077)
-   await page.goto("http://127.0.0.1:8080/?as=<SEAT_ID>", { waitUntil: "domcontentloaded" });
+   await page.goto("http://127.0.0.1:8080/?as=<SEAT_ID>&tt=1", { waitUntil: "domcontentloaded" });
+   const testsToggle = page.locator("#tt_btn_collapse");
    const input = page.locator("#tt_cmd_input");
    const runBtn = page.locator("#tt_cmd_run");
    const out = page.locator("#tt_test_output");
+   await testsToggle.waitFor({ state: "visible", timeout: 15000 });
+   if ((await testsToggle.getAttribute("aria-expanded")) !== "true") {
+     await testsToggle.click();
+   }
    await input.waitFor({ state: "visible", timeout: 15000 });
 
    // Clear pre-existing console noise, then launch autoplay once
@@ -274,10 +287,15 @@ To test true 4-player concurrent gameplay without bots or zombie turns, spawn **
      waitUntil: "domcontentloaded",
    });
    const frame = page.frameLocator("iframe");
+   const testsToggle = frame.locator("#tt_btn_collapse");
    const input = frame.locator("#tt_cmd_input");
    const runBtn = frame.locator("#tt_cmd_run");
    const out = frame.locator("#tt_test_output");
-   await input.waitFor({ state: "visible", timeout: 25000 });
+   await testsToggle.waitFor({ state: "visible", timeout: 25000 });
+   if ((await testsToggle.getAttribute("aria-expanded")) !== "true") {
+     await testsToggle.click();
+   }
+   await input.waitFor({ state: "visible", timeout: 10000 });
 
    await input.fill("clearConsoleIssues");
    await runBtn.click();
@@ -314,7 +332,7 @@ To test true 4-player concurrent gameplay without bots or zombie turns, spawn **
 - **Wrong completion selector (`#tt_cmd_status` / `#tt_cmd_output` do not exist)**: `#studio-test-bar` renders a single `<pre id="tt_test_output">` with `data-done="0"|"1"` and `data-status="running"|"pass"|"fail"`. Instructing subagents to wait on non-existent `#tt_cmd_status` forces expensive fallback DOM inspection steps.
 - **Double-clicking `#tt_cmd_run` or pressing `Enter` + clicking**: Every new `startAutoPlayMe` invocation increments `autoPlayRunSeq`, calls `stopAutoPlayMe("restarted")`, marks the prior run `superseded`, and resets move/assertion counters (`studio-test.ts` debounces identical triggers within `800ms`, but later clicks still abort the live run).
 - **`webview_browser` per-call timeouts vs. 20-minute Studio games**: A single `waitFor` call exceeding ~3–5 minutes times out in the `webview_browser` tool even though `startAutoPlayMe` is still running (`#tt_test_output` has `data-done="0"` and `"running":true`). Never reload or re-click `#tt_cmd_run` while `data-done="0"` — simply wait for `#tt_test_output[data-done="1"]` again in a loop (or across follow-up turns).
-- **Shared cookie jar on Studio (`&as=` vs. multi-account logins)**: All 4 `browser` subagent tabs share one Chromium session. Logging in as `dashwood1` in tab 2 overwrites `dashwood0`'s cookie in tab 1. Always stay authenticated as `dashwood0` and vary only `&as=2385074`..`2385077`.
+- **Shared cookie jar on Studio (`/tableview?table=<ID>&as=<ID>` vs. multi-account logins)**: All 4 `browser` subagent tabs share one Chromium session. Logging in as `dashwood1` in tab 2 overwrites `dashwood0`'s cookie in tab 1. Always stay authenticated as `dashwood0` and vary only `&as=2385074`..`2385077` — `/tableview?table=<ID>&as=<ID>` is verified in `bga-platform/` (`main.js:94736`, `ly_studio.js:31461`) as strictly per-tab (`testuser=<ID>` held in memory on the iframe, with no cookie).
 - **Option `100` (`gameLength`) mismatch between Studio "Express start" (500 pts) and 1000-pt validation**: Studio's native **Express start** button starts at 500 points (`option 100 = 1`), ending games twice as fast with half the corner-case coverage. Use `tt.expressStartNew({ gameLength: 2 })` (`expressStartNew:{"gameLength":2}`).
 - **Local vs. Studio iframe boundary**: On `127.0.0.1:8080`, locators live on `page`; on `studio.boardgamearena.com/tableview`, locators live inside `page.frameLocator("iframe")`.
 - **Cross-tab abort isolation (`stopOnIssue: true`)**: When one seat hits an error, `postLocalAbort` (`POST /local/abort` on local; `localStorage` `tichu_studio_abort_<tableId>` on Studio) halts all 4 subagents immediately so later turns do not overwrite the failing state.
@@ -379,8 +397,8 @@ Tichu has three fast local testing tiers that run without needing a BGA Studio c
      # Starts MySQL 8.0 via local/mysql-ctl.sh and runs php -S 127.0.0.1:8080 local/router.php
      ```
      Then open `http://127.0.0.1:8080` in the browser (`local/.mysql/` is initialized and `ebd_tichu_1` is seeded automatically, and is gitignored).
-   - **Interactive Dev Toolbar (`#local-dev-bar`)**:
-     - Switch seats in place (`P0`–`P3` or `Spectator`), trigger bot moves (`🤖 Act for Others`, `🤖 Step 1`, `⚡ Auto-Bot`), toggle `🔀 Auto-Switch` (automatically switches the UI to whichever player's turn is next), toggle `⏱ Real-Time` vs. `🃏 Exposed Cards`, toggle `🗿 Tiki` card art, or start a `🔄 New Game`.
+   - **Unified Top Toolbar (`#local-dev-bar` > `#studio-test-bar`)**:
+     - Open any player seat in a new tab (`/?as=<id>` or `Spectator` `/?as=0`), trigger bot moves (`🤖 Act for Others`, `🤖 Step 1`, per-tab `⚡ Auto-Bot`), toggle `⏱ Real-Time` vs. `🃏 Exposed Cards`, toggle `🗿 Tiki` card art, toggle `🔊`/`🔇`, start a `🔄 New Game`, or expand `🧪 Tests ▾` for automated test runners, scenario loading (`#tt_scenario_select`), and the `window.tt` command bar.
    - **Live Console Announcer**:
      - Every state transition (`[TICHU STATE]`), player action (`[TICHU ACTION]`), server notification (`[TICHU NOTIF]`), and UI assertion (`[TICHU UI]`) is logged in real time to the browser DevTools console.
    - **Console Test Runner (`window.tt` / `window.tichuTest`)**:

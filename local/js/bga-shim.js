@@ -1742,6 +1742,7 @@
 
   class GameGui {
     constructor() {
+      const self = this;
       this.gamedatas = initPayload.gamedatas;
       this.player_id = Number(initPayload.playerId);
       this.isSpectator = Boolean(initPayload.isSpectator);
@@ -1761,15 +1762,23 @@
       this.devBarPlayers = initPayload.devBarPlayers || [];
       this.localOptions = initPayload.options || { gameLength: 2, playerTeams: 1, turnBased: 0 };
       this.notifqueue = new GameNotifQueue(this);
-      this._botBusy = false;
       this._ajaxInFlight = 0;
       this._pollInFlight = false;
       this._pollQueued = false;
       this._abortState = null;
-      this._autoBotTimer = null;
-      this._autoSwitchTimer = null;
-      this._otherPlayerAutoCollectTimeout = null;
-      this._devTooltipBound = false;
+
+      this.bga = {
+        actions: {
+          get ajaxcall_running() {
+            return self._ajaxInFlight || 0;
+          },
+          performAction: (action, args = {}, params = {}) =>
+            this.bgaPerformAction(action, args, params),
+        },
+        players: {
+          getActivePlayerIds: () => this.getActivePlayers(),
+        },
+      };
 
       this.statusBar = {
         setTitle: (title, args) => {
@@ -2172,7 +2181,6 @@
     }
 
     ajaxcall(url, args, bind, resultHandler, allHandler) {
-      clearTimeout(this._otherPlayerAutoCollectTimeout);
       const sep = url.indexOf("?") === -1 ? "?" : "&";
       const targetUrl =
         url + sep + "as=" + encodeURIComponent(this.isSpectator ? 0 : this.player_id);
@@ -2264,10 +2272,11 @@
       } else if (params.checkPossibleActions) {
         if (!this.checkPossibleActions(action)) return Promise.resolve();
       }
+      const callArgs = params.lock === false ? { ...args } : { ...args, lock: true };
       return new Promise((resolve, reject) => {
         this.ajaxcall(
           `/tichu/tichu/${action}.html`,
-          { ...args, lock: true },
+          callArgs,
           this,
           (res) => resolve(res),
           (isErr, res) => {
@@ -2565,9 +2574,6 @@
       this.notifqueue.reset(newLastPacketId);
       clearTimeout(this.autoCollectTimeout);
       clearTimeout(this.autoAcceptTimeout);
-      clearTimeout(this._otherPlayerAutoCollectTimeout);
-      clearTimeout(this._autoBotTimer);
-      clearTimeout(this._autoSwitchTimer);
 
       // Clean up any open popin dialogs or temporary icon animations
       document.querySelectorAll(".bga-popin-underlay, #game_play_area .icon.temp").forEach((el) => {
@@ -2592,10 +2598,10 @@
       const viewerParam = this.isSpectator ? 0 : this.player_id;
       try {
         if (!pendingAutorun) {
-          window.history.replaceState(null, "", "?as=" + encodeURIComponent(viewerParam));
+          const nextParams = new URLSearchParams(window.location.search || "");
+          nextParams.set("as", String(viewerParam));
+          window.history.replaceState(null, "", "?" + nextParams.toString());
         }
-        document.cookie =
-          "tichu_player_id=" + encodeURIComponent(viewerParam) + "; path=/; SameSite=Lax";
       } catch (_e) {}
 
       const gd = this.gamedatas;
@@ -2677,7 +2683,6 @@
         ) {
           this.onEnteringStateChooseDragonGift(st.args);
         }
-        this._scheduleOtherPlayerAutoCollect(st);
       }
 
       this._renderDevBar();
@@ -2687,14 +2692,30 @@
 
     _switchSeatInPlace(targetPlayerId) {
       const pId = Number(targetPlayerId) || 0;
+      const seq = (this._seatSwitchSeq = (this._seatSwitchSeq || 0) + 1);
+      this._seatSwitchInFlight = (this._seatSwitchInFlight || 0) + 1;
+      this.isSpectator = pId === 0;
+      if (pId > 0) {
+        this.player_id = pId;
+      }
+      this._renderDevBar();
+
       return fetch(`/local/state?as=${encodeURIComponent(pId)}`)
         .then((r) => r.json())
         .then((payload) => {
+          if (seq !== this._seatSwitchSeq) return payload;
           if (payload && payload.status === 1) {
             this._rehydrateSeatInPlace(payload);
             this._onQueueDrained();
           }
           return payload;
+        })
+        .finally(() => {
+          this._seatSwitchInFlight = Math.max(0, (this._seatSwitchInFlight || 0) - 1);
+          if (this._seatSwitchInFlight === 0 && !(this._ajaxInFlight > 0) && this._pollQueued) {
+            this._pollQueued = false;
+            this._pollServer();
+          }
         });
     }
 
@@ -2704,7 +2725,6 @@
 
     _transitionToState(newState) {
       if (!newState || !this.gamedatas) return;
-      clearTimeout(this._otherPlayerAutoCollectTimeout);
 
       const prevState = this.gamedatas.gamestate;
       if (prevState && prevState.name && typeof this.onLeavingState === "function") {
@@ -2763,52 +2783,8 @@
         this.onEnteringStateChooseDragonGift(newState.args);
       }
 
-      this._scheduleOtherPlayerAutoCollect(newState);
       this._renderDevBar();
       this._logStateAnnouncement();
-    }
-
-    _scheduleOtherPlayerAutoCollect(stateObj) {
-      if (localStorage.getItem("tichu_local_autobot") !== "1") return;
-      clearTimeout(this._otherPlayerAutoCollectTimeout);
-      const st = stateObj || (this.gamedatas && this.gamedatas.gamestate);
-      if (!st || st.name !== "confirmTrick" || !this.bRealtime) return;
-      if (this.isCurrentPlayerActive()) return;
-      // When Auto-Switch is ON, the browser switches to the active trick winner,
-      // whose own client instance runs the 2-second auto-collect timer.
-      if (localStorage.getItem("tichu_local_autoswitch") === "1") return;
-
-      const activePlayerId = Number(st.active_player || 0);
-      if (!activePlayerId) return;
-
-      this._otherPlayerAutoCollectTimeout = setTimeout(() => {
-        this._collectForOtherPlayer(activePlayerId);
-      }, 2000);
-    }
-
-    _collectForOtherPlayer(activePlayerId) {
-      clearTimeout(this._otherPlayerAutoCollectTimeout);
-      const st = this.gamedatas && this.gamedatas.gamestate;
-      if (!st || st.name !== "confirmTrick") return;
-      const targetId = Number(st.active_player || activePlayerId || 0);
-      if (!targetId) return;
-
-      fetch(`/tichu/tichu/collect.html?as=${encodeURIComponent(targetId)}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "X-Bga-Player": String(targetId),
-        },
-        body: "lock=true",
-      })
-        .then((r) => r.json())
-        .then((payload) => {
-          if (!payload || payload.status === 0) return;
-          // Poll notifications from the current viewer's perspective so private channel payloads match viewer
-          this._pollServer();
-          this._broadcastSync("state_updated");
-        })
-        .catch(() => {});
     }
 
     _appendLogEntry(rawLog, args) {
@@ -2885,7 +2861,7 @@
 
       // Periodic poll for external CLI/bot updates
       setInterval(() => {
-        if (!this.notifqueue.isProcessing && !this._botBusy) {
+        if (!this.notifqueue.isProcessing && !(this._ajaxInFlight > 0)) {
           this._pollServer();
         }
       }, 150);
@@ -2900,7 +2876,7 @@
     }
 
     _pollServer() {
-      if (this._pollInFlight || this._ajaxInFlight > 0) {
+      if (this._pollInFlight || this._ajaxInFlight > 0 || this._seatSwitchInFlight > 0) {
         this._pollQueued = true;
         return;
       }
@@ -2910,6 +2886,11 @@
       fetch(`/local/poll?as=${encodeURIComponent(viewer)}&since=${encodeURIComponent(since)}`)
         .then((r) => r.json())
         .then((payload) => {
+          const currentViewer = this.isSpectator ? 0 : this.player_id;
+          if (this._seatSwitchInFlight > 0 || Number(currentViewer) !== Number(viewer)) {
+            this._pollQueued = true;
+            return;
+          }
           if (!payload || payload.status !== 1) return;
           if ("abort" in payload) {
             this._abortState = payload.abort || null;
@@ -2925,65 +2906,10 @@
         .catch(() => {})
         .finally(() => {
           this._pollInFlight = false;
-          if (this._pollQueued) {
+          if (this._pollQueued && !this._seatSwitchInFlight && !(this._ajaxInFlight > 0)) {
             this._pollQueued = false;
             this._pollServer();
           }
-        });
-    }
-
-    _runBot(mode) {
-      if (this._botBusy) return Promise.resolve(null);
-      this._botBusy = true;
-      this._renderDevBar();
-
-      const since = this.notifqueue.last_packet_id;
-      const viewer = this.isSpectator ? 0 : this.player_id;
-
-      return fetch(`/local/bot?as=${encodeURIComponent(viewer)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: mode,
-          as: viewer,
-          since: since,
-        }),
-      })
-        .then((r) => r.json())
-        .then((payload) => {
-          this._botBusy = false;
-          if (!payload || payload.status !== 1) {
-            if (payload && payload.error) {
-              this.showMessage("Bot error: " + payload.error, "error");
-            }
-            this._renderDevBar();
-            return payload;
-          }
-          if (Array.isArray(payload.actions)) {
-            for (const act of payload.actions) {
-              const pTag = this._formatPlayerTag(act.player_id);
-              consoleAnnounce(
-                "[TICHU ACTION]",
-                `BOT ${pTag} -> ${act.action} ${JSON.stringify(act.args || {})}`,
-                "font-weight:bold;color:#f0883e",
-              );
-            }
-          }
-          if (Array.isArray(payload.devBarPlayers)) {
-            this.devBarPlayers = payload.devBarPlayers;
-          }
-          if (Array.isArray(payload.notifications) && payload.notifications.length > 0) {
-            this.notifqueue.enqueuePackets(payload.notifications);
-          }
-          this._renderDevBar();
-          this._broadcastSync("state_updated");
-          return payload;
-        })
-        .catch((err) => {
-          this._botBusy = false;
-          this.showMessage("Bot error: " + err.message, "error");
-          this._renderDevBar();
-          return null;
         });
     }
 
@@ -3033,92 +2959,13 @@
         });
     }
 
-    _getNextAutoSwitchPlayerId() {
-      const st = this.gamedatas && this.gamedatas.gamestate;
-      if (!st || st.name === "gameEnd" || Number(st.id) === 99) return null;
-
-      if (st.type === "activeplayer") {
-        const activeId = Number(st.active_player || 0);
-        if (activeId > 0 && (this.isSpectator || activeId !== Number(this.player_id))) {
-          return activeId;
-        }
-        return null;
-      }
-
-      if (st.type === "multipleactiveplayer") {
-        const multi = Array.isArray(st.multiactive)
-          ? st.multiactive.map(Number).filter((n) => n > 0)
-          : [];
-        if (multi.length === 0) return null;
-        if (!this.isSpectator && multi.includes(Number(this.player_id))) {
-          return null;
-        }
-        const ordered = (this.devBarPlayers || []).map((p) => Number(p.id)).filter((n) => n > 0);
-        if (ordered.length > 0) {
-          const myIdx = ordered.indexOf(Number(this.player_id));
-          const startIdx = myIdx >= 0 ? myIdx + 1 : 0;
-          for (let offset = 0; offset < ordered.length; offset++) {
-            const candidate = ordered[(startIdx + offset) % ordered.length];
-            if (multi.includes(candidate)) {
-              return candidate;
-            }
-          }
-        }
-        return multi[0];
-      }
-
-      return null;
-    }
-
-    _checkAutoSwitch() {
-      if (localStorage.getItem("tichu_local_autoswitch") !== "1") return false;
-      if (this.notifqueue.isProcessing || this.notifqueue.queue.length > 0) return false;
-
-      const targetId = this._getNextAutoSwitchPlayerId();
-      if (!targetId || (!this.isSpectator && targetId === Number(this.player_id))) {
-        return false;
-      }
-
-      clearTimeout(this._autoSwitchTimer);
-      this._autoSwitchTimer = setTimeout(() => {
-        if (localStorage.getItem("tichu_local_autoswitch") !== "1") return;
-        if (this.notifqueue.isProcessing || this.notifqueue.queue.length > 0) return;
-        const finalTarget = this._getNextAutoSwitchPlayerId();
-        if (finalTarget && (this.isSpectator || finalTarget !== Number(this.player_id))) {
-          this._switchSeatInPlace(finalTarget);
-        }
-      }, 100);
-      return true;
-    }
-
     _onQueueDrained() {
       this._renderDevBar();
       this._logUiSummary();
       if (pendingAutorun) return;
-      if (this._checkAutoSwitch()) return;
-      if (localStorage.getItem("tichu_local_autobot") !== "1") return;
-      if (this._botBusy) return;
-
-      const st = this.gamedatas && this.gamedatas.gamestate;
-      if (!st || st.name === "gameEnd" || Number(st.id) === 99) return;
-      // In Real-Time confirmTrick, let the 2000ms auto-collect timer handle trick collection
-      // so the human player has 2 seconds to view the trick or play a bomb.
-      if (st.name === "confirmTrick" && this.bRealtime) return;
-
-      const otherActive = (this.devBarPlayers || []).some(
-        (p) => Number(p.id) !== Number(this.player_id) && p.isActive,
-      );
-      if (!otherActive) return;
-
-      clearTimeout(this._autoBotTimer);
-      this._autoBotTimer = setTimeout(() => {
-        if (localStorage.getItem("tichu_local_autobot") !== "1" || this._botBusy) return;
-        const curSt = this.gamedatas && this.gamedatas.gamestate;
-        if (!curSt || (curSt.name === "confirmTrick" && this.bRealtime)) return;
-        // In simultaneous states, act for all other players at once; in sequential states, step 1 bot at a time
-        const mode = curSt.type === "multipleactiveplayer" ? "others" : "step";
-        this._runBot(mode);
-      }, 300);
+      if (window.tt && typeof window.tt.onQueueDrained === "function") {
+        window.tt.onQueueDrained();
+      }
     }
 
     _openReplayViewer() {
@@ -3162,233 +3009,12 @@
         .catch(() => false);
     }
 
-    _setupDevBarTooltips(bar) {
-      if (this._devTooltipBound || !bar) return;
-      this._devTooltipBound = true;
-
-      let tipEl = document.getElementById("local-dev-tooltip");
-      if (!tipEl) {
-        tipEl = document.createElement("div");
-        tipEl.id = "local-dev-tooltip";
-        tipEl.setAttribute("role", "tooltip");
-        document.body.appendChild(tipEl);
-      }
-
-      const showTip = (target) => {
-        const host = target && target.closest ? target.closest("[data-tooltip]") : null;
-        if (!host || !bar.contains(host)) {
-          tipEl.classList.remove("visible");
-          return;
-        }
-        const text = host.getAttribute("data-tooltip");
-        if (!text) {
-          tipEl.classList.remove("visible");
-          return;
-        }
-        tipEl.textContent = text;
-        tipEl.classList.add("visible");
-
-        const rect = host.getBoundingClientRect();
-        const tipWidth = tipEl.offsetWidth || 240;
-        const left = Math.min(
-          Math.max(8, rect.left),
-          Math.max(8, window.innerWidth - tipWidth - 8),
-        );
-        const top = rect.bottom + 7;
-        tipEl.style.left = `${Math.round(left)}px`;
-        tipEl.style.top = `${Math.round(top)}px`;
-      };
-
-      const hideTip = () => {
-        tipEl.classList.remove("visible");
-      };
-
-      bar.addEventListener("mouseover", (e) => showTip(e.target));
-      bar.addEventListener("focusin", (e) => showTip(e.target));
-      bar.addEventListener("mouseout", (e) => {
-        const next = e.relatedTarget;
-        if (!next || !bar.contains(next) || !next.closest("[data-tooltip]")) {
-          hideTip();
-        }
-      });
-      bar.addEventListener("focusout", hideTip);
-      bar.addEventListener("mousedown", hideTip);
-    }
-
     _renderDevBar() {
-      const bar = document.getElementById("local-dev-bar");
-      if (!bar) return;
-
-      this._setupDevBarTooltips(bar);
-
-      const st = (this.gamedatas && this.gamedatas.gamestate) || {};
-      const isGameEnd = Number(st.id) === 99 || st.name === "gameEnd";
-      const autoBotOn = localStorage.getItem("tichu_local_autobot") === "1";
-      const autoSwitchOn = localStorage.getItem("tichu_local_autoswitch") === "1";
-      let isTiki = false;
-      if (this.isReadOnly()) {
-        isTiki = window.gameModel
-          ? Boolean(window.gameModel.getState().isTiki)
-          : Number(this.prefs?.[103]?.value ?? 2) === 1;
-      } else {
-        try {
-          isTiki = this.getGameUserPreference(103) == 1;
-        } catch (_e) {
-          isTiki = Number(this.prefs?.[103]?.value ?? 2) === 1;
-        }
+      if (window.tt && typeof window.tt.scheduleRefreshBar === "function") {
+        window.tt.scheduleRefreshBar();
+      } else if (window.tt && typeof window.tt.refreshBar === "function") {
+        window.tt.refreshBar();
       }
-      const isTurnBased = Boolean(this.localOptions && this.localOptions.turnBased);
-      const isMuted = localStorage.getItem("tichu_local_mute") === "1";
-
-      const escapeAttr = (str) =>
-        String(str ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/"/g, "&quot;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
-
-      let seatsHtml = "";
-      const playersList = this.devBarPlayers || [];
-      for (let i = 0; i < playersList.length; i++) {
-        const p = playersList[i];
-        const isViewer = !this.isSpectator && Number(p.id) === Number(this.player_id);
-        const cls = ["devbar-seat", isViewer ? "is-viewer" : "", p.isActive ? "is-active-turn" : ""]
-          .filter(Boolean)
-          .join(" ");
-
-        const seatTip = escapeAttr(
-          `Switch view to ${p.name} (Team ${p.team + 1}, ${p.handCount} cards in hand). Green dot = waiting for this player's action.`,
-        );
-        seatsHtml +=
-          `<a href="?as=${p.id}" data-seat-id="${p.id}" class="${cls}" title="${seatTip}" data-tooltip="${seatTip}">` +
-          `<span class="devbar-color-dot" style="background:#${p.color}"></span>` +
-          `<span>P${p.no}: ${p.name}</span>` +
-          `<span class="devbar-meta">[${p.handCount}]</span>` +
-          (p.isActive ? `<span class="devbar-turn-badge"></span>` : "") +
-          `</a>`;
-      }
-
-      const specCls = "devbar-seat" + (this.isSpectator ? " is-viewer" : "");
-      const specTip = escapeAttr(
-        "Switch to Spectator view (hides private hands and action buttons).",
-      );
-      seatsHtml += `<a href="?as=0" data-seat-id="0" class="${specCls}" title="${specTip}" data-tooltip="${specTip}">👁 Spectator</a>`;
-
-      const stateTip = escapeAttr(
-        `Current BGA state machine state (${st.name || "-"}, type: ${st.type || "-"}).`,
-      );
-      const botOthersTip = escapeAttr(
-        "Have bots play for the other 3 players (completes their Grand Tichu bets or 3-card passes in simultaneous states, or plays bot turns until your turn).",
-      );
-      const botStepTip = escapeAttr(
-        "Execute a single bot action for whichever player is currently active.",
-      );
-      const autoBotTip = escapeAttr(
-        "When ON, bots automatically act for the other 3 players so you can play a solo game without clicking bot buttons. (Turning this ON disables Auto-Switch.)",
-      );
-      const autoSwitchTip = escapeAttr(
-        "When ON, automatically switches the active seat view to whichever player's turn it is to act. (Turning this ON disables Auto-Bot.)",
-      );
-      const exposedTip = escapeAttr(
-        "Toggle between Real-Time mode and Turn-Based mode (Turn-Based mode exposes the Played Cards tracker and auto-passes unbeatable hands). Starts a new game.",
-      );
-      const tikiTip = escapeAttr(
-        "Toggle between classic Tichu card artwork and Tiki Edition artwork.",
-      );
-      const replayTip = escapeAttr("Open the Experimental Replay viewer for this finished game.");
-      const muteTip = escapeAttr(
-        "Toggle game sound effects (Tichu / Grand Tichu laser sound) on or off.",
-      );
-      const newGameTip = escapeAttr("Reset the database and start a fresh 4-player Tichu game.");
-
-      bar.innerHTML =
-        `<div class="devbar-group">` +
-        `<span class="devbar-brand">🀄 Tichu Local</span>` +
-        `<span class="devbar-label">Seat:</span>` +
-        seatsHtml +
-        `</div>` +
-        `<div class="devbar-group">` +
-        `<span class="devbar-label" title="${stateTip}" data-tooltip="${stateTip}">State: <strong style="color:#e6edf3">${st.name || "-"}</strong></span>` +
-        `<div class="devbar-divider"></div>` +
-        `<button type="button" id="devbar_bot_others" class="devbar-btn bot-btn" ${this._botBusy ? "disabled" : ""} title="${botOthersTip}" data-tooltip="${botOthersTip}">🤖 Act for Others</button>` +
-        `<button type="button" id="devbar_bot_step" class="devbar-btn bot-btn" ${this._botBusy ? "disabled" : ""} title="${botStepTip}" data-tooltip="${botStepTip}">🤖 Step 1</button>` +
-        `<button type="button" id="devbar_autobot" class="devbar-btn ${autoBotOn ? "active-toggle" : ""}" title="${autoBotTip}" data-tooltip="${autoBotTip}">⚡ Auto-Bot: ${autoBotOn ? "ON" : "OFF"}</button>` +
-        `<button type="button" id="devbar_autoswitch" class="devbar-btn ${autoSwitchOn ? "active-toggle" : ""}" title="${autoSwitchTip}" data-tooltip="${autoSwitchTip}">🔀 Auto-Switch: ${autoSwitchOn ? "ON" : "OFF"}</button>` +
-        `<div class="devbar-divider"></div>` +
-        `<button type="button" id="devbar_exposed" class="devbar-btn ${isTurnBased ? "active-toggle" : ""}" title="${exposedTip}" data-tooltip="${exposedTip}">${isTurnBased ? "🃏 Exposed Cards: ON" : "⏱ Real-Time"}</button>` +
-        `<button type="button" id="devbar_tiki" class="devbar-btn ${isTiki ? "active-toggle" : ""}" title="${tikiTip}" data-tooltip="${tikiTip}">🗿 Tiki: ${isTiki ? "ON" : "OFF"}</button>` +
-        (isGameEnd
-          ? `<button type="button" id="devbar_replay" class="devbar-btn ${this.experimentalArchiveModeEnabled ? "active-toggle" : ""}" title="${replayTip}" data-tooltip="${replayTip}">📼 Replay</button>`
-          : "") +
-        `<button type="button" id="devbar_mute" class="devbar-btn" title="${muteTip}" data-tooltip="${muteTip}">${isMuted ? "🔇" : "🔊"}</button>` +
-        `<button type="button" id="devbar_new_game" class="devbar-btn danger-btn" title="${newGameTip}" data-tooltip="${newGameTip}">🔄 New Game</button>` +
-        `</div>`;
-
-      // Bind in-place seat switching on seat buttons
-      bar.querySelectorAll(".devbar-seat[data-seat-id]").forEach((seatEl) => {
-        seatEl.addEventListener("click", (evt) => {
-          if (evt.metaKey || evt.ctrlKey || evt.shiftKey) return;
-          evt.preventDefault();
-          const targetId = Number(seatEl.getAttribute("data-seat-id") || 0);
-          this._switchSeatInPlace(targetId);
-        });
-      });
-
-      const bindClick = (id, fn) => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener("click", fn);
-      };
-
-      bindClick("devbar_bot_others", () => this._runBot("others"));
-      bindClick("devbar_bot_step", () => this._runBot("step"));
-      bindClick("devbar_autobot", () => {
-        const next = localStorage.getItem("tichu_local_autobot") === "1" ? "0" : "1";
-        localStorage.setItem("tichu_local_autobot", next);
-        if (next === "1") {
-          localStorage.setItem("tichu_local_autoswitch", "0");
-          clearTimeout(this._autoSwitchTimer);
-        }
-        this._renderDevBar();
-        if (next === "1") {
-          this._onQueueDrained();
-        } else {
-          clearTimeout(this._autoBotTimer);
-        }
-      });
-      bindClick("devbar_autoswitch", () => {
-        const next = localStorage.getItem("tichu_local_autoswitch") === "1" ? "0" : "1";
-        localStorage.setItem("tichu_local_autoswitch", next);
-        if (next === "1") {
-          localStorage.setItem("tichu_local_autobot", "0");
-          clearTimeout(this._autoBotTimer);
-        }
-        this._renderDevBar();
-        if (next === "1") {
-          this._checkAutoSwitch();
-        } else {
-          clearTimeout(this._autoSwitchTimer);
-          this._scheduleOtherPlayerAutoCollect(this.gamedatas && this.gamedatas.gamestate);
-        }
-      });
-      bindClick("devbar_exposed", () => {
-        this._startNewGame(isTurnBased ? 0 : 1);
-      });
-      bindClick("devbar_tiki", () => {
-        const nextVal = isTiki ? 2 : 1;
-        if (!this.isReadOnly()) {
-          this.setGameUserPreference(103, nextVal);
-        } else if (typeof this.onPreferenceChange === "function") {
-          this.onPreferenceChange(103, nextVal);
-          this._renderDevBar();
-        }
-      });
-      bindClick("devbar_replay", () => this._openReplayViewer());
-      bindClick("devbar_mute", () => {
-        const nextMute = isMuted ? "0" : "1";
-        localStorage.setItem("tichu_local_mute", nextMute);
-        this._renderDevBar();
-      });
-      bindClick("devbar_new_game", () => this._startNewGame());
     }
   }
 
@@ -3610,6 +3236,43 @@
     const normals = hand.filter((c) => c.type_arg >= 2).sort((a, b) => a.type_arg - b.type_arg);
     if (normals.length > 0) return [normals[0]];
     return [hand[0]];
+  }
+
+  function getNextActivePlayerId(ui) {
+    const st = ui && ui.gamedatas && ui.gamedatas.gamestate;
+    if (!st || st.name === "gameEnd" || Number(st.id) === 99) return null;
+
+    if (st.type === "activeplayer") {
+      const activeId = Number(st.active_player || 0);
+      if (activeId > 0 && (ui.isSpectator || activeId !== Number(ui.player_id))) {
+        return activeId;
+      }
+      return null;
+    }
+
+    if (st.type === "multipleactiveplayer") {
+      const multi = Array.isArray(st.multiactive)
+        ? st.multiactive.map(Number).filter((n) => n > 0)
+        : [];
+      if (multi.length === 0) return null;
+      if (!ui.isSpectator && multi.includes(Number(ui.player_id))) {
+        return null;
+      }
+      const ordered = (ui.devBarPlayers || []).map((p) => Number(p.id)).filter((n) => n > 0);
+      if (ordered.length > 0) {
+        const myIdx = ordered.indexOf(Number(ui.player_id));
+        const startIdx = myIdx >= 0 ? myIdx + 1 : 0;
+        for (let offset = 0; offset < ordered.length; offset++) {
+          const candidate = ordered[(startIdx + offset) % ordered.length];
+          if (multi.includes(candidate)) {
+            return candidate;
+          }
+        }
+      }
+      return multi[0];
+    }
+
+    return null;
   }
 
   async function ensureViewerSeat(seat) {
@@ -4197,7 +3860,6 @@
         ui.autoCollectTimeout = null;
       }
       if (ui) {
-        clearTimeout(ui._otherPlayerAutoCollectTimeout);
         ui.collectSent = true;
       }
       return performActionAndDrain("collect", {});
@@ -4210,17 +3872,17 @@
     async step() {
       const ui = window.gameui;
       if (!ui) throw new Error("window.gameui not initialized");
-      await ui._runBot("step");
+      await ui.bgaPerformAction("debug_botStep", {}, { checkAction: false, lock: false });
       await ui.notifqueue.waitUntilIdle();
-      return tt.status(false);
+      return (window.tt || tt).status(false);
     },
 
     async actForOthers() {
       const ui = window.gameui;
       if (!ui) throw new Error("window.gameui not initialized");
-      await ui._runBot("others");
+      await ui.bgaPerformAction("debug_botOthers", {}, { checkAction: false, lock: false });
       await ui.notifqueue.waitUntilIdle();
-      return tt.status(false);
+      return (window.tt || tt).status(false);
     },
 
     // ========================================================================
@@ -4232,12 +3894,11 @@
       if (!ui) throw new Error("window.gameui not initialized");
 
       const prevSpeed = ui.notifqueue.speedMode;
-      const prevAutoBot = localStorage.getItem("tichu_local_autobot");
-      const prevAutoSwitch = localStorage.getItem("tichu_local_autoswitch");
-      localStorage.setItem("tichu_local_autobot", "0");
-      localStorage.setItem("tichu_local_autoswitch", "0");
-      clearTimeout(ui._autoBotTimer);
-      clearTimeout(ui._autoSwitchTimer);
+      let prevAutoBot = null;
+      try {
+        prevAutoBot = sessionStorage.getItem("tichu_autobot");
+        sessionStorage.setItem("tichu_autobot", "0");
+      } catch (_e) {}
       tt.setSpeed(speed);
 
       const t0 = performance.now();
@@ -4274,7 +3935,7 @@
               "Expected P0 Grand Tichu badge to be visible",
             );
 
-            const sAfter = await tt.actForOthers();
+            const sAfter = await (window.tt || tt).actForOthers();
             tt.assertUI();
             assertCond(
               sAfter.state.name === "giveCards",
@@ -4550,10 +4211,10 @@
         throw err;
       } finally {
         tt.setSpeed(prevSpeed);
-        if (prevAutoBot !== null) localStorage.setItem("tichu_local_autobot", prevAutoBot);
-        else localStorage.removeItem("tichu_local_autobot");
-        if (prevAutoSwitch !== null) localStorage.setItem("tichu_local_autoswitch", prevAutoSwitch);
-        else localStorage.removeItem("tichu_local_autoswitch");
+        try {
+          if (prevAutoBot !== null) sessionStorage.setItem("tichu_autobot", prevAutoBot);
+          else sessionStorage.removeItem("tichu_autobot");
+        } catch (_e) {}
       }
     },
 
@@ -4617,12 +4278,11 @@
       if (!ui) throw new Error("window.gameui not initialized");
 
       const prevSpeed = ui.notifqueue.speedMode;
-      const prevAutoBot = localStorage.getItem("tichu_local_autobot");
-      const prevAutoSwitch = localStorage.getItem("tichu_local_autoswitch");
-      localStorage.setItem("tichu_local_autobot", "0");
-      localStorage.setItem("tichu_local_autoswitch", "0");
-      clearTimeout(ui._autoBotTimer);
-      clearTimeout(ui._autoSwitchTimer);
+      let prevAutoBot = null;
+      try {
+        prevAutoBot = sessionStorage.getItem("tichu_autobot");
+        sessionStorage.setItem("tichu_autobot", "0");
+      } catch (_e) {}
       tt.setSpeed(speed);
 
       const t0 = performance.now();
@@ -4650,7 +4310,7 @@
           }
 
           if (followActive) {
-            const nextSeatId = ui._getNextAutoSwitchPlayerId();
+            const nextSeatId = getNextActivePlayerId(ui);
             if (nextSeatId && (ui.isSpectator || nextSeatId !== Number(ui.player_id))) {
               await tt.switchSeat(nextSeatId);
               tt.assertUI();
@@ -4662,18 +4322,18 @@
             if (ui.isCurrentPlayerActive()) {
               await tt.betGrandTichu(0);
             } else {
-              await tt.actForOthers();
+              await (window.tt || tt).actForOthers();
             }
           } else if (stName === "giveCards") {
             if (ui.isCurrentPlayerActive()) {
               await tt.giveCards();
             } else {
-              await tt.actForOthers();
+              await (window.tt || tt).actForOthers();
             }
           } else if (stName === "confirmTrick" && ui.isCurrentPlayerActive()) {
             await tt.collect();
           } else {
-            await tt.step();
+            await (window.tt || tt).step(1);
           }
           steps++;
         }
@@ -4698,10 +4358,10 @@
         };
       } finally {
         tt.setSpeed(prevSpeed);
-        if (prevAutoBot !== null) localStorage.setItem("tichu_local_autobot", prevAutoBot);
-        else localStorage.removeItem("tichu_local_autobot");
-        if (prevAutoSwitch !== null) localStorage.setItem("tichu_local_autoswitch", prevAutoSwitch);
-        else localStorage.removeItem("tichu_local_autoswitch");
+        try {
+          if (prevAutoBot !== null) sessionStorage.setItem("tichu_autobot", prevAutoBot);
+          else sessionStorage.removeItem("tichu_autobot");
+        } catch (_e) {}
       }
     },
 
@@ -4779,6 +4439,14 @@
       const instance = new GameClass();
       window.gameui = instance;
 
+      if (!initialParams.has("as") && !pendingAutorun) {
+        try {
+          const nextParams = new URLSearchParams(window.location.search || "");
+          nextParams.set("as", String(instance.isSpectator ? 0 : instance.player_id));
+          window.history.replaceState(null, "", "?" + nextParams.toString());
+        } catch (_e) {}
+      }
+
       // Initialize score counters for all 4 players
       const players = (instance.gamedatas && instance.gamedatas.players) || {};
       for (const pId of Object.keys(players)) {
@@ -4788,19 +4456,6 @@
         instance.scoreCtrl[Number(pId)] = counter;
         instance.scoreCtrl[pId] = counter;
       }
-
-      // Intercept clicks on right-side player board name links so they also switch seats in-place
-      document.querySelectorAll("#player_boards .player-name a[href^='?as=']").forEach((aEl) => {
-        aEl.addEventListener("click", (evt) => {
-          if (evt.metaKey || evt.ctrlKey || evt.shiftKey) return;
-          evt.preventDefault();
-          const href = aEl.getAttribute("href") || "";
-          const m = href.match(/as=(\d+)/);
-          if (m) {
-            instance._switchSeatInPlace(Number(m[1]));
-          }
-        });
-      });
 
       instance._renderDevBar();
       instance._hydrateInitialLogs();
@@ -4834,7 +4489,6 @@
         ) {
           instance.onEnteringStateChooseDragonGift(initialState.args);
         }
-        instance._scheduleOtherPlayerAutoCollect(initialState);
       }
 
       instance._setupSyncChannel();
@@ -4861,10 +4515,14 @@
         }
         setTimeout(async () => {
           pendingAutorun = null;
-          try {
-            const viewerParam = instance.isSpectator ? 0 : instance.player_id;
-            window.history.replaceState(null, "", "?as=" + encodeURIComponent(viewerParam));
-          } catch (_e) {}
+          const replaceViewerAsParam = (viewerParam) => {
+            try {
+              const nextParams = new URLSearchParams(window.location.search || "");
+              nextParams.set("as", String(viewerParam));
+              window.history.replaceState(null, "", "?" + nextParams.toString());
+            } catch (_e) {}
+          };
+          replaceViewerAsParam(instance.isSpectator ? 0 : instance.player_id);
 
           try {
             let res;
@@ -4895,10 +4553,7 @@
               document.body.dataset.testSummary = JSON.stringify(failRes);
             }
           } finally {
-            try {
-              const viewerParam = instance.isSpectator ? 0 : instance.player_id;
-              window.history.replaceState(null, "", "?as=" + encodeURIComponent(viewerParam));
-            } catch (_e) {}
+            replaceViewerAsParam(instance.isSpectator ? 0 : instance.player_id);
           }
         }, 100);
       }

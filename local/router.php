@@ -129,8 +129,6 @@ if (isset($_GET['as']) && $_GET['as'] !== '') {
   $rawPlayerId = $jsonBody['as'];
 } elseif (!empty($_SERVER['HTTP_X_BGA_PLAYER'])) {
   $rawPlayerId = $_SERVER['HTTP_X_BGA_PLAYER'];
-} elseif (isset($_COOKIE['tichu_player_id']) && $_COOKIE['tichu_player_id'] !== '') {
-  $rawPlayerId = $_COOKIE['tichu_player_id'];
 }
 
 if ($rawPlayerId !== null) {
@@ -143,13 +141,6 @@ if ($rawPlayerId !== null) {
 }
 
 $isSpectator = $viewerPlayerId === 0;
-
-if (isset($_GET['as']) && !headers_sent()) {
-  setcookie('tichu_player_id', (string) $viewerPlayerId, [
-    'path' => '/',
-    'samesite' => 'Lax',
-  ]);
-}
 
 /**
  * Helper: Build summary of all 4 players for the Top Local Dev Bar.
@@ -227,6 +218,20 @@ if (!function_exists('sendJsonResponse')) {
   }
 }
 
+/**
+ * Helper: Load current gamestate for a viewer (`0` = spectator, strips `_private` args).
+ */
+if (!function_exists('stateForViewer')) {
+  function stateForViewer(\Tichu $game, int $notifPlayerId): ?array
+  {
+    $gamestate = $game->gamestate->state($notifPlayerId);
+    if ($notifPlayerId === 0 && is_array($gamestate) && isset($gamestate['args']['_private'])) {
+      unset($gamestate['args']['_private']);
+    }
+    return $gamestate;
+  }
+}
+
 $abortFile = __DIR__ . '/.mysql/abort.json';
 
 // 4. AJAX Game Action Endpoint: /tichu/tichu/<action>.html
@@ -235,23 +240,32 @@ if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
   $lastPacketId = getCurrentMaxPacketId();
 
   try {
-    if ($isSpectator) {
+    $isDebugAction = strpos($actionName, 'debug_') === 0 && method_exists($game, $actionName);
+    if ($isSpectator && !$isDebugAction) {
       throw new \Bga\GameFramework\UserException('Spectators cannot perform game actions');
     }
-    $game->setCurrentPlayerId($viewerPlayerId);
-    $actionObj = new \action_tichu($game, $requestParams);
-    if (!method_exists($actionObj, $actionName)) {
-      throw new \Bga\GameFramework\UserException("Unknown game action: $actionName");
+    $game->setCurrentPlayerId($isSpectator ? 0 : $viewerPlayerId);
+    if ($isDebugAction) {
+      $game->beginPlayerAction();
+      $game->bga->debug->setExecutingDebugAction();
+      $game->$actionName();
+      $game->endPlayerAction();
+    } else {
+      $actionObj = new \action_tichu($game, $requestParams);
+      if (!method_exists($actionObj, $actionName)) {
+        throw new \Bga\GameFramework\UserException("Unknown game action: $actionName");
+      }
+      $actionObj->$actionName();
     }
-    $actionObj->$actionName();
 
     $sincePacketId =
       isset($requestParams['since']) && $requestParams['since'] !== ''
         ? (int) $requestParams['since']
         : $lastPacketId;
-    $notifications = $game->getNotificationsSince($sincePacketId, $viewerPlayerId, false);
+    $notifPlayerId = $isSpectator ? 0 : $viewerPlayerId;
+    $notifications = $game->getNotificationsSince($sincePacketId, $notifPlayerId, false);
     $newLastPacketId = getCurrentMaxPacketId();
-    $gamestate = $game->gamestate->state($viewerPlayerId);
+    $gamestate = stateForViewer($game, $notifPlayerId);
 
     return sendJsonResponse([
       'status' => 1,
@@ -302,13 +316,10 @@ if ($uri === '/local/poll') {
   $since = isset($requestParams['since'])
     ? (int) $requestParams['since']
     : getCurrentMaxPacketId();
-  $notifications = $game->getNotificationsSince(
-    $since,
-    $isSpectator ? null : $viewerPlayerId,
-    false
-  );
+  $notifPlayerId = $isSpectator ? 0 : $viewerPlayerId;
+  $notifications = $game->getNotificationsSince($since, $notifPlayerId, false);
   $lastPacketId = getCurrentMaxPacketId();
-  $gamestate = $game->gamestate->state($isSpectator ? null : $viewerPlayerId);
+  $gamestate = stateForViewer($game, $notifPlayerId);
 
   return sendJsonResponse([
     'status' => 1,
@@ -485,6 +496,7 @@ if ($uri === '/local/bot') {
   $targetBotId = isset($requestParams['botPlayerId']) ? (int) $requestParams['botPlayerId'] : null;
 
   try {
+    $game->setCurrentPlayerId($humanPlayerId);
     $actions = [];
     if ($mode === 'step') {
       $stepRes = \LocalTichuBot::stepSingleBotTurn($game, $targetBotId);
@@ -501,13 +513,10 @@ if ($uri === '/local/bot') {
     }
 
     $game->setCurrentPlayerId($viewerPlayerId);
-    $notifications = $game->getNotificationsSince(
-      $sincePacketId,
-      $isSpectator ? null : $viewerPlayerId,
-      false
-    );
+    $notifPlayerId = $isSpectator ? 0 : $viewerPlayerId;
+    $notifications = $game->getNotificationsSince($sincePacketId, $notifPlayerId, false);
     $newLastPacketId = getCurrentMaxPacketId();
-    $gamestate = $game->gamestate->state($isSpectator ? null : $viewerPlayerId);
+    $gamestate = stateForViewer($game, $notifPlayerId);
 
     return sendJsonResponse([
       'status' => 1,
@@ -619,7 +628,7 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
                 <div class="player-board" id="overall_player_board_<?php echo $pId; ?>">
                   <div class="player_board_inner" id="player_board_inner_<?php echo $pId; ?>">
                     <div class="player-name" id="player_name_<?php echo $pId; ?>">
-                      <a href="?as=<?php echo $pId; ?>" style="color: #<?php echo htmlspecialchars($pColor, ENT_QUOTES, 'UTF-8'); ?>">
+                      <a href="?as=<?php echo $pId; ?>" target="_blank" rel="noopener" style="color: #<?php echo htmlspecialchars($pColor, ENT_QUOTES, 'UTF-8'); ?>">
                         <?php echo htmlspecialchars($pName, ENT_QUOTES, 'UTF-8'); ?>
                       </a>
                     </div>

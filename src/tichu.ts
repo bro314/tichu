@@ -599,6 +599,9 @@ export class Tichu {
     const res =
       typeof parentMethod === "function" ? parentMethod.apply(this, arguments) : undefined;
     this.releaseOrphanedNotificationLock();
+    if (typeof window !== "undefined") {
+      (window as any).tt?.onQueueDrained?.();
+    }
     return res;
   }
 
@@ -1171,6 +1174,9 @@ export class Tichu {
       wrap?.appendChild(replay);
     }
     this.rescale();
+    if (typeof window !== "undefined") {
+      (window as any).tt?.refreshBar?.();
+    }
   }
 
   rescale() {

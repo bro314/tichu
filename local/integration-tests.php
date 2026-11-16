@@ -1795,6 +1795,119 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   assertTrueVal(str_contains($report, 'playCombo'), 'Inspection report should include overridden playCombo state name');
 }
 
+// ============================================================================
+// Test 17: test_studio_debug_bot_step_and_bot_others
+// ============================================================================
+function callDebugAction(\Tichu $game, int $viewerId, string $method): void
+{
+  $game->setCurrentPlayerId($viewerId);
+  $game->beginPlayerAction();
+  try {
+    $game->bga->debug->setExecutingDebugAction();
+    $game->$method();
+    $game->endPlayerAction();
+  } catch (\Throwable $e) {
+    $game->endPlayerAction(true);
+    throw $e;
+  }
+}
+
+function test_studio_debug_bot_step_and_bot_others(): void
+{
+  assertSameVal('studio', \Tichu::getBgaEnvironment(), 'Local runner must report studio environment for debug_* actions');
+
+  $game = new \Tichu();
+  $game->createNewGame([
+    'gameLength' => 1,
+    'playerTeams' => TEAM_1_3,
+    'turnBased' => 0,
+  ]);
+
+  // 1. P0 bets 0 in grandTichuBets, then debug_botOthers() completes P1/P2/P3 -> transitions to giveCards
+  callAction($game, P0, 'grandTichuBet', ['bet' => '0']);
+  callDebugAction($game, P0, 'debug_botOthers');
+  assertSameVal('giveCards', $game->gamestate->state()['name'], 'debug_botOthers should finish grandTichuBets and enter giveCards');
+
+  // 2. In giveCards (multiactive), debug_botStep() while viewing as P0 must pick a non-viewer bot first
+  callDebugAction($game, P0, 'debug_botStep');
+  $activeAfterOneStep = array_map('intval', $game->gamestate->getActivePlayerList());
+  assertTrueVal(in_array(P0, $activeAfterOneStep, true), 'debug_botStep should not pass cards for viewer P0 when other bots are active');
+  assertSameVal(3, count($activeAfterOneStep), 'One bot should have passed cards after debug_botStep');
+
+  // Remaining bots pass via debug_botOthers(), leaving only P0 multiactive
+  callDebugAction($game, P0, 'debug_botOthers');
+  $activeAfterOthers = array_map('intval', $game->gamestate->getActivePlayerList());
+  assertSameVal([P0], $activeAfterOthers, 'Only viewer P0 should remain multiactive in giveCards after debug_botOthers');
+
+  // P0 passes 3 cards -> transitions to playComboOpen
+  $p0Pass = \LocalTichuBot::pickThreeCardsToGive(P0);
+  callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0Pass)]);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name']);
+
+  // 3. Test activeplayer stepping with viewer P0 != active bot, including confirmTrick -> collect()
+  //    Verify refreshLockStateAfterBotStep() keeps freshStateId synchronized across multiple steps in one request!
+  //    In bomb_interrupt: P0 led Ace (1,14), P1 is active in playCombo.
+  \LocalTichuScenarios::setupScenario($game, 'bomb_interrupt', P0);
+  callDebugAction($game, P0, 'debug_botOthers');
+  $stAfter = $game->gamestate->state();
+  assertTrueVal(
+    in_array($stAfter['name'], ['playCombo', 'playComboOpen', 'confirmTrick'], true),
+    'debug_botOthers should advance cleanly from P1 in playCombo (got ' . $stAfter['name'] . ')'
+  );
+
+  // Verify confirmTrick -> collect(false) -> chooseDragonGift(0, false) -> playComboOpen in one debug_botOthers call.
+  // In dragon_gift: P0 played Dragon, P1 & P2 passed, P3 is active. Viewing as P1 causes P3 to pass,
+  // transitioning through confirmTrick (P0) and chooseDragonGift (P0) until P1 becomes active.
+  \LocalTichuScenarios::setupScenario($game, 'dragon_gift', P0);
+  callDebugAction($game, P1, 'debug_botOthers');
+  $stateAfterDragon = $game->gamestate->state();
+  assertSameVal((string) P1, (string) $stateAfterDragon['active_player'], 'debug_botOthers as P1 should collect Dragon trick, gift it, and stop when P1 becomes active');
+  $lastTrickWinLogs = \APP_DbObject::getObjectListFromDB("SELECT log_player, log_action FROM actionlog WHERE log_action = 'chooseDragonGift'");
+  assertSameVal(1, count($lastTrickWinLogs), 'Dragon gift must have been chosen during single debug_botOthers request');
+  assertSameVal(P0, (int) $lastTrickWinLogs[0]['log_player'], 'Dragon gift log_player must be P0 (trick winner), not viewer P1');
+
+  // 4. Test spectator mode (viewer = 0): debug_botStep/debug_botOthers act for all 4 players,
+  //    and getNotificationsSince(..., 0, false) excludes private notifications (dealCards, passCards).
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  callDebugAction($game, 0, 'debug_botStep');
+  assertSameVal(3, count($game->gamestate->getActivePlayerList()), 'Spectator debug_botStep should advance 1 player in grandTichuBets');
+  callDebugAction($game, 0, 'debug_botOthers');
+  assertSameVal('giveCards', $game->gamestate->state()['name'], 'Spectator debug_botOthers should complete grandTichuBets for all remaining players');
+  callDebugAction($game, 0, 'debug_botOthers');
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Spectator debug_botOthers should complete giveCards for all 4 players');
+
+  $p0Packets = $game->getNotificationsSince(0, P0, false);
+  $p0Types = [];
+  foreach ($p0Packets as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      $p0Types[] = (string) ($notif['type'] ?? '');
+    }
+  }
+  assertTrueVal(in_array('dealCards', $p0Types, true), 'Player P0 must receive private dealCards notifications');
+  assertTrueVal(in_array('passCards', $p0Types, true), 'Player P0 must receive private passCards notifications');
+
+  $specPackets = $game->getNotificationsSince(0, 0, false);
+  foreach ($specPackets as $pkt) {
+    $channel = (string) ($pkt['channel'] ?? '');
+    assertTrueVal(!str_starts_with($channel, '/player/p'), 'Spectator must not receive /player/p* channels (got ' . $channel . ')');
+    foreach ($pkt['data'] ?? [] as $notif) {
+      $type = (string) ($notif['type'] ?? '');
+      assertTrueVal(
+        !in_array($type, ['dealCards', 'passCards', 'acceptCards', 'confirmTichu'], true),
+        'Spectator must not receive private notification type ' . $type
+      );
+    }
+  }
+
+  // 5. Test LocalTichuBot::autoPlayUntilPlayer() across multiactive -> active states
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  callAction($game, P0, 'grandTichuBet', ['bet' => '0']);
+  $actions = \LocalTichuBot::autoPlayUntilPlayer($game, P0);
+  assertSameVal(3, count($actions), 'autoPlayUntilPlayer should act for the 3 bots in grandTichuBets and stop when P0 is active in giveCards');
+  assertSameVal('giveCards', $game->gamestate->state()['name']);
+  assertTrueVal($game->gamestate->isPlayerActive(P0), 'P0 must be active in giveCards');
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -1812,6 +1925,7 @@ $tests = [
   'test_table_lock_version_and_duplicate_requests',
   'test_stale_snapshot_multiactive_and_notif_ordering',
   'test_production_bug_sql_loader_and_player_id_remapping',
+  'test_studio_debug_bot_step_and_bot_others',
 ];
 
 echo "====================================================================\n";

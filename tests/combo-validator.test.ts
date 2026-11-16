@@ -1052,3 +1052,203 @@ test("Tichu studio adapter regressions: legacy accessors, reflexion/args, confir
   assert.equal(publishedTopics[pubBefore]?.args?.[0]?.status, "updated");
   assert.equal(publishedTopics[pubBefore]?.args?.[0]?.uuid, "lock-123");
 });
+
+test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot timers", async () => {
+  const g = globalThis as any;
+  const savedWindow = g.window;
+  const savedDocument = g.document;
+  const savedSession = g.sessionStorage;
+  const savedCSS = g.CSS;
+
+  try {
+    const perfCalls: Array<{ action: string; args: any; opts: any }> = [];
+    const scheduledTimers: Array<{ id: number; delay: number; fn: () => void; cleared: boolean }> =
+      [];
+    let nextTimerId = 1;
+
+    const sessionMap = new Map<string, string>();
+    const sessionMock = {
+      getItem: (k: string) => (sessionMap.has(k) ? sessionMap.get(k)! : null),
+      setItem: (k: string, v: string) => {
+        sessionMap.set(k, String(v));
+      },
+      removeItem: (k: string) => {
+        sessionMap.delete(k);
+      },
+    };
+
+    const showMessages: Array<{ msg: string; type: string }> = [];
+    const clearedTimerIds: number[] = [];
+
+    const ui: any = {
+      player_id: 2385074,
+      isSpectator: false,
+      bRealtime: true,
+      instantaneousMode: true,
+      autoCollectTimeout: 4242,
+      showMessage(msg: string, type: string) {
+        showMessages.push({ msg, type });
+      },
+      gamedatas: {
+        players: {
+          "2385074": { id: "2385074", name: "p0", no: 1, color: "000000", score: "0" },
+          "2385075": { id: "2385075", name: "p1", no: 2, color: "ff0000", score: "0" },
+        },
+        gamestate: {
+          id: "60",
+          name: "playCombo",
+          type: "activeplayer",
+          active_player: "2385075",
+          multiactive: [],
+          args: {},
+        },
+        hand: [],
+        handcount: { 2385074: 14, 2385075: 14 },
+        capturedpoints: { 2385074: 0, 2385075: 0 },
+        round: 1,
+        trick: 1,
+        currentTrickValue: 0,
+      },
+      isPlayerActive(pid: number) {
+        const st = ui.gamedatas.gamestate;
+        return st.type === "activeplayer" && Number(st.active_player) === Number(pid);
+      },
+      isCurrentPlayerActive() {
+        return ui.isPlayerActive(ui.player_id);
+      },
+      bga: {
+        actions: {
+          ajaxcall_running: 0,
+          async performAction(action: string, args: any, opts: any) {
+            perfCalls.push({ action, args, opts });
+            return { ok: true };
+          },
+        },
+        players: {
+          getActivePlayerIds() {
+            const st = ui.gamedatas.gamestate;
+            return st.active_player ? [Number(st.active_player)] : [];
+          },
+        },
+      },
+    };
+
+    g.CSS = { escape: (s: string) => String(s) };
+    g.sessionStorage = sessionMock;
+    g.document = {
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      body: null,
+    };
+    g.window = {
+      location: { hostname: "studio.boardgamearena.com", search: "" },
+      console: globalThis.console,
+      addEventListener: () => {},
+      setTimeout(fn: () => void, delay = 0) {
+        const entry = { id: nextTimerId++, delay: Number(delay), fn, cleared: false };
+        scheduledTimers.push(entry);
+        return entry.id;
+      },
+      clearTimeout(id: number) {
+        clearedTimerIds.push(id);
+        const found = scheduledTimers.find((t) => t.id === id);
+        if (found) found.cleared = true;
+      },
+      gameui: ui,
+    };
+
+    const { initStudioTestHelper } = require("../src/studio-test");
+    initStudioTestHelper(ui);
+    const tt = g.window.tt;
+    assert.ok(tt, "window.tt must be initialized");
+
+    // 1. tt.step(1) -> debug_botStep; tt.step(4) -> debug_bgaPlayMoves; tt.actForOthers() -> debug_botOthers
+    await tt.step(1);
+    await tt.step(4);
+    await tt.actForOthers();
+    assert.deepEqual(
+      perfCalls.map((c) => [c.action, c.args, c.opts]),
+      [
+        ["debug_botStep", {}, { checkAction: false, lock: false }],
+        ["debug_bgaPlayMoves", { moves: 4 }, { checkAction: false, lock: false }],
+        ["debug_botOthers", {}, { checkAction: false, lock: false }],
+      ],
+    );
+
+    // 2. Auto-Bot OFF -> onQueueDrained schedules nothing
+    tt.onQueueDrained();
+    assert.equal(scheduledTimers.length, 0);
+
+    // 3. Auto-Bot ON -> repeated onQueueDrained() debounces to one 300ms timer
+    sessionMock.setItem("tichu_autobot", "1");
+    tt.onQueueDrained();
+    tt.onQueueDrained();
+    const activeNormal = scheduledTimers.filter((t) => !t.cleared);
+    assert.equal(activeNormal.length, 1);
+    assert.equal(activeNormal[0]!.delay, 300);
+
+    // 4. Real-time confirmTrick when another player won -> debounces to 2000ms timer
+    ui.gamedatas.gamestate.name = "confirmTrick";
+    ui.gamedatas.gamestate.active_player = "2385075";
+    tt.onQueueDrained();
+    const activeConfirm = scheduledTimers.filter((t) => !t.cleared);
+    assert.equal(activeConfirm.length, 1);
+    assert.equal(activeConfirm[0]!.delay, 2000);
+
+    // 5. When it becomes viewer's turn -> clears pending Auto-Bot timer and schedules nothing
+    ui.gamedatas.gamestate.active_player = "2385074";
+    tt.onQueueDrained();
+    assert.equal(scheduledTimers.filter((t) => !t.cleared).length, 0);
+
+    // 6. confirmTrick with active human winner preserves autoCollectTimeout in actForOthers()
+    ui.gamedatas.gamestate.name = "confirmTrick";
+    ui.gamedatas.gamestate.active_player = "2385074";
+    ui.autoCollectTimeout = 4242;
+    clearedTimerIds.length = 0;
+    const perfCountBefore = perfCalls.length;
+    await tt.actForOthers();
+    assert.equal(
+      perfCalls.length,
+      perfCountBefore,
+      "actForOthers must no-op when human owns confirmTrick",
+    );
+    assert.ok(
+      !clearedTimerIds.includes(4242),
+      "actForOthers must not cancel human winner's autoCollectTimeout",
+    );
+
+    // 7. Auto-Bot retries with exponential backoff (300 -> 600 -> 1200) and auto-disables after 3 no-ops
+    ui.gamedatas.gamestate.name = "playCombo";
+    ui.gamedatas.gamestate.active_player = "2385075";
+    scheduledTimers.length = 0;
+    sessionMock.setItem("tichu_autobot", "1");
+    tt.onQueueDrained();
+    let pending = scheduledTimers.filter((t) => !t.cleared);
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.delay, 300);
+
+    await pending[0]!.fn();
+    pending = scheduledTimers.filter((t) => !t.cleared).slice(-1);
+    assert.equal(pending[0]!.delay, 600);
+
+    await pending[0]!.fn();
+    pending = scheduledTimers.filter((t) => !t.cleared).slice(-1);
+    assert.equal(pending[0]!.delay, 1200);
+
+    await pending[0]!.fn();
+    assert.equal(
+      sessionMock.getItem("tichu_autobot"),
+      "0",
+      "Auto-Bot should auto-disable after 3 no-ops",
+    );
+    assert.equal(showMessages.length, 1);
+    assert.equal(showMessages[0]!.type, "error");
+    assert.equal(scheduledTimers.filter((t) => !t.cleared && t.id > pending[0]!.id).length, 0);
+  } finally {
+    g.window = savedWindow;
+    g.document = savedDocument;
+    g.sessionStorage = savedSession;
+    g.CSS = savedCSS;
+  }
+});

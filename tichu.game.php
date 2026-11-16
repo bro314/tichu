@@ -186,6 +186,14 @@ class Tichu extends Table
     return $this->gameLockStale;
   }
 
+  public function refreshLockStateAfterBotStep(): void
+  {
+    if (isset($this->gamestate)) {
+      $this->freshStateId = (int) $this->gamestate->getCurrentMainStateId();
+      $this->freshActivePlayerId = (int) $this->getActivePlayerId();
+    }
+  }
+
   /** Called by the local backend at the end of every emulated request. */
   public function onRequestEnd(): void
   {
@@ -676,11 +684,13 @@ class Tichu extends Table
     $this->completePlayCombo($pId, $combo);
   }
 
-  function playCombo($cards_ids)
+  function playCombo($cards_ids, $checkAction = true, $player_id = null)
   {
     $this->acquireGameLockOrFail();
-    $this->checkAction("playCombo");
-    $playerId = $this->getCurrentPlayerId();
+    if ($checkAction) {
+      $this->checkAction("playCombo");
+    }
+    $playerId = $player_id !== null ? (int) $player_id : (int) $this->getCurrentPlayerId();
     if (empty($cards_ids)) {
       throw new UserException(clienttranslate("You must select at least one card"));
     }
@@ -718,34 +728,41 @@ class Tichu extends Table
     }
   }
 
-  function pass($onlyOnce)
+  function pass($onlyOnce, $player_id = null)
   {
-    $this->acquireGameLock();
-    $player_id = (int) $this->getCurrentPlayerId();
-    if ($player_id != $this->freshActivePlayerId) {
-      if ($this->gameLockStale && $player_id == (int) $this->getActivePlayerId()) {
-        // The player passed on their turn, but a concurrent request (e.g. the same pass from
-        // another tab) already moved the game on. Don't turn this into an autopass setting.
-        $this->throwGameStateChanged();
+    if ($player_id === null) {
+      $this->acquireGameLock();
+      $player_id = (int) $this->getCurrentPlayerId();
+      if ($player_id != $this->freshActivePlayerId) {
+        if ($this->gameLockStale && $player_id == (int) $this->getActivePlayerId()) {
+          // The player passed on their turn, but a concurrent request (e.g. the same pass from
+          // another tab) already moved the game on. Don't turn this into an autopass setting.
+          $this->throwGameStateChanged();
+        }
+        // Autopass (out of turn): decided on data read with the lock held, so it is safe even if
+        // this request's snapshot is stale. It only changes the player's own autopass flag, which
+        // stNextPlayer() reads freshly, so it does not bump the version either.
+        $handCount = (int) $this->getUniqueValueFromDB(
+          "SELECT COUNT(*) FROM card WHERE card_location = 'hand' AND card_location_arg = $player_id FOR UPDATE"
+        );
+        if (!in_array($this->freshStateId, [ST_PLAY_COMBO, ST_CONFIRM_TRICK]) || $handCount == 0) {
+          throw new UserException(clienttranslate("You cannot pass now"));
+        }
+        PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
+        NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
+        return;
       }
-      // Autopass (out of turn): decided on data read with the lock held, so it is safe even if
-      // this request's snapshot is stale. It only changes the player's own autopass flag, which
-      // stNextPlayer() reads freshly, so it does not bump the version either.
-      $handCount = (int) $this->getUniqueValueFromDB(
-        "SELECT COUNT(*) FROM card WHERE card_location = 'hand' AND card_location_arg = $player_id FOR UPDATE"
-      );
-      if (!in_array($this->freshStateId, [ST_PLAY_COMBO, ST_CONFIRM_TRICK]) || $handCount == 0) {
-        throw new UserException(clienttranslate("You cannot pass now"));
-      }
-      PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
-      NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
-      return;
+    } else {
+      $player_id = (int) $player_id;
     }
 
     $this->acquireGameLockOrFail();
     $name = $this->gamestate->getCurrentMainState()->name;
     if ($name != "playCombo") {
       throw new UserException(clienttranslate("You cannot pass now"));
+    }
+    if ($player_id !== (int) $this->getActivePlayerId()) {
+      throw new UserException(clienttranslate("This is not your turn"));
     }
 
     $currentMahjongWish = $this->getGameStateValue("mahjongWish");
@@ -763,7 +780,9 @@ class Tichu extends Table
     }
 
     LogManager::insert($player_id, "pass");
-    NotificationManager::pass($player_id, $this->getActivePlayerName());
+    $pRow = PlayerManager::getPlayer($player_id);
+    $playerName = $pRow["name"] ?? $this->getActivePlayerName();
+    NotificationManager::pass($player_id, $playerName);
     if (!$onlyOnce) {
       PlayerManager::setAutopass(2, $player_id);
       NotificationManager::autopass(2, $player_id);
@@ -780,10 +799,12 @@ class Tichu extends Table
     NotificationManager::autopass(0, $this->getCurrentPlayerId());
   }
 
-  function cancel()
+  function cancel($checkAction = true)
   {
     $this->acquireGameLockOrFail();
-    $this->checkAction("cancel");
+    if ($checkAction) {
+      $this->checkAction("cancel");
+    }
     $action = LogManager::getLastAction("changePlayer");
     LogManager::insert($action["arg"]["active"], "changePlayer", [
       "transition" => $action["arg"]["last"],
@@ -1822,6 +1843,28 @@ class Tichu extends Table
       ]);
       $this->gamestate->setPlayerNonMultiactive($player_idm, "acceptPassedCards");
     }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////
+  //////////// Studio Debug Helpers
+  ////////////
+
+  public function debug_botStep(): void
+  {
+    if ($this->getBgaEnvironment() !== "studio") {
+      throw new VisibleSystemException("Debug actions are only available in Studio.");
+    }
+    $this->acquireGameLockOrFail();
+    \TichuBot::stepSingleBotTurn($this);
+  }
+
+  public function debug_botOthers(): void
+  {
+    if ($this->getBgaEnvironment() !== "studio") {
+      throw new VisibleSystemException("Debug actions are only available in Studio.");
+    }
+    $this->acquireGameLockOrFail();
+    \TichuBot::actForOtherPlayers($this, (int) $this->getCurrentPlayerId());
   }
 
   ///////////////////////////////////////////////////////////////////////////////////:

@@ -85,7 +85,8 @@ a:hover {
 }
 
 /* ============================================================================
- * 1. Top Local Developer Bar (#local-dev-bar)
+ * 1. Top Local Developer Bar Container (#local-dev-bar)
+ *    Unified bar controls & styles are mounted and injected by studio-test.ts.
  * ============================================================================ */
 
 #local-dev-bar {
@@ -93,186 +94,16 @@ a:hover {
   top: 0;
   left: 0;
   right: 0;
-  min-height: 44px;
+  min-height: 40px;
   background: #161b22;
   color: #e6edf3;
   border-bottom: 1px solid #30363d;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
   padding: 6px 12px;
   z-index: 9000;
   font-size: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  flex-wrap: wrap;
-}
-
-#local-dev-tooltip {
-  position: fixed;
-  z-index: 10001;
-  max-width: 320px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  background: #0d1117;
-  color: #f0f6fc;
-  border: 1px solid #58a6ff;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.4;
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-3px);
-  transition:
-    opacity 0.1s ease,
-    transform 0.1s ease;
-}
-
-#local-dev-tooltip.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.devbar-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.devbar-brand {
-  font-weight: 700;
-  font-size: 13px;
-  color: #58a6ff;
-  margin-right: 4px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.devbar-divider {
-  width: 1px;
-  height: 22px;
-  background: #30363d;
-  margin: 0 4px;
-}
-
-.devbar-label {
-  color: #8b949e;
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.devbar-btn,
-.devbar-seat {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border-radius: 5px;
-  border: 1px solid #30363d;
-  background: #21262d;
-  color: #c9d1d9;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    background 0.12s ease,
-    border-color 0.12s ease,
-    transform 0.06s ease;
-  user-select: none;
-  white-space: nowrap;
-  text-decoration: none !important;
-}
-
-.devbar-btn:hover,
-.devbar-seat:hover {
-  background: #30363d;
-  border-color: #8b949e;
-  color: #ffffff;
-}
-
-.devbar-btn:active,
-.devbar-seat:active {
-  transform: translateY(1px);
-}
-
-.devbar-seat.is-viewer {
-  background: #1f6feb;
-  border-color: #58a6ff;
-  color: #ffffff;
-  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.4);
-}
-
-.devbar-seat.is-active-turn {
-  border-color: #f0883e;
-}
-
-.devbar-color-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  flex-shrink: 0;
-}
-
-.devbar-turn-badge {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #3fb950;
-  box-shadow: 0 0 6px #3fb950;
-  animation: devbar-pulse 1.2s infinite ease-in-out;
-}
-
-@keyframes devbar-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.45;
-    transform: scale(0.85);
-  }
-}
-
-.devbar-meta {
-  font-size: 11px;
-  opacity: 0.85;
-  font-weight: 500;
-}
-
-.devbar-btn.active-toggle {
-  background: #238636;
-  border-color: #2ea043;
-  color: #ffffff;
-}
-
-.devbar-btn.bot-btn {
-  background: #2d333b;
-  border-color: #444c56;
-  color: #79c0ff;
-}
-.devbar-btn.bot-btn:hover {
-  background: #373e47;
-  border-color: #58a6ff;
-}
-
-.devbar-btn.danger-btn {
-  background: #21262d;
-  border-color: #da3633;
-  color: #ff7b72;
-}
-.devbar-btn.danger-btn:hover {
-  background: #da3633;
-  color: #ffffff;
 }
 
 /* ============================================================================

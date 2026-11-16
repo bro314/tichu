@@ -27,6 +27,7 @@ require_once "modules/managers/CardManager.php";
 require_once "modules/managers/LogManager.php";
 require_once "modules/managers/NotificationManager.php";
 require_once "modules/managers/PlayerManager.php";
+require_once "modules/Bot.php";
 
 $this->colors = [
   // type

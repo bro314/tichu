@@ -726,6 +726,291 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
   let consoleVerbose = true;
   let speedMode: "normal" | "fast" | "instant" = "normal";
+  let botBusy = false;
+  let activeTaskCount = 0;
+  let autoBotTimer: number | null = null;
+  let autoBotWaitQueued = false;
+  let autoBotConsecutiveErrors = 0;
+  let autoBotConsecutiveNoOps = 0;
+  let autoBotLastSignature = "";
+
+  function safeSessionGet(key: string): string | null {
+    try {
+      return typeof sessionStorage !== "undefined" ? sessionStorage.getItem(key) : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function safeSessionSet(key: string, value: string): void {
+    try {
+      if (typeof sessionStorage !== "undefined") sessionStorage.setItem(key, value);
+    } catch (_e) {}
+  }
+
+  function safeLocalGet(key: string): string | null {
+    try {
+      return typeof localStorage !== "undefined" ? localStorage.getItem(key) : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function safeLocalSet(key: string, value: string): void {
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
+    } catch (_e) {}
+  }
+
+  function resetAutoBotFailures(): void {
+    autoBotConsecutiveErrors = 0;
+    autoBotConsecutiveNoOps = 0;
+  }
+
+  function getAutoBotEnabled(): boolean {
+    return safeSessionGet("tichu_autobot") === "1";
+  }
+
+  function setAutoBotEnabled(enabled: boolean): void {
+    safeSessionSet("tichu_autobot", enabled ? "1" : "0");
+    if (enabled) {
+      resetAutoBotFailures();
+      autoBotLastSignature = "";
+    }
+  }
+
+  function clearAutoBotTimer(): void {
+    if (autoBotTimer !== null) {
+      window.clearTimeout(autoBotTimer);
+      autoBotTimer = null;
+    }
+  }
+
+  function getDrawerDefaultOpen(): boolean {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      if (params.get("tt") === "1") return true;
+    } catch (_e) {}
+    try {
+      if (window.top && window.top !== window) {
+        const topParams = new URLSearchParams(window.top.location.search || "");
+        if (topParams.get("tt") === "1") return true;
+      }
+    } catch (_e) {}
+    return safeSessionGet("tichu_tt_drawer") === "1";
+  }
+
+  function getActivePlayerIds(ui: any): number[] {
+    const gd = ui?.gamedatas;
+    const st = gd?.gamestate || {};
+    const ids = new Set<number>();
+    if (st.type === "activeplayer") {
+      if (st.active_player && Number(st.active_player) > 0) {
+        ids.add(Number(st.active_player));
+      }
+    } else if (st.type === "multipleactiveplayer") {
+      if (Array.isArray(st.multiactive)) {
+        for (let i = 0; i < st.multiactive.length; i++) {
+          const id = Number(st.multiactive[i]);
+          if (id > 0) ids.add(id);
+        }
+      }
+    } else if (ui?.bga?.players && typeof ui.bga.players.getActivePlayerIds === "function") {
+      const list = ui.bga.players.getActivePlayerIds();
+      for (let i = 0; i < list.length; i++) {
+        const id = Number(list[i]);
+        if (id > 0) ids.add(id);
+      }
+    } else {
+      const gmState = win.gameModel?.getState?.();
+      if (gmState?.activePlayerId && Number(gmState.activePlayerId) > 0) {
+        ids.add(Number(gmState.activePlayerId));
+      }
+      if (Array.isArray(gmState?.activePlayerIds)) {
+        for (let i = 0; i < gmState.activePlayerIds.length; i++) {
+          const id = Number(gmState.activePlayerIds[i]);
+          if (id > 0) ids.add(id);
+        }
+      }
+    }
+    if (typeof ui?.isPlayerActive === "function" && gd?.players) {
+      for (const pIdKey of Object.keys(gd.players)) {
+        const pId = Number(pIdKey);
+        if (pId > 0 && ui.isPlayerActive(pId)) {
+          ids.add(pId);
+        }
+      }
+    }
+    return Array.from(ids);
+  }
+
+  async function performDebugAction(actionName: string, args: Record<string, any> = {}) {
+    const ui = getUi();
+    if (!ui) throw new Error("window.gameui is not initialized");
+    if (ui.bga && ui.bga.actions && typeof ui.bga.actions.performAction === "function") {
+      await ui.bga.actions.performAction(actionName, args, {
+        checkAction: false,
+        lock: false,
+      });
+      return;
+    }
+    if (typeof ui.ajaxcall === "function") {
+      await new Promise<void>((resolve, reject) => {
+        ui.ajaxcall(
+          `/tichu/tichu/${actionName}.html`,
+          { ...args },
+          ui,
+          () => resolve(),
+          (isErr: boolean, msg?: string) => {
+            if (isErr) reject(new Error(msg || `${actionName} failed`));
+            else resolve();
+          },
+        );
+      });
+      return;
+    }
+    throw new Error("Neither ui.bga.actions.performAction nor ui.ajaxcall is available");
+  }
+
+  function getAutoBotProgressSignature(ui: any): string {
+    const gd = ui?.gamedatas || {};
+    const st = gd.gamestate || {};
+    const activeIds = getActivePlayerIds(ui)
+      .slice()
+      .sort((a, b) => a - b)
+      .join(",");
+    const lastPacketId = Number(
+      ui?.notifqueue?.last_packet_id ?? gd.notifications?.last_packet_id ?? 0,
+    );
+    return [
+      lastPacketId,
+      Number(st.id || 0),
+      String(st.name || ""),
+      activeIds,
+      Number(gd.round || 0),
+      Number(gd.trick || 0),
+    ].join("|");
+  }
+
+  function disableAutoBotOnFailure(reason: string): void {
+    setAutoBotEnabled(false);
+    clearAutoBotTimer();
+    resetAutoBotFailures();
+    (win.tt || tt).refreshBar?.();
+    const ui = getUi();
+    if (typeof ui?.showMessage === "function") {
+      ui.showMessage(reason, "error");
+    }
+    logAnnounce("[TICHU AUTOBOT]", reason, "#ff7b72");
+  }
+
+  function scheduleAutoBot(): void {
+    clearAutoBotTimer();
+    if (!getAutoBotEnabled()) return;
+    if (botBusy || autoPlayCtrl.running || activeTaskCount > 0) return;
+
+    const ui = getUi();
+    if (!ui || !ui.gamedatas || ui.isSpectator) return;
+
+    const st = ui.gamedatas.gamestate;
+    if (!st || st.name === "gameEnd" || Number(st.id) === 99) return;
+
+    if (isQueueBusy()) {
+      if (!autoBotWaitQueued) {
+        autoBotWaitQueued = true;
+        void waitUntilIdle(15000, 30).then(() => {
+          autoBotWaitQueued = false;
+          scheduleAutoBot();
+        });
+      }
+      return;
+    }
+
+    const sig = getAutoBotProgressSignature(ui);
+    if (sig !== autoBotLastSignature) {
+      autoBotLastSignature = sig;
+      resetAutoBotFailures();
+    }
+
+    const activeIds = getActivePlayerIds(ui);
+    const myId = Number(ui.player_id);
+    const otherActive = activeIds.some((id) => id > 0 && id !== myId);
+    if (!otherActive) return;
+
+    const retryCount = Math.max(autoBotConsecutiveErrors, autoBotConsecutiveNoOps);
+    if (retryCount >= 3) {
+      disableAutoBotOnFailure(
+        `Auto-Bot stopped after ${retryCount} consecutive failures or no-op retries.`,
+      );
+      return;
+    }
+
+    const isConfirmTrick = st.name === "confirmTrick";
+    const isRealtime = Boolean(
+      ui.bRealtime !== undefined ? ui.bRealtime : win.gameModel?.getState?.()?.isRealtime,
+    );
+    const baseDelayMs = isConfirmTrick && isRealtime ? 2000 : 300;
+    const delayMs = baseDelayMs * Math.pow(2, retryCount);
+
+    autoBotTimer = window.setTimeout(async () => {
+      autoBotTimer = null;
+      if (!getAutoBotEnabled()) return;
+      if (botBusy || autoPlayCtrl.running || activeTaskCount > 0) return;
+      if (isQueueBusy()) {
+        scheduleAutoBot();
+        return;
+      }
+      const curUi = getUi();
+      const curSt = curUi?.gamedatas?.gamestate;
+      if (!curUi || !curSt || curSt.name === "gameEnd" || Number(curSt.id) === 99) return;
+      if (curUi.isSpectator) return;
+      const curActiveIds = getActivePlayerIds(curUi);
+      const curMyId = Number(curUi.player_id);
+      if (!curActiveIds.some((id) => id > 0 && id !== curMyId)) return;
+
+      const sigBefore = getAutoBotProgressSignature(curUi);
+      try {
+        const curTt = win.tt || tt;
+        await curTt.actForOthers();
+        const afterUi = getUi();
+        const afterSt = afterUi?.gamedatas?.gamestate;
+        if (!afterUi || !afterSt || afterSt.name === "gameEnd" || Number(afterSt.id) === 99) {
+          resetAutoBotFailures();
+          return;
+        }
+        const sigAfter = getAutoBotProgressSignature(afterUi);
+        const afterActiveIds = getActivePlayerIds(afterUi);
+        const afterMyId = Number(afterUi.player_id);
+        const stillOtherActive = afterActiveIds.some((id) => id > 0 && id !== afterMyId);
+        if (sigAfter !== sigBefore) {
+          autoBotLastSignature = sigAfter;
+          resetAutoBotFailures();
+        } else if (stillOtherActive) {
+          autoBotConsecutiveNoOps++;
+          if (autoBotConsecutiveNoOps >= 3) {
+            disableAutoBotOnFailure(
+              "Auto-Bot stopped: game state made no progress after 3 attempts.",
+            );
+            return;
+          }
+        } else {
+          resetAutoBotFailures();
+        }
+      } catch (err: any) {
+        autoBotConsecutiveErrors++;
+        if (autoBotConsecutiveErrors >= 3) {
+          disableAutoBotOnFailure(
+            `Auto-Bot stopped after 3 consecutive errors: ${err?.message || String(err)}`,
+          );
+          return;
+        }
+      } finally {
+        if (getAutoBotEnabled()) {
+          scheduleAutoBot();
+        }
+      }
+    }, delayMs);
+  }
 
   const cornerCases = {
     grandTichuBets: 0,
@@ -939,9 +1224,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     );
   }
 
-  function isQueueBusy(): boolean {
-    const ui = getUi();
-    if (!ui) return false;
+  function getQueueBusyFlags(ui: any) {
     const actionsRunning = Number(
       (ui.bga && ui.bga.actions && ui.bga.actions.ajaxcall_running) || 0,
     );
@@ -949,7 +1232,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       ((window as any).g_sitecore && (window as any).g_sitecore.ajaxcall_running) || 0,
     );
     const uiAjaxRunning = Number(ui.ajaxcall_running || 0);
-    let ifaceLocked = Boolean(typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked());
+    const ifaceLocked = Boolean(
+      typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked(),
+    );
     const ajaxBusy = Number(ui._ajaxInFlight || 0) > 0;
     const nq = ui.notifqueue;
     const qLen = nq && Array.isArray(nq.queue) ? nq.queue.length : 0;
@@ -959,15 +1244,31 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         nq.isProcessing),
     );
     const resyncing = Boolean(nq && nq.notificationResendInProgress);
+    return {
+      actionsRunning,
+      sitecoreRunning,
+      uiAjaxRunning,
+      ifaceLocked,
+      ajaxBusy,
+      qLen,
+      waitingSync,
+      resyncing,
+    };
+  }
+
+  function repairOrphanedInterfaceLock(): void {
+    const ui = getUi();
+    if (!ui) return;
+    const f = getQueueBusyFlags(ui);
     if (
-      ifaceLocked &&
-      actionsRunning === 0 &&
-      sitecoreRunning === 0 &&
-      uiAjaxRunning === 0 &&
-      !ajaxBusy &&
-      qLen === 0 &&
-      !waitingSync &&
-      !resyncing &&
+      f.ifaceLocked &&
+      f.actionsRunning === 0 &&
+      f.sitecoreRunning === 0 &&
+      f.uiAjaxRunning === 0 &&
+      !f.ajaxBusy &&
+      f.qLen === 0 &&
+      !f.waitingSync &&
+      !f.resyncing &&
       (ui.interface_status === "queued" || ui.interface_status === "dispatched") &&
       ui.interface_locked_by_id
     ) {
@@ -983,17 +1284,22 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       ) {
         ui.unlockInterface(lockUuid);
       }
-      ifaceLocked = Boolean(typeof ui.isInterfaceLocked === "function" && ui.isInterfaceLocked());
     }
+  }
+
+  function isQueueBusy(): boolean {
+    const ui = getUi();
+    if (!ui) return false;
+    const f = getQueueBusyFlags(ui);
     return Boolean(
-      actionsRunning > 0 ||
-      sitecoreRunning > 0 ||
-      uiAjaxRunning > 0 ||
-      ifaceLocked ||
-      ajaxBusy ||
-      qLen > 0 ||
-      waitingSync ||
-      resyncing,
+      f.actionsRunning > 0 ||
+      f.sitecoreRunning > 0 ||
+      f.uiAjaxRunning > 0 ||
+      f.ifaceLocked ||
+      f.ajaxBusy ||
+      f.qLen > 0 ||
+      f.waitingSync ||
+      f.resyncing,
     );
   }
 
@@ -1100,8 +1406,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   async function waitUntilIdle(timeoutMs = 15000, settleMs = 50): Promise<void> {
+    repairOrphanedInterfaceLock();
     if (speedMode === "instant" && !isQueueBusy()) {
       await nextMicrotaskTick();
+      repairOrphanedInterfaceLock();
       if (!isQueueBusy()) return;
     }
     return new Promise((resolve) => {
@@ -1113,6 +1421,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           resolve();
           return;
         }
+        repairOrphanedInterfaceLock();
         if (isQueueBusy()) {
           idleSince = null;
           setTimeout(check, 12);
@@ -1297,11 +1606,12 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         },
         {
           Command: "await tt.step(moves=1)",
-          Description: "Run server zombieTurn for N moves via debug_bgaPlayMoves",
+          Description:
+            "Execute 1 rule-compliant bot move (debug_botStep), or N batch moves on Studio (debug_bgaPlayMoves)",
         },
         {
           Command: "await tt.actForOthers()",
-          Description: "Have server zombieTurn act for other players until your turn",
+          Description: "Have rule-compliant bots (debug_botOthers) act for other players",
         },
         {
           Command: "await tt.runSmokeTest(opts?)",
@@ -1800,21 +2110,27 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     },
 
     async passAllCards(cards?: any) {
-      let cur = tt.status(false)!;
-      if (cur.state.name !== "giveCards") {
-        return cur;
+      activeTaskCount++;
+      clearAutoBotTimer();
+      try {
+        let cur = tt.status(false)!;
+        if (cur.state.name !== "giveCards") {
+          return cur;
+        }
+        if (cur.isMyTurn) {
+          cur = (await tt.giveCards(cards))!;
+        }
+        if (cur.state.name === "giveCards") {
+          cur = (await (win.tt || tt).actForOthers())!;
+        }
+        if (!getUi().instantaneousMode) {
+          await new Promise((r) => setTimeout(r, 2100));
+        }
+        await waitUntilIdle(10000, speedMode === "instant" ? 40 : 150);
+        return tt.status(false);
+      } finally {
+        activeTaskCount--;
       }
-      if (cur.isMyTurn) {
-        cur = (await tt.giveCards(cards))!;
-      }
-      if (cur.state.name === "giveCards") {
-        cur = (await (isLocalHost ? (win.tt || tt).actForOthers() : tt.step(1)))!;
-      }
-      if (!getUi().instantaneousMode) {
-        await new Promise((r) => setTimeout(r, 2100));
-      }
-      await waitUntilIdle(10000, speedMode === "instant" ? 40 : 150);
-      return tt.status(false);
     },
 
     async play(cards?: any, seat?: any) {
@@ -1857,12 +2173,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     async collect(seat?: any) {
       const ui = getUi();
+      clearAutoBotTimer();
       if (ui && ui.autoCollectTimeout) {
         clearTimeout(ui.autoCollectTimeout);
         ui.autoCollectTimeout = null;
-      }
-      if (ui) {
-        clearTimeout(ui._otherPlayerAutoCollectTimeout);
       }
       const st = ui && ui.gamedatas && ui.gamedatas.gamestate;
       const targetSeat =
@@ -1986,34 +2300,99 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     async step(moves = 1) {
       const ui = getUi();
-      if (!ui || !ui.bga || !ui.bga.actions) {
-        throw new Error("BGA Studio actions helper is not available");
+      clearAutoBotTimer();
+      const st = ui?.gamedatas?.gamestate;
+      if (st?.name !== "confirmTrick" || !ui?.isCurrentPlayerActive?.()) {
+        clearTimeout(ui?.autoCollectTimeout);
       }
-      clearTimeout(ui.autoCollectTimeout);
-      logAnnounce(
-        "[TICHU STUDIO STEP]",
-        `Running debug_bgaPlayMoves (moves=${moves})...`,
-        "#d2a8ff",
-      );
-      await ui.bga.actions.performAction(
-        "debug_bgaPlayMoves",
-        { moves: Number(moves) || 1 },
-        { checkAction: false, lock: false },
-      );
-      await waitUntilIdle(15000, speedMode === "instant" ? 45 : 250);
-      dismissDialogsIfInstant();
-      return tt.status(false);
+      const count = Math.max(1, Math.floor(Number(moves) || 1));
+      botBusy = true;
+      (win.tt || tt).refreshBar?.();
+      try {
+        if (count === 1) {
+          logAnnounce(
+            isLocalHost ? "[TICHU LOCAL STEP]" : "[TICHU STUDIO STEP]",
+            "Running debug_botStep...",
+            "#d2a8ff",
+          );
+          await performDebugAction("debug_botStep");
+        } else if (!isLocalHost) {
+          logAnnounce(
+            "[TICHU STUDIO STEP]",
+            `Running debug_bgaPlayMoves (moves=${count})...`,
+            "#d2a8ff",
+          );
+          await performDebugAction("debug_bgaPlayMoves", { moves: count });
+        } else {
+          logAnnounce("[TICHU LOCAL STEP]", `Running debug_botStep x${count}...`, "#d2a8ff");
+          for (let i = 0; i < count; i++) {
+            const cur = tt.status(false);
+            if (!cur || cur.state.name === "gameEnd" || cur.state.id === 99) break;
+            await performDebugAction("debug_botStep");
+            if (ui?.notifqueue?.waitUntilIdle) {
+              await ui.notifqueue.waitUntilIdle();
+            }
+            await waitUntilIdle(15000, speedMode === "instant" ? 10 : 25);
+          }
+        }
+        if (isLocalHost && ui?.notifqueue?.waitUntilIdle) {
+          await ui.notifqueue.waitUntilIdle();
+        }
+        const settleMs =
+          speedMode === "instant"
+            ? isLocalHost
+              ? 10
+              : 40
+            : speedMode === "fast"
+              ? isLocalHost
+                ? 15
+                : 60
+              : 200;
+        await waitUntilIdle(15000, settleMs);
+        dismissDialogsIfInstant();
+        return tt.status(false);
+      } finally {
+        botBusy = false;
+        (win.tt || tt).refreshBar?.();
+      }
     },
 
-    async actForOthers(maxSteps = 12) {
-      for (let i = 0; i < maxSteps; i++) {
-        const s = tt.status(false);
-        if (!s || s.state.name === "gameEnd" || s.state.id === 99) break;
-        if (s.isMyTurn && s.state.type === "activeplayer") break;
-        if (s.isMyTurn && s.state.type === "multipleactiveplayer") break;
-        await tt.step(1);
+    async actForOthers() {
+      const ui = getUi();
+      if (ui?.gamedatas?.gamestate?.name === "confirmTrick" && ui?.isCurrentPlayerActive?.()) {
+        return tt.status(false);
       }
-      return tt.status(false);
+      clearAutoBotTimer();
+      clearTimeout(ui?.autoCollectTimeout);
+      botBusy = true;
+      (win.tt || tt).refreshBar?.();
+      try {
+        logAnnounce(
+          isLocalHost ? "[TICHU LOCAL BOT]" : "[TICHU STUDIO BOT]",
+          "Running debug_botOthers...",
+          "#d2a8ff",
+        );
+        await performDebugAction("debug_botOthers");
+        if (isLocalHost && ui?.notifqueue?.waitUntilIdle) {
+          await ui.notifqueue.waitUntilIdle();
+        }
+        const settleMs =
+          speedMode === "instant"
+            ? isLocalHost
+              ? 10
+              : 40
+            : speedMode === "fast"
+              ? isLocalHost
+                ? 15
+                : 60
+              : 200;
+        await waitUntilIdle(15000, settleMs);
+        dismissDialogsIfInstant();
+        return tt.status(false);
+      } finally {
+        botBusy = false;
+        (win.tt || tt).refreshBar?.();
+      }
     },
 
     async runSmokeTest({
@@ -2021,85 +2400,91 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       speed = "instant",
     }: { tricks?: number; speed?: "normal" | "fast" | "instant" } = {}) {
       const t0 = Date.now();
-      tt.setSpeed(speed);
-      logAnnounce(
-        "[TICHU STUDIO SMOKE]",
-        `▶ Starting BGA Studio Smoke Test (tricks=${tricks}, speed=${speed})...`,
-        "#ffa657",
-      );
+      activeTaskCount++;
+      clearAutoBotTimer();
+      try {
+        tt.setSpeed(speed);
+        logAnnounce(
+          "[TICHU STUDIO SMOKE]",
+          `▶ Starting BGA Studio Smoke Test (tricks=${tricks}, speed=${speed})...`,
+          "#ffa657",
+        );
 
-      let assertionsPassed = 0;
-      const checkUI = () => {
-        tt.assertUI();
-        assertionsPassed++;
-      };
+        let assertionsPassed = 0;
+        const checkUI = () => {
+          tt.assertUI();
+          assertionsPassed++;
+        };
 
-      const startStatus = tt.status(false);
-      if (!startStatus) throw new Error("Game UI not ready");
-      checkUI();
+        const startStatus = tt.status(false);
+        if (!startStatus) throw new Error("Game UI not ready");
+        checkUI();
 
-      // 1. Complete Grand Tichu bets if in grandTichuBets (viewer bet + batch step for others)
-      let cur = tt.status(false)!;
-      let stepsRun = 0;
-      if (cur.state.name === "grandTichuBets") {
-        if (cur.isMyTurn) {
-          cur = (await tt.betGrandTichu(0))!;
-          stepsRun++;
-        }
+        // 1. Complete Grand Tichu bets if in grandTichuBets (viewer bet + batch bots for others)
+        let cur = tt.status(false)!;
+        let stepsRun = 0;
         if (cur.state.name === "grandTichuBets") {
-          cur = (await (isLocalHost ? (win.tt || tt).actForOthers() : tt.step(1)))!;
-          stepsRun++;
+          if (cur.isMyTurn) {
+            cur = (await tt.betGrandTichu(0))!;
+            stepsRun++;
+          }
+          if (cur.state.name === "grandTichuBets") {
+            cur = (await (win.tt || tt).actForOthers())!;
+            stepsRun++;
+          }
+          checkUI();
         }
-        checkUI();
-      }
 
-      // 2. Complete passing 3 cards if in giveCards (viewer pass + batch step for others)
-      if (cur.state.name === "giveCards") {
-        cur = (await tt.passAllCards())!;
-        stepsRun += 2;
-        checkUI();
-      }
-
-      // 3. Play N tricks (viewer plays if leading, then single batch step for the remaining tricks)
-      if (cur.isMyTurn && cur.state.name === "playComboOpen") {
-        cur = (await tt.play())!;
-        stepsRun++;
-        checkUI();
-      }
-      if (cur.state.name === "mahjongPlay") {
-        cur = (await tt.wish(15))!;
-        stepsRun++;
-        checkUI();
-      }
-      if (cur.state.name !== "gameEnd" && cur.state.id !== 99) {
-        cur = (await tt.step(Math.max(4, tricks * 4)))!;
-        stepsRun++;
-        if (cur.state.name === "confirmTrick") {
-          cur = (await tt.collect())!;
-          stepsRun++;
+        // 2. Complete passing 3 cards if in giveCards (viewer pass + batch bots for others)
+        if (cur.state.name === "giveCards") {
+          cur = (await tt.passAllCards())!;
+          stepsRun += 2;
+          checkUI();
         }
-        checkUI();
-      }
 
-      const elapsedMs = Date.now() - t0;
-      const result = {
-        ok: true,
-        tableId: cur.tableId,
-        startState: startStatus.state.name,
-        endState: cur.state.name,
-        round: cur.round,
-        trick: cur.trick,
-        viewerHandCount: cur.hand.length,
-        stepsRun,
-        assertionsPassed,
-        elapsedMs,
-      };
-      logAnnounce(
-        "[TICHU STUDIO SMOKE]",
-        `✔ PASS in ${elapsedMs}ms — Table #${result.tableId}, State=${result.endState}, Round=${result.round}, Trick=${result.trick}, Assertions=${assertionsPassed}`,
-        "#3fb950",
-      );
-      return result;
+        // 3. Play N tricks (viewer plays if leading, then batch step for the remaining tricks)
+        if (cur.isMyTurn && cur.state.name === "playComboOpen") {
+          cur = (await tt.play())!;
+          stepsRun++;
+          checkUI();
+        }
+        if (cur.state.name === "mahjongPlay") {
+          cur = (await tt.wish(15))!;
+          stepsRun++;
+          checkUI();
+        }
+        if (cur.state.name !== "gameEnd" && cur.state.id !== 99) {
+          cur = (await (win.tt || tt).step(Math.max(4, tricks * 4)))!;
+          stepsRun++;
+          if (cur.state.name === "confirmTrick") {
+            cur = (await tt.collect())!;
+            stepsRun++;
+          }
+          checkUI();
+        }
+
+        const elapsedMs = Date.now() - t0;
+        const result = {
+          ok: true,
+          tableId: cur.tableId,
+          startState: startStatus.state.name,
+          endState: cur.state.name,
+          round: cur.round,
+          trick: cur.trick,
+          viewerHandCount: cur.hand.length,
+          stepsRun,
+          assertionsPassed,
+          elapsedMs,
+        };
+        logAnnounce(
+          "[TICHU STUDIO SMOKE]",
+          `✔ PASS in ${elapsedMs}ms — Table #${result.tableId}, State=${result.endState}, Round=${result.round}, Trick=${result.trick}, Assertions=${assertionsPassed}`,
+          "#3fb950",
+        );
+        return result;
+      } finally {
+        activeTaskCount--;
+      }
     },
 
     async runRound({
@@ -2107,41 +2492,47 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       maxSteps = 12,
     }: { speed?: "normal" | "fast" | "instant"; maxSteps?: number } = {}) {
       const t0 = Date.now();
-      tt.setSpeed(speed);
-      let cur = tt.status(false)!;
-      const initialRound = cur.round;
+      activeTaskCount++;
+      clearAutoBotTimer();
+      try {
+        tt.setSpeed(speed);
+        let cur = tt.status(false)!;
+        const initialRound = cur.round;
 
-      let batches = 0;
-      while (
-        cur.state.name !== "gameEnd" &&
-        cur.state.id !== 99 &&
-        cur.round === initialRound &&
-        batches < maxSteps
-      ) {
-        cur = (await tt.step(35))!;
-        batches++;
+        let batches = 0;
+        while (
+          cur.state.name !== "gameEnd" &&
+          cur.state.id !== 99 &&
+          cur.round === initialRound &&
+          batches < maxSteps
+        ) {
+          cur = (await (win.tt || tt).step(35))!;
+          batches++;
+        }
+        if (cur.state.name === "confirmTrick") {
+          cur = (await tt.collect())!;
+        }
+        dismissDialogsIfInstant();
+        if (cur.state.name !== "gameEnd" && cur.state.id !== 99) {
+          tt.assertUI();
+        }
+        return {
+          ok: true,
+          tableId: cur.tableId,
+          initialRound,
+          currentRound: cur.round,
+          state: cur.state.name,
+          batches,
+          players: cur.players.map((p: any) => ({
+            name: p.name,
+            score: p.score,
+            handCount: p.handCount,
+          })),
+          elapsedMs: Date.now() - t0,
+        };
+      } finally {
+        activeTaskCount--;
       }
-      if (cur.state.name === "confirmTrick") {
-        cur = (await tt.collect())!;
-      }
-      dismissDialogsIfInstant();
-      if (cur.state.name !== "gameEnd" && cur.state.id !== 99) {
-        tt.assertUI();
-      }
-      return {
-        ok: true,
-        tableId: cur.tableId,
-        initialRound,
-        currentRound: cur.round,
-        state: cur.state.name,
-        batches,
-        players: cur.players.map((p: any) => ({
-          name: p.name,
-          score: p.score,
-          handCount: p.handCount,
-        })),
-        elapsedMs: Date.now() - t0,
-      };
     },
 
     async runGame({
@@ -2149,26 +2540,34 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       maxBatches = 40,
     }: { speed?: "normal" | "fast" | "instant"; maxBatches?: number } = {}) {
       const t0 = Date.now();
-      tt.setSpeed(speed);
-      let cur = tt.status(false)!;
-      let batches = 0;
-      while (cur.state.name !== "gameEnd" && cur.state.id !== 99 && batches < maxBatches) {
-        cur = (await tt.step(50))!;
-        batches++;
+      activeTaskCount++;
+      clearAutoBotTimer();
+      try {
+        tt.setSpeed(speed);
+        let cur = tt.status(false)!;
+        let batches = 0;
+        while (cur.state.name !== "gameEnd" && cur.state.id !== 99 && batches < maxBatches) {
+          cur = (await (win.tt || tt).step(50))!;
+          batches++;
+        }
+        return {
+          ok: cur.state.name === "gameEnd" || cur.state.id === 99,
+          tableId: cur.tableId,
+          state: cur.state.name,
+          round: cur.round,
+          players: cur.players.map((p: any) => ({ name: p.name, score: p.score })),
+          elapsedMs: Date.now() - t0,
+        };
+      } finally {
+        activeTaskCount--;
       }
-      return {
-        ok: cur.state.name === "gameEnd" || cur.state.id === 99,
-        tableId: cur.tableId,
-        state: cur.state.name,
-        round: cur.round,
-        players: cur.players.map((p: any) => ({ name: p.name, score: p.score })),
-        elapsedMs: Date.now() - t0,
-      };
     },
 
     async expressStop(tableId?: number) {
       const ui = getUi();
-      const tid = Number(tableId || (ui && ui.table_id) || 0);
+      const tid = Number(
+        tableId || (ui && ui.table_id) || (window as any).bgaGameData?.tableId || 0,
+      );
       if (!tid) throw new Error("No tableId available for expressStop");
       const token = ((window as any).bgaConfig && (window as any).bgaConfig.requestToken) || "";
       const headers: Record<string, string> = token ? { "X-Request-Token": token } : {};
@@ -2187,7 +2586,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     async expressStartNew({ gameLength = 2 }: { gameLength?: number } = {}) {
       const ui = getUi();
-      const oldTableId = Number((ui && ui.table_id) || 0);
+      const oldTableId = Number((ui && ui.table_id) || (window as any).bgaGameData?.tableId || 0);
       const gameId = Number((ui && ui.game_id) || 1386);
       const token = ((window as any).bgaConfig && (window as any).bgaConfig.requestToken) || "";
       const headers: Record<string, string> = token ? { "X-Request-Token": token } : {};
@@ -3116,6 +3515,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         };
 
         try {
+          clearAutoBotTimer();
           autoPlayCtrl.runId = myRunId;
           if (autoPlayCtrl.running) {
             tt.stopAutoPlayMe("restarted");
@@ -3650,6 +4050,18 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         scheduleKick();
       });
     },
+
+    refreshBar() {},
+
+    scheduleRefreshBar() {},
+
+    showTests(_open = true) {},
+
+    showBar() {},
+
+    onQueueDrained() {
+      scheduleAutoBot();
+    },
   };
 
   let autoPlayRunSeq = 0;
@@ -3681,149 +4093,228 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   };
 
   function mountStudioTestBar() {
-    if ((window as any).g_archive_mode) return;
-    if (document.getElementById("studio-test-bar")) return;
+    if (!isLocalHost && typeof win.g_replayFrom !== "undefined") return;
+    const localDevBar = isLocalHost ? document.getElementById("local-dev-bar") : null;
     const wrap = document.getElementById("game_play_area_wrap");
-    if (!wrap || !wrap.parentNode) return;
+    if (!localDevBar && (!wrap || !wrap.parentNode) && !document.body) return;
+    if (document.getElementById("studio-test-bar")) {
+      (win.tt || tt).refreshBar?.();
+      return;
+    }
 
-    if (!document.getElementById("studio-test-bar-styles")) {
+    if (!document.getElementById("studio-test-bar-styles") && document.head) {
       const styleEl = document.createElement("style");
       styleEl.id = "studio-test-bar-styles";
       styleEl.textContent = `
         #studio-test-bar {
-          background: #0d1117;
+          background: #161b22;
           color: #e6edf3;
           border: 1px solid #30363d;
           border-radius: 6px;
-          padding: 5px 8px;
-          margin: 4px auto 6px auto;
+          padding: 6px 10px;
+          margin: 4px 0 8px 0;
           width: 100%;
-          max-width: 700px;
           box-sizing: border-box;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 11px;
+          font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+          font-size: 12px;
           display: flex;
           flex-direction: column;
-          gap: 5px;
+          gap: 6px;
           z-index: 100;
           position: relative;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+        }
+        #studio-test-bar.is-local-host {
+          background: transparent;
+          border: none;
+          border-radius: 0;
+          padding: 0;
+          margin: 0;
+          box-shadow: none;
         }
         #studio-test-bar.is-collapsed {
-          width: fit-content;
-          padding: 3px 8px;
           gap: 0;
         }
         #studio-test-bar.is-collapsed #tt_bar_body {
           display: none;
         }
-        #studio-test-bar.is-dismissed {
-          display: none;
-        }
-        #studio-test-restore {
-          display: none;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          background: #0d1117;
-          color: #58a6ff;
-          border: 1px solid #30363d;
-          border-radius: 4px;
-          padding: 2px 7px;
-          margin: 4px auto 6px auto;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 10px;
-          font-weight: bold;
-          cursor: pointer;
-          width: fit-content !important;
-          z-index: 100;
-          position: relative;
-        }
-        #studio-test-restore.is-visible {
-          display: flex;
-        }
-        #studio-test-restore:hover {
-          background: #161b22;
-          border-color: #58a6ff;
-        }
-        #studio-test-bar button {
-          width: auto !important;
-          min-width: 0;
-          margin: 0;
-          background: #21262d;
-          color: #e6edf3;
-          border: 1px solid #30363d;
-          border-radius: 4px;
-          padding: 2px 6px;
-          height: 22px;
-          line-height: 16px;
-          cursor: pointer;
-          font-family: inherit;
-          font-size: 11px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+        #studio-test-bar * {
           box-sizing: border-box;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 3px;
-          transition: background 0.12s ease, border-color 0.12s ease;
         }
-        #studio-test-bar button:hover {
-          background: #30363d;
-          border-color: #8b949e;
-        }
-        #studio-test-bar button.tt-btn-primary {
-          background: #238636;
-          color: #ffffff;
-          border-color: #2ea043;
-          font-weight: bold;
-        }
-        #studio-test-bar button.tt-btn-primary:hover {
-          background: #2ea043;
-          border-color: #3fb950;
-        }
-        #studio-test-bar button.tt-btn-danger {
-          background: #da3633;
-          color: #ffffff;
-          border-color: #f85149;
-        }
-        #studio-test-bar button.tt-btn-danger:hover {
-          background: #f85149;
-          border-color: #ff7b72;
-        }
-        #studio-test-bar button.tt-btn-icon {
-          padding: 1px 5px;
-          height: 18px;
-          font-size: 10px;
-          color: #8b949e;
-          background: transparent;
-          border-color: transparent;
-        }
-        #studio-test-bar button.tt-btn-icon:hover {
-          color: #e6edf3;
-          background: #21262d;
-          border-color: #30363d;
-        }
-        #tt_bar_header {
+        #tt_bar_primary {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 8px;
-          min-height: 18px;
+          flex-wrap: wrap;
+          width: 100%;
+        }
+        #studio-test-bar .devbar-group {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        #studio-test-bar .devbar-seats {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          flex-wrap: wrap;
+        }
+        #studio-test-bar .devbar-brand {
+          font-weight: 700;
+          font-size: 13px;
+          color: #58a6ff;
+          margin-right: 4px;
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          white-space: nowrap;
+        }
+        #studio-test-bar .devbar-divider {
+          width: 1px;
+          height: 22px;
+          background: #30363d;
+          margin: 0 2px;
+        }
+        #studio-test-bar .devbar-label {
+          color: #8b949e;
+          font-weight: 600;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+        }
+        #studio-test-bar .devbar-btn,
+        #studio-test-bar .devbar-seat {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          padding: 4px 9px;
+          margin: 0;
+          width: auto !important;
+          min-width: 0;
+          height: auto;
+          line-height: 1.3;
+          border-radius: 5px;
+          border: 1px solid #30363d;
+          background: #21262d;
+          color: #c9d1d9;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+          user-select: none;
+          white-space: nowrap;
+          text-decoration: none !important;
+          text-shadow: none;
+          box-shadow: none;
+        }
+        #studio-test-bar .devbar-btn:hover,
+        #studio-test-bar .devbar-seat:hover {
+          background: #30363d;
+          border-color: #8b949e;
+          color: #ffffff;
+        }
+        #studio-test-bar .devbar-btn:active,
+        #studio-test-bar .devbar-seat:active {
+          transform: translateY(1px);
+        }
+        #studio-test-bar .devbar-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        #studio-test-bar .devbar-seat.is-viewer {
+          background: #1f6feb;
+          border-color: #58a6ff;
+          color: #ffffff;
+          box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.4);
+        }
+        #studio-test-bar .devbar-seat.is-active-turn {
+          border-color: #f0883e;
+        }
+        #studio-test-bar .devbar-color-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+          display: inline-block;
+          border: 1px solid rgba(255, 255, 255, 0.5);
+          flex-shrink: 0;
+        }
+        #studio-test-bar .devbar-turn-badge {
+          display: inline-block;
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #3fb950;
+          box-shadow: 0 0 6px #3fb950;
+          animation: devbar-pulse 1.2s infinite ease-in-out;
+        }
+        @keyframes devbar-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.45; transform: scale(0.85); }
+        }
+        #studio-test-bar .devbar-meta {
+          font-size: 11px;
+          opacity: 0.85;
+          font-weight: 500;
+        }
+        #studio-test-bar .devbar-btn.active-toggle {
+          background: #238636;
+          border-color: #2ea043;
+          color: #ffffff;
+        }
+        #studio-test-bar .devbar-btn.bot-btn {
+          background: #2d333b;
+          border-color: #444c56;
+          color: #79c0ff;
+        }
+        #studio-test-bar .devbar-btn.bot-btn:hover {
+          background: #373e47;
+          border-color: #58a6ff;
+        }
+        #studio-test-bar .devbar-btn.danger-btn {
+          background: #21262d;
+          border-color: #da3633;
+          color: #ff7b72;
+        }
+        #studio-test-bar .devbar-btn.danger-btn:hover {
+          background: #da3633;
+          color: #ffffff;
+        }
+        #studio-test-bar .devbar-btn.tt-btn-primary {
+          background: #238636;
+          color: #ffffff;
+          border-color: #2ea043;
+          font-weight: 700;
+        }
+        #studio-test-bar .devbar-btn.tt-btn-primary:hover {
+          background: #2ea043;
+          border-color: #3fb950;
         }
         #tt_bar_body {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 5px;
+          padding-top: 6px;
+          border-top: 1px solid #30363d;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+          font-size: 11px;
+        }
+        #tt_bar_body .devbar-btn {
+          height: 24px;
+          padding: 2px 8px;
+          font-size: 11px;
         }
         #tt_btn_grid,
         #tt_cmd_row,
         #tt_output_row {
           display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 4px;
-          align-items: start;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 5px;
+          align-items: center;
         }
         #tt_btn_grid button,
         #tt_cmd_run,
@@ -3832,12 +4323,45 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
         #tt_cmd_input,
         #tt_test_output {
-          grid-column: span 4;
+          grid-column: span 5;
           width: 100% !important;
           min-width: 0;
-          box-sizing: border-box;
         }
-        @media (max-width: 560px) {
+        #tt_scenario_row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        #tt_scenario_select {
+          height: 24px;
+          min-width: 220px;
+          background: #0d1117;
+          color: #e6edf3;
+          border: 1px solid #30363d;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-family: inherit;
+          font-size: 11px;
+        }
+        #tt_scenario_select:focus {
+          outline: none;
+          border-color: #58a6ff;
+        }
+        @media (max-width: 720px) {
+          #tt_btn_grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          #tt_cmd_row,
+          #tt_output_row {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          #tt_cmd_input,
+          #tt_test_output {
+            grid-column: span 2;
+          }
+        }
+        @media (max-width: 480px) {
           #tt_btn_grid,
           #tt_cmd_row,
           #tt_output_row {
@@ -3849,12 +4373,12 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           }
         }
         #tt_cmd_input {
-          height: 22px;
-          background: #161b22;
+          height: 24px;
+          background: #0d1117;
           color: #e6edf3;
           border: 1px solid #30363d;
           border-radius: 4px;
-          padding: 2px 6px;
+          padding: 2px 8px;
           font-family: inherit;
           font-size: 11px;
         }
@@ -3864,11 +4388,11 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
         #tt_test_output {
           margin: 0;
-          padding: 2px 6px;
-          height: 22px;
+          padding: 3px 8px;
+          height: 24px;
           line-height: 16px;
-          background: #161b22;
-          border: 1px solid #21262d;
+          background: #0d1117;
+          border: 1px solid #30363d;
           border-radius: 4px;
           color: #8b949e;
           font-family: inherit;
@@ -3881,7 +4405,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         #tt_test_output.is-expanded {
           height: auto;
           max-height: 200px;
-          padding: 4px 6px;
+          padding: 5px 8px;
           white-space: pre-wrap;
           word-break: break-word;
           overflow: auto;
@@ -3890,15 +4414,16 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           position: fixed;
           z-index: 100000;
           max-width: 320px;
-          background: #161b22;
-          color: #e6edf3;
+          background: #0d1117;
+          color: #f0f6fc;
           border: 1px solid #58a6ff;
-          border-radius: 5px;
-          padding: 5px 8px;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          font-size: 11px;
-          line-height: 1.35;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+          border-radius: 6px;
+          padding: 6px 10px;
+          font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 1.4;
+          box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
           pointer-events: none;
           opacity: 0;
           visibility: hidden;
@@ -3917,33 +4442,46 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     const tips = {
       smoke: esc(
-        "Run full Studio smoke test: completes Grand Tichu bets, passes 3 cards for all players, plays 3 tricks at instant speed, and verifies DOM/UI state invariants (tt.runSmokeTest).",
+        "Run full smoke test: completes Grand Tichu bets, passes 3 cards for all players, plays tricks at instant speed, and verifies DOM/UI state invariants (tt.runSmokeTest).",
       ),
       round: esc(
-        "Fast-forward the current round to completion using server bot moves (debug_bgaPlayMoves) at instant speed and verify UI state (tt.runRound).",
+        "Fast-forward the current round to completion using bot moves at instant speed and verify UI state (tt.runRound).",
       ),
       game: esc(
-        "Fast-forward the entire game to Game End (state 99) using server bot moves at instant speed (tt.runGame).",
+        "Fast-forward the entire game to Game End (state 99) using bot moves at instant speed (tt.runGame).",
       ),
       gtAll: esc(
         "Decline Grand Tichu (bet 0) for all 4 players in the current tab without switching player views (tt.betAllGrandTichu).",
       ),
       passAll: esc(
-        "Select and pass 3 default low singleton cards for the active viewer and step server bots for the other 3 players (tt.passAllCards).",
+        "Select and pass 3 default low singleton cards for the active viewer and run bots for the other 3 players (tt.passAllCards).",
       ),
       step1: esc(
-        "Execute 1 automated server bot move (zombieTurn via debug_bgaPlayMoves) for whichever player is currently active (tt.step(1)).",
+        "Execute 1 rule-compliant server bot move (debug_botStep) for whichever player is currently active (tt.step(1)).",
       ),
       others: esc(
-        "Step server bot moves for the other players until it is your turn to act again (tt.actForOthers).",
+        "Have rule-compliant bots (debug_botOthers) play for the other 3 players until your turn (tt.actForOthers).",
       ),
+      autobot: esc(
+        "When ON (per-tab sessionStorage), automatically runs tt.actForOthers() ~300ms after queue drain (2000ms in real-time confirmTrick).",
+      ),
+      tiki: esc("Toggle between classic Tichu card artwork and Tiki Edition artwork (pref 103)."),
+      exposed: esc(
+        "Toggle between Real-Time mode and Turn-Based mode (Turn-Based exposes Played Cards and auto-passes unbeatable hands). Starts a new game.",
+      ),
+      mute: esc("Toggle game sound effects (Tichu / Grand Tichu laser sound) on or off."),
+      replay: esc("Open the Experimental Replay viewer for this finished game."),
+      newGame: esc("Reset the local database and start a fresh 4-player Tichu game."),
       assert: esc(
         "Verify that live DOM elements (hand cards, round/trick/points counters, player hand counts) match gamedatas and output table status JSON (tt.assertUI + tt.status).",
       ),
       newTable: esc(
-        "Stop the current table, create a new 4-player Tichu table, and express-start it via BGA Studio endpoints (tt.expressStartNew).",
+        "Stop the current table, create a new 4-player Tichu table, express-start it, and navigate there (tt.expressStartNew).",
       ),
       stopTable: esc("Immediately abort and close the current BGA Studio table (tt.expressStop)."),
+      testsDrawer: esc("Show or hide the automated test buttons, scenarios, and command runner."),
+      scenarioSelect: esc("Choose a deterministic Tichu scenario to load in local runner."),
+      loadScenario: esc("Load the selected deterministic scenario into the local database."),
       cmdInput: esc(
         "Type any window.tt method with optional colon argument — e.g. status, hand, assertUI, wish:8, play:S10, pass, step:4, giveDragon:0. Press Enter or click Run.",
       ),
@@ -3956,61 +4494,95 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       outputToggle: esc(
         "Expand or collapse the JSON output area between 1 line and a larger multi-line box.",
       ),
-      collapse: esc("Collapse or expand the Studio Test controls."),
-      dismiss: esc(
-        "Dismiss the Studio Test widget into a tiny restore pill (or run tt.showBar() in console).",
-      ),
-      restore: esc("Restore the BGA Studio Test widget (window.tt)."),
     };
 
     const bar = document.createElement("div");
     bar.id = "studio-test-bar";
+    bar.className = isLocalHost && localDevBar ? "is-local-host" : "is-studio-host";
+    const initialOpen = getDrawerDefaultOpen();
+    bar.classList.toggle("is-collapsed", !initialOpen);
+
+    const brandLabel = isLocalHost ? "🀄 Tichu Local" : "🀄 Tichu Studio";
+    const localControlsHtml = isLocalHost
+      ? `<button type="button" id="devbar_exposed" class="devbar-btn" data-tooltip="${tips.exposed}">⏱ Real-Time</button>` +
+        `<button type="button" id="devbar_mute" class="devbar-btn" data-tooltip="${tips.mute}">🔊</button>`
+      : "";
+    const replayBtnHtml = `<button type="button" id="devbar_replay" class="devbar-btn" style="display:none" data-tooltip="${tips.replay}">📼 Replay</button>`;
+    const tableControlsHtml = isLocalHost
+      ? `<button type="button" id="devbar_new_game" class="devbar-btn danger-btn" data-tooltip="${tips.newGame}">🔄 New Game</button>`
+      : `<button type="button" id="tt_btn_new" class="devbar-btn" data-tooltip="${tips.newTable}">🔄 New Table</button>` +
+        `<button type="button" id="tt_btn_stop" class="devbar-btn danger-btn" data-tooltip="${tips.stopTable}">⏹ Express Stop</button>`;
+
+    const scenarioRowHtml = isLocalHost
+      ? `<div id="tt_scenario_row">` +
+        `<label for="tt_scenario_select" class="devbar-label">Scenario:</label>` +
+        `<select id="tt_scenario_select" data-tooltip="${tips.scenarioSelect}">` +
+        `<option value="grand_tichu">grand_tichu — Grand Tichu Bets</option>` +
+        `<option value="give_cards">give_cards — Pass 3 Cards (Bomb Completed)</option>` +
+        `<option value="mahjong_wish">mahjong_wish — Mahjong Wish &amp; Fulfill</option>` +
+        `<option value="phoenix_ambiguous">phoenix_ambiguous — Phoenix Straight</option>` +
+        `<option value="bomb_interrupt">bomb_interrupt — Out-of-Turn Bomb Interrupt</option>` +
+        `<option value="dragon_gift">dragon_gift — Dragon Trick Gift</option>` +
+        `<option value="double_victory">double_victory — Double Victory Round End</option>` +
+        `</select>` +
+        `<button type="button" id="tt_btn_load_scenario" class="devbar-btn" data-tooltip="${tips.loadScenario}">🎬 Load Scenario</button>` +
+        `</div>`
+      : "";
 
     bar.innerHTML =
-      `<div id="tt_bar_header">` +
-      `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;" id="tt_header_title" data-tooltip="${tips.collapse}">` +
-      `<strong style="color:#58a6ff;">⚡ Studio Test (window.tt)</strong>` +
+      `<div id="tt_bar_primary">` +
+      `<div class="devbar-group">` +
+      `<span class="devbar-brand">${brandLabel}</span>` +
+      `<span class="devbar-label">Seat:</span>` +
+      `<span id="tt_seats_wrap" class="devbar-seats"></span>` +
       `</div>` +
-      `<div style="display:flex;align-items:center;gap:2px;">` +
-      `<button type="button" id="tt_btn_collapse" class="tt-btn-icon" data-tooltip="${tips.collapse}">▾ Collapse</button>` +
-      `<button type="button" id="tt_btn_dismiss" class="tt-btn-icon" data-tooltip="${tips.dismiss}">✕</button>` +
+      `<div class="devbar-group">` +
+      `<span id="devbar_state_label" class="devbar-label">State: <strong id="devbar_state_name" style="color:#e6edf3">-</strong></span>` +
+      `<div class="devbar-divider"></div>` +
+      `<button type="button" id="tt_btn_others" class="devbar-btn bot-btn" data-tooltip="${tips.others}">🤖 Act for Others</button>` +
+      `<button type="button" id="tt_btn_step1" class="devbar-btn bot-btn" data-tooltip="${tips.step1}">🤖 Step 1</button>` +
+      `<button type="button" id="devbar_autobot" class="devbar-btn" data-tooltip="${tips.autobot}">⚡ Auto-Bot: OFF</button>` +
+      `<div class="devbar-divider"></div>` +
+      `<button type="button" id="devbar_tiki" class="devbar-btn" data-tooltip="${tips.tiki}">🗿 Tiki: OFF</button>` +
+      localControlsHtml +
+      replayBtnHtml +
+      tableControlsHtml +
+      `<div class="devbar-divider"></div>` +
+      `<button type="button" id="tt_btn_collapse" class="devbar-btn${initialOpen ? " active-toggle" : ""}" aria-expanded="${initialOpen ? "true" : "false"}" data-tooltip="${tips.testsDrawer}">${initialOpen ? "🧪 Tests ▾" : "🧪 Tests ▸"}</button>` +
       `</div>` +
       `</div>` +
       `<div id="tt_bar_body">` +
       `<div id="tt_btn_grid">` +
-      `<button type="button" id="tt_btn_smoke" class="tt-btn-primary" data-tooltip="${tips.smoke}">🧪 Smoke Test</button>` +
-      `<button type="button" id="tt_btn_round" data-tooltip="${tips.round}">🏁 Run Round</button>` +
-      `<button type="button" id="tt_btn_game" data-tooltip="${tips.game}">🏆 Run Game</button>` +
-      `<button type="button" id="tt_btn_gt_all" data-tooltip="${tips.gtAll}">⚡ GT Bet All 4</button>` +
-      `<button type="button" id="tt_btn_pass_all" data-tooltip="${tips.passAll}">🃏 Pass 3 + Bots</button>` +
-      `<button type="button" id="tt_btn_step1" data-tooltip="${tips.step1}">🤖 Step 1</button>` +
-      `<button type="button" id="tt_btn_others" data-tooltip="${tips.others}">🤖 Act for Others</button>` +
-      `<button type="button" id="tt_btn_assert" data-tooltip="${tips.assert}">✔ Assert UI</button>` +
-      `<button type="button" id="tt_btn_new" data-tooltip="${tips.newTable}">🔄 New Table</button>` +
-      `<button type="button" id="tt_btn_stop" class="tt-btn-danger" data-tooltip="${tips.stopTable}">⏹ Express Stop</button>` +
+      `<button type="button" id="tt_btn_smoke" class="devbar-btn tt-btn-primary" data-tooltip="${tips.smoke}">🧪 Smoke Test</button>` +
+      `<button type="button" id="tt_btn_round" class="devbar-btn" data-tooltip="${tips.round}">🏁 Run Round</button>` +
+      `<button type="button" id="tt_btn_game" class="devbar-btn" data-tooltip="${tips.game}">🏆 Run Game</button>` +
+      `<button type="button" id="tt_btn_gt_all" class="devbar-btn" data-tooltip="${tips.gtAll}">⚡ GT Bet All 4</button>` +
+      `<button type="button" id="tt_btn_pass_all" class="devbar-btn" data-tooltip="${tips.passAll}">🃏 Pass 3 + Bots</button>` +
+      `<button type="button" id="tt_btn_assert" class="devbar-btn" data-tooltip="${tips.assert}">✔ Assert UI</button>` +
       `</div>` +
+      scenarioRowHtml +
       `<div id="tt_cmd_row">` +
       `<input type="text" id="tt_cmd_input" placeholder="Command: e.g. status, hand, wish:8, play:S10, step:4" data-tooltip="${tips.cmdInput}" />` +
-      `<button type="button" id="tt_cmd_run" data-tooltip="${tips.cmdRun}">▶ Run</button>` +
+      `<button type="button" id="tt_cmd_run" class="devbar-btn" data-tooltip="${tips.cmdRun}">▶ Run</button>` +
       `</div>` +
       `<div id="tt_output_row">` +
       `<pre id="tt_test_output" data-done="1" data-status="ready" data-tooltip="${tips.output}">Ready — click a button or run \`await tt.runSmokeTest()\` in console.</pre>` +
-      `<button type="button" id="tt_output_toggle" data-tooltip="${tips.outputToggle}">▾ Expand</button>` +
+      `<button type="button" id="tt_output_toggle" class="devbar-btn" data-tooltip="${tips.outputToggle}">▾ Expand</button>` +
       `</div>` +
       `</div>`;
 
-    const restoreBtn = document.createElement("button");
-    restoreBtn.type = "button";
-    restoreBtn.id = "studio-test-restore";
-    restoreBtn.setAttribute("data-tooltip", tips.restore);
-    restoreBtn.textContent = "⚡ TT";
-
-    wrap.parentNode.insertBefore(restoreBtn, wrap);
-    wrap.parentNode.insertBefore(bar, wrap);
+    if (localDevBar) {
+      localDevBar.innerHTML = "";
+      localDevBar.appendChild(bar);
+    } else if (wrap && wrap.parentNode) {
+      wrap.parentNode.insertBefore(bar, wrap);
+    } else {
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
 
     // Custom instant tooltip handler
     let tipEl = document.getElementById("studio-test-tooltip");
-    if (!tipEl) {
+    if (!tipEl && document.body) {
       tipEl = document.createElement("div");
       tipEl.id = "studio-test-tooltip";
       tipEl.setAttribute("role", "tooltip");
@@ -4025,7 +4597,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         return;
       }
       const host = target.closest("[data-tooltip]");
-      if (!host || (!bar.contains(host) && host !== restoreBtn)) {
+      if (!host || !bar.contains(host)) {
         hideTip();
         return;
       }
@@ -4058,43 +4630,290 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     });
     bar.addEventListener("focusout", hideTip);
     bar.addEventListener("mousedown", hideTip);
-    restoreBtn.addEventListener("mouseover", (e) => showTipFor(e.target));
-    restoreBtn.addEventListener("mouseout", hideTip);
-    restoreBtn.addEventListener("mousedown", hideTip);
 
-    // Collapse / Expand / Dismiss handlers
     const collapseBtn = document.getElementById("tt_btn_collapse");
-    const headerTitle = document.getElementById("tt_header_title");
-    const dismissBtn = document.getElementById("tt_btn_dismiss");
+    const seatsWrap = document.getElementById("tt_seats_wrap");
 
-    const setCollapsed = (collapsed: boolean) => {
+    const setDrawerOpen = (open: boolean, persist = true) => {
       hideTip();
-      bar.classList.toggle("is-collapsed", collapsed);
+      bar.classList.toggle("is-collapsed", !open);
       if (collapseBtn) {
-        collapseBtn.textContent = collapsed ? "▸ Expand" : "▾ Collapse";
+        collapseBtn.classList.toggle("active-toggle", open);
+        collapseBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        collapseBtn.textContent = open ? "🧪 Tests ▾" : "🧪 Tests ▸";
+      }
+      if (persist) {
+        safeSessionSet("tichu_tt_drawer", open ? "1" : "0");
       }
     };
-    const toggleCollapsed = () => setCollapsed(!bar.classList.contains("is-collapsed"));
 
-    if (collapseBtn) collapseBtn.addEventListener("click", toggleCollapsed);
-    if (headerTitle) headerTitle.addEventListener("click", toggleCollapsed);
-    if (dismissBtn) {
-      dismissBtn.addEventListener("click", () => {
-        hideTip();
-        bar.classList.add("is-dismissed");
-        restoreBtn.classList.add("is-visible");
+    const activeTt = () => win.tt || tt;
+
+    let lastBarDirtyKey = "";
+    let refreshBarRafId: number | null = null;
+
+    const getRefreshBarSnapshot = () => {
+      const ui = getUi();
+      const gd = ui?.gamedatas || {};
+      const st = gd.gamestate || {};
+      const gmState = win.gameModel?.getState?.();
+      const stateName = String(st.name || gmState?.stateName || "");
+      const stateType = String(st.type || "");
+      const stateId = Number(st.id || 0);
+      const isGameEnd = stateId === 99 || stateName === "gameEnd";
+      const isSpectator = Boolean(ui?.isSpectator ?? gmState?.isSpectator ?? false);
+      const viewerId = isSpectator ? 0 : Number(ui?.player_id || gmState?.currentPlayerId || 0);
+      const tableId = Number(
+        ui?.table_id || gd.table_id || (window as any).bgaGameData?.tableId || 0,
+      );
+
+      let playersList: any[] = getSortedPlayers();
+      if (playersList.length === 0 && Array.isArray(ui?.devBarPlayers)) {
+        playersList = [...ui.devBarPlayers].sort((a, b) => Number(a.no) - Number(b.no));
+      } else if (playersList.length === 0 && gmState?.players) {
+        playersList = Object.values(gmState.players).sort(
+          (a: any, b: any) => Number(a.no) - Number(b.no),
+        );
+      }
+
+      const activeSet = new Set<number>(getActivePlayerIds(ui));
+      if (activeSet.size === 0 && !stateType && Array.isArray(ui?.devBarPlayers)) {
+        for (let i = 0; i < ui.devBarPlayers.length; i++) {
+          const dp = ui.devBarPlayers[i];
+          if (dp && dp.isActive) activeSet.add(Number(dp.id));
+        }
+      }
+
+      const playerMeta = playersList.map((p: any, idx: number) => {
+        const pId = Number(p.id);
+        const gmPlayer = gmState?.players?.[String(pId)];
+        const devPlayer = Array.isArray(ui?.devBarPlayers)
+          ? ui.devBarPlayers.find((d: any) => Number(d.id) === pId)
+          : null;
+        const handCount =
+          gmPlayer !== undefined
+            ? Number(gmPlayer.handcount ?? 0)
+            : gd.handcount && gd.handcount[pId] !== undefined
+              ? Number(gd.handcount[pId])
+              : Number(devPlayer?.handCount ?? 0);
+        const pNo = Number(p.no ?? gmPlayer?.no ?? idx + 1);
+        const pName = String(p.name ?? gmPlayer?.name ?? `P${pNo}`);
+        const color = String(p.color || gmPlayer?.color || "000000");
+        const teamNum = p.team !== undefined ? Number(p.team) + 1 : ((pNo - 1) % 2) + 1;
+        return {
+          pId,
+          pNo,
+          pName,
+          color,
+          teamNum,
+          handCount,
+          isActive: activeSet.has(pId),
+          isViewer: !isSpectator && pId === viewerId,
+        };
       });
-    }
-    restoreBtn.addEventListener("click", () => {
-      hideTip();
-      restoreBtn.classList.remove("is-visible");
-      bar.classList.remove("is-dismissed");
-      setCollapsed(false);
-    });
-    (tt as any).showBar = () => {
-      restoreBtn.classList.remove("is-visible");
-      bar.classList.remove("is-dismissed");
-      setCollapsed(false);
+
+      const autoBotOn = getAutoBotEnabled();
+      const isTiki = gmState ? Boolean(gmState.isTiki) : Number(ui?.prefs?.[103]?.value ?? 2) === 1;
+      const isTurnBased = isLocalHost ? Boolean(ui?.localOptions?.turnBased) : false;
+      const isMuted = isLocalHost ? safeLocalGet("tichu_local_mute") === "1" : false;
+      const isReplay = Boolean(ui?.experimentalArchiveModeEnabled);
+
+      const dirtyKey = [
+        tableId,
+        viewerId,
+        isSpectator ? 1 : 0,
+        stateId,
+        stateName,
+        stateType,
+        isGameEnd ? 1 : 0,
+        playerMeta
+          .map((m) => `${m.pId}:${m.handCount}:${m.isActive ? 1 : 0}:${m.pName}:${m.color}`)
+          .join(","),
+        botBusy ? 1 : 0,
+        autoBotOn ? 1 : 0,
+        isTiki ? 1 : 0,
+        isTurnBased ? 1 : 0,
+        isMuted ? 1 : 0,
+        isReplay ? 1 : 0,
+      ].join("|");
+
+      return {
+        dirtyKey,
+        stateName,
+        stateType,
+        isGameEnd,
+        isSpectator,
+        tableId,
+        playerMeta,
+        autoBotOn,
+        isTiki,
+        isTurnBased,
+        isMuted,
+        isReplay,
+      };
+    };
+
+    const renderBarFromSnapshot = (snap: ReturnType<typeof getRefreshBarSnapshot>) => {
+      lastBarDirtyKey = snap.dirtyKey;
+      const setText = (el: Element | null, val: string) => {
+        if (el && el.textContent !== val) {
+          el.textContent = val;
+        }
+      };
+      const setAttr = (el: Element | null, name: string, val: string) => {
+        if (el && el.getAttribute(name) !== val) {
+          el.setAttribute(name, val);
+        }
+      };
+      const seatHref = (pId: number): string =>
+        isLocalHost
+          ? `/?as=${pId}`
+          : snap.tableId > 0
+            ? `https://studio.boardgamearena.com/tableview?table=${snap.tableId}&as=${pId}`
+            : `?as=${pId}`;
+
+      if (seatsWrap) {
+        const seatsSig =
+          snap.playerMeta.map((m) => String(m.pId)).join(",") +
+          (isLocalHost ? "|local" : "|studio");
+        if (seatsWrap.getAttribute("data-seats-sig") !== seatsSig) {
+          let seatsHtml = "";
+          for (const m of snap.playerMeta) {
+            seatsHtml +=
+              `<a href="${seatHref(m.pId)}" data-seat-id="${m.pId}" class="devbar-seat" target="_blank" rel="noopener">` +
+              `<span class="devbar-color-dot"></span>` +
+              `<span class="devbar-seat-name"></span>` +
+              `<span class="devbar-meta"></span>` +
+              `<span class="devbar-turn-badge" style="display:none"></span>` +
+              `</a>`;
+          }
+          if (isLocalHost) {
+            seatsHtml += `<a href="/?as=0" data-seat-id="0" class="devbar-seat" target="_blank" rel="noopener">👁 Spectator</a>`;
+          }
+          seatsWrap.innerHTML = seatsHtml;
+          seatsWrap.setAttribute("data-seats-sig", seatsSig);
+        }
+
+        for (const m of snap.playerMeta) {
+          const seatEl = seatsWrap.querySelector(`.devbar-seat[data-seat-id="${m.pId}"]`);
+          if (!seatEl) continue;
+
+          setAttr(seatEl, "href", seatHref(m.pId));
+          seatEl.classList.toggle("is-viewer", m.isViewer);
+          seatEl.classList.toggle("is-active-turn", m.isActive);
+
+          const dotEl = seatEl.querySelector(".devbar-color-dot") as HTMLElement | null;
+          if (dotEl && dotEl.getAttribute("data-color") !== m.color) {
+            dotEl.style.background = `#${m.color}`;
+            dotEl.setAttribute("data-color", m.color);
+          }
+
+          setText(seatEl.querySelector(".devbar-seat-name"), `P${m.pNo}: ${m.pName}`);
+          setText(seatEl.querySelector(".devbar-meta"), `[${m.handCount}]`);
+
+          const badgeEl = seatEl.querySelector(".devbar-turn-badge") as HTMLElement | null;
+          if (badgeEl) {
+            const nextDisp = m.isActive ? "" : "none";
+            if (badgeEl.style.display !== nextDisp) {
+              badgeEl.style.display = nextDisp;
+            }
+          }
+
+          setAttr(
+            seatEl,
+            "data-tooltip",
+            `Open ${m.pName} (Team ${m.teamNum}, ${m.handCount} cards in hand) in a new tab. Green dot = waiting for this player's action.`,
+          );
+        }
+
+        if (isLocalHost) {
+          const specEl = seatsWrap.querySelector('.devbar-seat[data-seat-id="0"]');
+          if (specEl) {
+            specEl.classList.toggle("is-viewer", snap.isSpectator);
+            setAttr(
+              specEl,
+              "data-tooltip",
+              "Open Spectator view in a new tab (hides private hands and action buttons).",
+            );
+          }
+        }
+      }
+
+      setText(document.getElementById("devbar_state_name"), snap.stateName || "-");
+      setAttr(
+        document.getElementById("devbar_state_label"),
+        "data-tooltip",
+        `Current BGA state machine state (${snap.stateName || "-"}, type: ${snap.stateType || "-"}).`,
+      );
+
+      const botOthersEl = document.getElementById("tt_btn_others") as HTMLButtonElement | null;
+      if (botOthersEl) {
+        botOthersEl.disabled = botBusy;
+      }
+      const botStepEl = document.getElementById("tt_btn_step1") as HTMLButtonElement | null;
+      if (botStepEl) {
+        botStepEl.disabled = botBusy;
+      }
+
+      const autoBotEl = document.getElementById("devbar_autobot");
+      if (autoBotEl) {
+        autoBotEl.classList.toggle("active-toggle", snap.autoBotOn);
+        setText(autoBotEl, `⚡ Auto-Bot: ${snap.autoBotOn ? "ON" : "OFF"}`);
+      }
+
+      const tikiEl = document.getElementById("devbar_tiki");
+      if (tikiEl) {
+        tikiEl.classList.toggle("active-toggle", snap.isTiki);
+        setText(tikiEl, `🗿 Tiki: ${snap.isTiki ? "ON" : "OFF"}`);
+      }
+
+      if (isLocalHost) {
+        const exposedEl = document.getElementById("devbar_exposed");
+        if (exposedEl) {
+          exposedEl.classList.toggle("active-toggle", snap.isTurnBased);
+          setText(exposedEl, snap.isTurnBased ? "🃏 Exposed Cards: ON" : "⏱ Real-Time");
+        }
+        const muteEl = document.getElementById("devbar_mute");
+        if (muteEl) {
+          setText(muteEl, snap.isMuted ? "🔇" : "🔊");
+        }
+      }
+
+      const replayEl = document.getElementById("devbar_replay") as HTMLElement | null;
+      if (replayEl) {
+        const nextReplayDisp = snap.isGameEnd ? "" : "none";
+        if (replayEl.style.display !== nextReplayDisp) {
+          replayEl.style.display = nextReplayDisp;
+        }
+        replayEl.classList.toggle("active-toggle", snap.isReplay);
+      }
+    };
+
+    const refreshBar = () => {
+      if (refreshBarRafId !== null) {
+        if (typeof window.cancelAnimationFrame === "function") {
+          window.cancelAnimationFrame(refreshBarRafId);
+        } else {
+          window.clearTimeout(refreshBarRafId);
+        }
+        refreshBarRafId = null;
+      }
+      renderBarFromSnapshot(getRefreshBarSnapshot());
+    };
+
+    const scheduleRefreshBar = () => {
+      if (refreshBarRafId !== null) return;
+      const run = () => {
+        refreshBarRafId = null;
+        const snap = getRefreshBarSnapshot();
+        if (snap.dirtyKey === lastBarDirtyKey) return;
+        renderBarFromSnapshot(snap);
+      };
+      if (typeof window.requestAnimationFrame === "function") {
+        refreshBarRafId = window.requestAnimationFrame(run);
+      } else {
+        refreshBarRafId = window.setTimeout(run, 16);
+      }
     };
 
     // Output 1-line vs expanded toggle
@@ -4119,12 +4938,17 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       renderOutputText();
     };
 
-    outEl.addEventListener("click", toggleOutputExpanded);
-    if (outToggleBtn) {
-      outToggleBtn.addEventListener("click", toggleOutputExpanded);
-    }
-
-    const runTask = async (label: string, fn: () => Promise<any> | any, abortOnCatch = false) => {
+    const runTask = async (
+      label: string,
+      fn: () => Promise<any> | any,
+      abortOnCatch = false,
+      expandDrawer = true,
+    ) => {
+      if (expandDrawer && bar.classList.contains("is-collapsed")) {
+        setDrawerOpen(true);
+      }
+      activeTaskCount++;
+      clearAutoBotTimer();
       hasJsonValue = false;
       outEl.setAttribute("data-done", "0");
       outEl.setAttribute("data-status", "running");
@@ -4160,32 +4984,169 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         outEl.setAttribute("data-done", "1");
         outEl.style.color = "#f85149";
         renderOutputText();
+      } finally {
+        activeTaskCount = Math.max(0, activeTaskCount - 1);
+        refreshBar();
+        if (getAutoBotEnabled() && label !== "actForOthers") {
+          scheduleAutoBot();
+        }
       }
     };
 
-    const bind = (id: string, label: string, fn: () => Promise<any> | any) => {
-      const btn = document.getElementById(id);
-      if (btn) {
-        btn.addEventListener("click", () => runTask(label, fn));
-      }
-    };
+    // Single delegated click handler on #studio-test-bar (do NOT intercept .devbar-seat clicks!)
+    bar.addEventListener("click", (evt) => {
+      const target = evt.target as Element | null;
+      if (!target) return;
+      if (target.closest(".devbar-seat")) return;
 
-    const activeTt = () => (window as any).tt || tt;
-    bind("tt_btn_smoke", "runSmokeTest", () =>
-      activeTt().runSmokeTest({ tricks: 3, speed: "instant" }),
-    );
-    bind("tt_btn_round", "runRound", () => activeTt().runRound({ speed: "instant" }));
-    bind("tt_btn_game", "runGame", () => activeTt().runGame({ speed: "instant" }));
-    bind("tt_btn_gt_all", "betAllGrandTichu", () => activeTt().betAllGrandTichu([0, 0, 0, 0]));
-    bind("tt_btn_pass_all", "passAllCards", () => activeTt().passAllCards());
-    bind("tt_btn_step1", "step(1)", () => activeTt().step(1));
-    bind("tt_btn_others", "actForOthers", () => activeTt().actForOthers());
-    bind("tt_btn_assert", "assertUI + status", () => ({
-      ui: activeTt().assertUI(),
-      status: activeTt().status(false),
-    }));
-    bind("tt_btn_new", "expressStartNew", () => activeTt().expressStartNew());
-    bind("tt_btn_stop", "expressStop", () => activeTt().expressStop());
+      if (target.closest("#tt_test_output") || target.closest("#tt_output_toggle")) {
+        toggleOutputExpanded();
+        return;
+      }
+
+      const btn = target.closest("button.devbar-btn") as HTMLButtonElement | null;
+      if (!btn || !bar.contains(btn) || btn.disabled) return;
+      const ui = getUi();
+
+      switch (btn.id) {
+        case "tt_btn_collapse":
+          setDrawerOpen(bar.classList.contains("is-collapsed"));
+          break;
+        case "tt_btn_others":
+          void runTask("actForOthers", () => activeTt().actForOthers(), false, false);
+          break;
+        case "tt_btn_step1":
+          void runTask("step(1)", () => activeTt().step(1), false, false);
+          break;
+        case "devbar_autobot": {
+          const next = !getAutoBotEnabled();
+          setAutoBotEnabled(next);
+          refreshBar();
+          if (next) {
+            scheduleAutoBot();
+          } else {
+            clearAutoBotTimer();
+          }
+          break;
+        }
+        case "devbar_tiki": {
+          const gmStateNow = win.gameModel?.getState?.();
+          const isTikiNow = gmStateNow
+            ? Boolean(gmStateNow.isTiki)
+            : Number(ui?.prefs?.[103]?.value ?? 2) === 1;
+          const nextVal = isTikiNow ? 2 : 1;
+          const isReadOnly = typeof ui?.isReadOnly === "function" && ui.isReadOnly();
+          if (!isReadOnly && typeof ui?.setGameUserPreference === "function") {
+            try {
+              ui.setGameUserPreference(103, nextVal);
+            } catch (_e) {
+              ui.onPreferenceChange?.(103, nextVal);
+            }
+          } else if (typeof ui?.onPreferenceChange === "function") {
+            ui.onPreferenceChange(103, nextVal);
+          } else {
+            win.gameModel?.setTiki?.(!isTikiNow);
+          }
+          refreshBar();
+          break;
+        }
+        case "devbar_exposed": {
+          const isTurnBasedNow = Boolean(ui?.localOptions?.turnBased);
+          if (typeof ui?._startNewGame === "function") {
+            void ui._startNewGame(isTurnBasedNow ? 0 : 1);
+          }
+          break;
+        }
+        case "devbar_mute": {
+          const nextMute = safeLocalGet("tichu_local_mute") === "1" ? "0" : "1";
+          safeLocalSet("tichu_local_mute", nextMute);
+          refreshBar();
+          break;
+        }
+        case "devbar_replay": {
+          if (isLocalHost && typeof ui?._openReplayViewer === "function") {
+            void Promise.resolve(ui._openReplayViewer()).finally(() => refreshBar());
+          } else if (typeof ui?.toggleExperimentalReplay === "function") {
+            ui.toggleExperimentalReplay();
+            refreshBar();
+          }
+          break;
+        }
+        case "devbar_new_game": {
+          if (typeof ui?._startNewGame === "function") {
+            void ui._startNewGame();
+          }
+          break;
+        }
+        case "tt_btn_new":
+          void runTask(
+            "expressStartNew",
+            async () => {
+              const res = await activeTt().expressStartNew();
+              if (res && res.tableviewUrl) {
+                if (window.parent && window.parent !== window) {
+                  try {
+                    window.parent.postMessage(
+                      {
+                        type: "bga:navigate",
+                        url: res.tableviewUrl,
+                        sourceTableId: Number(
+                          getUi()?.table_id || (window as any).bgaGameData?.tableId || 0,
+                        ),
+                      },
+                      window.location.origin,
+                    );
+                  } catch (_e) {
+                    window.open(res.tableviewUrl, "_blank");
+                  }
+                } else {
+                  try {
+                    window.location.href = res.tableviewUrl;
+                  } catch (_e) {
+                    window.open(res.tableviewUrl, "_blank");
+                  }
+                }
+              }
+              return res;
+            },
+            false,
+            false,
+          );
+          break;
+        case "tt_btn_stop":
+          void runTask("expressStop", () => activeTt().expressStop(), false, false);
+          break;
+        case "tt_btn_smoke":
+          void runTask("runSmokeTest", () =>
+            activeTt().runSmokeTest({ tricks: 3, speed: "instant" }),
+          );
+          break;
+        case "tt_btn_round":
+          void runTask("runRound", () => activeTt().runRound({ speed: "instant" }));
+          break;
+        case "tt_btn_game":
+          void runTask("runGame", () => activeTt().runGame({ speed: "instant" }));
+          break;
+        case "tt_btn_gt_all":
+          void runTask("betAllGrandTichu", () => activeTt().betAllGrandTichu([0, 0, 0, 0]));
+          break;
+        case "tt_btn_pass_all":
+          void runTask("passAllCards", () => activeTt().passAllCards());
+          break;
+        case "tt_btn_assert":
+          void runTask("assertUI + status", () => ({
+            ui: activeTt().assertUI(),
+            status: activeTt().status(false),
+          }));
+          break;
+        case "tt_btn_load_scenario": {
+          const sel = document.getElementById("tt_scenario_select") as HTMLSelectElement | null;
+          const scenarioName = sel?.value || "grand_tichu";
+          void runTask(`loadScenario:${scenarioName}`, () => activeTt().loadScenario(scenarioName));
+          break;
+        }
+      }
+    });
 
     const cmdBtn = document.getElementById("tt_cmd_run");
     const cmdInput = document.getElementById("tt_cmd_input") as HTMLInputElement | null;
@@ -4219,10 +5180,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           parsedArg && typeof parsedArg === "object" && "stopOnIssue" in parsedArg
             ? Boolean(parsedArg.stopOnIssue)
             : method === "startAutoPlayMe";
-        runTask(
+        void runTask(
           raw,
           async () => {
-            const curTt = (window as any).tt || tt;
+            const curTt = activeTt();
             const fn = curTt[method];
             if (typeof fn !== "function") {
               throw new Error(`Unknown tt method: "${method}"`);
@@ -4233,6 +5194,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             return await fn.call(curTt, parsedArg);
           },
           abortOnCatch,
+          true,
         );
       };
       cmdBtn.addEventListener("click", executeCmd);
@@ -4243,11 +5205,52 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
       });
     }
+
+    const showTests = (open = true) => setDrawerOpen(Boolean(open));
+    (tt as any).refreshBar = refreshBar;
+    (tt as any).scheduleRefreshBar = scheduleRefreshBar;
+    (tt as any).showTests = showTests;
+    (tt as any).showBar = () => setDrawerOpen(true);
+    (tt as any).onQueueDrained = scheduleAutoBot;
+    if (win.tt && win.tt !== tt) {
+      win.tt.refreshBar = refreshBar;
+      win.tt.scheduleRefreshBar = scheduleRefreshBar;
+      win.tt.showTests = showTests;
+      win.tt.showBar = (tt as any).showBar;
+      win.tt.onQueueDrained = scheduleAutoBot;
+    }
+
+    if (win.__tichuStudioModelSub && typeof win.__tichuStudioModelSub.unsubscribe === "function") {
+      win.__tichuStudioModelSub.unsubscribe();
+    }
+    if (win.gameModel && typeof win.gameModel.state$?.subscribe === "function") {
+      win.__tichuStudioModelSub = win.gameModel.state$.subscribe(() => {
+        activeTt().scheduleRefreshBar?.();
+      });
+    }
+
+    const dojoObj = win.dojo;
+    if (dojoObj && typeof dojoObj.subscribe === "function" && !win.__tichuStudioBarDojoBound) {
+      win.__tichuStudioBarDojoBound = true;
+      dojoObj.subscribe("gameStateChange", null, () => {
+        activeTt().scheduleRefreshBar?.();
+        if (!isLocalHost) scheduleAutoBot();
+      });
+      dojoObj.subscribe("gameStateMultipleActiveUpdate", null, () => {
+        activeTt().scheduleRefreshBar?.();
+        if (!isLocalHost) scheduleAutoBot();
+      });
+    }
+
+    refreshBar();
+    if (getAutoBotEnabled()) {
+      scheduleAutoBot();
+    }
   }
 
   let mergedTt: any = tt;
   if (existingTt) {
-    // Preserve local bga-shim.js multi-tab/scenario/runner methods while merging Studio driver methods.
+    // Preserve local bga-shim.js multi-tab/scenario/runner methods while unifying step/actForOthers/bar.
     const preservedLocal: Record<string, any> = {};
     for (const k of [
       "newGame",
@@ -4257,8 +5260,6 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       "runSuite",
       "runRound",
       "runGame",
-      "step",
-      "actForOthers",
       "help",
       "cancelAutopass",
     ]) {
@@ -4291,6 +5292,8 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       collect: tt.collect,
       bomb: tt.bomb,
       cancelBomb: tt.cancelBomb,
+      step: tt.step,
+      actForOthers: tt.actForOthers,
       runSmokeTest: tt.runSmokeTest,
       actMyTurn: tt.actMyTurn,
       startAutoPlayMe: tt.startAutoPlayMe,
@@ -4300,21 +5303,19 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       setSpeed: tt.setSpeed,
       setVerbose: tt.setVerbose,
       waitUntilIdle: tt.waitUntilIdle,
+      refreshBar: tt.refreshBar,
+      scheduleRefreshBar: tt.scheduleRefreshBar,
+      showTests: tt.showTests,
+      showBar: tt.showBar,
+      onQueueDrained: tt.onQueueDrained,
     };
     mergedTt = Object.assign(existingTt, studioOverlay, preservedLocal);
-    if (typeof (tt as any).showBar === "function") {
-      mergedTt.showBar = (tt as any).showBar;
-    }
   }
 
   win.tt = mergedTt;
   win.tichuTest = mergedTt;
 
   mountStudioTestBar();
-
-  if (typeof (tt as any).showBar === "function") {
-    mergedTt.showBar = (tt as any).showBar;
-  }
 
   try {
     if (window.parent && window.parent !== window) {
