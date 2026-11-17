@@ -2498,3 +2498,188 @@ test("TichuReplay::tidyUpGamelogs and segmentNotifMoves isolate batched bot move
     ]);
   });
 });
+
+test("notif_acceptCards keeps received-cards view visible even when animations pref 105 is disabled, and survives leaving giveCards", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const { Tichu, declaredClass } = loadTichuAdapterForNodeTests();
+
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+    const savedWinSetTimeout = g.window.setTimeout;
+    const savedGlobalClearTimeout = g.clearTimeout;
+
+    try {
+      const scheduled: Array<{ id: number; delay: number; fn: () => void; cleared: boolean }> = [];
+      let nextTimerId = 100;
+      g.window.setTimeout = (fn: () => void, delay = 0) => {
+        const entry = { id: nextTimerId++, delay: Number(delay), fn, cleared: false };
+        scheduled.push(entry);
+        return entry.id;
+      };
+      g.clearTimeout = (id: any) => {
+        const found = scheduled.find((t) => t.id === id);
+        if (found) found.cleared = true;
+      };
+
+      const hand11 = [A2, B2, C2, D2, A3, B3, C3, D3, A4, B4, C4];
+      const received3 = [
+        { ...D6, passed_from: "2385077" },
+        { ...A7, passed_from: "2385076" },
+        { ...B8, passed_from: "2385075" },
+      ];
+
+      const setupScenario = (pref105: number) => {
+        const ui = new (declaredClass || Tichu)();
+        ui.player_id = 2385074;
+        ui.isSpectator = false;
+        ui.instantaneousMode = false;
+        ui.bgaAnimationsActive = () => true;
+        ui.isReadOnly = () => false;
+        ui.isCurrentPlayerActive = () => false;
+        ui.removeActionButtons = () => {};
+        ui.onUpdateActionButtons = () => {};
+        ui.updatePageTitle = () => {};
+        ui.prefs = { 105: { value: pref105 } };
+        ui.getGameUserPreference = (id: number) => (id === 105 ? ui.prefs[105].value : 1);
+
+        const syncDurations: number[] = [];
+        ui.notifqueue = {
+          setSynchronousDuration(ms: number) {
+            syncDurations.push(ms);
+          },
+        };
+
+        let prepareCalls = 0;
+        let runCalls = 0;
+        const fakeFromRects = new Map<number, DOMRect>([
+          [Number(D6.id), { left: 10, top: 10, width: 100, height: 150 } as any],
+        ]);
+        ui.getAnimationLayer = () => ({
+          cancelAll() {},
+          getAcceptCardsTiming() {
+            return { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 };
+          },
+          prepareAcceptCards() {
+            prepareCalls++;
+            return { fromRects: fakeFromRects, durationMs: 370 };
+          },
+          runAcceptCardsFlight() {
+            runCalls++;
+            return Promise.resolve();
+          },
+        });
+
+        ui.gamedatas = {
+          players: {
+            "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" },
+            "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" },
+            "2385076": { id: "2385076", name: "p2", color: "000000", no: 3, score: "0" },
+            "2385077": { id: "2385077", name: "p3", color: "ff0000", no: 4, score: "0" },
+          },
+          gamestate: { id: "40", name: "giveCards", type: "multipleactiveplayer", args: {} },
+          hand: [...hand11],
+        };
+
+        const model = new GameModel();
+        model.hydrateFromGamedatas(ui.gamedatas, "2385074", false, true, ui.readPrefs());
+        g.window.gameModel = model;
+        g.window.gameui = ui;
+
+        return {
+          ui,
+          model,
+          syncDurations,
+          getPrepareCalls: () => prepareCalls,
+          getRunCalls: () => runCalls,
+        };
+      };
+
+      // 1. Animations enabled (pref 105 = 1)
+      {
+        const s = setupScenario(1);
+        const beforeLen = scheduled.length;
+        s.ui.notif_acceptCards({ args: { cards: received3 } });
+        assert.equal(s.model.getState().hand.length, 11);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard?.id),
+          [D6.id, A7.id, B8.id],
+        );
+        assert.equal(s.syncDurations.at(-1), 1570);
+        assert.equal(scheduled.length, beforeLen + 1);
+        const timer = scheduled[beforeLen]!;
+        assert.equal(timer.delay, 1200);
+
+        // Leaving giveCards must NOT cancel the pending received-cards display timer
+        s.ui.onLeavingState("giveCards");
+        assert.equal(timer.cleared, false);
+        assert.equal(s.model.getState().hand.length, 11);
+
+        // Once the view delay completes, prepareAcceptCards + finishAcceptCards + runAcceptCardsFlight run
+        timer.fn();
+        assert.equal(s.getPrepareCalls(), 1);
+        assert.equal(s.getRunCalls(), 1);
+        assert.equal(s.model.getState().hand.length, 14);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard),
+          [null, null, null],
+        );
+
+        // Entering acceptPassedCards after finishAcceptCards must not re-populate passSlots
+        s.model.enterShowPassedCards(received3);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard),
+          [null, null, null],
+        );
+      }
+
+      // 2. Animations disabled (pref 105 = 2) -> view still shown for 1200ms, no flight
+      {
+        const s = setupScenario(2);
+        assert.equal(s.ui.shouldAnimate(), false);
+        assert.equal(s.ui.shouldSkipReceivedCardsView(), false);
+        const beforeLen = scheduled.length;
+        s.ui.notif_acceptCards({ args: { cards: received3 } });
+        assert.equal(s.model.getState().hand.length, 11);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard?.id),
+          [D6.id, A7.id, B8.id],
+        );
+        assert.equal(s.syncDurations.at(-1), 1200);
+        assert.equal(scheduled.length, beforeLen + 1);
+        const timer = scheduled[beforeLen]!;
+        assert.equal(timer.delay, 1200);
+
+        timer.fn();
+        assert.equal(s.getPrepareCalls(), 0);
+        assert.equal(s.getRunCalls(), 0);
+        assert.equal(s.model.getState().hand.length, 14);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard),
+          [null, null, null],
+        );
+      }
+
+      // 3. instantaneousMode = true -> flushes immediately without waiting 1200ms
+      {
+        const s = setupScenario(1);
+        s.ui.instantaneousMode = true;
+        assert.equal(s.ui.shouldSkipReceivedCardsView(), true);
+        const beforeLen = scheduled.length;
+        s.ui.notif_acceptCards({ args: { cards: received3 } });
+        assert.equal(scheduled.length, beforeLen);
+        assert.equal(s.syncDurations.at(-1), 1);
+        assert.equal(s.model.getState().hand.length, 14);
+        assert.deepEqual(
+          s.model.getState().passSlots.map((slot) => slot.receivedCard),
+          [null, null, null],
+        );
+      }
+    } finally {
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+      g.window.setTimeout = savedWinSetTimeout;
+      g.clearTimeout = savedGlobalClearTimeout;
+    }
+  });
+});

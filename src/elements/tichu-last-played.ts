@@ -1,7 +1,7 @@
 import { html, css, LitElement, PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
-import { Card, LastComboState, LivePlayer } from "./game-model";
+import { Card, LastComboState, LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
@@ -21,6 +21,8 @@ export class TichuLastPlayed extends LitElement {
   @state() private activePlayerId = "";
   @state() private bombActivePlayerId: string | null = null;
   @state() private stateName = "";
+  @state() private isSpectator = false;
+  @state() private passSlots: PassSlotState[] = [];
   @state() private mahjongWish = 0;
   @state() private isTiki = false;
   @state() private clockwise = true;
@@ -232,6 +234,16 @@ export class TichuLastPlayed extends LitElement {
     );
     subscribe(
       this,
+      () => window.gameModel.isSpectator$,
+      (isSpectator) => (this.isSpectator = isSpectator),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.passSlots$,
+      (slots) => (this.passSlots = slots),
+    );
+    subscribe(
+      this,
       () => window.gameModel.mahjongWish$,
       (wish) => (this.mahjongWish = wish),
     );
@@ -279,10 +291,16 @@ export class TichuLastPlayed extends LitElement {
     this.style.setProperty("--mahjong-bg-url", `url(${themeUrl}img/tichu-mahjong.png)`);
     this.style.setProperty("--tiki-mahjong-bg-url", `url(${themeUrl}img/tiki-tichu-mahjong.png)`);
 
+    const hasPendingPassCards =
+      !this.isSpectator &&
+      this.passSlots.some(
+        (s) => s.givenCard !== null || s.receivedCard !== null || s.animatingAccept,
+      );
     const isPassState =
       this.stateName === "giveCards" ||
       this.stateName === "showPassedCards" ||
-      this.stateName === "acceptPassedCards";
+      this.stateName === "acceptPassedCards" ||
+      hasPendingPassCards;
 
     const wishVisible = this.mahjongWish >= 2 && this.mahjongWish <= 14;
     const wishIdx = wishVisible ? this.mahjongWish - 2 : 0;

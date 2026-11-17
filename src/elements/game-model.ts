@@ -696,10 +696,15 @@ export class GameModel {
       };
     }
 
-    const normalized = receivedCards ? normalizeCards(receivedCards) : [];
+    const handIdSet = new Set(prev.hand.map((c) => c.id));
+    const normalized = (receivedCards ? normalizeCards(receivedCards) : []).filter(
+      (c) => !handIdSet.has(c.id),
+    );
     const passSlots = prev.passSlots.map((slot) => {
+      const fallbackReceived =
+        slot.receivedCard && !handIdSet.has(slot.receivedCard.id) ? slot.receivedCard : null;
       const received =
-        normalized.find((c) => String(c.passed_from) === slot.playerId) ?? slot.receivedCard;
+        normalized.find((c) => String(c.passed_from) === slot.playerId) ?? fallbackReceived;
       return {
         ...slot,
         givenCard: null,

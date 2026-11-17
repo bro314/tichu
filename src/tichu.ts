@@ -321,6 +321,17 @@ export class Tichu {
     return typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
   }
 
+  shouldSkipReceivedCardsView(): boolean {
+    if (typeof window === "undefined" || typeof document === "undefined") return true;
+    if (this.isSpectator) return true;
+    if (document.hidden || document.visibilityState === "hidden") return true;
+    if ((window as any).__tichuSpeed === "instant") return true;
+    if ((this as any).instantaneousMode) return true;
+    if ((this.notifqueue as any)?.speedMode === "instant") return true;
+    if (typeof this.bgaAnimationsActive === "function" && !this.bgaAnimationsActive()) return true;
+    return false;
+  }
+
   playLaserSound() {
     if (!this.areAnimationsActive()) return;
     if (typeof playSound === "function") {
@@ -997,14 +1008,14 @@ export class Tichu {
   onLeavingState(stateName: string) {
     clearTimeout(this.autoAcceptTimeout);
     clearTimeout(this.autoCollectTimeout);
-    clearTimeout(this.acceptFlightTimeout);
-    if (
-      this.pendingAcceptFlush &&
-      (stateName === "acceptPassedCards" || stateName === "showPassedCards")
-    ) {
-      const flush = this.pendingAcceptFlush;
-      this.pendingAcceptFlush = null;
-      flush();
+    if (stateName === "acceptPassedCards" || stateName === "showPassedCards") {
+      clearTimeout(this.acceptFlightTimeout);
+      this.acceptFlightTimeout = undefined;
+      if (this.pendingAcceptFlush) {
+        const flush = this.pendingAcceptFlush;
+        this.pendingAcceptFlush = null;
+        flush();
+      }
     }
     this.collectSent = false;
     window.gameModel?.setAcceptingCardsCountdown(false);
@@ -1568,7 +1579,7 @@ export class Tichu {
       window.gameModel?.finishAcceptCards(cards);
     };
 
-    if (!animate || !layer) {
+    if (cards.length === 0 || this.shouldSkipReceivedCardsView()) {
       applyAcceptedCardsToHand();
       this.notifqueue.setSynchronousDuration(1);
       return;
@@ -1576,19 +1587,24 @@ export class Tichu {
 
     window.gameModel?.enterShowPassedCards(cards);
     const timing =
-      typeof layer.getAcceptCardsTiming === "function"
+      animate && layer && typeof layer.getAcceptCardsTiming === "function"
         ? layer.getAcceptCardsTiming(cards.length)
-        : { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 };
+        : animate && layer
+          ? { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 }
+          : { viewDelayMs: 1200, flightDurationMs: 0, totalDurationMs: 1200 };
     this.notifqueue.setSynchronousDuration(timing.totalDurationMs);
 
     this.pendingAcceptFlush = applyAcceptedCardsToHand;
     this.acceptFlightTimeout = window.setTimeout(() => {
       this.acceptFlightTimeout = undefined;
+      const activeLayer = this.shouldAnimate() ? this.getAnimationLayer() : null;
       const prep =
-        typeof layer.prepareAcceptCards === "function" ? layer.prepareAcceptCards(cards) : null;
+        activeLayer && typeof activeLayer.prepareAcceptCards === "function"
+          ? activeLayer.prepareAcceptCards(cards)
+          : null;
       applyAcceptedCardsToHand();
-      if (prep && typeof layer.runAcceptCardsFlight === "function") {
-        void layer.runAcceptCardsFlight(cards, prep.fromRects);
+      if (activeLayer && prep && typeof activeLayer.runAcceptCardsFlight === "function") {
+        void activeLayer.runAcceptCardsFlight(cards, prep.fromRects);
       }
     }, timing.viewDelayMs);
   }
