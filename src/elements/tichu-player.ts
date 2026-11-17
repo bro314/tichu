@@ -250,7 +250,7 @@ export class TichuPlayer extends LitElement {
             reverse: this.reverse,
           })}
         >
-          <tichu-stock .cards=${this.hand}></tichu-stock>
+          <tichu-stock .overlap=${81} .cards=${this.hand}></tichu-stock>
           ${passingCards ? this.renderPassedCards() : this.renderCombo()}
         </div>
       </div>

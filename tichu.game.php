@@ -192,6 +192,9 @@ class Tichu extends Table
       $this->freshStateId = (int) $this->gamestate->getCurrentMainStateId();
       $this->freshActivePlayerId = (int) $this->getActivePlayerId();
     }
+    if (method_exists($this, "sendNotifications")) {
+      $this->sendNotifications();
+    }
   }
 
   /** Called by the local backend at the end of every emulated request. */

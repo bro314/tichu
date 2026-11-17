@@ -12,7 +12,7 @@ import { subscribe } from "./subscription-controller";
 const fakeGamelogs: NotifsPacket[] = [];
 const fakePlayers = {};
 
-interface NotifsPacket {
+export interface NotifsPacket {
   packet_type: "single" | "sequence" | "resend" | "history";
   data: Notif[];
   channel: string;
@@ -259,6 +259,7 @@ export class TichuReplay extends LitElement {
         }),
       );
     }
+    segmentNotifMoves(this.notifs);
 
     subscribe(
       this,
@@ -510,6 +511,7 @@ function isIgnored(notif: Notif) {
   const type = notif.type as string;
   const args = notif.args as any;
   if (type === "autopass") return true;
+  if (type === "botSuggestion") return true;
   if (type === "confirmTichu") return true;
   if (type === "devConsole") return true;
   if (type === "hasBomb") return true;
@@ -555,11 +557,10 @@ function toNumber(s?: string | number) {
   return isNaN(n) ? 0 : n;
 }
 
-function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
+export function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
   for (let index = 0; index < gamelogs.length; index++) {
     const thisPacket = gamelogs[index];
-    let prevPacket = gamelogs[index - 1];
-    if (!thisPacket || !prevPacket) continue;
+    if (!thisPacket) continue;
 
     const allIgnored = thisPacket.data.every(isIgnored);
     if (allIgnored) {
@@ -567,6 +568,9 @@ function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
       index -= 1;
       continue;
     }
+
+    const prevPacket = gamelogs[index - 1];
+    if (!prevPacket) continue;
 
     // All GT bets should be one move.
     const thisgt = thisPacket.data.some((notif) => (notif.type as string) === "grandTichuBet");
@@ -604,12 +608,137 @@ function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
       );
     if (thispc && prevpc) thisPacket.move_id = prevPacket.move_id;
 
-    // Make sure that public updates (/table) come before private updates (/player).
+    // Make sure that public updates (/table) come before private updates (/player),
+    // except do not swap public updates before passCards.
     if (thisPacket?.move_id !== prevPacket?.move_id) continue;
     if (!thisPacket?.channel.startsWith("/table/t")) continue;
     if (!prevPacket?.channel.startsWith("/player/p")) continue;
+    if (prevPacket.data.some((notif) => (notif.type as string) === "passCards")) continue;
     swap(gamelogs, index, index - 1);
     index -= 2;
+  }
+}
+
+/**
+ * Re-assign sequential logical `move_id` values across flattened replay notifications so
+ * batched bot steps, auto-passes, and round-end/new-round transitions each step individually.
+ */
+export function segmentNotifMoves(notifs: (Notif & { player_id: number })[]): void {
+  let moveCounter = 1;
+  let currentPhase = "newScores";
+  let dealCountInRound = 0;
+  let acceptCountInRound = 0;
+  let pendingPrefixForPlayer: number | null = null;
+
+  for (let i = 0; i < notifs.length; i++) {
+    const notif = notifs[i]!;
+    const type = notif.type as string;
+    const args = (notif.args ?? {}) as any;
+
+    if (type === "newScores") {
+      moveCounter++;
+      currentPhase = "newScores";
+      dealCountInRound = 0;
+      acceptCountInRound = 0;
+      pendingPrefixForPlayer = null;
+    } else if (acceptCountInRound < 4) {
+      if (type === "dealCards") {
+        if (dealCountInRound < 4) {
+          if (currentPhase !== "newScores" && currentPhase !== "deal8") {
+            moveCounter++;
+          }
+          currentPhase = "deal8";
+        } else if (dealCountInRound === 4) {
+          moveCounter++;
+          currentPhase = "deal6";
+        }
+        dealCountInRound++;
+      } else if (type === "grandTichuBet" || (type === "tichuBet" && dealCountInRound <= 4)) {
+        if (currentPhase !== "gt") {
+          moveCounter++;
+          currentPhase = "gt";
+        }
+      } else if (
+        type === "passCards" ||
+        (type === "tichuBet" && dealCountInRound > 4 && acceptCountInRound === 0)
+      ) {
+        if (currentPhase !== "passCards") {
+          moveCounter++;
+          currentPhase = "passCards";
+        }
+      } else if (type === "gameStateChange" && args.type === "activeplayer") {
+        if (currentPhase === "passCards") {
+          moveCounter++;
+          currentPhase = "acceptCards";
+        }
+      } else if (type === "acceptCards") {
+        if (currentPhase !== "acceptCards") {
+          moveCounter++;
+          currentPhase = "acceptCards";
+        }
+        acceptCountInRound++;
+      }
+    } else {
+      if (type === "mahjongWishGranted") {
+        let nextPlayPlayer: number | null = null;
+        for (let j = i + 1; j < notifs.length; j++) {
+          const nextNotif = notifs[j]!;
+          const nextType = nextNotif.type as string;
+          if (nextType === "playCombo") {
+            nextPlayPlayer = Number((nextNotif.args as any)?.player_id);
+            break;
+          }
+          if (nextType !== "tichuBet" && !isIgnored(nextNotif)) break;
+        }
+        if (
+          currentPhase !== "prePlay" ||
+          (pendingPrefixForPlayer !== null &&
+            nextPlayPlayer !== null &&
+            pendingPrefixForPlayer !== nextPlayPlayer)
+        ) {
+          moveCounter++;
+        }
+        currentPhase = "prePlay";
+        pendingPrefixForPlayer = nextPlayPlayer;
+      } else if (type === "tichuBet") {
+        const betPlayer = Number(args.player_id);
+        if (
+          currentPhase !== "prePlay" ||
+          (pendingPrefixForPlayer !== null && pendingPrefixForPlayer !== betPlayer)
+        ) {
+          moveCounter++;
+        }
+        currentPhase = "prePlay";
+        pendingPrefixForPlayer = betPlayer;
+      } else if (type === "playCombo") {
+        const playPlayer = Number(args.player_id);
+        if (
+          currentPhase === "prePlay" &&
+          (pendingPrefixForPlayer === null || pendingPrefixForPlayer === playPlayer)
+        ) {
+          // Group with preceding mahjongWishGranted / tichuBet from the same turn
+        } else {
+          moveCounter++;
+        }
+        currentPhase = "playCombo";
+        pendingPrefixForPlayer = null;
+      } else if (type === "wishMade") {
+        if (currentPhase !== "playCombo") {
+          moveCounter++;
+        }
+        currentPhase = "wishMade";
+      } else if (type === "pass") {
+        moveCounter++;
+        currentPhase = "pass";
+        pendingPrefixForPlayer = null;
+      } else if (type === "captureCards") {
+        moveCounter++;
+        currentPhase = "capture";
+        pendingPrefixForPlayer = null;
+      }
+    }
+
+    notif.move_id = String(moveCounter);
   }
 }
 

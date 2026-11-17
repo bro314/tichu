@@ -38,6 +38,8 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) dynamicOverlap = false;
 
+  @property({ type: Number }) overlap = 75;
+
   @property({ type: Number }) highlightedRank = 0;
 
   @property({ attribute: false }) externalHiddenIds: string[] = [];
@@ -189,7 +191,7 @@ export class TichuStock extends LitElement {
     const itemMargin = 5;
 
     if (!this.dynamicOverlap) {
-      return -75 * this.scale;
+      return -this.overlap * this.scale;
     }
 
     if (this.cards.length <= 1) {

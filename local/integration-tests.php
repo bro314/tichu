@@ -1937,6 +1937,36 @@ function test_studio_debug_bot_step_and_bot_others(): void
   assertSameVal(3, count($actions), 'autoPlayUntilPlayer should act for the 3 bots in grandTichuBets and stop when P0 is active in giveCards');
   assertSameVal('giveCards', $game->gamestate->state()['name']);
   assertTrueVal($game->gamestate->isPlayerActive(P0), 'P0 must be active in giveCards');
+
+  // 6. Verify each bot step in actForOtherPlayers produces a distinct gamelog_move_id
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [1, 14]],
+    P1 => [[2, 3], [2, 10]],
+    P2 => [[3, 4], [3, 11]],
+    P3 => [[4, 5], [4, 12]],
+  ], 'captured_p0');
+  callAction($game, P0, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 2)]);
+  $beforeBatchPkt = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  $batchActions = \LocalTichuBot::actForOtherPlayers($game, P0);
+  assertSameVal(3, count($batchActions), 'actForOtherPlayers should step P1, P2, and P3 before returning to P0');
+  $batchPackets = $game->getNotificationsSince($beforeBatchPkt, P0, false);
+  $moveIdsByAction = [];
+  foreach ($batchPackets as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      if (in_array($notif['type'] ?? '', ['playCombo', 'pass'], true)) {
+        $moveIdsByAction[] = (string) ($pkt['move_id'] ?? '');
+      }
+    }
+  }
+  assertSameVal(3, count($moveIdsByAction), 'Expected 3 playCombo/pass notifications from bot batch');
+  assertSameVal(
+    3,
+    count(array_unique($moveIdsByAction)),
+    'Each bot step in actForOtherPlayers must get its own distinct gamelog_move_id'
+  );
 }
 
 $tests = [

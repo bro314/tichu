@@ -2096,3 +2096,198 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
     }
   });
 });
+
+test("TichuReplay::tidyUpGamelogs and segmentNotifMoves isolate batched bot moves, pre-trick phases, and round transitions", async () => {
+  await withMockLitEnv(() => {
+    const {
+      tidyUpGamelogs,
+      segmentNotifMoves,
+    }: {
+      tidyUpGamelogs: (logs: any[]) => void;
+      segmentNotifMoves: (notifs: any[]) => void;
+    } = require("../src/elements/tichu-replay");
+
+    const P0 = 2385074;
+    const P1 = 2385075;
+    const P2 = 2385076;
+    const P3 = 2385077;
+
+    let uidCounter = 1;
+    const n = (type: string, args: any = {}) => ({
+      uid: `u${uidCounter++}`,
+      type,
+      log: "",
+      args,
+    });
+    const pkt = (channel: string, moveId: string, data: any[]) => ({
+      packet_id: String(uidCounter),
+      packet_type: "single" as const,
+      channel,
+      move_id: moveId,
+      data,
+    });
+
+    const gamelogs: any[] = [
+      // Index 0 ignored packet must be stripped even at position 0
+      pkt("/table/t1", "1", [n("log")]),
+      // Round 1: initial 8 cards + multiactive update
+      pkt(`/player/p${P0}`, "1", [n("dealCards", { cards: [{ id: "1", location_arg: P0 }] })]),
+      pkt(`/player/p${P1}`, "1", [n("dealCards", { cards: [{ id: "2", location_arg: P1 }] })]),
+      pkt(`/player/p${P2}`, "1", [n("dealCards", { cards: [{ id: "3", location_arg: P2 }] })]),
+      pkt(`/player/p${P3}`, "1", [n("dealCards", { cards: [{ id: "4", location_arg: P3 }] })]),
+      pkt("/table/t1", "1", [
+        n("gameStateChange", { type: "game" }),
+        n("gameStateMultipleActiveUpdate", [String(P0), String(P1), String(P2), String(P3)]),
+      ]),
+      // Grand Tichu bets split across move_ids 2 and 3
+      pkt("/table/t1", "2", [
+        n("grandTichuBet", { player_id: P0, bet: 0 }),
+        n("gameStateMultipleActiveUpdate", [String(P1), String(P2), String(P3)]),
+        n("grandTichuBet", { player_id: P1, bet: 0 }),
+      ]),
+      pkt("/table/t1", "3", [
+        n("grandTichuBet", { player_id: P2, bet: 0 }),
+        n("grandTichuBet", { player_id: P3, bet: 200 }),
+      ]),
+      // Round 1: last 6 cards
+      pkt(`/player/p${P0}`, "3", [n("dealCards", { cards: [{ id: "5", location_arg: P0 }] })]),
+      pkt(`/player/p${P1}`, "3", [n("dealCards", { cards: [{ id: "6", location_arg: P1 }] })]),
+      pkt(`/player/p${P2}`, "3", [n("dealCards", { cards: [{ id: "7", location_arg: P2 }] })]),
+      pkt(`/player/p${P3}`, "3", [n("dealCards", { cards: [{ id: "8", location_arg: P3 }] })]),
+      // Pass cards: 3 separate, 4th joined with acceptCards, plus /table/t1 activeplayer transition
+      pkt(`/player/p${P1}`, "4", [n("passCards", { cardIds: ["2", "6", "10"] })]),
+      pkt("/table/t1", "4", [
+        n("gameStateMultipleActiveUpdate", [String(P0), String(P2), String(P3)]),
+      ]),
+      pkt(`/player/p${P2}`, "4", [n("passCards", { cardIds: ["3", "7", "11"] })]),
+      pkt(`/player/p${P3}`, "4", [n("passCards", { cardIds: ["4", "8", "12"] })]),
+      pkt(`/player/p${P0}`, "5", [
+        n("passCards", { cardIds: ["1", "5", "9"] }),
+        n("gameStateChange", { type: "game" }),
+        n("acceptCards", {}),
+      ]),
+      pkt(`/player/p${P1}`, "5", [n("acceptCards", {})]),
+      pkt(`/player/p${P2}`, "5", [n("acceptCards", {})]),
+      pkt(`/player/p${P3}`, "5", [n("acceptCards", {})]),
+      pkt("/table/t1", "5", [n("gameStateChange", { type: "activeplayer", active_player: P1 })]),
+      // Trick play batched into a single server move_id ("6"):
+      //   - P1 calls Tichu, plays Mahjong, makes a wish
+      //   - P2 calls Tichu out of turn, then P3 grants wish (with implicit tichuBet=0) and plays
+      //   - P0 and P1 pass, then P3 captures trick
+      pkt("/table/t1", "6", [
+        n("tichuBet", { player_id: P1, bet: 100 }),
+        n("playCombo", { player_id: P1, cards: [MJ], points: 0 }),
+        n("wishMade", { player_id: P1, wish: 5 }),
+        n("gameStateChange", { type: "activeplayer", active_player: P2 }),
+        n("tichuBet", { player_id: P2, bet: 100 }),
+        n("mahjongWishGranted", {}),
+        n("tichuBet", { player_id: P3, bet: 0 }),
+        n("playCombo", { player_id: P3, cards: [A5], points: 5 }),
+        n("gameStateChange", { type: "activeplayer", active_player: P0 }),
+        n("pass", { player_id: P0 }),
+        n("pass", { player_id: P1 }),
+        n("captureCards", { player_id: P3, trick_value: 5 }),
+      ]),
+      // Round-ending play + capture + newScores + Round 2 initial deal batched into move_id "7":
+      pkt("/table/t1", "7", [
+        n("playCombo", { player_id: P3, cards: [DR], points: 25 }),
+        n("playerGoOut", { player_id: P3, firstout_id: P3 }),
+        n("captureCards", { player_id: P3, trick_value: 25 }),
+        n("tableWindow", {}),
+        n("newScores", { newScores: { [P0]: 0, [P1]: 200, [P2]: 0, [P3]: 200 } }),
+      ]),
+      pkt(`/player/p${P0}`, "7", [n("dealCards", { cards: [{ id: "13", location_arg: P0 }] })]),
+      pkt(`/player/p${P1}`, "7", [n("dealCards", { cards: [{ id: "14", location_arg: P1 }] })]),
+      pkt(`/player/p${P2}`, "7", [n("dealCards", { cards: [{ id: "15", location_arg: P2 }] })]),
+      pkt(`/player/p${P3}`, "7", [n("dealCards", { cards: [{ id: "16", location_arg: P3 }] })]),
+    ];
+
+    tidyUpGamelogs(gamelogs);
+    const notifs: any[] = [];
+    for (const packet of gamelogs) {
+      const player_id = packet.channel.startsWith("/player/p")
+        ? Number(packet.channel.substring(9))
+        : -1;
+      for (const d of packet.data) {
+        notifs.push({ ...d, player_id, move_id: packet.move_id });
+      }
+    }
+    segmentNotifMoves(notifs);
+
+    const moves: string[][] = [];
+    for (const notif of notifs) {
+      if (
+        notif.type === "log" ||
+        notif.type === "playerGoOut" ||
+        notif.type === "tableWindow" ||
+        (notif.type === "gameStateChange" && notif.args?.type === "game")
+      ) {
+        continue;
+      }
+      const prevMove = moves.at(-1);
+      const pid =
+        notif.args?.player_id ??
+        notif.args?.active_player ??
+        (notif.player_id > 0 ? notif.player_id : undefined);
+      const tag = `${notif.type}${pid ? `:${pid}` : ""}`;
+      const moveIdx = Number(notif.move_id) - 1;
+      if (!prevMove || moves.length <= moveIdx) {
+        while (moves.length <= moveIdx) moves.push([]);
+      }
+      moves[moveIdx]!.push(tag);
+    }
+
+    assert.deepEqual(moves, [
+      // Move 1: Round 1 initial 8-card deal
+      [
+        "gameStateMultipleActiveUpdate",
+        `dealCards:${P0}`,
+        `dealCards:${P1}`,
+        `dealCards:${P2}`,
+        `dealCards:${P3}`,
+      ],
+      // Move 2: Grand Tichu bets
+      [
+        `grandTichuBet:${P0}`,
+        "gameStateMultipleActiveUpdate",
+        `grandTichuBet:${P1}`,
+        `grandTichuBet:${P2}`,
+        `grandTichuBet:${P3}`,
+      ],
+      // Move 3: Round 1 last 6-card deal
+      [`dealCards:${P0}`, `dealCards:${P1}`, `dealCards:${P2}`, `dealCards:${P3}`],
+      // Move 4: Pass cards (all 4 passCards together, before acceptCards)
+      [
+        `passCards:${P1}`,
+        "gameStateMultipleActiveUpdate",
+        `passCards:${P2}`,
+        `passCards:${P3}`,
+        `passCards:${P0}`,
+      ],
+      // Move 5: Accept cards + playComboOpen activeplayer transition
+      [
+        `gameStateChange:${P1}`,
+        `acceptCards:${P0}`,
+        `acceptCards:${P1}`,
+        `acceptCards:${P2}`,
+        `acceptCards:${P3}`,
+      ],
+      // Move 6: P1 Tichu + Mahjong play + wishMade + activeplayer transition
+      [`tichuBet:${P1}`, `playCombo:${P1}`, `wishMade:${P1}`, `gameStateChange:${P2}`],
+      // Move 7: P2 out-of-turn Tichu bet is NOT merged into P3's play
+      [`tichuBet:${P2}`],
+      // Move 8: P3 wish grant + implicit tichuBet(0) + playCombo + activeplayer transition
+      ["mahjongWishGranted", `tichuBet:${P3}`, `playCombo:${P3}`, `gameStateChange:${P0}`],
+      // Moves 9-11: Each pass and captureCards in its own step
+      [`pass:${P0}`],
+      [`pass:${P1}`],
+      [`captureCards:${P3}`],
+      // Move 12: Round-ending playCombo
+      [`playCombo:${P3}`],
+      // Move 13: Round-ending captureCards
+      [`captureCards:${P3}`],
+      // Move 14: Round transition newScores + Round 2 initial deal
+      ["newScores", `dealCards:${P0}`, `dealCards:${P1}`, `dealCards:${P2}`, `dealCards:${P3}`],
+    ]);
+  });
+});
