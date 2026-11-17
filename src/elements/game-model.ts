@@ -1,5 +1,6 @@
 import { BehaviorSubject, Observable } from "rxjs";
 import type { Card, CardData, TichuGamedatas } from "../types/tichu-contracts";
+import { Combo } from "./combo-validator";
 import type { TichuAnimationLayer } from "./tichu-animation-layer";
 import { select } from "./utils";
 
@@ -1021,8 +1022,18 @@ export class GameModel {
         }
       : prev.players;
 
-    const comboType = type !== undefined ? Number(type) : 0;
-    const comboPhoenix = phoenixValue !== undefined ? phoenixValue : null;
+    const needsInference = type === undefined || Number(type) <= 0 || phoenixValue === undefined;
+    const inferred = needsInference
+      ? Combo.inferPlayedCombo(normalized, prev.trickLastCombo, comboName)
+      : null;
+    const comboType =
+      type !== undefined && Number(type) > 0
+        ? Number(type)
+        : inferred && inferred.type > 0
+          ? inferred.type
+          : 0;
+    const comboPhoenix =
+      phoenixValue !== undefined ? phoenixValue : (inferred?.phoenixValue ?? null);
 
     const lastCombos = {
       ...prev.lastCombos,

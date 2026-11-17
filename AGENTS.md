@@ -6,12 +6,12 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 ## 1. Progressive-Disclosure Skills & Reference Docs
 
-| Topic / Trigger                                                                             | Read Before Acting                                                                                         |
-| :------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------------------------- |
-| **Studio SFTP sync, `browser` subagent, `#studio-test-bar`, `window.tt`, `npm run local`**  | [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md)           |
-| **Actions, multiactive/out-of-turn locks, MySQL 8.0 `SERIALIZABLE`, `npm run test:race`**   | [tichu-concurrency-locks](file:///Users/brohlfs/git/tichu/.agents/skills/tichu-concurrency-locks/SKILL.md) |
-| **Production releases, `upgradeTableDb`, `@thoun` autopass resets, i18n, Tutorial Creator** | [bga-release-and-qa](file:///Users/brohlfs/git/tichu/.agents/skills/bga-release-and-qa/SKILL.md)           |
-| **BGA bug reports (`game=1237`), SQL dump import, 7-surface `player_id` remapping**         | [bga-bug-triage](file:///Users/brohlfs/git/tichu/.agents/skills/bga-bug-triage/SKILL.md)                   |
+| Topic / Trigger                                                                                                | Read Before Acting                                                                                         |
+| :------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Studio SFTP sync, `browser` subagent, `#studio-test-bar`, `window.tt`, `npm run local`**                     | [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md)           |
+| **Actions, multiactive/out-of-turn locks, MySQL 8.0 `SERIALIZABLE`, `npm run test:race`**                      | [tichu-concurrency-locks](file:///Users/brohlfs/git/tichu/.agents/skills/tichu-concurrency-locks/SKILL.md) |
+| **Production releases/rollbacks, backwards/forwards compatibility, `upgradeTableDb`, `@thoun` autopass, i18n** | [bga-release-and-qa](file:///Users/brohlfs/git/tichu/.agents/skills/bga-release-and-qa/SKILL.md)           |
+| **BGA bug reports (`game=1237`), SQL dump import, 7-surface `player_id` remapping**                            | [bga-bug-triage](file:///Users/brohlfs/git/tichu/.agents/skills/bga-bug-triage/SKILL.md)                   |
 
 - **Authoritative Stubs (Beat the Wiki)**: [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS). Re-download `/tichu/_ide_helper.php` via SFTP if checking newer Studio APIs.
 - **Official BGA Docs**: https://doc.studio.boardgamearena.com/ (2025–2026 PHP 8.4/ES2022) and https://en.doc.boardgamearena.com/Studio (classic `Deck`/`ebg/stock`).
@@ -74,7 +74,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 ### Action Log & Quirks
 
-- **`actionlog` Events (`LogManager.php`)**: JSON records (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) for `newRound`, `newTrick`, `combo`, `pass`, `phoenix`, `changePlayer`, `confirm`, `tichuCall` (`TICHU_CONFIRMATION_TRESHOLD = 60`s), `grandTichuBet`, `giveCards`, `acceptCards`, `mahjongWish`, `chooseDragonGift`, and `zombieTurn`.
+- **`actionlog` Events (`LogManager.php`)**: JSON records (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) for `newRound`, `newTrick`, `combo`, `pass`, `phoenix`, `changePlayer`, `confirm`, `tichuCall` (`TICHU_CONFIRMATION_TRESHOLD = 60`s), `grandTichuBet`, `giveCards`, `acceptCards`, `mahjongWish`, `chooseDragonGift`, and `zombieTurn`. `log_trick` stays globally monotonic across rounds (`MAX(log_trick) + 1` on `newTrick`) for rollback compatibility with unscoped queries, while `LogManager::getCurrentRoundAndTrick()` returns the per-round trick count (`getCurrentDbRoundAndTrick()` returns the raw DB `log_trick`).
 - **Action Naming Mismatches**:
   - `states.inc.php` `"giveCards"` routes to `giveTheCards` in `tichu.action.php` / `tichu.game.php`.
   - `states.inc.php` `"phoenixPlay"` routes to `choosePhoenix` in `tichu.action.php`.
@@ -87,7 +87,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 ### Backend, Database & Concurrency
 
-- **Live-Game Migrations**: Never delete states or change state/option/stat IDs; handle live schema changes in `upgradeTableDb($from_version)` using `DBPREFIX_<table_name>`.
+- **Live-Game Migrations & 4-Way Release/Rollback Compatibility**: Never delete states or change state/option/stat IDs; handle live schema changes in `upgradeTableDb($from_version)` using `DBPREFIX_<table_name>`. BGA has no `downgradeTableDb`, never auto-reloads open tabs, and does not check game version on `ajaxcall`/notifications — keep releases 4-way compatible across old/new JS, PHP, DB, and `actionlog` (see [bga-release-and-qa](file:///Users/brohlfs/git/tichu/.agents/skills/bga-release-and-qa/SKILL.md)).
 - **`dbmodel.sql` Comments**: Never put `--` comments in `dbmodel.sql` (BGA strips newlines before executing it as a single string).
 - **No Runtime DDL**: Never use `TRUNCATE` or `DROP` in runtime game logic (triggers an implicit MySQL commit and breaks rollback).
 - **Randomness & `Deck`**: Prefer `bga_rand` over `shuffle()`. `Deck::createCards()` shuffles `card_id` (`1..56`), `Deck::getCards()` throws `feException` on missing/duplicate IDs, and `Deck::getCardsInLocation()` keys by `card_id` (wrap in `array_values(...)` + cast `(int)`).
@@ -107,7 +107,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 - **`ebg/stock` Moves**: Add to destination stock before removing from source stock (`noupdate = true` in loops, then `updateDisplay()`).
 - **Dark Mode & Translations**: Dark mode uses `html[data-theme="dark"]`. Pass literal strings only to `clienttranslate()` (`&dummyTranslations` tests `_()`).
 - **Zero-Reload Preferences (`100`–`105`) & Two-Way Sync**: All 6 prefs use `"needReload" => false`, are read safely via `safeGetPref(prefId, fallback)` (guarding spectator/archive missing `#preference_control_<id>`), update `GameModel` via `onGameUserPreferenceChanged` -> `onPreferenceChange` (no duplicate `initPreferencesObserver()`), and persist in-hand clicks via `persistUserPreference` (which skips `setGameUserPreference` when `isReadOnly()` is `true`). Hand sort order persists in `localStorage` (`tichu_hand_sort_order`).
-- **Client Breadcrumbs, Version Guard & Snapshot (`src/tichu.ts`)**: `getAllDatas` exposes `gameVersion`; `src/tichu.ts` checks version parity (`checkVersion`), logs state/action/notif breadcrumbs into a 50-entry ring buffer (`window.__tichuBreadcrumbs`), warns on hand-count mismatches, and exposes read-only `window.tichuDebugSnapshot()`.
+- **Client Breadcrumbs, Version Guard & Snapshot (`src/tichu.ts`)**: `getAllDatas` exposes `gameVersion` (`global[300]`, which is monotonic and does not decrement on rollback); `src/tichu.ts` checks version parity (`checkVersion`, though notifications must carry a server `gameVersion` to trigger — not yet emitted by `NotificationManager.php`), logs state/action/notif breadcrumbs into a 50-entry ring buffer (`window.__tichuBreadcrumbs`), warns on hand-count mismatches, and exposes read-only `window.tichuDebugSnapshot()`.
 
 ---
 

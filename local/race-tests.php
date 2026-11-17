@@ -1106,7 +1106,6 @@ function checkInvariants(\Tichu $game, ?int $lastVersion): array
         $errs[] = "actionlog: newRound {$l['log_round']} after round $round (log {$l['log_id']})";
       }
       $round = (int) $l['log_round'];
-      $trick = 0;
     } elseif ($l['log_action'] === 'newTrick') {
       $newTricks++;
       if ((int) $l['log_round'] !== $round || (int) $l['log_trick'] !== $trick + 1) {

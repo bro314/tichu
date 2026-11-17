@@ -45,8 +45,8 @@ export interface TichuNotificationMap {
     combo_name: string;
     cards: CardData[];
     points: number;
-    type: number;
-    phoenixValue: number | number[] | null;
+    type?: number;
+    phoenixValue?: number | number[] | null;
   };
   wishMade: {
     i18n?: string[];

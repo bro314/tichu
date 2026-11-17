@@ -117,6 +117,34 @@ export function rankToDisplayName(rank: number, plural = false): string {
   return decodeHtmlEntities(cardToStr(rank, plural));
 }
 
+function isPhoenixCard(card: TichuCard | undefined): boolean {
+  return Boolean(card && cardRank(card) === 1 && cardSuit(card) === TYPE_PHOENIX);
+}
+
+function parseRankWord(word: string): number | null {
+  const trimmed = decodeHtmlEntities(word).trim();
+  switch (trimmed) {
+    case "Jack":
+    case "Jacks":
+      return 11;
+    case "Queen":
+    case "Queens":
+      return 12;
+    case "King":
+    case "Kings":
+      return 13;
+    case "Ace":
+    case "Aces":
+      return 14;
+    default: {
+      const m = /^(\d+)s?$/.exec(trimmed);
+      if (!m || !m[1]) return null;
+      const n = Number(m[1]);
+      return n >= 1 && n <= 10 ? n : null;
+    }
+  }
+}
+
 export function comboTypeToLabel(type: number): string {
   switch (type) {
     case SINGLE_COMBO:
@@ -238,12 +266,105 @@ export class Combo {
       typeof state.phoenixValue === "number"
     ) {
       combo.phoenixValue = Number(state.phoenixValue);
+    } else if (state.phoenixValue === undefined || state.phoenixValue === null) {
+      Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
     }
     if (state.description && !combo.description) {
       combo.description = state.description;
     }
     combo.player = String(state.player ?? state.playerId ?? "");
     return combo;
+  }
+
+  public static inferPlayedCombo(
+    cards: TichuCard[],
+    prevLastCombo?: LastComboLike | Combo | null,
+    description?: string,
+  ): Combo {
+    if (!Array.isArray(cards) || cards.length === 0) {
+      return Combo.noCombo;
+    }
+    const prev =
+      prevLastCombo instanceof Combo ? prevLastCombo : Combo.fromLastComboState(prevLastCombo);
+    const combo = new Combo(cards, null, null, null, prev);
+    if (Array.isArray(combo.phoenixValue)) {
+      Combo.resolveMissingPhoenixMetadata(combo, cards, description);
+    } else if (
+      combo.type === SINGLE_COMBO &&
+      combo.cards.length === 1 &&
+      isPhoenixCard(combo.cards[0]) &&
+      prev.type === NO_COMBO &&
+      description
+    ) {
+      Combo.resolveMissingPhoenixMetadata(combo, cards, description);
+    }
+    if (description && !combo.description) {
+      combo.description = description;
+    }
+    return combo;
+  }
+
+  private static resolveMissingPhoenixMetadata(
+    combo: Combo,
+    rawCards: TichuCard[],
+    description?: string,
+  ): void {
+    if (Array.isArray(combo.phoenixValue) && combo.phoenixValue.length === 2) {
+      const opt0 = combo.phoenixValue[0]!;
+      const opt1 = combo.phoenixValue[1]!;
+      if (combo.type === STRAIGHT_COMBO) {
+        if (rawCards.length >= 5 && isPhoenixCard(rawCards[rawCards.length - 1])) {
+          combo.setPhoenixValue(opt0);
+        } else if (rawCards.length >= 5 && isPhoenixCard(rawCards[0])) {
+          combo.setPhoenixValue(opt1);
+        } else if (description) {
+          const m = /^Run of \d+ cards from (\d+)\b/.exec(decodeHtmlEntities(description));
+          if (m && m[1]) {
+            combo.setPhoenixValue(Number(m[1]) === opt1 ? opt1 : opt0);
+          }
+        }
+      } else if (combo.type === FULL_HOUSE_COMBO) {
+        const c1 = rawCards[1];
+        const c2 = rawCards[2];
+        if (
+          rawCards.length === 5 &&
+          isPhoenixCard(rawCards[0]) &&
+          c1 &&
+          c2 &&
+          cardRank(c1) === cardRank(c2)
+        ) {
+          const chosen = cardRank(c1);
+          if (chosen === opt0 || chosen === opt1) {
+            combo.setPhoenixValue(chosen);
+          }
+        } else if (description) {
+          const m = /^(.+?)\s+full of\b/.exec(decodeHtmlEntities(description));
+          if (m && m[1]) {
+            const parsed = parseRankWord(m[1]);
+            if (parsed === opt0 || parsed === opt1) {
+              combo.setPhoenixValue(parsed);
+            }
+          }
+        }
+      }
+      return;
+    }
+
+    if (
+      combo.type === SINGLE_COMBO &&
+      combo.cards.length === 1 &&
+      isPhoenixCard(combo.cards[0]) &&
+      description
+    ) {
+      const m = /^Phoenix a half step above\s+(.+)$/.exec(decodeHtmlEntities(description));
+      if (m && m[1]) {
+        const baseRank = parseRankWord(m[1]);
+        if (baseRank !== null) {
+          combo.phoenixValue = baseRank + 0.5;
+          combo.description = `Phoenix a half step above ${cardToStr(baseRank)}`;
+        }
+      }
+    }
   }
 
   private static runCheck(

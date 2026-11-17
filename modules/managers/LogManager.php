@@ -19,11 +19,12 @@ class LogManager
   public static function insert($playerId, $action, $args = [])
   {
     $playerId = $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
-    $current = self::getCurrentRoundAndTrick();
-    $round = $current["round"];
-    $trick = $current["trick"];
+    $current = self::getCurrentDbRoundAndTrick();
+    $round = (int) ($current["round"] ?? 0);
+    $trick = (int) ($current["trick"] ?? 0);
     if ($action == "newTrick") {
-      $trick++;
+      $trick =
+        ((int) Table::getUniqueValueFromDB("SELECT IFNULL(MAX(log_trick),0) FROM actionlog")) + 1;
     }
     if ($action == "newRound") {
       $round++;
@@ -68,17 +69,24 @@ class LogManager
     return self::getLastActions($action, $currentTrick, true);
   }
 
-  public static function getCurrentRoundAndTrick()
+  public static function getCurrentDbRoundAndTrick()
   {
     return Table::getObjectFromDB(
       "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog WHERE log_round = (SELECT IFNULL(MAX(log_round), 0) FROM actionlog)"
     );
   }
 
+  public static function getCurrentRoundAndTrick()
+  {
+    return Table::getObjectFromDB(
+      "SELECT IFNULL(MAX(log_round),0) AS round, COUNT(DISTINCT CASE WHEN log_trick > 0 THEN log_trick END) AS trick FROM actionlog WHERE log_round = (SELECT IFNULL(MAX(log_round), 0) FROM actionlog)"
+    );
+  }
+
   public static function getCurrentTrickCond()
   {
-    $curr = self::getCurrentRoundAndTrick();
-    return "log_round=" . $curr["round"] . " AND log_trick=" . $curr["trick"];
+    $curr = self::getCurrentDbRoundAndTrick();
+    return "log_round=" . ((int) $curr["round"]) . " AND log_trick=" . ((int) $curr["trick"]);
   }
 
   public static function getLastCombos()

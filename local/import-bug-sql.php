@@ -598,7 +598,7 @@ final class LocalBugSqlLoader
     }
 
     if ($targetStateId === ST_CONFIRM_TRICK && \LogManager::getLastAction('confirm') === null) {
-      $roundAndTrick = \LogManager::getCurrentRoundAndTrick();
+      $roundAndTrick = \LogManager::getCurrentDbRoundAndTrick();
       $round = (int) ($roundAndTrick['round'] ?? 1);
       $trick = (int) ($roundAndTrick['trick'] ?? 1);
       $lastCombo = \LogManager::getLastCombo();

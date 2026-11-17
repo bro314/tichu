@@ -891,6 +891,11 @@ function test_double_victory_and_normal_round_scoring(): void
   \PlayerManager::tichuBet(P0, 100);
   \PlayerManager::grandTichuBet(P1, 200);
 
+  // Advance Round 1 trick counter to 3 before Round 1 ends so we verify global-monotonic
+  // DB `log_trick` (rollback compatibility) alongside per-round logical `trick` in Round 2.
+  \LogManager::insert(0, 'newTrick');
+  \LogManager::insert(0, 'newTrick');
+
   $beforeDvPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
   callAction($game, P2, 'playCombo', ['cards' => $lastCardId]);
@@ -929,6 +934,25 @@ function test_double_victory_and_normal_round_scoring(): void
   assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Round 2 should advance to playComboOpen');
   assertSameVal(2, (int) \LogManager::getCurrentRoundAndTrick()['round'], 'Round counter should remain 2');
   assertSameVal(1, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Round 2 first trick counter should be 1');
+  assertSameVal(4, (int) \LogManager::getCurrentDbRoundAndTrick()['trick'], 'Round 2 first trick DB log_trick should stay globally monotonic (4) for rollback safety');
+  assertSameVal(
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT MAX(log_trick) FROM actionlog'),
+    (int) \LogManager::getCurrentDbRoundAndTrick()['trick'],
+    'Unscoped MAX(log_trick) must match current Round 2 Trick 1 DB log_trick'
+  );
+
+  // Playing in Round 2 Trick 1 must record combo under log_round=2 and the monotonic MAX(log_trick)
+  $activeR2 = (int) $game->getActivePlayerId();
+  $r2CardId = (string) array_values($deckR2->getCardsInLocation('hand', $activeR2))[0]['id'];
+  callAction($game, $activeR2, 'playCombo', ['cards' => $r2CardId]);
+  assertTrueVal(\LogManager::getLastCombo()->type !== NO_COMBO, 'Round 2 Trick 1 combo should be readable via LogManager::getLastCombo()');
+  assertSameVal(
+    1,
+    (int) \APP_DbObject::getUniqueValueFromDB(
+      "SELECT COUNT(*) FROM actionlog WHERE log_action = 'combo' AND log_round = 2 AND log_trick = (SELECT MAX(log_trick) FROM actionlog)"
+    ),
+    'Round 2 Trick 1 combo row must match unscoped MAX(log_round)/MAX(log_trick) query'
+  );
 
   // Part B: Normal Round Scoring (3 players go out, 4th player's captured cards -> firstOutPlayer, hand -> opposing team)
   \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);

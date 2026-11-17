@@ -1615,8 +1615,8 @@ export class Tichu {
     const cards = notif.args.cards || [];
     const comboName = notif.args.combo_name || "";
     const points = Number(notif.args.points || 0);
-    const comboType = notif.args.type !== undefined ? Number(notif.args.type) : 0;
-    const phoenixValue = notif.args.phoenixValue !== undefined ? notif.args.phoenixValue : null;
+    const rawType = notif.args.type !== undefined ? Number(notif.args.type) : undefined;
+    const rawPhoenixValue = notif.args.phoenixValue;
 
     const animate = this.shouldAnimate();
     const layer = animate ? this.getAnimationLayer() : null;
@@ -1624,6 +1624,19 @@ export class Tichu {
       layer && typeof layer.preparePlayCombo === "function"
         ? layer.preparePlayCombo(playerId, cards, comboName, this.stateName === "playBomb")
         : null;
+
+    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points, rawType, rawPhoenixValue);
+    const resolvedLast = window.gameModel?.getState().trickLastCombo;
+    const comboType =
+      resolvedLast && String(resolvedLast.playerId) === String(playerId)
+        ? resolvedLast.type
+        : (rawType ?? 0);
+    const phoenixValue =
+      resolvedLast && String(resolvedLast.playerId) === String(playerId)
+        ? resolvedLast.phoenixValue
+        : rawPhoenixValue !== undefined
+          ? rawPhoenixValue
+          : null;
 
     if (this.gamedatas) {
       this.gamedatas.currentTrick = [...(this.gamedatas.currentTrick || []), ...cards];
@@ -1656,7 +1669,6 @@ export class Tichu {
       };
     }
 
-    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points, comboType, phoenixValue);
     this.notifqueue.setSynchronousDuration(prep ? prep.durationMs : animate ? 100 : 1);
     if (layer && prep && typeof layer.runPlayComboFlight === "function") {
       void layer.runPlayComboFlight(playerId, cards, prep);

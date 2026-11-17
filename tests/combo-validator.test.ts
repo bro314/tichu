@@ -2683,3 +2683,159 @@ test("notif_acceptCards keeps received-cards view visible even when animations p
     }
   });
 });
+
+test("Legacy playCombo notification fallback (rollback & archive compatibility)", () => {
+  const phoenixCard = card(TYPE_PHOENIX, 1);
+  const basePlayers = {
+    1: {
+      id: 1,
+      name: "P1",
+      color: "000000",
+      no: 1,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    2: {
+      id: 2,
+      name: "P2",
+      color: "ff0000",
+      no: 2,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    3: {
+      id: 3,
+      name: "P3",
+      color: "000000",
+      no: 3,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    4: {
+      id: 4,
+      name: "P4",
+      color: "ff0000",
+      no: 4,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+  };
+
+  // 1. Single King (13) followed by Single Phoenix with omitted type/phoenixValue and non-English combo_name
+  {
+    const model = new GameModel();
+    model.hydrateFromGamedatas(
+      {
+        players: basePlayers as any,
+        hand: [card(1, 5), card(2, 14)],
+        handcount: { 1: 2, 2: 5, 3: 5, 4: 5 },
+      },
+      1,
+      false,
+      true,
+    );
+    model.applyPlayCombo(2, [card(1, 13)], "Roi", 10);
+    model.applyPlayCombo(3, [phoenixCard], "Phénix", -25);
+
+    const last = model.getState().trickLastCombo;
+    assert.equal(last.type, SINGLE_COMBO);
+    assert.equal(last.phoenixValue, 13.5);
+    const parsed = Combo.fromLastComboState(last);
+    assert.equal(parsed.type, SINGLE_COMBO);
+    assert.equal(parsed.phoenixValue, 13.5);
+
+    // Hand has a 5 and Ace; since Single Phoenix is 13.5 (not 1.5!), Ace beats it, 5 does not -> Pass allowed even with wish=5
+    const passCheck = validatePassAction(model.getState().hand, parsed, 5);
+    assert.equal(passCheck.canPass, true);
+  }
+
+  // 2. Ambiguous Straight with omitted type/phoenixValue and non-English combo_name:
+  //    server places Phoenix at end for high option ([5,6,7,8,Ph] => 5..9) and at start for low option ([Ph,5,6,7,8] => 4..8)
+  {
+    const highCards = [card(1, 5), card(2, 6), card(3, 7), card(4, 8), phoenixCard];
+    const modelHigh = new GameModel();
+    modelHigh.hydrateFromGamedatas({ players: basePlayers as any, hand: [] }, 1, false, true);
+    modelHigh.applyPlayCombo(2, highCards, "Suite de 5 à 9", 5);
+    assert.equal(modelHigh.getState().trickLastCombo.type, STRAIGHT_COMBO);
+    assert.equal(modelHigh.getState().trickLastCombo.phoenixValue, 9);
+    const highLast = Combo.fromLastComboState({
+      cards: highCards,
+      type: 0,
+      phoenixValue: null,
+      description: "Suite de 5 à 9",
+    });
+    assert.equal(highLast.phoenixValue, 9);
+    assert.equal(highLast.getFirstValue(), 5);
+    const straight5to9 = new Combo([card(1, 5), card(2, 6), card(3, 7), card(4, 8), card(1, 9)]);
+    const straight6to10 = new Combo([card(1, 6), card(2, 7), card(3, 8), card(4, 9), card(1, 10)]);
+    assert.equal(straight5to9.canBeat(highLast), false);
+    assert.equal(straight6to10.canBeat(highLast), true);
+
+    const lowCards = [phoenixCard, card(1, 5), card(2, 6), card(3, 7), card(4, 8)];
+    const modelLow = new GameModel();
+    modelLow.hydrateFromGamedatas({ players: basePlayers as any, hand: [] }, 1, false, true);
+    modelLow.applyPlayCombo(2, lowCards, "Suite de 4 à 8", 5);
+    assert.equal(modelLow.getState().trickLastCombo.type, STRAIGHT_COMBO);
+    assert.equal(modelLow.getState().trickLastCombo.phoenixValue, 4);
+    const lowLast = Combo.fromLastComboState({
+      cards: lowCards,
+      type: 0,
+      phoenixValue: null,
+      description: "Suite de 4 à 8",
+    });
+    assert.equal(lowLast.phoenixValue, 4);
+    assert.equal(lowLast.getFirstValue(), 4);
+    assert.equal(straight5to9.canBeat(lowLast), true);
+  }
+
+  // 3. Ambiguous Full House with omitted type/phoenixValue and non-English combo_name:
+  //    server places [Phoenix, tripleRank, tripleRank, pairRank, pairRank]
+  {
+    const fhSevensCards = [phoenixCard, card(1, 7), card(2, 7), card(1, 8), card(2, 8)];
+    const modelSevens = new GameModel();
+    modelSevens.hydrateFromGamedatas({ players: basePlayers as any, hand: [] }, 1, false, true);
+    modelSevens.applyPlayCombo(2, fhSevensCards, "Full aux 7 par les 8", 0);
+    assert.equal(modelSevens.getState().trickLastCombo.type, FULL_HOUSE_COMBO);
+    assert.equal(modelSevens.getState().trickLastCombo.phoenixValue, 7);
+    const sevensLast = Combo.fromLastComboState({
+      cards: fhSevensCards,
+      type: 0,
+      phoenixValue: null,
+      description: "Full aux 7 par les 8",
+    });
+    assert.equal(sevensLast.phoenixValue, 7);
+    assert.equal(sevensLast.getFirstValue(), 7);
+    const fhEightsOverTwos = new Combo([
+      card(1, 8),
+      card(2, 8),
+      card(3, 8),
+      card(1, 2),
+      card(2, 2),
+    ]);
+    assert.equal(fhEightsOverTwos.canBeat(sevensLast), true);
+
+    const fhEightsCards = [phoenixCard, card(1, 8), card(2, 8), card(1, 7), card(2, 7)];
+    const modelEights = new GameModel();
+    modelEights.hydrateFromGamedatas({ players: basePlayers as any, hand: [] }, 1, false, true);
+    modelEights.applyPlayCombo(2, fhEightsCards, "Full aux 8 par les 7", 0);
+    assert.equal(modelEights.getState().trickLastCombo.type, FULL_HOUSE_COMBO);
+    assert.equal(modelEights.getState().trickLastCombo.phoenixValue, 8);
+    const eightsLast = Combo.fromLastComboState({
+      cards: fhEightsCards,
+      type: 0,
+      phoenixValue: null,
+      description: "Full aux 8 par les 7",
+    });
+    assert.equal(eightsLast.phoenixValue, 8);
+    assert.equal(eightsLast.getFirstValue(), 8);
+    assert.equal(fhEightsOverTwos.canBeat(eightsLast), false);
+  }
+});

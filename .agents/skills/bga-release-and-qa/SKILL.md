@@ -1,16 +1,18 @@
 ---
 name: bga-release-and-qa
 description: >-
-  BGA pre-release QA checklist, production release workflow on studiogame?game=tichu, live-game
-  DB migration rules (upgradeTableDb & DBPREFIX_), @thoun autopass state-reset invariants,
-  i18n/dummyTranslations validation, Shadow DOM vs BGA Tutorial Creator caveats, and BGA 2025-2026
-  modernization workflow order. Use before building/deploying a BGA release, editing dbmodel.sql
-  or upgradeTableDb, auditing translations/dark mode/autopass, or modernizing BGA APIs.
+  BGA pre-release QA checklist, production release & rollback workflow on studiogame?game=tichu,
+  backwards/forwards compatibility & live-tab client/server skew rules, live-game DB migration
+  rules (upgradeTableDb & DBPREFIX_), @thoun autopass state-reset invariants, i18n/dummyTranslations
+  validation, Shadow DOM vs BGA Tutorial Creator caveats, and BGA 2025-2026 modernization workflow
+  order. Use before building/deploying/rolling back a BGA release, editing dbmodel.sql,
+  upgradeTableDb, actions, notifications, states, or actionlog, auditing translations/dark
+  mode/autopass, or modernizing BGA APIs.
 ---
 
 # BGA Release, Live-Game Safety, Autopass & QA Checklist
 
-## 1. Pushing a Release to Production (`boardgamearena.com`)
+## 1. Pushing a Release to Production (`boardgamearena.com`) & Rolling Back
 
 - **CRITICAL SAFETY GUARDRAIL**: **NEVER** build a release or deploy a new version to production without getting **explicit, clear confirmation from the user first**. Safe actions like `Reload game informations` or `Dry run build (to check code warnings)` can be clicked anytime, but committing/building/deploying a release requires user approval.
 - Once confirmed by the user, follow these steps on `https://studio.boardgamearena.com/studiogame?game=tichu`:
@@ -24,7 +26,9 @@ description: >-
      - Fill in the **`Release note: what has changed since the last release?`** input field (max 250 chars).
      - Click **`⇨ Commit & build a new version now`**. This snapshots the SFTP `/tichu/` files into BGA's internal SVN/release system and builds a numbered release package (e.g., `YYMMDD-HHMM`).
   3. Under the **Versions available for production** section:
-     - Locate the newly built version row and click its **Deploy** button to push it live to `boardgamearena.com`.
+     - Locate the newly built version row and click its **Deploy** button (`Deploy to production`) to push it live to `boardgamearena.com`.
+  4. **Rolling Back a Production Release**:
+     - Rolling back on `studiogame?game=tichu` means clicking **`Deploy to production`** on the previous stable build in the **Versions available for production** history (`proddeploy.html`). Always keep at least one known-good release build in the version history (never delete the previous build right after deploying).
 
 ---
 
@@ -47,7 +51,27 @@ Explicit invariant: every state transition that resets or advances trick/round p
 
 ---
 
-## 3. Live Game Migration Safety (`dbmodel.sql` & `upgradeTableDb`)
+## 3. Live Game Migration, Wire Skew & Rollback Compatibility
+
+### How BGA Platform Handles Deployments & Rollbacks Under the Hood
+
+- **Open browser tabs are NEVER auto-reloaded** on game deploy or rollback, and BGA's `ajaxcall` / Centrifuge notification pipeline performs **no game-version check** (`code 806` `"Update needed!"` is CSRF token expiry, and `force_browser_reload` is only for BGA platform upgrades). Already-open tabs keep their in-memory `.tpl` DOM, `tichu.css`, and `tichu.js` talking directly to the newly deployed (or rolled-back) PHP backend until the user refreshes (`F5`). Fresh page loads serve `.tpl`, `tichu.js`, and `tichu.css` atomically from the active release (`YYMMDD-HHMM`).
+- **`upgradeTableDb($from_version)` & `game_db_version` (`global_id = 300`) are strictly one-way**: `Table::setTable()` only runs `upgradeTableDb($from_version)` and updates `global[300]` when `$game_version > $db_version`. On a rollback (`OLD < NEW`), **no downgrade hook runs** and `global[300]` stays at `NEW` on every table that processed a request while `NEW` was live — creating a split `$from_version` baseline across tables for the _next_ release. All `upgradeTableDb` logic must therefore use idempotent schema guards (`SHOW COLUMNS`, `CREATE TABLE IF NOT EXISTS`, `try/catch` for `zz_replay*` shadow tables).
+
+### The 4-Direction Compatibility Checklist (Audit Before Modifying Actions, Notifications, States, `actionlog`, or Schema)
+
+1. **Forward DB / State / Replay (`OLD DB -> NEW PHP + NEW JS`)**: Never delete states or change `ST_*`, option, preference, or stat IDs. Default newly added `global` rows safely when absent on running tables (`getGameStateValue("...", 0)` + `INSERT` fallback if `UPDATE` affects 0 rows). Keep `<tichu-replay>` and `g_replayFrom` tolerant of historical `gamelog` payload types (e.g., `Number(args.bet)` for `"200"` vs `200`).
+2. **Forward Live-Tab Skew (`OLD JS open tab <-> NEW PHP`)**: Preserve `tichu.action.php` endpoint names, parameter names/types/enums, and `states.inc.php` `possibleactions` expected by the currently live `tichu.js`. Keep `NotificationManager.php` notification names and existing payload keys/types intact (additive keys only).
+3. **Rollback Live-Tab Skew (`NEW JS open tab <-> OLD PHP`)**: `NEW` JS (`src/tichu.ts`, `GameModel`, `Combo`) must gracefully handle `undefined` for newly added `getAllDatas` or `NotificationManager` fields (especially when client-side validators disable/gate Play or Pass buttons!) and must not depend on brand-new action endpoints unless phased across releases.
+4. **Rollback DB / Log Forwards Compatibility (`NEW DB/Logs -> OLD PHP + OLD JS`)**: Because BGA has no `downgradeTableDb`, never drop/rename columns or card locations, park tables in newly added states, or change `actionlog` round/trick query invariants expected by `OLD` PHP in a single release. Use a **two-release expand-then-contract** rollout for any breaking schema, action, or log change.
+
+### Client Version Reload Banner (`checkVersion` in `src/tichu.ts`) Caveats
+
+- `checkVersion` only runs in tabs that already loaded a release containing it (never in older clients).
+- Notifications do **not** carry `gameVersion` automatically unless explicitly added by PHP (e.g., in `NotificationManager`), so `traceNotif` will not see version changes unless `gameVersion` is emitted on notifications/state changes.
+- Reading `global[300]` (`getGameStateValue("game_db_version", 0)`) detects forward upgrades (`V1 -> V2` once `Table::setTable()` bumps `global[300]`), **not** rollbacks (`V2 -> V1`, where `global[300]` remains `V2` on touched tables). Detecting rollbacks requires comparing against the deployed code's own build/version identifier rather than `global[300]`.
+
+### Schema, DB & Platform Rules
 
 - **Never** delete states, change state IDs (`ST_*`), or change option/statistic IDs (`gameoptions.inc.php`, `stats.inc.php`) if games are running in production.
 - **Never put `--` comments in [`dbmodel.sql`](file:///Users/brohlfs/git/tichu/dbmodel.sql)**: BGA Studio strips all newlines from `dbmodel.sql` before passing it as a single string to MySQL, so any `--` comment silently swallows the rest of the schema!
