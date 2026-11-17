@@ -325,7 +325,34 @@ function test_give_cards_and_accept_passed_cards_and_bomb_passing_stat(): void
   );
 
   // P0 passes 3 valid cards -> triggers stAcceptPassedCards -> detectBombPassing -> stNewTrick -> playComboOpen!
+  $beforeAcceptPacketId = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
   callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0PassIds) . ';']);
+
+  // Verify notification ordering: acceptPassedCards -> acceptCards -> newTrick for both P0 and P1
+  foreach ([P0, P1] as $viewerId) {
+    $viewerNotifs = $game->getNotificationsSince($beforeAcceptPacketId, $viewerId, false);
+    $seq = [];
+    foreach ($viewerNotifs as $pkt) {
+      $d = $pkt['data'][0] ?? [];
+      $t = $d['type'] ?? '';
+      if ($t === 'gameStateChange') {
+        $seq[] = 'state:' . ($d['args']['name'] ?? '');
+      } elseif ($t === 'acceptCards' || $t === 'passCards') {
+        $seq[] = $t;
+      }
+    }
+    $idxAcceptState = array_search('state:acceptPassedCards', $seq, true);
+    $idxAcceptNotif = array_search('acceptCards', $seq, true);
+    $idxNewTrickState = array_search('state:newTrick', $seq, true);
+    assertTrueVal(
+      $idxAcceptState !== false && $idxAcceptNotif !== false && $idxNewTrickState !== false,
+      "Expected acceptPassedCards, acceptCards, and newTrick notifications for player $viewerId, got: " . implode(', ', $seq)
+    );
+    assertTrueVal(
+      $idxAcceptState < $idxAcceptNotif && $idxAcceptNotif < $idxNewTrickState,
+      "Expected acceptPassedCards < acceptCards < newTrick for player $viewerId, got: " . implode(', ', $seq)
+    );
+  }
 
   $state = $game->gamestate->state(P0);
   assertSameVal('playComboOpen', $state['name'], 'Should transition to playComboOpen after all 4 players pass');

@@ -4,6 +4,7 @@ import { classMap } from "lit/directives/class-map.js";
 import { Card, LastComboState, LivePlayer } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
+import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-status";
 import "./tichu-stock";
 import type { TichuStock } from "./tichu-stock";
@@ -411,6 +412,7 @@ export class TichuLastPlayed extends LitElement {
                     .pass=${true}
                     .scale=${0.75}
                     .tiki=${this.isTiki}
+                    .hideAllCards=${this.hideAllForSweep}
                   ></tichu-stock
                 ></span>`
               : html`<tichu-stock
@@ -431,10 +433,13 @@ export class TichuLastPlayed extends LitElement {
 
   protected override willUpdate(changedProperties: PropertyValues) {
     super.willUpdate(changedProperties);
-    if (
+    const stateReset =
       changedProperties.has("stateName") &&
-      (this.stateName === "newTrick" || this.stateName === "newRound")
-    ) {
+      (this.stateName === "newTrick" ||
+        this.stateName === "newRound" ||
+        this.stateName === "playComboOpen" ||
+        this.stateName === "endRound");
+    if (stateReset || changedProperties.has("trick")) {
       this.hideAllForSweep = false;
       this.winningHighlightPlayerId = null;
       this.pendingRevealByPlayer = {};
@@ -458,6 +463,7 @@ export class TichuLastPlayed extends LitElement {
   }
 
   markPendingReveal(playerId: string | number, cardIds: Array<string | number>): void {
+    this.hideAllForSweep = false;
     const id = String(playerId);
     const existing = new Set(this.pendingRevealByPlayer[id] ?? []);
     for (const cid of cardIds) {
@@ -495,16 +501,27 @@ export class TichuLastPlayed extends LitElement {
     this.pendingRevealByPlayer = copy;
   }
 
-  getAllTableComboCards(): Array<{ playerId: string; card: Card; rect: DOMRect }> {
-    const result: Array<{ playerId: string; card: Card; rect: DOMRect }> = [];
+  getAllTableComboCards(): Array<{ playerId: string; card: Card; rect: DOMRect; pass?: boolean }> {
+    const result: Array<{ playerId: string; card: Card; rect: DOMRect; pass?: boolean }> = [];
     if (!this.shadowRoot) return result;
     const stocks = Array.from(
       this.shadowRoot.querySelectorAll<TichuStock>("tichu-stock[data-player-id]"),
     );
     for (const stock of stocks) {
-      if (stock.pass) continue;
       const pid = stock.getAttribute("data-player-id");
       if (!pid) continue;
+      if (stock.pass) {
+        const rect = stock.getPassCardRect();
+        if (rect) {
+          result.push({
+            playerId: pid,
+            card: { id: `pass_${pid}`, type: "0", type_arg: "0" },
+            rect,
+            pass: true,
+          });
+        }
+        continue;
+      }
       const rectMap = stock.getCardRects();
       for (const card of stock.cards) {
         const rect = rectMap.get(Number(card.id));
@@ -524,16 +541,28 @@ export class TichuLastPlayed extends LitElement {
     this.winningHighlightPlayerId = playerId !== null ? String(playerId) : null;
   }
 
-  private getZoomFactor(): number {
-    const areaWrap = document.getElementById("game_play_area_wrap");
-    if (areaWrap) {
-      const m = areaWrap.style.transform.match(/scale\(([^)]+)\)/);
-      if (m && m[1]) {
-        const parsed = Number(m[1]);
-        if (!Number.isNaN(parsed) && parsed > 0) return parsed;
-      }
-    }
-    return 1;
+  getPlayerHandIconRect(playerId: string | number): DOMRect | null {
+    return this.getIconAnchorRect(`icon_hand_${playerId}`);
+  }
+
+  getPlayerPointsIconRect(playerId: string | number): DOMRect | null {
+    return this.getIconAnchorRect(`icon_star_${playerId}`);
+  }
+
+  private getIconAnchorRect(elementId: string): DOMRect | null {
+    const el = this.shadowRoot?.getElementById(elementId);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const zoom = getPlayAreaZoomFactor();
+    const w = 36 * zoom;
+    const h = 54 * zoom;
+    return new DOMRect(
+      rect.left + rect.width / 2 - w / 2,
+      rect.top + rect.height / 2 - h / 2,
+      w,
+      h,
+    );
   }
 
   getSeatAnchorRect(playerId: string | number): DOMRect | null {
@@ -544,7 +573,7 @@ export class TichuLastPlayed extends LitElement {
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
-    const zoom = this.getZoomFactor();
+    const zoom = getPlayAreaZoomFactor();
     const w = 75 * zoom;
     const h = 112.5 * zoom;
     return new DOMRect(
@@ -562,7 +591,7 @@ export class TichuLastPlayed extends LitElement {
       this;
     const rect = area.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
-    const zoom = this.getZoomFactor();
+    const zoom = getPlayAreaZoomFactor();
     const w = 65 * zoom;
     const h = 97.5 * zoom;
     return new DOMRect(

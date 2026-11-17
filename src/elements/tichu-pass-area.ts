@@ -4,6 +4,7 @@ import { classMap } from "lit/directives/class-map.js";
 import { LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
+import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-card";
 import type { TichuCard } from "./tichu-card";
 
@@ -17,6 +18,7 @@ export class TichuPassArea extends LitElement {
   @state() private players: Record<string, LivePlayer> = {};
   @state() private isTiki = false;
   @state() private clockwise = true;
+  @state() private pendingRevealCardIds: Set<string> = new Set();
 
   static override get styles() {
     return [
@@ -108,6 +110,9 @@ export class TichuPassArea extends LitElement {
           transform: translateY(180px);
           opacity: 0;
         }
+        tichu-card[data-pending-reveal] {
+          visibility: hidden;
+        }
       `,
     ];
   }
@@ -188,6 +193,9 @@ export class TichuPassArea extends LitElement {
     const isGrandTichu = targetPlayer?.callGrandTichu === 200;
     const isTichu = targetPlayer?.callTichu === 100;
     const hasCard = slot.givenCard !== null || slot.receivedCard !== null;
+    const givenHidden = slot.givenCard
+      ? this.pendingRevealCardIds.has(String(slot.givenCard.id))
+      : false;
 
     return html`
       <div
@@ -223,6 +231,7 @@ export class TichuPassArea extends LitElement {
           ${
             slot.givenCard
               ? html`<tichu-card
+                  ?data-pending-reveal=${givenHidden}
                   .card=${slot.givenCard}
                   .scale=${1.0}
                   .tiki=${this.isTiki}
@@ -253,21 +262,100 @@ export class TichuPassArea extends LitElement {
     `;
   }
 
-  getReceivedCardRects(): Map<number, DOMRect> {
+  isPassAreaVisible(): boolean {
+    const tables = this.shadowRoot?.getElementById("playertables");
+    if (!tables) return false;
+    const rect = tables.getBoundingClientRect();
+    return Boolean(rect && rect.width > 0 && rect.height > 0);
+  }
+
+  markPendingReveal(cardIds: Array<string | number>): void {
+    if (!cardIds || cardIds.length === 0) return;
+    const next = new Set(this.pendingRevealCardIds);
+    for (const id of cardIds) {
+      next.add(String(id));
+    }
+    this.pendingRevealCardIds = next;
+  }
+
+  revealCards(cardIds?: Array<string | number>): void {
+    if (!cardIds) {
+      if (this.pendingRevealCardIds.size > 0) {
+        this.pendingRevealCardIds = new Set();
+      }
+      return;
+    }
+    if (this.pendingRevealCardIds.size === 0) return;
+    const next = new Set(this.pendingRevealCardIds);
+    let changed = false;
+    for (const id of cardIds) {
+      if (next.delete(String(id))) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.pendingRevealCardIds = next;
+    }
+  }
+
+  private collectCardRects(
+    selector: string,
+    cardIds?: Array<string | number>,
+  ): Map<number, DOMRect> {
     const result = new Map<number, DOMRect>();
     if (!this.shadowRoot) return result;
-    const cardEls = Array.from(
-      this.shadowRoot.querySelectorAll<TichuCard>("tichu-card.received-card"),
-    );
+    const filter = cardIds ? new Set(cardIds.map((id) => Number(id))) : null;
+    const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>(selector));
     for (const cardEl of cardEls) {
       if (!cardEl.card?.id) continue;
       const numId = Number(cardEl.card.id);
       if (Number.isNaN(numId)) continue;
+      if (filter && !filter.has(numId)) continue;
       const innerCard = cardEl.shadowRoot?.getElementById("card");
       const rect = innerCard ? innerCard.getBoundingClientRect() : cardEl.getBoundingClientRect();
-      result.set(numId, rect);
+      if (rect && rect.width > 0 && rect.height > 0) {
+        result.set(numId, rect);
+      }
     }
     return result;
+  }
+
+  getReceivedCardRects(): Map<number, DOMRect> {
+    return this.collectCardRects("tichu-card.received-card");
+  }
+
+  getGivenCardRects(cardIds?: Array<string | number>): Map<number, DOMRect> {
+    const result = this.collectCardRects("tichu-card.given-card", cardIds);
+    const filter = cardIds ? new Set(cardIds.map((id) => Number(id))) : null;
+    if (!filter || result.size < filter.size) {
+      this.passSlots.forEach((slot, idx) => {
+        if (!slot.givenCard?.id) return;
+        const numId = Number(slot.givenCard.id);
+        if (Number.isNaN(numId)) return;
+        if (filter && !filter.has(numId)) return;
+        if (!result.has(numId)) {
+          const slotRect = this.getSlotCardTargetRect(idx);
+          if (slotRect) result.set(numId, slotRect);
+        }
+      });
+    }
+    return result;
+  }
+
+  getSlotCardTargetRect(slotIndex: number): DOMRect | null {
+    const slotEl = this.shadowRoot?.getElementById(`playertable_${slotIndex + 1}`);
+    if (!slotEl) return null;
+    const rect = slotEl.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    const zoom = getPlayAreaZoomFactor();
+    return new DOMRect(rect.left + 20 * zoom, rect.top + 40 * zoom, 100 * zoom, 150 * zoom);
+  }
+
+  getSlotCardRectByPlayerId(playerId: string | number): DOMRect | null {
+    const id = String(playerId);
+    const idx = this.passSlots.findIndex((s) => String(s.playerId) === id);
+    if (idx < 0) return null;
+    return this.getSlotCardTargetRect(idx);
   }
 
   getSeatAnchorRect(playerId: string | number): DOMRect | null {

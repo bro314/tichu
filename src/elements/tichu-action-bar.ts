@@ -4,9 +4,9 @@ import {
   Combo,
   ComboValidationResult,
   PassValidationResult,
+  WishBombCallout,
   analyzeSelection,
-  canFinishHandInOnePlay,
-  decodeHtmlEntities,
+  getWishBombOnlyCallout,
   validatePassAction,
 } from "./combo-validator";
 import { Card, LivePlayer, TrickLastComboState } from "./game-model";
@@ -31,8 +31,6 @@ export class TichuActionBar extends LitElement {
     phoenixValue: null,
     description: "",
   };
-  @state() private confirmWholeHandPending = false;
-  @state() private wholeHandComboDesc = "";
   @state() private firstOutPlayerId = "";
   @state() private acceptingCardsCountdown = false;
   @state() private collectingTrickCountdown = false;
@@ -93,7 +91,7 @@ export class TichuActionBar extends LitElement {
           margin-left: 10px;
           margin-right: 15px;
         }
-        #wholeHandConfirmBanner {
+        #wishBombCallout {
           display: flex;
           align-items: center;
           flex-wrap: wrap;
@@ -104,14 +102,9 @@ export class TichuActionBar extends LitElement {
           box-shadow: var(--elevation);
           font-size: 13px;
         }
-        #wholeHandConfirmBanner .confirm-msg {
+        #wishBombCallout .callout-msg {
           font-weight: 600;
           margin-right: 6px;
-        }
-        #wholeHandConfirmBanner .bgabutton {
-          margin: 0;
-          padding: 4px 10px;
-          font-size: 13px;
         }
       `,
     ];
@@ -122,10 +115,7 @@ export class TichuActionBar extends LitElement {
     subscribe(
       this,
       () => window.gameModel.stateName$,
-      (stateName) => {
-        this.stateName = stateName;
-        this.confirmWholeHandPending = false;
-      },
+      (stateName) => (this.stateName = stateName),
     );
     subscribe(
       this,
@@ -150,18 +140,12 @@ export class TichuActionBar extends LitElement {
     subscribe(
       this,
       () => window.gameModel.hand$,
-      (hand) => {
-        this.hand = hand;
-        this.confirmWholeHandPending = false;
-      },
+      (hand) => (this.hand = hand),
     );
     subscribe(
       this,
       () => window.gameModel.selectedCardIds$,
-      (ids) => {
-        this.selectedCardIds = ids;
-        this.confirmWholeHandPending = false;
-      },
+      (ids) => (this.selectedCardIds = ids),
     );
     subscribe(
       this,
@@ -171,10 +155,7 @@ export class TichuActionBar extends LitElement {
     subscribe(
       this,
       () => window.gameModel.trickLastCombo$,
-      (lastCombo) => {
-        this.trickLastCombo = lastCombo;
-        this.confirmWholeHandPending = false;
-      },
+      (lastCombo) => (this.trickLastCombo = lastCombo),
     );
     subscribe(
       this,
@@ -244,6 +225,8 @@ export class TichuActionBar extends LitElement {
       this.currentPlayer.callGrandTichu !== 200 &&
       !this.firstOutPlayerId;
 
+    const wishBombCallout = this.getWishBombCallout();
+
     return html`
       <div id="buttons">
         <div id="play_button">${this.renderPlayButtonContent()}</div>
@@ -279,37 +262,29 @@ export class TichuActionBar extends LitElement {
         </div>
         <div class="space2"></div>
       </div>
-      ${this.confirmWholeHandPending ? this.renderWholeHandConfirmBanner() : ""}
+      ${wishBombCallout ? this.renderWishBombCallout(wishBombCallout) : ""}
     `;
   }
 
-  private renderWholeHandConfirmBanner() {
+  private getWishBombCallout(): WishBombCallout | null {
+    if (this.isReadOnly() || this.acceptingCardsCountdown || this.collectingTrickCountdown) {
+      return null;
+    }
+    const canPlayCombo =
+      this.isCurrentPlayerActive &&
+      (this.stateName === "playComboOpen" ||
+        this.stateName === "playCombo" ||
+        this.stateName === "playBomb");
+    if (!canPlayCombo) {
+      return null;
+    }
+    return getWishBombOnlyCallout(this.hand, this.getLastCombo(), this.mahjongWish);
+  }
+
+  private renderWishBombCallout(callout: WishBombCallout) {
     return html`
-      <div id="wholeHandConfirmBanner">
-        <span class="confirm-msg">
-          ${t(`Your whole hand is a legal play (${this.wholeHandComboDesc}) — finish in one play?`)}
-        </span>
-        <a
-          href="#"
-          id="confirmPlayWholeHand"
-          class="action-button bgabutton bgabutton_blue"
-          @click=${this.onConfirmPlayWholeHand}
-          >${t("Finish in one play")}</a
-        >
-        <a
-          href="#"
-          id="confirmPlaySelected"
-          class="action-button bgabutton bgabutton_gray"
-          @click=${this.onConfirmPlaySelected}
-          >${t("Play selected only")}</a
-        >
-        <a
-          href="#"
-          id="cancelPlayConfirm"
-          class="action-button bgabutton bgabutton_red"
-          @click=${this.onCancelPlayConfirm}
-          >${t("Cancel")}</a
-        >
+      <div id="wishBombCallout">
+        <span class="callout-msg">${t(callout.message)}</span>
       </div>
     `;
   }
@@ -459,41 +434,7 @@ export class TichuActionBar extends LitElement {
     const validation = this.getSelectionValidation();
     if (!validation.isValid) return;
 
-    const wholeHandCombo = canFinishHandInOnePlay(
-      this.hand,
-      this.getSelectedCards(),
-      this.getLastCombo(),
-      this.mahjongWish,
-      this.stateName,
-    );
-    if (wholeHandCombo && !this.confirmWholeHandPending) {
-      this.wholeHandComboDesc = decodeHtmlEntities(wholeHandCombo.description || "");
-      this.confirmWholeHandPending = true;
-      return;
-    }
-
-    this.confirmWholeHandPending = false;
     this.executePlayCombo(e);
-  }
-
-  private onConfirmPlayWholeHand(e: Event) {
-    e.preventDefault();
-    if (this.isReadOnly()) return;
-    this.confirmWholeHandPending = false;
-    window.gameModel.setSelectedCardIds(this.hand.map((c) => String(c.id)));
-    this.executePlayCombo(e);
-  }
-
-  private onConfirmPlaySelected(e: Event) {
-    e.preventDefault();
-    if (this.isReadOnly()) return;
-    this.confirmWholeHandPending = false;
-    this.executePlayCombo(e);
-  }
-
-  private onCancelPlayConfirm(e: Event) {
-    e.preventDefault();
-    this.confirmWholeHandPending = false;
   }
 
   private executePlayCombo(e: Event) {

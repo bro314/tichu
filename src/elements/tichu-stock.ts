@@ -261,7 +261,12 @@ export class TichuStock extends LitElement {
 
   renderPass() {
     return html`<div id="stock">
-      <tichu-card pass .scale=${this.scale} .tiki=${this.tiki}></tichu-card>
+      <tichu-card
+        pass
+        ?data-pending-reveal=${this.hideAllCards}
+        .scale=${this.scale}
+        .tiki=${this.tiki}
+      ></tichu-card>
     </div>`;
   }
 
@@ -337,6 +342,16 @@ export class TichuStock extends LitElement {
       result.set(numId, rect);
     }
     return result;
+  }
+
+  getPassCardRect(): DOMRect | null {
+    if (!this.shadowRoot || !this.pass) return null;
+    const cardEl = this.shadowRoot.querySelector<TichuCard>("tichu-card");
+    if (!cardEl) return null;
+    const innerCard = cardEl.shadowRoot?.getElementById("card");
+    const rect = innerCard ? innerCard.getBoundingClientRect() : cardEl.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    return rect;
   }
 
   markPendingReveal(cardIds: Array<string | number>): void {

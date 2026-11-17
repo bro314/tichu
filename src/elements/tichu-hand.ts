@@ -19,6 +19,7 @@ export class TichuHand extends LitElement {
   @state() private handSortOrder: "rank" | "color" = "rank";
   @state() private stateName = "";
   @state() private isTiki = false;
+  @state() private animationsEnabled = true;
   @state() private clockwise = true;
   @state() private squareTable = false;
   @state() private theme = 0;
@@ -122,6 +123,11 @@ export class TichuHand extends LitElement {
       this,
       () => window.gameModel.isTiki$,
       (isTiki) => (this.isTiki = isTiki),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.animationsEnabled$,
+      (animationsEnabled) => (this.animationsEnabled = animationsEnabled),
     );
     subscribe(
       this,
@@ -263,6 +269,22 @@ export class TichuHand extends LitElement {
           <a
             href="#"
             class="reordercards"
+            id="enable_animations"
+            style="display: ${this.animationsEnabled ? "none" : "inline"}"
+            @click=${(e: Event) => this.onAnimationsClick(e, true)}
+            >[${t("Enable animations")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
+            id="disable_animations"
+            style="display: ${this.animationsEnabled ? "inline" : "none"}"
+            @click=${(e: Event) => this.onAnimationsClick(e, false)}
+            >[${t("Disable animations")}]</a
+          >
+          <a
+            href="#"
+            class="reordercards"
             id="expReplay"
             style="display: ${isArchiveMode ? "inline" : "none"}"
             @click=${this.onExpReplay}
@@ -345,6 +367,15 @@ export class TichuHand extends LitElement {
     const ui = (window as any).gameui;
     if (ui && typeof ui.changeTiki === "function") {
       ui.changeTiki(isTiki);
+    }
+  }
+
+  private onAnimationsClick(e: Event, enabled: boolean) {
+    e.preventDefault();
+    window.gameModel.setAnimationsEnabled(enabled);
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.changeAnimations === "function") {
+      ui.changeAnimations(enabled);
     }
   }
 

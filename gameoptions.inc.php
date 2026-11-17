@@ -123,4 +123,13 @@ $game_preferences = [
     ],
     "default" => 0,
   ],
+  105 => [
+    "name" => totranslate("Animations"),
+    "needReload" => false,
+    "values" => [
+      1 => ["name" => totranslate("enabled")],
+      2 => ["name" => totranslate("disabled")],
+    ],
+    "default" => 1,
+  ],
 ];

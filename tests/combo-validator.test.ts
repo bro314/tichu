@@ -19,7 +19,7 @@ import {
   TYPE_MAHJONG,
   TYPE_PHOENIX,
   analyzeSelection,
-  canFinishHandInOnePlay,
+  getWishBombOnlyCallout,
   validatePassAction,
 } from "../src/elements/combo-validator";
 import { hasBomb } from "../src/elements/utils";
@@ -643,7 +643,7 @@ test("HandTest::testFindPlayableCombo", () => {
 });
 
 // =========================================================================
-// Smart Play UX Helpers (analyzeSelection, validatePassAction, canFinishHandInOnePlay)
+// Smart Play UX Helpers (analyzeSelection, validatePassAction, getWishBombOnlyCallout)
 // =========================================================================
 
 test("SmartPlayUX::analyzeSelection states and validation", () => {
@@ -811,43 +811,77 @@ test("SmartPlayUX::validatePassAction wish guard and combo-specific tooltips", (
   assert.equal(new Combo([A0]).canBeat(reconstructed), false);
 });
 
-test("SmartPlayUX::canFinishHandInOnePlay prompt trigger", () => {
-  const straightHand = [A5, B6, C7, D8, A9];
-  // Playing only single 5 when whole 5-card hand forms a straight on lead
-  const triggerLead = canFinishHandInOnePlay(straightHand, [A5], Combo.noCombo, 0, "playCombo");
-  assert.ok(triggerLead !== null);
-  assert.equal(triggerLead.type, STRAIGHT_COMBO);
+test("SmartPlayUX::getWishBombOnlyCallout triggers only when wish requires a bomb", () => {
+  // No active wish -> null
+  assert.equal(getWishBombOnlyCallout([A5, B5, C5, D5], new Combo([AA, BA]), 0), null);
 
-  // Selecting all 5 cards does NOT prompt
-  const noPromptAllSelected = canFinishHandInOnePlay(
-    straightHand,
-    straightHand,
-    Combo.noCombo,
-    0,
-    "playCombo",
+  // Leading a trick (no combo or Dog) -> null because a single fulfills the wish
+  assert.equal(getWishBombOnlyCallout([A5, B5, C5, D5], Combo.noCombo, 5), null);
+  assert.equal(getWishBombOnlyCallout([A5, A6, A7, A8, A9], new Combo([DOG]), 7), null);
+
+  // Fulfillable via the trick's combo type -> null
+  assert.equal(getWishBombOnlyCallout([A5, B5, C5, D5], new Combo([A3]), 5), null);
+  assert.equal(getWishBombOnlyCallout([A5, B5, C5, D5], new Combo([A3, B3]), 5), null);
+  assert.equal(
+    getWishBombOnlyCallout([A5, A6, A7, A8, A9], new Combo([B2, C3, D4, A5, B6]), 7),
+    null,
   );
-  assert.equal(noPromptAllSelected, null);
 
-  // If lastCombo is a Pair, a 5-card straight hand cannot beat it -> no prompt
-  const noPromptCannotBeat = canFinishHandInOnePlay(
-    straightHand,
-    [A9],
-    new Combo([A2, B2]),
-    0,
-    "playCombo",
+  // Cannot fulfill wish at all -> null
+  assert.equal(getWishBombOnlyCallout([A5, DR], new Combo([AA]), 5), null);
+  assert.equal(getWishBombOnlyCallout([A5, B5, C5, D5], new Combo([AA, BA, CA, DA]), 5), null);
+
+  // Fulfillable ONLY by a 4-of-a-kind bomb
+  const fourBombPair = getWishBombOnlyCallout([A5, B5, C5, D5, B9], new Combo([AA, BA]), 5);
+  assert.ok(fourBombPair !== null);
+  assert.equal(fourBombPair.bombKind, "4-of-a-kind bomb");
+  assert.equal(fourBombPair.bombDescription, "Bomb of four 5s");
+  assert.match(fourBombPair.message, /4-of-a-kind bomb/);
+  assert.match(fourBombPair.message, /5/);
+
+  const fourBombSingle = getWishBombOnlyCallout([AQ, BQ, CQ, DQ], new Combo([AA]), 12);
+  assert.ok(fourBombSingle !== null);
+  assert.equal(fourBombSingle.bombKind, "4-of-a-kind bomb");
+  assert.equal(fourBombSingle.bombDescription, "Bomb of four Queens");
+  assert.match(fourBombSingle.message, /4-of-a-kind bomb/);
+  assert.match(fourBombSingle.message, /Queen/);
+
+  // Fulfillable ONLY by a straight flush bomb
+  const sfBombPair = getWishBombOnlyCallout([A5, A6, A7, A8, A9, B2], new Combo([B0, C0]), 7);
+  assert.ok(sfBombPair !== null);
+  assert.equal(sfBombPair.bombKind, "straight flush bomb");
+  assert.equal(sfBombPair.bombDescription, "Straight flush bomb starting from 5 to 9");
+  assert.match(sfBombPair.message, /straight flush bomb/);
+  assert.match(sfBombPair.message, /7/);
+
+  const sfBombStraight = getWishBombOnlyCallout(
+    [A3, A4, A5, A6, A7],
+    new Combo([B8, C9, D0, AJ, BQ]),
+    5,
   );
-  assert.equal(noPromptCannotBeat, null);
+  assert.ok(sfBombStraight !== null);
+  assert.equal(sfBombStraight.bombKind, "straight flush bomb");
+  assert.equal(sfBombStraight.bombDescription, "Straight flush bomb starting from 3 to 7");
+  assert.match(sfBombStraight.message, /straight flush bomb/);
 
-  // If hand is [DOG], length === 1 -> no prompt
-  const noPromptDog = canFinishHandInOnePlay([DOG], [DOG], Combo.noCombo, 0, "playCombo");
-  assert.equal(noPromptDog, null);
+  // Against Bomb of four Aces: four 7s cannot beat it, only the straight flush bomb can
+  const sfOverFourBomb = getWishBombOnlyCallout(
+    [A5, A6, A7, A8, A9, B7, C7, D7],
+    new Combo([AA, BA, CA, DA]),
+    7,
+  );
+  assert.ok(sfOverFourBomb !== null);
+  assert.equal(sfOverFourBomb.bombKind, "straight flush bomb");
 
-  // Ambiguous Phoenix straight finished in one play (4,5,6,7,PH beating 2,3,4,5,6)
-  const phHand = [B4, C5, D6, A7, PH];
-  const lastStraight = new Combo([A2, B3, C4, D5, A6]);
-  const phTrigger = canFinishHandInOnePlay(phHand, [A7], lastStraight, 0, "playCombo");
-  assert.ok(phTrigger !== null);
-  assert.equal(phTrigger.type, STRAIGHT_COMBO);
+  // Both a 4-of-a-kind bomb and a straight flush bomb can fulfill the wish
+  const bothBombs = getWishBombOnlyCallout(
+    [A5, A6, A7, A8, A9, B7, C7, D7],
+    new Combo([AA, BA]),
+    7,
+  );
+  assert.ok(bothBombs !== null);
+  assert.equal(bothBombs.bombKind, "4-of-a-kind or straight flush bomb");
+  assert.match(bothBombs.message, /4-of-a-kind or straight flush bomb/);
 });
 
 // =========================================================================
@@ -1388,4 +1422,677 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
     g.localStorage = savedLocal;
     g.CSS = savedCSS;
   }
+});
+
+// =========================================================================
+// Animation Origin / Destination, Pass-Card Flights & Trick Pass Sweep Tests
+// =========================================================================
+
+class MockDOMRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  right: number;
+  bottom: number;
+  x: number;
+  y: number;
+  constructor(x = 0, y = 0, width = 0, height = 0) {
+    this.x = x;
+    this.y = y;
+    this.left = x;
+    this.top = y;
+    this.width = width;
+    this.height = height;
+    this.right = x + width;
+    this.bottom = y + height;
+  }
+  toJSON() {
+    return {
+      x: this.x,
+      y: this.y,
+      left: this.left,
+      top: this.top,
+      width: this.width,
+      height: this.height,
+      right: this.right,
+      bottom: this.bottom,
+    };
+  }
+}
+
+function withMockLitEnv(
+  fn: (mods: {
+    TichuAnimationLayer: any;
+    TichuLastPlayed: any;
+    TichuPassArea: any;
+    TichuStock: any;
+  }) => Promise<void> | void,
+): Promise<void> {
+  const g = globalThis as any;
+  const saved = {
+    window: g.window,
+    document: g.document,
+    Element: g.Element,
+    HTMLElement: g.HTMLElement,
+    DOMRect: g.DOMRect,
+    customElements: g.customElements,
+  };
+
+  class MockElement {
+    style: Record<string, any> = {
+      setProperty(k: string, v: string) {
+        this[k] = v;
+      },
+    };
+    private attrs = new Map<string, string>();
+    get shadowRoot(): any {
+      return null;
+    }
+    attachShadow() {
+      return {};
+    }
+    setAttribute(k: string, v: string) {
+      this.attrs.set(k, String(v));
+    }
+    getAttribute(k: string) {
+      return this.attrs.has(k) ? this.attrs.get(k)! : null;
+    }
+    removeAttribute(k: string) {
+      this.attrs.delete(k);
+    }
+    hasAttribute(k: string) {
+      return this.attrs.has(k);
+    }
+    toggleAttribute(k: string, force?: boolean) {
+      const next = force === undefined ? !this.attrs.has(k) : Boolean(force);
+      if (next) this.attrs.set(k, "");
+      else this.attrs.delete(k);
+      return next;
+    }
+    animate() {
+      return { finished: Promise.resolve(), cancel() {} };
+    }
+  }
+
+  g.Element = MockElement;
+  g.HTMLElement = MockElement;
+  g.DOMRect = MockDOMRect;
+  g.customElements = { define() {}, get: () => undefined };
+  g.document = {
+    hidden: false,
+    visibilityState: "visible",
+    createTreeWalker: () => ({ currentNode: null, nextNode: () => null }),
+    createComment: () => ({}),
+    createTextNode: () => ({}),
+    createElement: () => new MockElement(),
+    getElementById: () => null,
+    querySelector: () => null,
+    body: null,
+  };
+  g.window = {
+    matchMedia: () => ({ matches: false }),
+    innerWidth: 1200,
+    innerHeight: 900,
+  };
+
+  const mods = {
+    TichuAnimationLayer: require("../src/elements/tichu-animation-layer").TichuAnimationLayer,
+    TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
+    TichuPassArea: require("../src/elements/tichu-pass-area").TichuPassArea,
+    TichuStock: require("../src/elements/tichu-stock").TichuStock,
+  };
+
+  return Promise.resolve(fn(mods)).finally(() => {
+    g.window = saved.window;
+    g.document = saved.document;
+    g.Element = saved.Element;
+    g.HTMLElement = saved.HTMLElement;
+    g.DOMRect = saved.DOMRect;
+    g.customElements = saved.customElements;
+  });
+}
+
+test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and <tichu-last-played> icons for opponents (never player panels)", async () => {
+  await withMockLitEnv(({ TichuAnimationLayer }) => {
+    const g = globalThis as any;
+    const model = new GameModel();
+    model.hydrateFromGamedatas(
+      {
+        players: {
+          "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" } as any,
+          "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" } as any,
+          "2385076": { id: "2385076", name: "p2", color: "000000", no: 3, score: "0" } as any,
+          "2385077": { id: "2385077", name: "p3", color: "ff0000", no: 4, score: "0" } as any,
+        },
+        playerorder: ["2385074", "2385075", "2385076", "2385077"],
+        gamestate: {
+          id: "60",
+          name: "playCombo",
+          type: "activeplayer",
+          active_player: "2385074",
+          args: {},
+        } as any,
+        hand: [A5, B6],
+      },
+      "2385074",
+      false,
+      true,
+    );
+    g.window.gameModel = model;
+
+    const handCardRect = new MockDOMRect(200, 620, 100, 150);
+    const handAnchorRect = new MockDOMRect(350, 620, 100, 150);
+    const oppHandIconRect = new MockDOMRect(120, 180, 36, 54);
+    const oppPointsIconRect = new MockDOMRect(160, 180, 36, 54);
+    const tableAceRect = new MockDOMRect(400, 200, 75, 112.5);
+    const tablePassRect = new MockDOMRect(400, 340, 75, 112.5);
+
+    let panelAccessed = false;
+    const mockHand = {
+      getCardRects: (ids: Array<string | number>) => {
+        const m = new Map<number, DOMRect>();
+        for (const id of ids) m.set(Number(id), handCardRect as any);
+        return m;
+      },
+      getHandAnchorRect: () => handAnchorRect,
+      revealCards() {},
+    };
+    const mockLastPlayed = {
+      markPendingReveal() {},
+      revealCards() {},
+      hideAllComboCards() {},
+      setWinningComboHighlight() {},
+      getPlayerHandIconRect: (pid: number) => (Number(pid) === 2385075 ? oppHandIconRect : null),
+      getPlayerPointsIconRect: (pid: number) =>
+        Number(pid) === 2385075 ? oppPointsIconRect : null,
+      getSeatAnchorRect: () => new MockDOMRect(999, 999, 75, 112.5),
+      getAllTableComboCards: () => [
+        { playerId: "2385074", card: AA, rect: tableAceRect as any },
+        {
+          playerId: "2385075",
+          card: { id: "pass_2385075", type: "0", type_arg: "0" },
+          rect: tablePassRect as any,
+          pass: true,
+        },
+      ],
+    };
+    const mockGameEl = {
+      shadowRoot: {
+        querySelector: (sel: string) => {
+          if (sel === "tichu-hand") return mockHand;
+          if (sel === "tichu-last-played") return mockLastPlayed;
+          return null;
+        },
+      },
+    };
+    g.document.querySelector = (sel: string) => {
+      if (sel === "tichu-game") return mockGameEl;
+      if (sel.includes("tichu-player-panel")) {
+        panelAccessed = true;
+        return { getBadgeRect: () => new MockDOMRect(900, 50, 50, 75) };
+      }
+      return null;
+    };
+    g.document.getElementById = (id: string) => {
+      if (id.startsWith("player_board_")) {
+        panelAccessed = true;
+        return { querySelector: () => ({ getBadgeRect: () => new MockDOMRect(900, 50, 50, 75) }) };
+      }
+      return null;
+    };
+
+    const layer = Object.create(TichuAnimationLayer.prototype);
+    layer.activeBatches = new Set();
+    layer.totalFlights = 0;
+
+    // 1. Self playCombo uses hand card rect
+    const selfPrep = layer.preparePlayCombo(2385074, [A5], "5", false);
+    assert.equal(selfPrep.fromRects.get(Number(A5.id)), handCardRect);
+    assert.equal(selfPrep.fallbackFromRect, handAnchorRect);
+
+    // 2. Opponent playCombo uses #icon_hand_<id> inside <tichu-last-played>, never #player_board_
+    const oppPrep = layer.preparePlayCombo(2385075, [B6], "6", false);
+    assert.equal(oppPrep.fromRects.size, 0);
+    assert.equal(oppPrep.fallbackFromRect, oppHandIconRect);
+    assert.equal(panelAccessed, false);
+
+    // 3. Spectator mode treats every seat as opponent (uses #icon_hand_2385074, not hand)
+    model.update({ isSpectator: true });
+    const specPrep = layer.preparePlayCombo(2385074, [A5], "5", false);
+    assert.equal(specPrep.fromRects.size, 0);
+    assert.notEqual(specPrep.fallbackFromRect, handAnchorRect);
+    model.update({ isSpectator: false });
+
+    // Capture flights passed to flyCards
+    const recordedFlights: any[][] = [];
+    layer.flyCards = (flights: any[], onCleanup?: () => void) => {
+      recordedFlights.push(flights);
+      onCleanup?.();
+      return Promise.resolve();
+    };
+
+    // 4. Capture sweep for self -> sweeps both played card and pass card into handAnchorRect
+    model.update({ lastComboPlayerId: "2385074" });
+    layer.runCaptureCardsSweep(2385074);
+    assert.equal(recordedFlights.length, 1);
+    assert.equal(recordedFlights[0]!.length, 2);
+    const selfPassFlight = recordedFlights[0]!.find((f) => f.pass === true);
+    const selfWinFlight = recordedFlights[0]!.find((f) => !f.pass);
+    assert.ok(selfPassFlight, "Expected pass card to be swept during captureCards");
+    assert.equal(selfPassFlight.toRect, handAnchorRect);
+    assert.equal(selfPassFlight.fadeOut, true);
+    assert.equal(selfWinFlight.toRect, handAnchorRect);
+    assert.ok(
+      selfWinFlight.delayMs > selfPassFlight.delayMs,
+      "Winning combo should linger after pass cards",
+    );
+
+    // 5. Capture sweep for opponent -> sweeps into #icon_star_<id> in <tichu-last-played>, never panel
+    layer.runCaptureCardsSweep(2385075);
+    assert.equal(recordedFlights.length, 2);
+    for (const f of recordedFlights[1]!) {
+      assert.equal(f.toRect, oppPointsIconRect);
+      assert.equal(f.fadeOut, true);
+    }
+    assert.equal(panelAccessed, false);
+
+    // 6. applyCaptureCards clears lastCombos immediately so cards cannot flicker back after sweep
+    model.applyPlayCombo(2385074, [AA], "Ace", 0, 1, null);
+    model.applyPass(2385075);
+    assert.equal(model.getState().lastCombos["2385074"]?.cards.length, 1);
+    assert.equal(model.getState().lastCombos["2385075"]?.passed, true);
+    model.applyCaptureCards(2385074, 25);
+    assert.equal(model.getState().players["2385074"]?.capturedPoints, 25);
+    assert.equal(model.getState().lastComboPlayerId, "2385074");
+    for (const comboState of Object.values(model.getState().lastCombos)) {
+      assert.equal(comboState.cards.length, 0);
+      assert.equal(comboState.passed, false);
+      assert.equal(comboState.description, "");
+    }
+  });
+});
+
+test("Animations::pass-card selection, reset, submit slide-out, and acceptCards flights", async () => {
+  await withMockLitEnv(
+    async ({ TichuAnimationLayer, TichuLastPlayed, TichuPassArea, TichuStock }) => {
+      const g = globalThis as any;
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" } as any,
+            "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" } as any,
+            "2385076": { id: "2385076", name: "p2", color: "000000", no: 3, score: "0" } as any,
+            "2385077": { id: "2385077", name: "p3", color: "ff0000", no: 4, score: "0" } as any,
+          },
+          playerorder: ["2385074", "2385075", "2385076", "2385077"],
+          gamestate: {
+            id: "40",
+            name: "giveCards",
+            type: "multipleactiveplayer",
+            multiactive: ["2385074"],
+            args: {},
+          } as any,
+          hand: [A2, B3, C4, D5],
+        },
+        "2385074",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+
+      let passVisible = true;
+      const pendingPassReveals = new Set<string>();
+      const pendingHandReveals = new Set<string>();
+      const handRects = new Map<number, DOMRect>([
+        [Number(A2.id), new MockDOMRect(100, 620, 100, 150) as any],
+        [Number(B3.id), new MockDOMRect(140, 620, 100, 150) as any],
+        [Number(C4.id), new MockDOMRect(180, 620, 100, 150) as any],
+      ]);
+      const slotRects = [
+        new MockDOMRect(80, 180, 100, 150),
+        new MockDOMRect(260, 140, 100, 150),
+        new MockDOMRect(440, 180, 100, 150),
+      ];
+
+      const mockPassArea = {
+        updateComplete: Promise.resolve(),
+        isPassAreaVisible: () => passVisible,
+        markPendingReveal: (ids: Array<string | number>) => {
+          ids.forEach((id) => pendingPassReveals.add(String(id)));
+        },
+        revealCards: (ids?: Array<string | number>) => {
+          if (!ids) pendingPassReveals.clear();
+          else ids.forEach((id) => pendingPassReveals.delete(String(id)));
+        },
+        getSlotCardTargetRect: (idx: number) => slotRects[idx] ?? null,
+        getSlotCardRectByPlayerId: (pid: string | number) => {
+          const idx = model.getState().passSlots.findIndex((s) => s.playerId === String(pid));
+          return idx >= 0 ? (slotRects[idx] ?? null) : null;
+        },
+        getReceivedCardRects: () => new Map<number, DOMRect>(),
+        getGivenCardRects: (cardIds?: Array<string | number>) => {
+          const res = new Map<number, DOMRect>();
+          const filter = cardIds ? new Set(cardIds.map(Number)) : null;
+          model.getState().passSlots.forEach((slot, idx) => {
+            if (!slot.givenCard) return;
+            const nId = Number(slot.givenCard.id);
+            if (filter && !filter.has(nId)) return;
+            res.set(nId, slotRects[idx]! as any);
+          });
+          return res;
+        },
+      };
+      const mockHand = {
+        updateComplete: Promise.resolve(),
+        getStock: () => ({ updateComplete: Promise.resolve() }),
+        getCardRects: (ids: Array<string | number>) => {
+          const res = new Map<number, DOMRect>();
+          for (const id of ids) {
+            const r = handRects.get(Number(id));
+            if (r) res.set(Number(id), r);
+          }
+          return res;
+        },
+        getHandAnchorRect: () => new MockDOMRect(200, 620, 100, 150),
+        markPendingReveal: (ids: Array<string | number>) => {
+          ids.forEach((id) => pendingHandReveals.add(String(id)));
+        },
+        revealCards: (ids?: Array<string | number>) => {
+          if (!ids) pendingHandReveals.clear();
+          else ids.forEach((id) => pendingHandReveals.delete(String(id)));
+        },
+      };
+      const mockGameEl = {
+        shadowRoot: {
+          querySelector: (sel: string) => {
+            if (sel === "tichu-pass-area") return mockPassArea;
+            if (sel === "tichu-hand") return mockHand;
+            return null;
+          },
+        },
+      };
+
+      const layer = Object.create(TichuAnimationLayer.prototype);
+      layer.activeBatches = new Set();
+      layer.totalFlights = 0;
+      const flownBatches: any[][] = [];
+      layer.flyCards = (flights: any[], onCleanup?: () => void) => {
+        flownBatches.push(flights);
+        onCleanup?.();
+        return Promise.resolve();
+      };
+      layer.canAnimate = () => true;
+
+      g.document.querySelector = (sel: string) => {
+        if (sel === "tichu-animation-layer") return layer;
+        if (sel === "tichu-game") return mockGameEl;
+        return null;
+      };
+
+      // 1. Selecting a pass card triggers hand -> pass slot flight
+      model.setSelectedCardIds([A2.id]);
+      model.toggleGiveCardSlot(0);
+      await new Promise((r) => setTimeout(r, 0));
+      assert.equal(flownBatches.length, 1);
+      assert.equal(flownBatches[0]![0].fromRect, handRects.get(Number(A2.id)));
+      assert.equal(flownBatches[0]![0].toRect, slotRects[0]);
+      assert.equal(pendingPassReveals.size, 0);
+
+      // 2. Unselecting a pass card triggers pass slot -> hand flight
+      model.toggleGiveCardSlot(0);
+      await new Promise((r) => setTimeout(r, 0));
+      assert.equal(flownBatches.length, 2);
+      assert.equal(flownBatches[1]![0].fromRect, slotRects[0]);
+      assert.equal(flownBatches[1]![0].toRect, handRects.get(Number(A2.id)));
+      assert.equal(pendingHandReveals.size, 0);
+
+      // 3. Stage 3 cards and reset -> flies all 3 back to hand
+      model.setSelectedCardIds([A2.id]);
+      model.toggleGiveCardSlot(0);
+      model.setSelectedCardIds([B3.id]);
+      model.toggleGiveCardSlot(1);
+      model.setSelectedCardIds([C4.id]);
+      model.toggleGiveCardSlot(2);
+      await new Promise((r) => setTimeout(r, 0));
+      const batchesBeforeReset = flownBatches.length;
+      model.resetPassCards();
+      await new Promise((r) => setTimeout(r, 0));
+      assert.equal(flownBatches.length, batchesBeforeReset + 1);
+      assert.equal(flownBatches[flownBatches.length - 1]!.length, 3);
+
+      // 4. Submit passCards -> slides staged cards upward & fades out
+      model.setSelectedCardIds([A2.id]);
+      model.toggleGiveCardSlot(0);
+      model.setSelectedCardIds([B3.id]);
+      model.toggleGiveCardSlot(1);
+      model.setSelectedCardIds([C4.id]);
+      model.toggleGiveCardSlot(2);
+      await new Promise((r) => setTimeout(r, 0));
+      const batchesBeforeOut = flownBatches.length;
+      const outRes = layer.runPassCardsOutFlight([A2.id, B3.id, C4.id]);
+      assert.ok(outRes.durationMs >= 200);
+      assert.equal(flownBatches.length, batchesBeforeOut + 1);
+      const outFlights = flownBatches[flownBatches.length - 1]!;
+      assert.equal(outFlights.length, 3);
+      assert.equal(outFlights[0].fadeOut, true);
+      assert.equal(outFlights[0].toRect.top, outFlights[0].fromRect.top - 60);
+
+      // 5. acceptCards timing & flight when passArea is visible -> uses slot rects by passed_from with 0ms delay (viewDelay happens before prepareAcceptCards)
+      const timing = layer.getAcceptCardsTiming(3);
+      assert.equal(timing.viewDelayMs, 1200);
+      assert.equal(timing.flightDurationMs, 370);
+      assert.equal(timing.totalDurationMs, 1570);
+
+      const slots = model.getState().passSlots;
+      const recv0 = { ...D6, passed_from: slots[0]!.playerId };
+      const recv1 = { ...A7, passed_from: slots[1]!.playerId };
+      const recv2 = { ...B8, passed_from: slots[2]!.playerId };
+      const acceptPrep = layer.prepareAcceptCards([recv0, recv1, recv2]);
+      assert.equal(acceptPrep.fromRects.size, 3);
+      assert.equal(acceptPrep.fromRects.get(Number(recv0.id)), slotRects[0]);
+      assert.equal(acceptPrep.fromRects.get(Number(recv1.id)), slotRects[1]);
+      assert.equal(acceptPrep.fromRects.get(Number(recv2.id)), slotRects[2]);
+      await layer.runAcceptCardsFlight([recv0, recv1, recv2], acceptPrep.fromRects);
+      const acceptFlights = flownBatches[flownBatches.length - 1]!;
+      assert.equal(acceptFlights.length, 3);
+      assert.equal(acceptFlights[0].delayMs, 0);
+      assert.equal(acceptFlights[1].delayMs, 35);
+      assert.equal(acceptFlights[2].delayMs, 70);
+
+      // 6. acceptCards when passArea is NOT visible -> skips animation completely
+      passVisible = false;
+      const hiddenPrep = layer.prepareAcceptCards([recv0, recv1, recv2]);
+      assert.equal(hiddenPrep.fromRects.size, 0);
+      assert.equal(pendingHandReveals.size, 0);
+      const countBeforeHidden = flownBatches.length;
+      await layer.runAcceptCardsFlight([recv0, recv1, recv2], hiddenPrep.fromRects);
+      assert.equal(flownBatches.length, countBeforeHidden);
+
+      // 7. TichuLastPlayed.getAllTableComboCards includes pass:true from pass stocks
+      const passStock = Object.create(TichuStock.prototype);
+      Object.defineProperties(passStock, {
+        pass: { value: true, configurable: true },
+        cards: { value: [], configurable: true },
+        getAttribute: {
+          value: (k: string) => (k === "data-player-id" ? "2385075" : null),
+        },
+        shadowRoot: {
+          value: {
+            querySelector: () => ({
+              shadowRoot: {
+                getElementById: () => ({
+                  getBoundingClientRect: () => new MockDOMRect(50, 60, 75, 112.5),
+                }),
+              },
+            }),
+          },
+        },
+      });
+      const fakeLastPlayed = Object.create(TichuLastPlayed.prototype);
+      Object.defineProperty(fakeLastPlayed, "shadowRoot", {
+        value: {
+          querySelectorAll: () => [passStock],
+          getElementById: (id: string) =>
+            id === "icon_hand_2385075"
+              ? { getBoundingClientRect: () => new MockDOMRect(10, 20, 16, 16) }
+              : id === "icon_star_2385075"
+                ? { getBoundingClientRect: () => new MockDOMRect(50, 20, 16, 16) }
+                : null,
+        },
+      });
+      const allEntries = fakeLastPlayed.getAllTableComboCards();
+      assert.equal(allEntries.length, 1);
+      assert.equal(allEntries[0].pass, true);
+      assert.equal(allEntries[0].playerId, "2385075");
+      const handAnchor = fakeLastPlayed.getPlayerHandIconRect(2385075);
+      const ptsAnchor = fakeLastPlayed.getPlayerPointsIconRect(2385075);
+      assert.equal(handAnchor.left, 10 + 8 - 18);
+      assert.equal(ptsAnchor.left, 50 + 8 - 18);
+
+      // 8. TichuPassArea.getSlotCardTargetRect computes exact (left+20*zoom, top+40*zoom, 100*zoom, 150*zoom)
+      g.document.getElementById = (id: string) =>
+        id === "game_play_area_wrap" ? { style: { transform: "scale(0.8)" } } : null;
+      const fakePassArea = Object.create(TichuPassArea.prototype);
+      Object.defineProperty(fakePassArea, "shadowRoot", {
+        value: {
+          getElementById: (id: string) =>
+            id === "playertable_1"
+              ? { getBoundingClientRect: () => new MockDOMRect(100, 200, 112, 168) }
+              : null,
+        },
+      });
+      const targetRect = fakePassArea.getSlotCardTargetRect(0);
+      assert.equal(targetRect.left, 100 + 20 * 0.8);
+      assert.equal(targetRect.top, 200 + 40 * 0.8);
+      assert.equal(targetRect.width, 100 * 0.8);
+      assert.equal(targetRect.height, 150 * 0.8);
+    },
+  );
+});
+
+test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimations, shouldAnimate, and bet splash gating", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const { shouldAnimate } = require("../src/elements/tichu-animation-layer");
+    const { Tichu, declaredClass } = loadTichuAdapterForNodeTests();
+
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+    const savedPlaySound = g.playSound;
+    try {
+      const ui = new (declaredClass || Tichu)();
+      ui.player_id = 2385074;
+      ui.isSpectator = false;
+      ui.bgaAnimationsActive = () => true;
+      ui.isReadOnly = () => false;
+      ui.isCurrentPlayerActive = () => false;
+      ui.removeActionButtons = () => {};
+      ui.onUpdateActionButtons = () => {};
+      ui.updatePageTitle = () => {};
+      const persistedPrefs: Array<[number, number]> = [];
+      ui.prefs = { 105: { value: 2 } };
+      ui.getGameUserPreference = (id: number) => (id === 105 ? ui.prefs[105].value : 1);
+      ui.setGameUserPreference = (id: number, val: number) => {
+        persistedPrefs.push([id, val]);
+        ui.prefs[id] = { value: val };
+      };
+      const syncDurations: number[] = [];
+      ui.notifqueue = {
+        setSynchronousDuration(ms: number) {
+          syncDurations.push(ms);
+        },
+      };
+      let cancelledLayerCalls = 0;
+      ui.getAnimationLayer = () => ({
+        cancelAll() {
+          cancelledLayerCalls++;
+        },
+      });
+      ui.gamedatas = {
+        players: {
+          "2385074": {
+            id: "2385074",
+            name: "p0",
+            color: "000000",
+            no: 1,
+            score: "0",
+            call_grand_tichu: "0",
+            call_tichu: "-1",
+          },
+          "2385075": {
+            id: "2385075",
+            name: "p1",
+            color: "ff0000",
+            no: 2,
+            score: "0",
+            call_grand_tichu: "0",
+            call_tichu: "-1",
+          },
+        },
+        gamestate: {
+          id: "50",
+          name: "playCombo",
+          type: "activeplayer",
+          active_player: "2385074",
+          args: {},
+        },
+        hand: [],
+      };
+
+      const prefs = ui.readPrefs();
+      assert.equal(prefs[105], 2);
+      assert.equal(prefs.animationsEnabled, false);
+
+      const model = new GameModel();
+      model.hydrateFromGamedatas(ui.gamedatas, "2385074", false, true, prefs);
+      g.window.gameModel = model;
+      g.window.gameui = ui;
+
+      assert.equal(model.getState().animationsEnabled, false);
+      assert.equal(ui.areAnimationsActive(), false);
+      assert.equal(ui.shouldAnimate(), false);
+      assert.equal(shouldAnimate(), false);
+
+      let laserPlayed = 0;
+      g.playSound = () => {
+        laserPlayed++;
+      };
+      ui.notif_tichuBet({ args: { player_id: 2385074, bet: Bet.TICHU } });
+      assert.equal(model.getState().betAnimations.length, 0);
+      assert.equal(laserPlayed, 0);
+      assert.equal(syncDurations.at(-1), 1);
+
+      // Re-enable via BGA preference callback
+      ui.onPreferenceChange(105, 1);
+      assert.equal(model.getState().animationsEnabled, true);
+      assert.equal(ui.areAnimationsActive(), true);
+      assert.equal(ui.shouldAnimate(), true);
+      assert.equal(shouldAnimate(), true);
+
+      // Toggle off via in-hand widget handler -> updates model, cancels layer, persists pref 105 = 2
+      ui.changeAnimations(false);
+      assert.equal(model.getState().animationsEnabled, false);
+      assert.equal(cancelledLayerCalls, 1);
+      assert.deepEqual(persistedPrefs.at(-1), [105, 2]);
+      assert.equal(shouldAnimate(), false);
+      ui.notif_grandTichuBet({ args: { player_id: 2385075, bet: Bet.GRAND_TICHU } });
+      assert.equal(model.getState().betAnimations.length, 0);
+      assert.equal(syncDurations.at(-1), 1);
+
+      // Re-enable via changeAnimations(true) -> bet splash triggers when enabled
+      ui.changeAnimations(true);
+      assert.deepEqual(persistedPrefs.at(-1), [105, 1]);
+      assert.equal(shouldAnimate(), true);
+      ui.notif_tichuBet({ args: { player_id: 2385075, bet: Bet.TICHU } });
+      assert.equal(model.getState().betAnimations.length, 1);
+      assert.equal(laserPlayed, 1);
+      assert.equal(syncDurations.at(-1), 1000);
+    } finally {
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+      g.playSound = savedPlaySound;
+    }
+  });
 });

@@ -1,6 +1,17 @@
 import { BehaviorSubject, Observable } from "rxjs";
 import type { Card, CardData, TichuGamedatas } from "../types/tichu-contracts";
+import type { TichuAnimationLayer } from "./tichu-animation-layer";
 import { select } from "./utils";
+
+function getActiveAnimationLayer(): TichuAnimationLayer | null {
+  if (typeof document === "undefined" || typeof window === "undefined") return null;
+  if (document.hidden || document.visibilityState === "hidden") return null;
+  const layer = document.querySelector("tichu-animation-layer") as TichuAnimationLayer | null;
+  if (!layer || typeof layer.canAnimate !== "function" || !layer.canAnimate()) {
+    return null;
+  }
+  return layer;
+}
 
 export type { Card, CardData };
 
@@ -59,6 +70,7 @@ export interface LiveGamePrefs {
   clockwise?: boolean;
   confirmPassWithSelection?: boolean;
   isTiki?: boolean;
+  animationsEnabled?: boolean;
   theme?: number;
   handSortOrder?: "rank" | "color";
   [prefId: number]: number | undefined;
@@ -100,6 +112,7 @@ export interface LiveGameState {
   confirmPassWithSelection: boolean;
   theme: number;
   isTiki: boolean;
+  animationsEnabled: boolean;
   experimentalReplayOpen: boolean;
   trickModalOpen: boolean;
   betAnimations: BetAnimation[];
@@ -159,6 +172,7 @@ export const initialLiveGameState: LiveGameState = {
   confirmPassWithSelection: true,
   theme: 0,
   isTiki: false,
+  animationsEnabled: true,
   experimentalReplayOpen: false,
   trickModalOpen: false,
   betAnimations: [],
@@ -275,6 +289,7 @@ export class GameModel {
   );
   public readonly theme$ = select(this.state$, (s) => s.theme);
   public readonly isTiki$ = select(this.state$, (s) => s.isTiki);
+  public readonly animationsEnabled$ = select(this.state$, (s) => s.animationsEnabled);
   public readonly experimentalReplayOpen$ = select(this.state$, (s) => s.experimentalReplayOpen);
   public readonly trickModalOpen$ = select(this.state$, (s) => s.trickModalOpen);
   public readonly betAnimations$ = select(this.state$, (s) => s.betAnimations);
@@ -470,7 +485,7 @@ export class GameModel {
     const rawWish = Number(gamedatas?.mahjongWish ?? gamedatas?.mahjong_wish ?? 0);
     const mahjongWish = rawWish > 0 && rawWish < 15 ? rawWish : 0;
 
-    // Resolve user preferences from either named fields or BGA numeric IDs (100..104)
+    // Resolve user preferences from either named fields or BGA numeric IDs (100..105)
     const squareTable =
       prefs?.squareTable !== undefined ? Boolean(prefs.squareTable) : Number(prefs?.[100]) === 2;
     const clockwise =
@@ -480,6 +495,10 @@ export class GameModel {
         ? Boolean(prefs.confirmPassWithSelection)
         : Number(prefs?.[102] ?? 1) !== 2;
     const isTiki = prefs?.isTiki !== undefined ? Boolean(prefs.isTiki) : Number(prefs?.[103]) === 1;
+    const animationsEnabled =
+      prefs?.animationsEnabled !== undefined
+        ? Boolean(prefs.animationsEnabled)
+        : Number(prefs?.[105] ?? 1) !== 2;
     const rawTheme =
       prefs?.theme !== undefined
         ? Number(prefs.theme)
@@ -541,6 +560,7 @@ export class GameModel {
       confirmPassWithSelection,
       theme,
       isTiki,
+      animationsEnabled,
       experimentalReplayOpen: false,
       trickModalOpen: false,
       betAnimations: [],
@@ -854,6 +874,8 @@ export class GameModel {
       const card = prev.hand.find((c) => c.id === selectedId);
       if (!card) return;
 
+      const layer = getActiveAnimationLayer();
+      const fromRect = layer ? layer.prepareGiveCardToSlot(card) : null;
       const passSlots = prev.passSlots.map((s, idx) =>
         idx === slotIndex ? { ...s, givenCard: card } : s,
       );
@@ -862,8 +884,13 @@ export class GameModel {
         hand: prev.hand.filter((c) => c.id !== selectedId),
         selectedCardIds: [],
       });
+      if (layer && fromRect) {
+        void layer.runGiveCardToSlotFlight(card, slotIndex, fromRect);
+      }
     } else {
       const returnedCard = slot.givenCard;
+      const layer = getActiveAnimationLayer();
+      const fromRects = layer ? layer.prepareReturnPassCardsToHand([returnedCard]) : null;
       const passSlots = prev.passSlots.map((s, idx) =>
         idx === slotIndex ? { ...s, givenCard: null } : s,
       );
@@ -871,6 +898,9 @@ export class GameModel {
         passSlots,
         hand: [...prev.hand, returnedCard],
       });
+      if (layer && fromRects && fromRects.size > 0) {
+        void layer.runReturnPassCardsToHandFlight([returnedCard], fromRects);
+      }
     }
   }
 
@@ -885,10 +915,15 @@ export class GameModel {
       return slot;
     });
     if (returnedCards.length === 0) return;
+    const layer = getActiveAnimationLayer();
+    const fromRects = layer ? layer.prepareReturnPassCardsToHand(returnedCards) : null;
     this.update({
       passSlots,
       hand: [...prev.hand, ...returnedCards],
     });
+    if (layer && fromRects && fromRects.size > 0) {
+      void layer.runReturnPassCardsToHandFlight(returnedCards, fromRects);
+    }
   }
 
   getCardsToGiveIds(): string[] | null {
@@ -1105,6 +1140,9 @@ export class GameModel {
     fadeDelayMs = 1000,
     fadeDurationMs = 1000,
   ): void {
+    if (!this.getState().animationsEnabled) {
+      return;
+    }
     const id = this.addBetAnimation(playerId, bet);
     setTimeout(() => {
       this.fadeOutBetAnimation(id);
@@ -1159,6 +1197,7 @@ export class GameModel {
     const pid = String(playerId);
     const prev = this.getState();
     const players: Record<string, LivePlayer> = {};
+    const lastCombos: Record<string, LastComboState> = {};
     for (const [id, player] of Object.entries(prev.players)) {
       players[id] = {
         ...player,
@@ -1166,8 +1205,9 @@ export class GameModel {
           id === pid ? player.capturedPoints + Number(trickValue) : player.capturedPoints,
         passedCardReady: false,
       };
+      lastCombos[id] = { cards: [], description: "", passed: false };
     }
-    this.update({ players });
+    this.update({ players, lastCombos });
   }
 
   applyNewScores(newScores: Record<string | number, number | string>): void {
@@ -1216,6 +1256,10 @@ export class GameModel {
 
   setTiki(isTiki: boolean): void {
     this.update({ isTiki });
+  }
+
+  setAnimationsEnabled(animationsEnabled: boolean): void {
+    this.update({ animationsEnabled: Boolean(animationsEnabled) });
   }
 
   setExperimentalReplayOpen(experimentalReplayOpen: boolean): void {

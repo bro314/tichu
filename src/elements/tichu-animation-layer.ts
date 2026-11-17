@@ -3,7 +3,6 @@ import { CardData } from "./game-model";
 import type { TichuHand } from "./tichu-hand";
 import type { TichuLastPlayed } from "./tichu-last-played";
 import type { TichuPassArea } from "./tichu-pass-area";
-import type { TichuPlayerPanel } from "./tichu-player-panel";
 import "./tichu-card";
 import type { TichuCard } from "./tichu-card";
 import { hasBomb } from "./utils";
@@ -17,6 +16,7 @@ export interface CardFlight {
   fadeOut?: boolean;
   pulse?: boolean;
   tiki?: boolean;
+  pass?: boolean;
 }
 
 export interface PlayComboPrep {
@@ -51,7 +51,14 @@ export function shouldAnimate(): boolean {
   if ((window as any).__tichuSpeed === "instant") {
     return false;
   }
+  const gm = (window as any).gameModel;
+  if (gm && typeof gm.getState === "function" && gm.getState()?.animationsEnabled === false) {
+    return false;
+  }
   const ui = getGameUi();
+  if (Number(ui?.prefs?.[105]?.value) === 2) {
+    return false;
+  }
   if (ui?.instantaneousMode) {
     return false;
   }
@@ -86,6 +93,19 @@ export function getAnimationSpeedScale(): number {
 
 export function scaleAnimMs(ms: number): number {
   return Math.max(0, Math.round(ms * getAnimationSpeedScale()));
+}
+
+export function getPlayAreaZoomFactor(): number {
+  if (typeof document === "undefined") return 1;
+  const areaWrap = document.getElementById("game_play_area_wrap");
+  if (areaWrap) {
+    const m = areaWrap.style.transform.match(/scale\(([^)]+)\)/);
+    if (m && m[1]) {
+      const parsed = Number(m[1]);
+      if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return 1;
 }
 
 export function getAnimationLayer(): TichuAnimationLayer | null {
@@ -146,18 +166,14 @@ export class TichuAnimationLayer extends LitElement {
     );
   }
 
+  canAnimate(): boolean {
+    return shouldAnimate();
+  }
+
   private getPassAreaElement(): TichuPassArea | null {
     return (
       (this.getGameElement()?.shadowRoot?.querySelector("tichu-pass-area") as TichuPassArea) ?? null
     );
-  }
-
-  private getPlayerBadgeRect(playerId: number | string): DOMRect | null {
-    const id = String(playerId);
-    const panel = (document.querySelector(`tichu-player-panel[player-id="${id}"]`) ??
-      document.getElementById(`player_board_${id}`)?.querySelector("tichu-player-panel")) as
-      TichuPlayerPanel | null | undefined;
-    return panel?.getBadgeRect() ?? null;
   }
 
   private getCenterFallbackRect(width = 75, height = 112.5): DOMRect {
@@ -186,7 +202,11 @@ export class TichuAnimationLayer extends LitElement {
       wrapper.className = "ghost-wrapper";
 
       const cardEl = document.createElement("tichu-card") as TichuCard;
-      cardEl.card = flight.card;
+      if (flight.pass) {
+        cardEl.pass = true;
+      } else {
+        cardEl.card = flight.card;
+      }
       cardEl.scale = 1.0;
       cardEl.tiki = flight.tiki ?? isTiki;
       wrapper.appendChild(cardEl);
@@ -267,6 +287,7 @@ export class TichuAnimationLayer extends LitElement {
       batch.cleanup();
     }
     this.getHandElement()?.revealCards();
+    this.getPassAreaElement()?.revealCards();
     const lastPlayedEl = this.getLastPlayedElement();
     if (lastPlayedEl) {
       lastPlayedEl.setWinningComboHighlight(null);
@@ -318,11 +339,49 @@ export class TichuAnimationLayer extends LitElement {
     await this.flyCards(flights, () => handEl.revealCards(cardIds));
   }
 
+  getAcceptCardsTiming(cardCount: number): {
+    viewDelayMs: number;
+    flightDurationMs: number;
+    totalDurationMs: number;
+  } {
+    const viewDelayMs = scaleAnimMs(1200);
+    const flightDurationMs = Math.max(
+      40,
+      scaleAnimMs(260) + Math.max(0, cardCount - 1) * scaleAnimMs(35) + scaleAnimMs(40),
+    );
+    return {
+      viewDelayMs,
+      flightDurationMs,
+      totalDurationMs: viewDelayMs + flightDurationMs,
+    };
+  }
+
   prepareAcceptCards(cards: CardData[]): AcceptCardsPrep {
-    if (!shouldAnimate() || cards.length === 0) {
+    const passAreaEl = this.getPassAreaElement();
+    if (!shouldAnimate() || cards.length === 0 || !passAreaEl?.isPassAreaVisible()) {
       return { fromRects: new Map(), durationMs: 50 };
     }
-    const fromRects = this.getPassAreaElement()?.getReceivedCardRects() ?? new Map();
+    const existingRects = passAreaEl.getReceivedCardRects();
+    const fromRects = new Map<number, DOMRect>();
+    cards.forEach((card, idx) => {
+      const idNum = Number(card.id);
+      if (Number.isNaN(idNum)) return;
+      const fromExisting = existingRects.get(idNum);
+      if (fromExisting) {
+        fromRects.set(idNum, fromExisting);
+        return;
+      }
+      const passedFrom = card.passed_from ?? (card as any).card_passed_from;
+      const slotRect =
+        (passedFrom ? passAreaEl.getSlotCardRectByPlayerId(passedFrom) : null) ??
+        passAreaEl.getSlotCardTargetRect(idx);
+      if (slotRect) {
+        fromRects.set(idNum, slotRect);
+      }
+    });
+    if (fromRects.size === 0) {
+      return { fromRects, durationMs: 50 };
+    }
     this.getHandElement()?.markPendingReveal(cards.map((c) => c.id));
     const durationMs = Math.max(
       40,
@@ -334,7 +393,7 @@ export class TichuAnimationLayer extends LitElement {
   async runAcceptCardsFlight(cards: CardData[], fromRects: Map<number, DOMRect>): Promise<void> {
     const handEl = this.getHandElement();
     const cardIds = cards.map((c) => c.id);
-    if (!shouldAnimate() || !handEl || cards.length === 0) {
+    if (!shouldAnimate() || !handEl || cards.length === 0 || fromRects.size === 0) {
       handEl?.revealCards(cardIds);
       return;
     }
@@ -346,21 +405,195 @@ export class TichuAnimationLayer extends LitElement {
     }
 
     const toRects = handEl.getCardRects(cardIds);
-    const fallbackFromRect =
-      this.getLastPlayedElement()?.getDeckOriginRect() ?? this.getCenterFallbackRect(75, 112.5);
     const fallbackToRect = handEl.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5);
     const durationMs = Math.max(12, scaleAnimMs(260));
     const staggerMs = scaleAnimMs(35);
 
-    const flights: CardFlight[] = cards.map((card, idx) => ({
-      card,
-      fromRect: fromRects.get(Number(card.id)) ?? fallbackFromRect,
-      toRect: toRects.get(Number(card.id)) ?? fallbackToRect,
-      delayMs: idx * staggerMs,
-      durationMs,
-    }));
+    const flights: CardFlight[] = [];
+    cards.forEach((card, idx) => {
+      const fromRect = fromRects.get(Number(card.id));
+      if (!fromRect) return;
+      flights.push({
+        card,
+        fromRect,
+        toRect: toRects.get(Number(card.id)) ?? fallbackToRect,
+        delayMs: idx * staggerMs,
+        durationMs,
+      });
+    });
+
+    if (flights.length === 0) {
+      handEl.revealCards(cardIds);
+      return;
+    }
 
     await this.flyCards(flights, () => handEl.revealCards(cardIds));
+  }
+
+  prepareGiveCardToSlot(card: CardData): DOMRect | null {
+    const passAreaEl = this.getPassAreaElement();
+    const handEl = this.getHandElement();
+    if (!shouldAnimate() || !passAreaEl?.isPassAreaVisible() || !handEl) {
+      return null;
+    }
+    const fromRect =
+      handEl.getCardRects([card.id]).get(Number(card.id)) ?? handEl.getHandAnchorRect();
+    if (!fromRect) {
+      return null;
+    }
+    passAreaEl.markPendingReveal([card.id]);
+    return fromRect;
+  }
+
+  async runGiveCardToSlotFlight(
+    card: CardData,
+    slotIndex: number,
+    fromRect: DOMRect | null,
+  ): Promise<void> {
+    const passAreaEl = this.getPassAreaElement();
+    if (!shouldAnimate() || !passAreaEl || !fromRect || !passAreaEl.isPassAreaVisible()) {
+      passAreaEl?.revealCards([card.id]);
+      return;
+    }
+
+    await passAreaEl.updateComplete;
+
+    const toRect =
+      passAreaEl.getGivenCardRects([card.id]).get(Number(card.id)) ??
+      passAreaEl.getSlotCardTargetRect(slotIndex);
+    if (!toRect) {
+      passAreaEl.revealCards([card.id]);
+      return;
+    }
+
+    const durationMs = Math.max(12, scaleAnimMs(220));
+    await this.flyCards(
+      [
+        {
+          card,
+          fromRect,
+          toRect,
+          durationMs,
+        },
+      ],
+      () => passAreaEl.revealCards([card.id]),
+    );
+  }
+
+  prepareReturnPassCardsToHand(cards: CardData[]): Map<number, DOMRect> {
+    const passAreaEl = this.getPassAreaElement();
+    const handEl = this.getHandElement();
+    if (!shouldAnimate() || cards.length === 0 || !passAreaEl?.isPassAreaVisible() || !handEl) {
+      return new Map();
+    }
+    const cardIds = cards.map((c) => c.id);
+    const fromRects = passAreaEl.getGivenCardRects(cardIds);
+    passAreaEl.revealCards(cardIds);
+    if (fromRects.size === 0) {
+      return fromRects;
+    }
+    handEl.markPendingReveal(cardIds);
+    return fromRects;
+  }
+
+  async runReturnPassCardsToHandFlight(
+    cards: CardData[],
+    fromRects: Map<number, DOMRect>,
+  ): Promise<void> {
+    const handEl = this.getHandElement();
+    const cardIds = cards.map((c) => c.id);
+    if (!shouldAnimate() || !handEl || cards.length === 0 || fromRects.size === 0) {
+      handEl?.revealCards(cardIds);
+      return;
+    }
+
+    await handEl.updateComplete;
+    const stock = handEl.getStock();
+    if (stock) {
+      await stock.updateComplete;
+    }
+
+    const toRects = handEl.getCardRects(cardIds);
+    const fallbackToRect = handEl.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5);
+    const durationMs = Math.max(12, scaleAnimMs(220));
+    const staggerMs = scaleAnimMs(25);
+
+    const flights: CardFlight[] = [];
+    cards.forEach((card, idx) => {
+      const fromRect = fromRects.get(Number(card.id));
+      if (!fromRect) return;
+      flights.push({
+        card,
+        fromRect,
+        toRect: toRects.get(Number(card.id)) ?? fallbackToRect,
+        delayMs: idx * staggerMs,
+        durationMs,
+      });
+    });
+
+    if (flights.length === 0) {
+      handEl.revealCards(cardIds);
+      return;
+    }
+
+    await this.flyCards(flights, () => handEl.revealCards(cardIds));
+  }
+
+  runPassCardsOutFlight(cardIds?: Array<string | number>): {
+    durationMs: number;
+    promise: Promise<void>;
+  } {
+    const passAreaEl = this.getPassAreaElement();
+    if (!shouldAnimate() || !passAreaEl?.isPassAreaVisible()) {
+      return { durationMs: 50, promise: Promise.resolve() };
+    }
+
+    const passSlots = window.gameModel?.getState().passSlots ?? [];
+    const filter = cardIds && cardIds.length > 0 ? new Set(cardIds.map(String)) : null;
+    const givenRects = passAreaEl.getGivenCardRects(cardIds);
+
+    const entries: Array<{ card: CardData; fromRect: DOMRect }> = [];
+    passSlots.forEach((slot, idx) => {
+      const card = slot.givenCard;
+      if (!card) return;
+      if (filter && !filter.has(String(card.id))) return;
+      const fromRect = givenRects.get(Number(card.id)) ?? passAreaEl.getSlotCardTargetRect(idx);
+      if (fromRect) {
+        entries.push({ card, fromRect });
+      }
+    });
+
+    if (entries.length === 0) {
+      return { durationMs: 50, promise: Promise.resolve() };
+    }
+
+    this.cancelAll();
+
+    const outDurationMs = Math.max(12, scaleAnimMs(240));
+    const staggerMs = scaleAnimMs(25);
+    const flights: CardFlight[] = entries.map(({ card, fromRect }, idx) => {
+      const scale = fromRect.width > 0 ? fromRect.width / 100 : 1;
+      return {
+        card,
+        fromRect,
+        toRect: new DOMRect(
+          fromRect.left,
+          fromRect.top - 60 * scale,
+          fromRect.width,
+          fromRect.height,
+        ),
+        delayMs: idx * staggerMs,
+        durationMs: outDurationMs,
+        fadeOut: true,
+      };
+    });
+
+    const promise = this.flyCards(flights);
+    const durationMs = Math.max(
+      40,
+      outDurationMs + Math.max(0, flights.length - 1) * staggerMs + scaleAnimMs(40),
+    );
+    return { durationMs, promise };
   }
 
   preparePlayCombo(
@@ -380,15 +613,15 @@ export class TichuAnimationLayer extends LitElement {
     }
 
     const cardIds = cards.map((c) => c.id);
-    const currentPlayerId = Number(window.gameModel?.getState().currentPlayerId ?? 0);
-    const isSelf = playerId === currentPlayerId;
+    const st = window.gameModel?.getState();
+    const isSelf = !st?.isSpectator && playerId === Number(st?.currentPlayerId ?? 0);
 
     const handEl = this.getHandElement();
     const lastPlayedEl = this.getLastPlayedElement();
     const fromRects = isSelf && handEl ? handEl.getCardRects(cardIds) : new Map<number, DOMRect>();
     const fallbackFromRect = isSelf
       ? (handEl?.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5))
-      : (this.getPlayerBadgeRect(playerId) ??
+      : (lastPlayedEl?.getPlayerHandIconRect(playerId) ??
         lastPlayedEl?.getSeatAnchorRect(playerId) ??
         this.getCenterFallbackRect(50, 75));
 
@@ -454,11 +687,18 @@ export class TichuAnimationLayer extends LitElement {
       return { durationMs: 100, promise: Promise.resolve() };
     }
 
-    const winnerId = String(window.gameModel?.getState().lastComboPlayerId || recipientPlayerId);
-    const toRect =
-      this.getPlayerBadgeRect(recipientPlayerId) ??
-      lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
-      this.getCenterFallbackRect(50, 75);
+    const st = window.gameModel?.getState();
+    const isSelf =
+      !st?.isSpectator && Number(recipientPlayerId) === Number(st?.currentPlayerId ?? 0);
+    const winnerId = String(st?.lastComboPlayerId || recipientPlayerId);
+    const toRect = isSelf
+      ? (this.getHandElement()?.getHandAnchorRect() ??
+        lastPlayedEl.getPlayerPointsIconRect(recipientPlayerId) ??
+        lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
+        this.getCenterFallbackRect(75, 112.5))
+      : (lastPlayedEl.getPlayerPointsIconRect(recipientPlayerId) ??
+        lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
+        this.getCenterFallbackRect(36, 54));
 
     const nonWinnerEntries = entries.filter((e) => e.playerId !== winnerId);
     const winnerEntries = entries.filter((e) => e.playerId === winnerId);
@@ -470,31 +710,27 @@ export class TichuAnimationLayer extends LitElement {
     const flights: CardFlight[] = [];
     let maxDelayMs = 0;
 
-    nonWinnerEntries.forEach((entry, idx) => {
-      const delayMs = idx * staggerMs;
-      if (delayMs > maxDelayMs) maxDelayMs = delayMs;
-      flights.push({
-        card: entry.card,
-        fromRect: entry.rect,
-        toRect,
-        delayMs,
-        durationMs: sweepDurationMs,
-        fadeOut: true,
+    const pushFlights = (
+      list: Array<{ playerId: string; card: CardData; rect: DOMRect; pass?: boolean }>,
+      baseDelayMs: number,
+    ) => {
+      list.forEach((entry, idx) => {
+        const delayMs = baseDelayMs + idx * staggerMs;
+        if (delayMs > maxDelayMs) maxDelayMs = delayMs;
+        flights.push({
+          card: entry.card,
+          fromRect: entry.rect,
+          toRect,
+          delayMs,
+          durationMs: sweepDurationMs,
+          fadeOut: true,
+          pass: Boolean(entry.pass),
+        });
       });
-    });
+    };
 
-    winnerEntries.forEach((entry, idx) => {
-      const delayMs = winnerLingerMs + idx * staggerMs;
-      if (delayMs > maxDelayMs) maxDelayMs = delayMs;
-      flights.push({
-        card: entry.card,
-        fromRect: entry.rect,
-        toRect,
-        delayMs,
-        durationMs: sweepDurationMs,
-        fadeOut: true,
-      });
-    });
+    pushFlights(nonWinnerEntries, 0);
+    pushFlights(winnerEntries, winnerLingerMs);
 
     lastPlayedEl.hideAllComboCards();
     lastPlayedEl.setWinningComboHighlight(winnerId);

@@ -5390,6 +5390,7 @@ abstract class Table extends Old\APP_GameClass
 
             $publicNotifs = [];
             $privateNotifs = [];
+            $publicRawIndex = 0;
 
             foreach ($groupRows as $row) {
                 $packetId = (string) $row['gamelog_packet_id'];
@@ -5415,6 +5416,10 @@ abstract class Table extends Old\APP_GameClass
                     $type = (string) ($notif['type'] ?? '');
                     $args = is_array($notif['args'] ?? null) ? $notif['args'] : [];
 
+                    $curPubIdx = 0;
+                    if ($isPublicRow) {
+                        $curPubIdx = $publicRawIndex++;
+                    }
                     if (!$allChannels && $viewerPlayerId !== null && $isPublicRow) {
                         if (
                             $type === 'gameStateChange' &&
@@ -5447,7 +5452,10 @@ abstract class Table extends Old\APP_GameClass
                     ];
 
                     if ($isPublicRow) {
-                        $publicNotifs[] = $pkt;
+                        $publicNotifs[] = [
+                            'rawIdx' => $curPubIdx,
+                            'packet' => $pkt,
+                        ];
                     } else {
                         $privateNotifs[] = [
                             'synchro' => $synchro,
@@ -5468,11 +5476,11 @@ abstract class Table extends Old\APP_GameClass
             $privCount = count($privateNotifs);
             $pubCount = count($publicNotifs);
             for ($i = 0; $i < $pubCount; $i++) {
-                while ($privIdx < $privCount && $privateNotifs[$privIdx]['synchro'] <= $i) {
+                while ($privIdx < $privCount && $privateNotifs[$privIdx]['synchro'] <= $publicNotifs[$i]['rawIdx']) {
                     $packets[] = $privateNotifs[$privIdx]['packet'];
                     $privIdx++;
                 }
-                $packets[] = $publicNotifs[$i];
+                $packets[] = $publicNotifs[$i]['packet'];
             }
             while ($privIdx < $privCount) {
                 $packets[] = $privateNotifs[$privIdx]['packet'];

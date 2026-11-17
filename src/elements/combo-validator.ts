@@ -704,7 +704,7 @@ export class Hand {
     return highestCombo.canBeat(combo);
   }
 
-  private getWishHighestByType(
+  public getWishHighestByType(
     comboType: number,
     wish: number,
     length: number,
@@ -1606,29 +1606,121 @@ export function validatePassAction(
   };
 }
 
-export function canFinishHandInOnePlay(
+export type WishBombKind =
+  "4-of-a-kind bomb" | "straight flush bomb" | "4-of-a-kind or straight flush bomb";
+
+export interface WishBombCallout {
+  wish: number;
+  wishLabel: string;
+  bombKind: WishBombKind;
+  bombDescription: string;
+  combo: Combo;
+  message: string;
+}
+
+export function getWishBombOnlyCallout(
   handCards: TichuCard[],
-  selectedCards: TichuCard[],
   lastCombo: Combo,
   mahjongWish: number,
-  stateName = "playCombo",
-): Combo | null {
-  if (
-    handCards.length <= 1 ||
-    selectedCards.length === 0 ||
-    selectedCards.length >= handCards.length
-  ) {
+): WishBombCallout | null {
+  if (mahjongWish < 2 || mahjongWish > 14) {
     return null;
   }
-  const fullAnalysis = analyzeSelection({
-    selectedCards: handCards,
-    handCards,
-    lastCombo,
-    stateName,
-    mahjongWish,
-  });
-  if (!fullAnalysis.isValid || fullAnalysis.type === DOG_COMBO) {
+  const isLeading =
+    !lastCombo ||
+    lastCombo.type === NO_COMBO ||
+    lastCombo.type === DOG_COMBO ||
+    lastCombo.cards.length === 0;
+  if (isLeading) {
     return null;
   }
-  return fullAnalysis.combo;
+
+  const hand = new Hand(handCards);
+  if (!hand.canFulFillWish(mahjongWish, lastCombo)) {
+    return null;
+  }
+
+  // If the player can fulfill the wish by playing the non-bomb combo type of the trick, no bomb callout is needed.
+  if (lastCombo.type !== BOMB_COMBO) {
+    const regularWishCombo = hand.getWishHighestByType(
+      lastCombo.type,
+      mahjongWish,
+      lastCombo.cards.length,
+      lastCombo,
+    );
+    if (regularWishCombo !== null && regularWishCombo.canBeat(lastCombo)) {
+      return null;
+    }
+  }
+
+  const wishCards = hand.cards.filter((c) => cardRank(c) === mahjongWish);
+  let fourBomb: Combo | null = null;
+  if (wishCards.length === 4) {
+    const candidate = new Combo(wishCards);
+    if (candidate.type === BOMB_COMBO && candidate.canBeat(lastCombo)) {
+      fourBomb = candidate;
+    }
+  }
+
+  let sfBomb: Combo | null = null;
+  for (const card of wishCards) {
+    const color = cardSuit(card);
+    const suitCards = hand.cards.filter((c) => cardSuit(c) === color && cardRank(c) !== 1);
+    if (suitCards.length < 5) continue;
+    for (let idx = 0; idx <= suitCards.length - 5; idx++) {
+      const startRank = cardRank(suitCards[idx]!);
+      if (startRank > mahjongWish) break;
+      if (cardRank(suitCards[idx + 4]!) !== startRank + 4) continue;
+      let end = idx + 5;
+      while (end < suitCards.length && cardRank(suitCards[end]!) === startRank + (end - idx)) {
+        end++;
+      }
+      const len = end - idx;
+      if (mahjongWish < startRank + len) {
+        const candidate = new Combo(suitCards.slice(idx, end));
+        if (
+          candidate.type === BOMB_COMBO &&
+          candidate.canBeat(lastCombo) &&
+          (sfBomb === null || candidate.canBeat(sfBomb))
+        ) {
+          sfBomb = candidate;
+        }
+      }
+      idx = end - 1;
+    }
+  }
+
+  if (fourBomb === null && sfBomb === null) {
+    return null;
+  }
+
+  const wishLabel = rankToDisplayName(mahjongWish);
+  let bombKind: WishBombKind;
+  let bombDescription: string;
+  let combo: Combo;
+
+  if (fourBomb !== null && sfBomb !== null) {
+    bombKind = "4-of-a-kind or straight flush bomb";
+    bombDescription = `${decodeHtmlEntities(fourBomb.description)} / ${decodeHtmlEntities(sfBomb.description)}`;
+    combo = sfBomb;
+  } else if (fourBomb !== null) {
+    bombKind = "4-of-a-kind bomb";
+    bombDescription = decodeHtmlEntities(fourBomb.description);
+    combo = fourBomb;
+  } else {
+    bombKind = "straight flush bomb";
+    bombDescription = decodeHtmlEntities(sfBomb!.description);
+    combo = sfBomb!;
+  }
+
+  const message = `You must fulfill the Mahjong wish (${wishLabel}) by playing a ${bombKind} (${bombDescription}).`;
+
+  return {
+    wish: mahjongWish,
+    wishLabel,
+    bombKind,
+    bombDescription,
+    combo,
+    message,
+  };
 }

@@ -1739,6 +1739,7 @@
     102: 1, // Unselect before passing: 1 = Enabled, 2 = Disabled
     103: 2, // Edition: 1 = Tiki, 2 = Standard
     104: 0, // Color Theme: 0..10
+    105: 1, // Animations: 1 = Enabled, 2 = Disabled
   };
 
   class GameGui {
@@ -1757,6 +1758,7 @@
         102: { value: this.getGameUserPreference(102) },
         103: { value: this.getGameUserPreference(103) },
         104: { value: this.getGameUserPreference(104) },
+        105: { value: this.getGameUserPreference(105) },
       };
       this._setPrefCalls = 0;
       this._simulateMissingPrefControl = false;
@@ -4492,7 +4494,7 @@
       instance._hydrateInitialLogs();
 
       if (instance.prefs) {
-        for (const prefId of [100, 101, 102, 103, 104]) {
+        for (const prefId of [100, 101, 102, 103, 104, 105]) {
           try {
             instance.prefs[prefId] = { value: instance.getGameUserPreference(prefId) };
           } catch (_e) {

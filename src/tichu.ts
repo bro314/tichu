@@ -28,6 +28,8 @@ declare global {
 export class Tichu {
   autoCollectTimeout?: number;
   autoAcceptTimeout?: number;
+  acceptFlightTimeout?: number;
+  private pendingAcceptFlush: (() => void) | null = null;
   collectSent = false;
   experimentalArchiveModeEnabled = false;
   allLastCombos: Record<number, Combo | undefined> = {};
@@ -276,6 +278,17 @@ export class Tichu {
   }
 
   areAnimationsActive(): boolean {
+    if (
+      typeof window !== "undefined" &&
+      window.gameModel &&
+      typeof window.gameModel.getState === "function" &&
+      window.gameModel.getState().animationsEnabled === false
+    ) {
+      return false;
+    }
+    if (Number((this as any).prefs?.[105]?.value) === 2) {
+      return false;
+    }
     if (typeof this.bgaAnimationsActive === "function") {
       return Boolean(this.bgaAnimationsActive());
     }
@@ -373,16 +386,19 @@ export class Tichu {
     const pref102 = this.safeGetPref(102, 1);
     const pref103 = this.safeGetPref(103, 2);
     const pref104 = this.safeGetPref(104, storedTheme);
+    const pref105 = this.safeGetPref(105, 1);
     return {
       100: pref100,
       101: pref101,
       102: pref102,
       103: pref103,
       104: pref104,
+      105: pref105,
       squareTable: pref100 === 2,
       clockwise: pref101 === 2,
       confirmPassWithSelection: pref102 !== 2,
       isTiki: pref103 === 1,
+      animationsEnabled: pref105 !== 2,
       theme: pref104,
       handSortOrder: this.safeGetHandSortOrder(),
     };
@@ -414,6 +430,9 @@ export class Tichu {
       case 104:
         this.onThemeChange(val);
         break;
+      case 105:
+        this.onAnimationsChange(val !== 2);
+        break;
     }
   }
 
@@ -441,6 +460,8 @@ export class Tichu {
     if (document.body && !document.querySelector("tichu-trick-modal")) {
       document.body.appendChild(document.createElement("tichu-trick-modal"));
     }
+    clearTimeout(this.acceptFlightTimeout);
+    this.pendingAcceptFlush = null;
     this.getAnimationLayer()?.cancelAll?.();
 
     window.gameModel?.hydrateFromGamedatas(
@@ -976,6 +997,15 @@ export class Tichu {
   onLeavingState(stateName: string) {
     clearTimeout(this.autoAcceptTimeout);
     clearTimeout(this.autoCollectTimeout);
+    clearTimeout(this.acceptFlightTimeout);
+    if (
+      this.pendingAcceptFlush &&
+      (stateName === "acceptPassedCards" || stateName === "showPassedCards")
+    ) {
+      const flush = this.pendingAcceptFlush;
+      this.pendingAcceptFlush = null;
+      flush();
+    }
     this.collectSent = false;
     window.gameModel?.setAcceptingCardsCountdown(false);
     window.gameModel?.setCollectingTrickCountdown(false);
@@ -1165,6 +1195,19 @@ export class Tichu {
   changeTiki(isTiki: boolean) {
     this.onTikiChange(isTiki);
     this.persistUserPreference(103, isTiki ? 1 : 2);
+  }
+
+  onAnimationsChange(enabled: boolean) {
+    const active = Boolean(enabled);
+    window.gameModel?.setAnimationsEnabled(active);
+    if (!active) {
+      this.getAnimationLayer()?.cancelAll?.();
+    }
+  }
+
+  changeAnimations(enabled: boolean) {
+    this.onAnimationsChange(enabled);
+    this.persistUserPreference(105, enabled ? 1 : 2);
   }
 
   toggleExperimentalReplay(enable?: boolean) {
@@ -1482,39 +1525,67 @@ export class Tichu {
     this.traceNotif("passCards", notif);
     const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
     if (!Array.isArray(ids)) return;
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const out =
+      layer && typeof layer.runPassCardsOutFlight === "function"
+        ? layer.runPassCardsOutFlight(ids)
+        : null;
     if (this.gamedatas?.hand) {
       const idSet = new Set(ids.map(String));
       this.gamedatas.hand = this.gamedatas.hand.filter((c) => !idSet.has(String(c.id)));
     }
     window.gameModel?.applyPassCardsNotif(ids);
+    this.notifqueue.setSynchronousDuration(out ? out.durationMs : animate ? 50 : 1);
   }
 
   notif_acceptCards(notif: TypedNotif<"acceptCards">) {
     this.traceNotif("acceptCards", notif);
     clearTimeout(this.autoAcceptTimeout);
+    clearTimeout(this.acceptFlightTimeout);
+    this.pendingAcceptFlush = null;
     window.gameModel?.setAcceptingCardsCountdown(false);
     const cards = notif.args.cards || [];
     const animate = this.shouldAnimate();
     const layer = animate ? this.getAnimationLayer() : null;
-    const prep =
-      layer && typeof layer.prepareAcceptCards === "function"
-        ? layer.prepareAcceptCards(cards)
-        : null;
 
-    if (this.gamedatas) {
-      if (!this.gamedatas.hand) this.gamedatas.hand = [];
-      const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
-      for (const card of cards) {
-        if (!existingIds.has(String(card.id))) {
-          this.gamedatas.hand.push(card);
+    const applyAcceptedCardsToHand = () => {
+      this.pendingAcceptFlush = null;
+      if (this.gamedatas) {
+        if (!this.gamedatas.hand) this.gamedatas.hand = [];
+        const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
+        for (const card of cards) {
+          if (!existingIds.has(String(card.id))) {
+            this.gamedatas.hand.push(card);
+          }
         }
       }
+      window.gameModel?.finishAcceptCards(cards);
+    };
+
+    if (!animate || !layer) {
+      applyAcceptedCardsToHand();
+      this.notifqueue.setSynchronousDuration(1);
+      return;
     }
-    window.gameModel?.finishAcceptCards(cards);
-    this.notifqueue.setSynchronousDuration(prep ? prep.durationMs : animate ? 50 : 1);
-    if (layer && prep && typeof layer.runAcceptCardsFlight === "function") {
-      void layer.runAcceptCardsFlight(cards, prep.fromRects);
-    }
+
+    window.gameModel?.enterShowPassedCards(cards);
+    const timing =
+      typeof layer.getAcceptCardsTiming === "function"
+        ? layer.getAcceptCardsTiming(cards.length)
+        : { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 };
+    this.notifqueue.setSynchronousDuration(timing.totalDurationMs);
+
+    this.pendingAcceptFlush = applyAcceptedCardsToHand;
+    this.acceptFlightTimeout = window.setTimeout(() => {
+      this.acceptFlightTimeout = undefined;
+      const prep =
+        typeof layer.prepareAcceptCards === "function" ? layer.prepareAcceptCards(cards) : null;
+      applyAcceptedCardsToHand();
+      if (prep && typeof layer.runAcceptCardsFlight === "function") {
+        void layer.runAcceptCardsFlight(cards, prep.fromRects);
+      }
+    }, timing.viewDelayMs);
   }
 
   notif_playCombo(notif: TypedNotif<"playCombo">) {
@@ -1595,7 +1666,9 @@ export class Tichu {
       if (!this.gamedatas.capturedpoints) this.gamedatas.capturedpoints = {};
       const prevPts = Number(this.gamedatas.capturedpoints[playerId] ?? 0);
       this.gamedatas.capturedpoints[playerId] = prevPts + trickValue;
+      this.gamedatas.allLastCombos = {};
     }
+    this.allLastCombos = {};
 
     window.gameModel?.applyCaptureCards(playerId, trickValue);
     this.notifqueue.setSynchronousDuration(sweep ? sweep.durationMs : animate ? 100 : 1);
@@ -1613,9 +1686,13 @@ export class Tichu {
     }
     window.gameModel?.applyGrandTichuBet(playerId, bet);
     if (bet === Bet.GRAND_TICHU) {
-      window.gameModel?.triggerBetAnimation(playerId, 200);
-      this.playLaserSound();
-      this.notifqueue.setSynchronousDuration(1000);
+      if (this.areAnimationsActive()) {
+        window.gameModel?.triggerBetAnimation(playerId, 200);
+        this.playLaserSound();
+        this.notifqueue.setSynchronousDuration(1000);
+      } else {
+        this.notifqueue.setSynchronousDuration(1);
+      }
     } else {
       this.notifqueue.setSynchronousDuration(1);
     }
@@ -1640,9 +1717,13 @@ export class Tichu {
     }
     window.gameModel?.applyTichuBet(playerId, bet);
     if (bet === Bet.TICHU) {
-      window.gameModel?.triggerBetAnimation(playerId, 100);
-      this.playLaserSound();
-      this.notifqueue.setSynchronousDuration(1000);
+      if (this.areAnimationsActive()) {
+        window.gameModel?.triggerBetAnimation(playerId, 100);
+        this.playLaserSound();
+        this.notifqueue.setSynchronousDuration(1000);
+      } else {
+        this.notifqueue.setSynchronousDuration(1);
+      }
     } else {
       this.notifqueue.setSynchronousDuration(1);
     }
