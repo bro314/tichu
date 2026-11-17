@@ -679,8 +679,19 @@ class Tichu extends Table
     }
     $pId = $this->getActivePlayerId();
     $combo = LogManager::getLastCombo(0, "phoenix");
-    if (!in_array($phoenixValue, $combo->phoenixValue)) {
-      throw new UserException(clienttranslate("You have chosen an invalid value for the phoenix, choose a new hand"));
+    if ($phoenixValue === null || $phoenixValue === "" || !is_numeric($phoenixValue)) {
+      throw new UserException(
+        clienttranslate("You have chosen an invalid value for the phoenix, choose a new hand")
+      );
+    }
+    $phoenixValue = (int) $phoenixValue;
+    $allowedValues = is_array($combo->phoenixValue)
+      ? array_map("intval", $combo->phoenixValue)
+      : [];
+    if (!in_array($phoenixValue, $allowedValues, true)) {
+      throw new UserException(
+        clienttranslate("You have chosen an invalid value for the phoenix, choose a new hand")
+      );
     }
     $combo->setPhoenixValue($phoenixValue);
     LogManager::playCombo($pId, $combo);

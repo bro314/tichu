@@ -89,6 +89,19 @@ class LogManager
     return "log_round=" . ((int) $curr["round"]) . " AND log_trick=" . ((int) $curr["trick"]);
   }
 
+  private static function normalizePhoenixValue($phoenixValue)
+  {
+    if (is_array($phoenixValue)) {
+      return array_values(
+        array_map(static fn($v) => is_numeric($v) ? $v + 0 : $v, $phoenixValue)
+      );
+    }
+    if (is_numeric($phoenixValue)) {
+      return $phoenixValue + 0;
+    }
+    return $phoenixValue;
+  }
+
   public static function getLastCombos()
   {
     // All "combo" and "pass" actions from the current trick.
@@ -112,6 +125,11 @@ class LogManager
         $passes[] = intval($playerId);
       }
       if ($action["action"] == "combo") {
+        if (array_key_exists("phoenixValue", $action["arg"])) {
+          $action["arg"]["phoenixValue"] = self::normalizePhoenixValue(
+            $action["arg"]["phoenixValue"]
+          );
+        }
         $combos[$playerId] = $action["arg"];
       }
     }
@@ -127,7 +145,12 @@ class LogManager
     if (count($lastComboActions) > $skip) {
       $lastComboAction = $lastComboActions[$skip];
       $arg = $lastComboAction["arg"];
-      $combo = new Combo($arg["cards"], $arg["type"], $arg["phoenixValue"], $arg["description"]);
+      $combo = new Combo(
+        $arg["cards"],
+        $arg["type"],
+        self::normalizePhoenixValue($arg["phoenixValue"] ?? null),
+        $arg["description"]
+      );
       $combo->player = $lastComboAction["player"];
       return $combo;
     }

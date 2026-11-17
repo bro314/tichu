@@ -132,5 +132,84 @@ final class ComboTest extends TestCase
     $comboAfterDog->recheckPhoenix();
     $this->assertEquals([8, 3], $comboAfterDog->phoenixValue);
   }
+
+  public function testBug257052SameSuitStraightWithPhoenixAndStringValues(): void
+  {
+    // 4 blue (Pagodas) 7-10 + Phoenix is a straight (6-10 or 7-J), NEVER a straight flush bomb
+    $combo = new Combo([C7, C8, C9, C0, PH]);
+    $this->assertSame(STRAIGHT_COMBO, $combo->type);
+    $this->assertSame([11, 6], $combo->phoenixValue);
+
+    // Selecting "11" as a string (like HTTP query param from BGA getArg) coerces to strict int 11
+    $combo->setPhoenixValue("11");
+    $this->assertSame(11, $combo->phoenixValue);
+    $this->assertSame(7, $combo->getFirstValue());
+    $this->assertSame("Run of 5 cards from 7 to Jack", $combo->description);
+    $this->assertTrue((new Combo([A8, B9, C0, DJ, AQ]))->canBeat($combo));
+    $this->assertFalse((new Combo([A7, B8, C9, D0, AJ]))->canBeat($combo));
+
+    // Deck DB rows return string type / type_arg values; phoenixValue must remain strict int / int[]
+    $strCard = static function (string $id, int $type, int $arg): array {
+      return ["id" => $id, "type" => (string) $type, "type_arg" => (string) $arg];
+    };
+    $phStr = $strCard("99", TYPE_PHOENIX, 1);
+
+    $pairCombo = new Combo([$phStr, $strCard("1", 3, 7)]);
+    $this->assertSame(PAIR_COMBO, $pairCombo->type);
+    $this->assertSame(7, $pairCombo->phoenixValue);
+
+    $tripCombo = new Combo([$phStr, $strCard("1", 3, 7), $strCard("2", 1, 7)]);
+    $this->assertSame(TRIP_COMBO, $tripCombo->type);
+    $this->assertSame(7, $tripCombo->phoenixValue);
+
+    $runningPairCombo = new Combo([
+      $phStr,
+      $strCard("1", 1, 7),
+      $strCard("2", 2, 7),
+      $strCard("3", 3, 8),
+    ]);
+    $this->assertSame(RUNNING_PAIRS_COMBO, $runningPairCombo->type);
+    $this->assertSame(8, $runningPairCombo->phoenixValue);
+
+    $straightCombo = new Combo([
+      $phStr,
+      $strCard("1", 3, 7),
+      $strCard("2", 3, 8),
+      $strCard("3", 3, 9),
+      $strCard("4", 3, 10),
+    ]);
+    $this->assertSame(STRAIGHT_COMBO, $straightCombo->type);
+    $this->assertSame([11, 6], $straightCombo->phoenixValue);
+
+    $fhAabb = new Combo([
+      $phStr,
+      $strCard("1", 1, 4),
+      $strCard("2", 2, 4),
+      $strCard("3", 1, 8),
+      $strCard("4", 2, 8),
+    ]);
+    $this->assertSame(FULL_HOUSE_COMBO, $fhAabb->type);
+    $this->assertSame([4, 8], $fhAabb->phoenixValue);
+
+    $fhAaab = new Combo([
+      $phStr,
+      $strCard("1", 1, 4),
+      $strCard("2", 2, 4),
+      $strCard("3", 3, 4),
+      $strCard("4", 2, 8),
+    ]);
+    $this->assertSame(FULL_HOUSE_COMBO, $fhAaab->type);
+    $this->assertSame(8, $fhAaab->phoenixValue);
+
+    $fhAbbb = new Combo([
+      $phStr,
+      $strCard("1", 1, 4),
+      $strCard("2", 1, 8),
+      $strCard("3", 2, 8),
+      $strCard("4", 3, 8),
+    ]);
+    $this->assertSame(FULL_HOUSE_COMBO, $fhAbbb->type);
+    $this->assertSame(4, $fhAbbb->phoenixValue);
+  }
 }
 ?>

@@ -25,7 +25,7 @@ export type Card = CardData;
 export interface TichuCombo {
   cards: CardData[];
   description: string;
-  phoenixValue: number | number[] | null;
+  phoenixValue: number | string | Array<number | string> | null;
   type: number;
 }
 
@@ -46,7 +46,7 @@ export interface TichuNotificationMap {
     cards: CardData[];
     points: number;
     type?: number;
-    phoenixValue?: number | number[] | null;
+    phoenixValue?: number | string | Array<number | string> | null;
   };
   wishMade: {
     i18n?: string[];

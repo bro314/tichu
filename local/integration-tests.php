@@ -571,7 +571,7 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   assertSameVal((string) P1, $stateAfterChoose['active_player'], 'P1 should be active');
   $lastCombo = \LogManager::getLastCombo();
   assertSameVal('Run of 5 cards from 5 to 9', $lastCombo->description);
-  assertSameVal(9, (int) $lastCombo->phoenixValue);
+  assertSameVal(9, $lastCombo->phoenixValue);
 
   // Part B: Phoenix played as a single card (1.5 when led, or lastCard + 0.5 in playCombo)
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
@@ -675,6 +675,49 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   callAction($game, P2, 'cancelPhoenix');
   assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'cancelPhoenix after Dog lead must return to playComboOpen');
   assertSameVal((string) P2, $game->getActivePlayerId());
+
+  // Part G: Bug #257052 — 7-10 same-suit + Phoenix chosen via string '11' stays a 7-J straight and is beaten by 8-Q
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[3, 7], [3, 8], [3, 9], [3, 10], [2, 1], [1, 2]],
+    P1 => [[1, 8], [2, 9], [4, 10], [1, 11], [2, 12], [2, 2]],
+    P2 => [[3, 2], [1, 3], [2, 4], [3, 5], [4, 6]],
+    P3 => [[4, 2], [2, 3], [3, 4], [4, 5], [1, 6]],
+  ], 'captured_p0');
+  $blue7to10Phx = \LocalTichuScenarios::getCardIds([[3, 7], [3, 8], [3, 9], [3, 10], [2, 1]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $blue7to10Phx)]);
+  $stateBug = $game->gamestate->state(P0);
+  assertSameVal('phoenixPlay', $stateBug['name'], '4 blue straight cards + Phoenix must enter phoenixPlay');
+  assertSameVal([11, 6], $stateBug['args']['_private']['values'] ?? []);
+
+  // Pass phoenixValue as string '11' just like HTTP query parameters on BGA
+  callAction($game, P0, 'choosePhoenix', ['phoenixValue' => '11']);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P1, $game->getActivePlayerId());
+  $lastComboBug = \LogManager::getLastCombo();
+  assertSameVal(STRAIGHT_COMBO, $lastComboBug->type, '4 same-suit cards + Phoenix must be STRAIGHT_COMBO, not BOMB_COMBO');
+  assertSameVal(11, $lastComboBug->phoenixValue, 'choosePhoenix("11") must persist strict integer 11');
+  assertSameVal(7, $lastComboBug->getFirstValue(), '7-J straight with Phoenix=11 must have firstValue 7');
+
+  $payloadP1 = $game->getFullClientPayload(P1);
+  assertSameVal(11, $payloadP1['lastCombo']['phoenixValue'] ?? null, 'getAllDatas lastCombo phoenixValue must be strict int 11');
+  assertSameVal(11, $payloadP1['allLastCombos'][P0]['phoenixValue'] ?? null, 'getAllDatas allLastCombos phoenixValue must be strict int 11');
+
+  // Legacy actionlog rows storing "phoenixValue":"11" as a string must also normalize to strict int 11
+  \APP_DbObject::DbQuery(
+    "UPDATE actionlog SET log_arg = REPLACE(log_arg, '\"phoenixValue\":11', '\"phoenixValue\":\"11\"') WHERE log_action = 'combo'"
+  );
+  assertSameVal(11, \LogManager::getLastCombo()->phoenixValue, 'Legacy string phoenixValue in actionlog must normalize to int 11');
+  $legacyPayloadP1 = $game->getFullClientPayload(P1);
+  assertSameVal(11, $legacyPayloadP1['lastCombo']['phoenixValue'] ?? null, 'Legacy getAllDatas lastCombo phoenixValue must normalize to int 11');
+  assertSameVal(11, $legacyPayloadP1['allLastCombos'][P0]['phoenixValue'] ?? null, 'Legacy getAllDatas allLastCombos phoenixValue must normalize to int 11');
+
+  // P1 beats 7-J with 8-Q
+  $p1Straight8toQ = \LocalTichuScenarios::getCardIds([[1, 8], [2, 9], [4, 10], [1, 11], [2, 12]]);
+  callAction($game, P1, 'playCombo', ['cards' => implode(';', $p1Straight8toQ)]);
+  assertSameVal('playCombo', $game->gamestate->state()['name']);
+  assertSameVal((string) P2, $game->getActivePlayerId());
+  assertSameVal('Run of 5 cards from 8 to Queen', \LogManager::getLastCombo()->description);
 }
 
 // ============================================================================

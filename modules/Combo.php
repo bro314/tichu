@@ -139,9 +139,9 @@ class Combo
   public function getFirstValue()
   {
     $card = $this->cards[0];
-    $val = $card["type_arg"];
+    $val = (int) $card["type_arg"];
     if ($card["type"] == TYPE_PHOENIX && $val == 1) {
-      return $this->phoenixValue;
+      return is_numeric($this->phoenixValue) ? $this->phoenixValue + 0 : $this->phoenixValue;
     }
     if ($card["type"] == TYPE_DRAGON && $val == 1) {
       return 15;
@@ -176,6 +176,7 @@ class Combo
    */
   public function setPhoenixValue($val)
   {
+    $val = is_numeric($val) ? (int) $val : $val;
     if ($this->type == STRAIGHT_COMBO) {
       $count = count($this->cards);
       if ($val == $this->phoenixValue[1]) {
@@ -185,7 +186,7 @@ class Combo
       } else {
         $this->cards[] = array_shift($this->cards); // move phoenix to the end
         $highest = CardManager::cardToStr($val);
-        $lowest = $this->cards[0]["type_arg"]; // lowest is always a number
+        $lowest = (int) $this->cards[0]["type_arg"]; // lowest is always a number
       }
       $this->description = "Run of $count cards from $lowest to $highest";
     } else {
@@ -296,7 +297,7 @@ class Combo
       if ($cards[0]["type"] != TYPE_PHOENIX) {
         return;
       }
-      $phoenixValue = $cards[1]["type_arg"];
+      $phoenixValue = (int) $cards[1]["type_arg"];
       if ($phoenixValue == 1) {
         return;
       }
@@ -323,7 +324,7 @@ class Combo
       if ($cards[0]["type"] != TYPE_PHOENIX) {
         return;
       }
-      $phoenixValue = $cards[1]["type_arg"];
+      $phoenixValue = (int) $cards[1]["type_arg"];
       if ($phoenixValue == 1 || $cards[2]["type_arg"] != $phoenixValue) {
         return;
       }
@@ -358,7 +359,7 @@ class Combo
       }
       $phoenix = array_shift($cards);
     }
-    $value = $cards[0]["type_arg"];
+    $value = (int) $cards[0]["type_arg"];
     if ($value == 1) {
       return;
     }
@@ -435,7 +436,7 @@ class Combo
           return;
       }
     }
-    $value = $cards[0]["type_arg"];
+    $value = (int) $cards[0]["type_arg"];
     foreach ($cards as $i => $card) {
       if ($card["type_arg"] != $value) {
         if (is_null($phoenix) || !is_null($phoenixValue)) {
@@ -450,7 +451,7 @@ class Combo
       }
       $value++;
     }
-    $lowest = $cards[0]["type_arg"];
+    $lowest = (int) $cards[0]["type_arg"];
     if (!is_null($phoenix)) {
       if (is_null($phoenixValue)) {
         // no gap detected
@@ -499,8 +500,8 @@ class Combo
       if (count($distinct) != 3) {
         return;
       }
-      $first = $cards[1]["type_arg"];
-      $last = $cards[4]["type_arg"];
+      $first = (int) $cards[1]["type_arg"];
+      $last = (int) $cards[4]["type_arg"];
       if ($cards[2]["type_arg"] == $last) {
         //ABBB
         $phoenixValue = $first;
@@ -517,8 +518,8 @@ class Combo
       if (count($distinct) != 2) {
         return;
       }
-      $first = $cards[0]["type_arg"];
-      $last = $cards[4]["type_arg"];
+      $first = (int) $cards[0]["type_arg"];
+      $last = (int) $cards[4]["type_arg"];
       if ($cards[1]["type_arg"] != $first) {
         return;
       }

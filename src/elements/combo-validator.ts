@@ -121,6 +121,38 @@ function isPhoenixCard(card: TichuCard | undefined): boolean {
   return Boolean(card && cardRank(card) === 1 && cardSuit(card) === TYPE_PHOENIX);
 }
 
+/**
+ * Coerce a wire/DB scalar `phoenixValue` (number or numeric string like `"11"` or `"10.5"`)
+ * into a finite number, returning `null` for empty/null/array values.
+ */
+export function normalizePhoenixScalar(val: unknown): number | null {
+  if (
+    val === null ||
+    val === undefined ||
+    val === "" ||
+    typeof val === "boolean" ||
+    Array.isArray(val)
+  ) {
+    return null;
+  }
+  const n = Number(val);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Normalize a `phoenixValue` payload (`number`, numeric `string`, array, or `null`)
+ * into numeric form (`number | number[] | null`).
+ */
+export function normalizePhoenixValue(val: unknown): number | number[] | null {
+  if (Array.isArray(val)) {
+    const nums = val
+      .map((item) => normalizePhoenixScalar(item))
+      .filter((item): item is number => item !== null);
+    return nums.length > 0 ? nums : null;
+  }
+  return normalizePhoenixScalar(val);
+}
+
 function parseRankWord(word: string): number | null {
   const trimmed = decodeHtmlEntities(word).trim();
   switch (trimmed) {
@@ -171,7 +203,7 @@ export function comboTypeToLabel(type: number): string {
 export interface LastComboLike {
   cards?: TichuCard[];
   type?: number;
-  phoenixValue?: number | number[] | null;
+  phoenixValue?: number | string | Array<number | string> | null;
   description?: string;
   player?: string | number;
   playerId?: string;
@@ -246,28 +278,25 @@ export class Combo {
     }
     const explicitType = rawType > 0 && rawType !== NO_COMBO ? rawType : null;
     const combo = new Combo(cards, null, null, null, Combo.noCombo);
-    if (
-      explicitType === SINGLE_COMBO &&
-      combo.type === SINGLE_COMBO &&
-      state.phoenixValue !== undefined &&
-      state.phoenixValue !== null &&
-      !Array.isArray(state.phoenixValue)
-    ) {
-      combo.phoenixValue = Number(state.phoenixValue);
-      const valBelow = Number(combo.phoenixValue) - 0.5;
+    const scalarPhoenix = normalizePhoenixScalar(state.phoenixValue);
+    if (explicitType === SINGLE_COMBO && combo.type === SINGLE_COMBO && scalarPhoenix !== null) {
+      combo.phoenixValue = scalarPhoenix;
+      const valBelow = scalarPhoenix - 0.5;
       combo.description = `Phoenix a half step above ${cardToStr(valBelow)}`;
-    } else if (Array.isArray(combo.phoenixValue) && typeof state.phoenixValue === "number") {
-      combo.setPhoenixValue(Number(state.phoenixValue));
-    } else if (
-      combo.type === SINGLE_COMBO &&
-      combo.cards[0] &&
-      cardRank(combo.cards[0]) === 1 &&
-      cardSuit(combo.cards[0]) === TYPE_PHOENIX &&
-      typeof state.phoenixValue === "number"
-    ) {
-      combo.phoenixValue = Number(state.phoenixValue);
-    } else if (state.phoenixValue === undefined || state.phoenixValue === null) {
-      Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
+    } else if (Array.isArray(combo.phoenixValue)) {
+      if (scalarPhoenix !== null && combo.phoenixValue.includes(scalarPhoenix)) {
+        combo.setPhoenixValue(scalarPhoenix);
+      } else {
+        Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
+      }
+    } else if (combo.type === SINGLE_COMBO && isPhoenixCard(combo.cards[0])) {
+      if (scalarPhoenix !== null) {
+        combo.phoenixValue = scalarPhoenix;
+        const valBelow = scalarPhoenix - 0.5;
+        combo.description = `Phoenix a half step above ${cardToStr(valBelow)}`;
+      } else {
+        Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
+      }
     }
     if (state.description && !combo.description) {
       combo.description = state.description;
@@ -511,31 +540,32 @@ export class Combo {
   }
 
   public setPhoenixValue(val: number): void {
+    const numVal = Number(val);
     const pvArr = Array.isArray(this.phoenixValue) ? this.phoenixValue : null;
     if (this.type === STRAIGHT_COMBO) {
       const count = this.cards.length;
       let lowest: number | string;
       let highest: string;
-      if (pvArr && val === pvArr[1]) {
+      if (pvArr && numVal === pvArr[1]) {
         highest = cardToStr(this.cards[count - 1]!);
-        lowest = val;
+        lowest = numVal;
       } else {
         const first = this.cards.shift();
         if (first) this.cards.push(first);
-        highest = cardToStr(val);
+        highest = cardToStr(numVal);
         lowest = cardRank(this.cards[0]!);
       }
       this.description = `Run of ${count} cards from ${lowest} to ${highest}`;
     } else {
-      if (pvArr && val === pvArr[1]) {
+      if (pvArr && numVal === pvArr[1]) {
         const moved = this.cards.splice(1, 2);
         this.cards.splice(3, 0, ...moved);
       }
-      const trip = cardToStr(val, true);
+      const trip = cardToStr(numVal, true);
       const pair = cardToStr(this.cards[4]!, true);
       this.description = `${trip} full of ${pair}`;
     }
-    this.phoenixValue = val;
+    this.phoenixValue = numVal;
   }
 
   public static checkDog(cards: TichuCard[]): CheckResult | null {

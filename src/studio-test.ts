@@ -2617,7 +2617,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
         case "choosePhoenix": {
           const chosenRank =
-            sArgs.phoenixValue !== undefined ? Number(sArgs.phoenixValue) : undefined;
+            sArgs.phoenixValue !== undefined && sArgs.phoenixValue !== null
+              ? Number(sArgs.phoenixValue)
+              : undefined;
           await tt.choosePhoenix(chosenRank);
           actionDesc = `choosePhoenix(${chosenRank ?? "default"})`;
           break;
@@ -2670,12 +2672,46 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           if (Number(sArgs.wishFulfilled || 0) >= 2) {
             cornerCases.wishesFulfilled++;
           }
+          if (ui.playerHand && resolved.length > 0) {
+            ui.playerHand.unselectAll();
+            for (const c of resolved) {
+              ui.playerHand.selectItem(String(c.id));
+            }
+            await waitLitUpdates();
+            if (
+              typeof ui.isCurrentPlayerActive === "function" &&
+              ui.isCurrentPlayerActive() &&
+              String(ui.gamedatas?.gamestate?.name || "") === cur.state.name
+            ) {
+              const playBtn = queryDeep("#myPlayCombo");
+              if (playBtn && playBtn.classList.contains("disabled")) {
+                throw new Error(
+                  `[ASSERT_UI FAILED] #myPlayCombo disabled for legal bot play: ${playBtn.getAttribute("title") || ""}`,
+                );
+              }
+            }
+          }
           await tt.play(rawCards.join(";"));
           actionDesc = `${suggestion.callTichuFirst ? "tichuBet+" : ""}play(${resolved.map((c) => formatCardCode(c)).join(",")})`;
           break;
         }
         case "pass": {
           const onlyOnce = sArgs.onlyOnce !== undefined ? Boolean(sArgs.onlyOnce) : true;
+          if (
+            cur.state.name === "playCombo" &&
+            typeof ui.isCurrentPlayerActive === "function" &&
+            ui.isCurrentPlayerActive() &&
+            String(ui.gamedatas?.gamestate?.name || "") === "playCombo"
+          ) {
+            ui.playerHand?.unselectAll();
+            await waitLitUpdates();
+            const passBtn = queryDeep("#myPass");
+            if (passBtn && passBtn.classList.contains("disabled")) {
+              throw new Error(
+                `[ASSERT_UI FAILED] #myPass disabled for legal bot pass: ${passBtn.getAttribute("title") || ""}`,
+              );
+            }
+          }
           await tt.pass(onlyOnce);
           actionDesc = onlyOnce ? "pass(once)" : "pass";
           break;

@@ -2839,3 +2839,182 @@ test("Legacy playCombo notification fallback (rollback & archive compatibility)"
     assert.equal(fhEightsOverTwos.canBeat(eightsLast), false);
   }
 });
+
+test("Bug #257052: 7-10 suited + Phoenix as Jack with string phoenixValue is a 7-J straight beaten by 8-Q", () => {
+  const basePlayers = {
+    1: {
+      id: 1,
+      name: "P1",
+      color: "000000",
+      no: 1,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    2: {
+      id: 2,
+      name: "P2",
+      color: "ff0000",
+      no: 2,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    3: {
+      id: 3,
+      name: "P3",
+      color: "000000",
+      no: 3,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+    4: {
+      id: 4,
+      name: "P4",
+      color: "ff0000",
+      no: 4,
+      score: 0,
+      call_tichu: "-1",
+      call_grand_tichu: "-1",
+      pass: "0",
+    },
+  };
+
+  // 1. 7-10 of blue (Pagodas) + Phoenix is classified as STRAIGHT_COMBO (never BOMB_COMBO)
+  const suitedPlusPh = new Combo([C7, C8, C9, C0, PH]);
+  assert.equal(suitedPlusPh.type, STRAIGHT_COMBO);
+  assert.deepEqual(suitedPlusPh.phoenixValue, [11, 6]);
+
+  const myHand = [A8, B9, C0, DJ, AQ, A7, B8, D0, AJ];
+  const straight8toQ = [A8, B9, C0, DJ, AQ];
+  const straight7toJ = [A7, B8, C9, D0, AJ];
+
+  // 2. Live playCombo notification carrying string phoenixValue: "11"
+  const liveModel = new GameModel();
+  liveModel.hydrateFromGamedatas(
+    {
+      players: basePlayers as any,
+      hand: myHand,
+      handcount: { 1: myHand.length, 2: 5, 3: 5, 4: 5 },
+    },
+    1,
+    false,
+    true,
+  );
+  liveModel.applyPlayCombo(
+    2,
+    [C7, C8, C9, C0, PH],
+    "Run of 5 cards from 7 to Jack",
+    10,
+    STRAIGHT_COMBO,
+    "11" as any,
+  );
+  assert.equal(liveModel.getState().trickLastCombo.phoenixValue, 11);
+  assert.equal(typeof liveModel.getState().trickLastCombo.phoenixValue, "number");
+
+  const reconstructedLive = Combo.fromLastComboState(liveModel.getState().trickLastCombo);
+  assert.equal(reconstructedLive.type, STRAIGHT_COMBO);
+  assert.equal(reconstructedLive.phoenixValue, 11);
+  assert.equal(reconstructedLive.getFirstValue(), 7);
+
+  const play8toQ = analyzeSelection({
+    selectedCards: straight8toQ,
+    handCards: myHand,
+    lastCombo: reconstructedLive,
+    stateName: "playCombo",
+    mahjongWish: 0,
+  });
+  assert.equal(play8toQ.isValid, true);
+  assert.equal(play8toQ.buttonLabel, "Play");
+
+  const play7toJ = analyzeSelection({
+    selectedCards: straight7toJ,
+    handCards: myHand,
+    lastCombo: reconstructedLive,
+    stateName: "playCombo",
+    mahjongWish: 0,
+  });
+  assert.equal(play7toJ.isValid, false);
+  assert.equal(play7toJ.reason, "cannot_beat");
+
+  // 3. F5 page-refresh path: getAllDatas with string phoenixValue: "11"
+  const refreshModel = new GameModel();
+  refreshModel.hydrateFromGamedatas(
+    {
+      players: basePlayers as any,
+      hand: myHand,
+      handcount: { 1: myHand.length, 2: 5, 3: 5, 4: 5 },
+      lastCombo: {
+        player: "2",
+        cards: [C7, C8, C9, C0, PH],
+        type: STRAIGHT_COMBO,
+        phoenixValue: "11" as any,
+        description: "Run of 5 cards from 7 to Jack",
+      },
+      allLastCombos: {
+        2: {
+          cards: [C7, C8, C9, C0, PH],
+          type: STRAIGHT_COMBO,
+          phoenixValue: "11" as any,
+          description: "Run of 5 cards from 7 to Jack",
+        },
+      },
+    } as any,
+    1,
+    false,
+    true,
+  );
+  assert.equal(refreshModel.getState().trickLastCombo.phoenixValue, 11);
+  assert.equal(refreshModel.getState().lastCombos["2"]?.phoenixValue, 11);
+
+  const reconstructedRefresh = Combo.fromLastComboState(refreshModel.getState().trickLastCombo);
+  assert.equal(reconstructedRefresh.type, STRAIGHT_COMBO);
+  assert.equal(reconstructedRefresh.phoenixValue, 11);
+  assert.equal(reconstructedRefresh.getFirstValue(), 7);
+
+  const play8toQAfterRefresh = analyzeSelection({
+    selectedCards: straight8toQ,
+    handCards: myHand,
+    lastCombo: reconstructedRefresh,
+    stateName: "playCombo",
+    mahjongWish: 0,
+  });
+  assert.equal(play8toQAfterRefresh.isValid, true);
+  assert.equal(play8toQAfterRefresh.buttonLabel, "Play");
+
+  // 4. String phoenixValue coverage for low-end straight, ambiguous full house, and single Phoenix
+  const lowStraight = Combo.fromLastComboState({
+    cards: [PH, C7, C8, C9, C0],
+    type: STRAIGHT_COMBO,
+    phoenixValue: "6",
+    description: "Run of 5 cards from 6 to 10",
+  });
+  assert.equal(lowStraight.phoenixValue, 6);
+  assert.equal(lowStraight.getFirstValue(), 6);
+  assert.equal(new Combo(straight7toJ).canBeat(lowStraight), true);
+
+  const lowFullHouse = Combo.fromLastComboState({
+    cards: [PH, A4, B4, C8, D8],
+    type: FULL_HOUSE_COMBO,
+    phoenixValue: "4",
+    description: "4s full of 8s",
+  });
+  assert.equal(lowFullHouse.phoenixValue, 4);
+  assert.equal(lowFullHouse.getFirstValue(), 4);
+  assert.equal(new Combo([A5, B5, C5, A2, B2]).canBeat(lowFullHouse), true);
+
+  const singlePhoenix = Combo.fromLastComboState({
+    cards: [PH],
+    type: SINGLE_COMBO,
+    phoenixValue: "10.5",
+    description: "Phoenix a half step above 10",
+  });
+  assert.equal(singlePhoenix.phoenixValue, 10.5);
+  assert.equal(singlePhoenix.getFirstValue(), 10.5);
+  assert.equal(new Combo([AJ]).canBeat(singlePhoenix), true);
+  assert.equal(new Combo([A0]).canBeat(singlePhoenix), false);
+});

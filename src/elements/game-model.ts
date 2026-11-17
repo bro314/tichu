@@ -1,6 +1,6 @@
 import { BehaviorSubject, Observable } from "rxjs";
 import type { Card, CardData, TichuGamedatas } from "../types/tichu-contracts";
-import { Combo } from "./combo-validator";
+import { Combo, normalizePhoenixValue } from "./combo-validator";
 import type { TichuAnimationLayer } from "./tichu-animation-layer";
 import { select } from "./utils";
 
@@ -400,7 +400,7 @@ export class GameModel {
           description: String(combo?.description ?? ""),
           passed: false,
           type: Number.isNaN(comboType) ? 0 : comboType,
-          phoenixValue: combo?.phoenixValue ?? null,
+          phoenixValue: normalizePhoenixValue(combo?.phoenixValue),
         };
       } else if (hasPassed) {
         lastCombos[pid] = {
@@ -473,7 +473,7 @@ export class GameModel {
       cards: trickLastComboCards,
       phoenixValue:
         rawStructuredLast?.phoenixValue !== undefined
-          ? rawStructuredLast.phoenixValue
+          ? normalizePhoenixValue(rawStructuredLast.phoenixValue)
           : (fallbackCombo?.phoenixValue ?? null),
       description: String(
         rawStructuredLast?.description ??
@@ -997,7 +997,7 @@ export class GameModel {
     comboName: string,
     points: number,
     type?: number,
-    phoenixValue?: number | number[] | null,
+    phoenixValue?: number | string | Array<number | string> | null,
   ): void {
     const pid = String(playerId);
     const normalized = normalizeCards(cards);
@@ -1022,7 +1022,13 @@ export class GameModel {
         }
       : prev.players;
 
-    const needsInference = type === undefined || Number(type) <= 0 || phoenixValue === undefined;
+    const normalizedPhoenix =
+      phoenixValue !== undefined ? normalizePhoenixValue(phoenixValue) : undefined;
+    const needsInference =
+      type === undefined ||
+      Number(type) <= 0 ||
+      normalizedPhoenix === undefined ||
+      Array.isArray(normalizedPhoenix);
     const inferred = needsInference
       ? Combo.inferPlayedCombo(normalized, prev.trickLastCombo, comboName)
       : null;
@@ -1033,7 +1039,9 @@ export class GameModel {
           ? inferred.type
           : 0;
     const comboPhoenix =
-      phoenixValue !== undefined ? phoenixValue : (inferred?.phoenixValue ?? null);
+      normalizedPhoenix !== undefined && !Array.isArray(normalizedPhoenix)
+        ? normalizedPhoenix
+        : (inferred?.phoenixValue ?? null);
 
     const lastCombos = {
       ...prev.lastCombos,

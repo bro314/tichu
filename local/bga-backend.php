@@ -584,10 +584,10 @@ namespace {
                 $val = $this->args[$name];
                 switch ($type) {
                     case AT_int:
-                        if (!is_numeric($val)) {
+                        if (!is_scalar($val) || !preg_match('/^-?[0-9]+$/', (string) $val)) {
                             throw new \Bga\GameFramework\UserException("Invalid integer parameter: $name");
                         }
-                        return (int) $val;
+                        return (string) $val;
                     case AT_posint:
                         if ($val === null || $val === '') {
                             if (!$mandatory) {
@@ -595,15 +595,15 @@ namespace {
                             }
                             throw new \Bga\GameFramework\UserException("Invalid positive integer parameter: $name");
                         }
-                        if (!is_numeric($val) || (int) $val < 0) {
+                        if (!is_scalar($val) || !preg_match('/^[0-9]+$/', (string) $val)) {
                             throw new \Bga\GameFramework\UserException("Invalid positive integer parameter: $name");
                         }
-                        return (int) $val;
+                        return (string) $val;
                     case AT_float:
                         if (!is_numeric($val)) {
                             throw new \Bga\GameFramework\UserException("Invalid float parameter: $name");
                         }
-                        return (float) $val;
+                        return (string) $val;
                     case AT_bool:
                         if ($val === 'true' || $val === '1' || $val === 1 || $val === true) {
                             return true;
