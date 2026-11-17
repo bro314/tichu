@@ -178,5 +178,12 @@ class NotificationManager
       ]
     );
   }
+
+  public static function botSuggestion($player_id, $suggestion)
+  {
+    Tichu::$instance->notifyPlayer($player_id, "botSuggestion", "", [
+      "suggestion" => $suggestion,
+    ]);
+  }
 }
 ?>

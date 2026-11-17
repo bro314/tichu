@@ -1424,6 +1424,213 @@ test("initStudioTestHelper unifies step/actForOthers and debounces Auto-Bot time
   }
 });
 
+test("tt.suggest and tt.actMyTurn strictly follow server botSuggestion notifications", async () => {
+  const g = globalThis as any;
+  const savedWindow = g.window;
+  const savedDocument = g.document;
+  const savedSession = g.sessionStorage;
+  const savedLocal = g.localStorage;
+  const savedCSS = g.CSS;
+  const savedDojo = g.dojo;
+
+  try {
+    const ajaxCalls: Array<{ url: string; args: any }> = [];
+    const perfCalls: string[] = [];
+    const listeners = new Map<string, Array<{ fn: (...args: any[]) => void }>>();
+
+    const dojoMock = {
+      subscribe(topic: string, context: any, method: any) {
+        const list = listeners.get(topic) || [];
+        const fn =
+          typeof method === "function"
+            ? method.bind(context)
+            : typeof context === "function"
+              ? context
+              : (...args: any[]) => context?.[method]?.(...args);
+        const handle = {
+          fn,
+          remove() {
+            const idx = list.indexOf(handle);
+            if (idx !== -1) list.splice(idx, 1);
+          },
+        };
+        list.push(handle);
+        listeners.set(topic, list);
+        return handle;
+      },
+      unsubscribe(handle: any) {
+        handle?.remove?.();
+      },
+      publish(topic: string, args: any[]) {
+        const list = (listeners.get(topic) || []).slice();
+        for (const h of list) {
+          h.fn(...(args || []));
+        }
+      },
+    };
+
+    const statusEl = {
+      roundCount: 1,
+      trickCount: 1,
+      trickPoints: 0,
+      getAttribute(name: string) {
+        return name in statusEl ? String((statusEl as any)[name]) : null;
+      },
+    };
+
+    const ui: any = {
+      player_id: 2385074,
+      isSpectator: false,
+      instantaneousMode: true,
+      gamedatas: {
+        players: {
+          "2385074": { id: "2385074", name: "p0", no: 1, color: "000000", score: "0", team: 0 },
+          "2385075": { id: "2385075", name: "p1", no: 2, color: "ff0000", score: "0", team: 1 },
+        },
+        gamestate: {
+          id: "49",
+          name: "playComboOpen",
+          type: "activeplayer",
+          active_player: "2385074",
+          multiactive: [],
+          args: {},
+        },
+        hand: [
+          { id: "14", type: "1", type_arg: "14" },
+          { id: "28", type: "2", type_arg: "14" },
+        ],
+        handcount: { 2385074: 2, 2385075: 14 },
+        capturedpoints: { 2385074: 0, 2385075: 0 },
+        round: 1,
+        trick: 1,
+        currentTrickValue: 0,
+      },
+      isPlayerActive(pid: number) {
+        return Number(ui.gamedatas.gamestate.active_player) === Number(pid);
+      },
+      isCurrentPlayerActive() {
+        return ui.isPlayerActive(ui.player_id);
+      },
+      ajaxcall(url: string, args: any, _ctx: any, cb: () => void) {
+        ajaxCalls.push({ url, args });
+        if (url.endsWith("/playCombo.html")) {
+          ui.gamedatas.hand = [];
+          ui.gamedatas.handcount[2385074] = 0;
+          ui.gamedatas.gamestate.active_player = "2385075";
+        }
+        cb();
+      },
+      bga: {
+        actions: {
+          ajaxcall_running: 0,
+          async performAction(action: string) {
+            perfCalls.push(action);
+            if (action === "debug_botSuggest") {
+              const suggestion = {
+                acted: true,
+                player_id: 2385074,
+                state: "playComboOpen",
+                action: "playCombo",
+                callTichuFirst: true,
+                args: { cards: ["14", "28"] },
+              };
+              dojoMock.publish("botSuggestion", [{ type: "botSuggestion", args: { suggestion } }]);
+            }
+            return { ok: true };
+          },
+        },
+        players: {
+          getActivePlayerIds() {
+            return [Number(ui.gamedatas.gamestate.active_player)];
+          },
+        },
+      },
+    };
+
+    const emptyMap = { getItem: () => null, setItem() {}, removeItem() {} };
+    g.CSS = { escape: (s: string) => String(s) };
+    g.sessionStorage = emptyMap;
+    g.localStorage = emptyMap;
+    g.dojo = dojoMock;
+    g.document = {
+      getElementById: (id: string) =>
+        id === "overall-content"
+          ? { className: "gamestate_playComboOpen", classList: { contains: () => true } }
+          : null,
+      querySelector: (sel: string) => (sel.includes("tichu-status") ? statusEl : null),
+      querySelectorAll: (sel: string) => {
+        if (sel.includes("#myhand .stockitem")) {
+          return ui.gamedatas.hand.map((c: any) => ({ id: c.id }));
+        }
+        if (sel.includes(".handcount.2385074")) {
+          return [{ textContent: String(ui.gamedatas.handcount[2385074]) }];
+        }
+        if (sel.includes(".handcount.2385075")) {
+          return [{ textContent: String(ui.gamedatas.handcount[2385075]) }];
+        }
+        if (sel.includes("tichu-status")) return [statusEl];
+        return [];
+      },
+      body: null,
+    };
+    g.window = {
+      location: { hostname: "studio.boardgamearena.com", search: "" },
+      console: globalThis.console,
+      addEventListener: () => {},
+      dojo: dojoMock,
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+      gameui: ui,
+    };
+
+    const { initStudioTestHelper } = require("../src/studio-test");
+    initStudioTestHelper(ui);
+    const tt = g.window.tt;
+
+    const directSuggestion = await tt.suggest();
+    assert.equal(directSuggestion.action, "playCombo");
+    assert.equal(directSuggestion.callTichuFirst, true);
+    assert.equal(
+      listeners.get("botSuggestion")?.length || 0,
+      0,
+      "tt.suggest must unsubscribe listener",
+    );
+
+    const actRes = await tt.actMyTurn();
+    assert.equal(actRes.acted, true);
+    assert.equal(actRes.action, "tichuBet+play(SA,RA)");
+    assert.deepEqual(
+      ajaxCalls.map((c) => [c.url, c.args]),
+      [
+        ["/tichu/tichu/tichuBet.html", { bet: 100, lock: true }],
+        ["/tichu/tichu/playCombo.html", { cards: "14;28", lock: true }],
+      ],
+    );
+    assert.equal(perfCalls.filter((a) => a === "debug_botSuggest").length, 2);
+    assert.equal(
+      listeners.get("botSuggestion")?.length || 0,
+      0,
+      "actMyTurn must clean up listener",
+    );
+
+    const notMyTurnRes = await tt.actMyTurn();
+    assert.equal(notMyTurnRes.acted, false);
+    assert.equal(notMyTurnRes.reason, "not_my_turn");
+    assert.equal(
+      perfCalls.filter((a) => a === "debug_botSuggest").length,
+      2,
+      "actMyTurn must not call debug_botSuggest when not viewer's turn",
+    );
+  } finally {
+    g.window = savedWindow;
+    g.document = savedDocument;
+    g.sessionStorage = savedSession;
+    g.localStorage = savedLocal;
+    g.CSS = savedCSS;
+    g.dojo = savedDojo;
+  }
+});
+
 // =========================================================================
 // Animation Origin / Destination, Pass-Card Flights & Trick Pass Sweep Tests
 // =========================================================================

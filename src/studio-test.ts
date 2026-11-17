@@ -321,372 +321,6 @@ function pickDefaultPlayCardsFromHand(ui: any): NormalizedCard[] {
   return [hand[0]!];
 }
 
-function getTeamRelations(players: any[], myPlayerId: number) {
-  const myIdx = players.findIndex((p: any) => Number(p.id) === myPlayerId);
-  const myPlayer = myIdx >= 0 ? players[myIdx] : null;
-  const myTeam = myPlayer ? Number(myPlayer.team) : 0;
-  const partner =
-    players.find((p: any) => Number(p.id) !== myPlayerId && Number(p.team) === myTeam) ||
-    (myIdx >= 0 && players.length >= 4 ? players[(myIdx + 2) % players.length] : null);
-  const opps = players.filter(
-    (p: any) => Number(p.id) !== myPlayerId && Number(p.id) !== Number(partner?.id ?? -1),
-  );
-  return { myIdx, myPlayer, myTeam, partner, opps };
-}
-
-function normalizeRealHand(handCards: any[]): NormalizedCard[] {
-  const res: NormalizedCard[] = [];
-  for (let i = 0; i < (handCards || []).length; i++) {
-    const c = normalizeCardObj(handCards[i]);
-    if (c && c.id && c.id !== "0") res.push(c);
-  }
-  return res;
-}
-
-function comboRankStrength(combo: any): number {
-  if (!combo || !Array.isArray(combo.cards) || combo.cards.length === 0) return 0;
-  if (typeof combo.getFirstValue === "function") {
-    const v = Number(combo.getFirstValue());
-    if (!isNaN(v)) return v;
-  }
-  const c0 = combo.cards[0];
-  return c0 ? Number(c0.type_arg || 0) : 0;
-}
-
-function findAllRealBombsInHand(handCards: any[], cv: any): any[] {
-  const hand = normalizeRealHand(handCards);
-  if (hand.length < 4 || !cv || !cv.Combo) return [];
-  const bombs: any[] = [];
-  const seenKeys: Record<string, boolean> = {};
-  const addBomb = (cards: NormalizedCard[]) => {
-    try {
-      const c = new cv.Combo(cards);
-      if (c && c.type === 7) {
-        const key = c.cards
-          .map((x: any) => String(x.id))
-          .sort()
-          .join(",");
-        if (!seenKeys[key]) {
-          seenKeys[key] = true;
-          bombs.push(c);
-        }
-      }
-    } catch (_e) {}
-  };
-
-  // 1. 4-of-a-kind bombs
-  const byRank: Record<number, NormalizedCard[]> = {};
-  for (let i = 0; i < hand.length; i++) {
-    const card = hand[i]!;
-    if (card.type_arg < 2) continue;
-    if (!byRank[card.type_arg]) byRank[card.type_arg] = [];
-    byRank[card.type_arg]!.push(card);
-  }
-  const rankKeys = Object.keys(byRank);
-  for (let i = 0; i < rankKeys.length; i++) {
-    const group = byRank[Number(rankKeys[i])]!;
-    if (group.length === 4) {
-      addBomb(group);
-    }
-  }
-
-  // 2. Straight flush bombs (5+ consecutive cards of same suit)
-  for (let suit = 1; suit <= 4; suit++) {
-    const suitCards = hand
-      .filter((c) => c.type === suit && c.type_arg >= 2)
-      .sort((a, b) => a.type_arg - b.type_arg);
-    if (suitCards.length < 5) continue;
-    let runStart = 0;
-    while (runStart < suitCards.length) {
-      let runEnd = runStart;
-      while (
-        runEnd + 1 < suitCards.length &&
-        suitCards[runEnd + 1]!.type_arg === suitCards[runEnd]!.type_arg + 1
-      ) {
-        runEnd++;
-      }
-      const runLen = runEnd - runStart + 1;
-      if (runLen >= 5) {
-        for (let s = runStart; s <= runEnd - 4; s++) {
-          for (let e = s + 4; e <= runEnd; e++) {
-            addBomb(suitCards.slice(s, e + 1));
-          }
-        }
-      }
-      runStart = runEnd + 1;
-    }
-  }
-
-  bombs.sort((a, b) => {
-    if (a.canBeat(b)) return 1;
-    if (b.canBeat(a)) return -1;
-    return a.cards.length - b.cards.length;
-  });
-  return bombs;
-}
-
-function getBombCardIdSet(bombs: any[]): Record<string, boolean> {
-  const ids: Record<string, boolean> = {};
-  for (let i = 0; i < bombs.length; i++) {
-    const cards = bombs[i]?.cards || [];
-    for (let j = 0; j < cards.length; j++) {
-      ids[String(cards[j].id)] = true;
-    }
-  }
-  return ids;
-}
-
-function comboBreaksBomb(combo: any, handLen: number, bombIds: Record<string, boolean>): boolean {
-  if (!combo || combo.type === 7) return false;
-  if (combo.cards.length === handLen) return false;
-  for (let i = 0; i < combo.cards.length; i++) {
-    if (bombIds[String(combo.cards[i].id)]) return true;
-  }
-  return false;
-}
-
-function findSmartPassCards(
-  handCards: any[],
-  cv: any,
-): [NormalizedCard, NormalizedCard, NormalizedCard] {
-  const hand = normalizeRealHand(handCards);
-  const bombs = findAllRealBombsInHand(hand, cv);
-  const bombIds = getBombCardIdSet(bombs);
-
-  const rankCounts: Record<number, number> = {};
-  for (let i = 0; i < hand.length; i++) {
-    const r = hand[i]!.type_arg;
-    rankCounts[r] = (rankCounts[r] || 0) + 1;
-  }
-
-  // Pick partner card (slot 1): highest card not breaking a bomb (prefer Dragon/Phoenix/Ace/King).
-  const scorePartner = (c: NormalizedCard): number => {
-    let score = 0;
-    if (c.type_arg === 1 && c.type === 1)
-      score = 200; // Dragon
-    else if (c.type_arg === 1 && c.type === 2)
-      score = 190; // Phoenix
-    else if (c.type_arg === 1 && c.type === 4)
-      score = 20; // Mahjong
-    else if (c.type_arg === 1 && c.type === 3)
-      score = -100; // Dog (avoid gifting Dog unless forced)
-    else score = c.type_arg * 10;
-    if ((rankCounts[c.type_arg] || 0) === 1 && c.type_arg >= 2) score += 3;
-    if (bombIds[c.id]) score -= 80;
-    return score;
-  };
-  const partnerCandidates = hand.slice().sort((a, b) => scorePartner(b) - scorePartner(a));
-  const partnerCard = partnerCandidates[0]!;
-
-  // Pick 2 opponent cards (slots 0 & 2): low singletons 2..7, avoid Dog/Dragon/Phoenix/Ace, avoid 5/10 if possible.
-  const remaining = hand.filter((c) => c.id !== partnerCard.id);
-  const scoreOpponent = (c: NormalizedCard): number => {
-    if (c.type_arg === 1) {
-      if (c.type === 4) return 25; // Mahjong ok if low cards scarce
-      if (c.type === 3) return 40; // Dog prefer not to give opponent, but better than Ace/Dragon
-      return 1000; // Never give Phoenix or Dragon unless forced
-    }
-    let penalty = 0;
-    const freq = rankCounts[c.type_arg] || 1;
-    if (freq > 1) penalty += freq * 18;
-    if (c.type_arg === 5 || c.type_arg === 10 || c.type_arg === 13) penalty += 14;
-    if (c.type_arg === 14) penalty += 200;
-    if (bombIds[c.id]) penalty += 150;
-    return c.type_arg * 5 + penalty;
-  };
-  remaining.sort((a, b) => scoreOpponent(a) - scoreOpponent(b));
-  const opp0 = remaining[0]!;
-  const opp1 = remaining[1]!;
-  return [opp0, partnerCard, opp1];
-}
-
-function generateLegalCombos(handCards: any[], lastCombo: any, wish: number, cv: any): any[] {
-  const hand = normalizeRealHand(handCards);
-  if (hand.length === 0 || !cv || !cv.Combo) return [];
-
-  const seen: Record<string, boolean> = {};
-  const results: any[] = [];
-  const isOpen = !lastCombo || lastCombo.type === 99;
-  const targetType = isOpen ? null : Number(lastCombo.type);
-  const targetLen = isOpen ? null : Number(lastCombo.cards?.length || 0);
-
-  const tryAdd = (cards: NormalizedCard[]) => {
-    if (wish >= 2 && wish <= 14) {
-      let hasWish = false;
-      for (let i = 0; i < cards.length; i++) {
-        if (cards[i]!.type_arg === wish) {
-          hasWish = true;
-          break;
-        }
-      }
-      if (!hasWish) return;
-    }
-    try {
-      const c = new cv.Combo(cards, null, null, null, lastCombo);
-      if (!c || c.type === 99) return;
-      if (!isOpen && !c.canBeat(lastCombo)) return;
-      const key = `${c.type}:${c.cards
-        .map((x: any) => x.id)
-        .sort()
-        .join(",")}`;
-      if (!seen[key]) {
-        seen[key] = true;
-        results.push(c);
-      }
-    } catch (_e) {}
-  };
-
-  const phoenix = hand.find((c) => c.type === 2 && c.type_arg === 1) || null;
-  const normalsByRank: Record<number, NormalizedCard[]> = {};
-  for (let i = 0; i < hand.length; i++) {
-    const card = hand[i]!;
-    if (card.type_arg >= 2) {
-      if (!normalsByRank[card.type_arg]) normalsByRank[card.type_arg] = [];
-      normalsByRank[card.type_arg]!.push(card);
-    }
-  }
-  const ranks = Object.keys(normalsByRank)
-    .map(Number)
-    .sort((a, b) => a - b);
-
-  // Singles (also Dog when open)
-  if (isOpen || targetType === 1) {
-    for (let i = 0; i < hand.length; i++) {
-      tryAdd([hand[i]!]);
-    }
-  }
-
-  // Pairs
-  if (isOpen || (targetType === 2 && targetLen === 2)) {
-    for (let i = 0; i < ranks.length; i++) {
-      const r = ranks[i]!;
-      const group = normalsByRank[r]!;
-      if (group.length >= 2) tryAdd([group[0]!, group[1]!]);
-      if (phoenix) tryAdd([phoenix, group[0]!]);
-    }
-  }
-
-  // Trips
-  if (isOpen || (targetType === 3 && targetLen === 3)) {
-    for (let i = 0; i < ranks.length; i++) {
-      const r = ranks[i]!;
-      const group = normalsByRank[r]!;
-      if (group.length >= 3) tryAdd([group[0]!, group[1]!, group[2]!]);
-      if (phoenix && group.length >= 2) tryAdd([phoenix, group[0]!, group[1]!]);
-    }
-  }
-
-  // Full houses (5 cards)
-  if (isOpen || (targetType === 4 && targetLen === 5)) {
-    const tripSets: Array<{ rank: number; cards: NormalizedCard[] }> = [];
-    const pairSets: Array<{ rank: number; cards: NormalizedCard[] }> = [];
-    for (let i = 0; i < ranks.length; i++) {
-      const r = ranks[i]!;
-      const group = normalsByRank[r]!;
-      if (group.length >= 3) tripSets.push({ rank: r, cards: group.slice(0, 3) });
-      if (group.length >= 2) pairSets.push({ rank: r, cards: group.slice(0, 2) });
-    }
-    for (let t = 0; t < tripSets.length; t++) {
-      for (let p = 0; p < pairSets.length; p++) {
-        if (tripSets[t]!.rank !== pairSets[p]!.rank) {
-          tryAdd([...tripSets[t]!.cards, ...pairSets[p]!.cards]);
-        }
-      }
-    }
-    // Pair + Pair + Phoenix -> triggers ambiguous phoenixPlay!
-    if (phoenix && pairSets.length >= 2) {
-      for (let i = 0; i < pairSets.length; i++) {
-        for (let j = i + 1; j < pairSets.length; j++) {
-          tryAdd([phoenix, ...pairSets[i]!.cards, ...pairSets[j]!.cards]);
-        }
-      }
-    }
-    // Natural Trip + Singleton + Phoenix -> Phoenix completes pair
-    if (phoenix && tripSets.length >= 1) {
-      for (let t = 0; t < tripSets.length; t++) {
-        for (let rIdx = 0; rIdx < ranks.length; rIdx++) {
-          const r = ranks[rIdx]!;
-          if (r !== tripSets[t]!.rank) {
-            tryAdd([phoenix, ...tripSets[t]!.cards, normalsByRank[r]![0]!]);
-          }
-        }
-      }
-    }
-  }
-
-  // Running pairs (even length >= 4)
-  if (isOpen || targetType === 5) {
-    const minRun = targetLen ? targetLen / 2 : 2;
-    const maxRun = targetLen ? targetLen / 2 : Math.floor(hand.length / 2);
-    for (let runPairs = minRun; runPairs <= maxRun; runPairs++) {
-      if (runPairs < 2) continue;
-      for (let start = 2; start <= 15 - runPairs; start++) {
-        const end = start + runPairs - 1;
-        const missingSingles: number[] = [];
-        let ok = true;
-        const collected: NormalizedCard[] = [];
-        for (let r = start; r <= end; r++) {
-          const cnt = normalsByRank[r]?.length || 0;
-          if (cnt >= 2) {
-            collected.push(normalsByRank[r]![0]!, normalsByRank[r]![1]!);
-          } else if (cnt === 1 && phoenix && missingSingles.length === 0) {
-            missingSingles.push(r);
-            collected.push(phoenix, normalsByRank[r]![0]!);
-          } else {
-            ok = false;
-            break;
-          }
-        }
-        if (ok) tryAdd(collected);
-      }
-    }
-  }
-
-  // Straights (length >= 5, ranks 1..14)
-  if (isOpen || targetType === 6) {
-    const mahjong = hand.find((c) => c.type === 4 && c.type_arg === 1) || null;
-    const rankRep: Record<number, NormalizedCard> = {};
-    if (mahjong) rankRep[1] = mahjong;
-    for (let i = 0; i < ranks.length; i++) {
-      const r = ranks[i]!;
-      // Prefer cards not in a bomb if multiple suits exist
-      rankRep[r] = normalsByRank[r]![0]!;
-    }
-    const minLen = targetLen || 5;
-    const maxLen = targetLen || Math.min(14, hand.length);
-    for (let len = minLen; len <= maxLen; len++) {
-      if (len < 5) continue;
-      for (let start = 1; start <= 15 - len; start++) {
-        const end = start + len - 1;
-        const collected: NormalizedCard[] = [];
-        let gaps = 0;
-        for (let r = start; r <= end; r++) {
-          if (rankRep[r]) {
-            collected.push(rankRep[r]!);
-          } else if (r >= 2 && phoenix && gaps === 0) {
-            gaps++;
-            collected.push(phoenix);
-          } else {
-            gaps = 99;
-            break;
-          }
-        }
-        if (gaps <= 1 && collected.length === len) {
-          tryAdd(collected);
-        }
-      }
-    }
-  }
-
-  // Bombs
-  const bombs = findAllRealBombsInHand(handCards, cv);
-  for (let i = 0; i < bombs.length; i++) {
-    tryAdd(bombs[i]!.cards);
-  }
-
-  return results;
-}
-
 export function initStudioTestHelper(gameuiInstance: any): void {
   const win = window as any;
   if (win.__tichuStudioHelperInitialized) return;
@@ -945,6 +579,70 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     throw new Error("Neither ui.bga.actions.performAction nor ui.ajaxcall is available");
   }
 
+  async function requestBotSuggestion(timeoutMs = 10000): Promise<any> {
+    const ui = getUi();
+    if (!ui) throw new Error("window.gameui is not initialized");
+    if (ui.isSpectator) {
+      return { acted: false, reason: "spectator" };
+    }
+    ui.lastBotSuggestion = null;
+    const dj = (win && win.dojo) || (typeof dojo !== "undefined" ? dojo : null) || null;
+    if (!dj || typeof dj.subscribe !== "function") {
+      await performDebugAction("debug_botSuggest");
+      return ui.lastBotSuggestion ?? null;
+    }
+
+    let handle: any = null;
+    let timerId: number | null = null;
+    const notifPromise = new Promise<any>((resolve, reject) => {
+      let settled = false;
+      const cleanup = () => {
+        if (timerId !== null) {
+          clearTimeout(timerId);
+          timerId = null;
+        }
+        if (handle && typeof dj.unsubscribe === "function") {
+          dj.unsubscribe(handle);
+          handle = null;
+        }
+      };
+      handle = dj.subscribe("botSuggestion", null, (notif: any) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(notif?.args?.suggestion ?? notif?.suggestion ?? null);
+      });
+      timerId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (ui.lastBotSuggestion !== null && ui.lastBotSuggestion !== undefined) {
+          resolve(ui.lastBotSuggestion);
+        } else {
+          reject(new Error(`Timed out waiting for botSuggestion notification (${timeoutMs}ms)`));
+        }
+      }, timeoutMs) as unknown as number;
+    });
+
+    try {
+      const [suggestion] = await Promise.all([
+        notifPromise,
+        performDebugAction("debug_botSuggest"),
+      ]);
+      await waitUntilIdle(2000, 10);
+      return suggestion ?? ui.lastBotSuggestion ?? null;
+    } finally {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (handle && typeof dj.unsubscribe === "function") {
+        dj.unsubscribe(handle);
+        handle = null;
+      }
+    }
+  }
+
   function getAutoBotProgressSignature(ui: any): string {
     const gd = ui?.gamedatas || {};
     const st = gd.gamestate || {};
@@ -1113,9 +811,6 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     bombCancelTested: false,
     dragonGifts: 0,
   };
-  let passedOppRanksRound = -1;
-  let passedOppRanks: number[] = [];
-  let lastCanceledBombSig = "";
   const lastGrandTichuBetRoundByPlayer: Record<number, number> = {};
   const lastGiveCardsRoundByPlayer: Record<number, number> = {};
 
@@ -2761,6 +2456,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       return entry;
     },
 
+    async suggest() {
+      return requestBotSuggestion();
+    },
+
     async actMyTurn() {
       const ui = getUi();
       if (!ui || !ui.gamedatas) {
@@ -2795,27 +2494,6 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       assertionsPassed++;
 
       const myPlayerId = Number(ui.player_id);
-      const { myIdx, partner, opps } = getTeamRelations(cur.players || [], myPlayerId);
-      const cv = (window as any).__tichuComboValidator;
-      const gmState = (window as any).gameModel?.getState?.();
-      const rawLast = gmState?.trickLastCombo ?? ui.gamedatas.lastCombo;
-      const hasTableCombo = Boolean(
-        rawLast && rawLast.type !== undefined && Number(rawLast.type) !== 99,
-      );
-      const lastCombo =
-        cv?.Combo && hasTableCombo ? cv.Combo.fromLastComboState(rawLast) : cv?.Combo?.noCombo;
-      const lastPlayerId = Number(
-        ui.gamedatas.lastComboPlayer || gmState?.trickLastCombo?.playerId || 0,
-      );
-      const wish = Number(ui.gamedatas.mahjongWish || 0);
-      const mustWish =
-        cv?.Hand &&
-        wish >= 2 &&
-        wish <= 14 &&
-        new cv.Hand(handCards).canFulFillWish(wish, lastCombo)
-          ? wish
-          : 0;
-      const currentBombTrickSig = `${cur.round}:${cur.trick}:${lastPlayerId}:${lastCombo?.type ?? 99}:${lastCombo?.cards?.length || 0}:${(lastCombo?.cards || []).map((c: any) => c.id).join(",")}`;
 
       // Handle confirmTichu 60s prompt if active state OR #confirmTichu button is visible.
       if (cur.state.name === "confirmTichu" || isConfirmTichuVisible()) {
@@ -2840,99 +2518,58 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         };
       }
 
-      // Out-of-turn bomb interrupt when opponent holds a valuable/dangerous trick in playCombo.
       if (!cur.isMyTurn) {
-        if (
-          cur.state.name === "playCombo" &&
-          !ui.isSpectator &&
-          handCards.length >= 4 &&
-          cv?.Combo &&
-          cv?.Hand &&
-          lastCombo &&
-          lastCombo.type !== 99 &&
-          lastCombo.type !== 0 &&
-          lastPlayerId > 0 &&
-          lastPlayerId !== myPlayerId &&
-          lastPlayerId !== Number(partner?.id ?? -1) &&
-          currentBombTrickSig !== lastCanceledBombSig &&
-          (Number(cur.trickPoints || 0) >= 10 ||
-            opps.some((o: any) => o.handCount > 0 && o.handCount <= 4))
-        ) {
-          const bombs = findAllRealBombsInHand(handCards, cv).filter(
-            (b) =>
-              b.canBeat(lastCombo) &&
-              (!mustWish || b.cards.some((c: any) => Number(c.type_arg) === mustWish)),
-          );
-          if (bombs.length > 0) {
-            await new Promise((r) => setTimeout(r, (Math.max(0, myIdx) + 1) * 25));
-            await waitUntilIdle(2000, 20);
-            const recheck = tt.status(false);
-            const recheckGmState = (window as any).gameModel?.getState?.();
-            const recheckLastPlayerId = Number(
-              ui.gamedatas.lastComboPlayer || recheckGmState?.trickLastCombo?.playerId || 0,
-            );
-            if (
-              recheck &&
-              recheck.state.name === "playCombo" &&
-              !recheck.isMyTurn &&
-              recheck.round === cur.round &&
-              recheck.trick === cur.trick &&
-              recheckLastPlayerId === lastPlayerId &&
-              currentBombTrickSig !== lastCanceledBombSig
-            ) {
-              lastCanceledBombSig = currentBombTrickSig;
-              await tt.bomb();
-              await waitUntilIdle(5000, 30);
-              await waitLitUpdates();
-              const after = tt.status(false);
-              if (after && after.state.name !== "endRound" && after.state.name !== "newRound") {
-                tt.assertUI();
-                assertionsPassed++;
-              }
-              return {
-                acted: true,
-                stateBefore: cur.state.name,
-                action: "playBomb(interrupt)",
-                status: after,
-                assertionsPassed,
-              };
-            }
-          }
-        }
         return { acted: false, reason: "not_my_turn", status: cur, assertionsPassed };
       }
 
+      const curRound = Number(cur.round || 0);
+      if (cur.state.name === "grandTichuBets") {
+        const prevGtRound = lastGrandTichuBetRoundByPlayer[myPlayerId] ?? -1;
+        if (curRound < prevGtRound) {
+          delete lastGrandTichuBetRoundByPlayer[myPlayerId];
+        }
+        const myGtVal = Number(ui.gamedatas?.players?.[myPlayerId]?.call_grand_tichu ?? -1);
+        if (myGtVal >= 0 || lastGrandTichuBetRoundByPlayer[myPlayerId] === curRound) {
+          return { acted: false, reason: "already_bet_gt", status: cur, assertionsPassed };
+        }
+      } else if (cur.state.name === "giveCards") {
+        const prevGiveRound = lastGiveCardsRoundByPlayer[myPlayerId] ?? -1;
+        if (curRound < prevGiveRound) {
+          delete lastGiveCardsRoundByPlayer[myPlayerId];
+        }
+        if (lastGiveCardsRoundByPlayer[myPlayerId] === curRound) {
+          return { acted: false, reason: "already_gave_cards", status: cur, assertionsPassed };
+        }
+      }
+
+      const suggestion = await requestBotSuggestion();
+      if (!suggestion || !suggestion.acted) {
+        return {
+          acted: false,
+          reason: String(suggestion?.reason || "no_suggestion"),
+          status: tt.status(false) || cur,
+          assertionsPassed,
+        };
+      }
+
+      const latest = tt.status(false);
+      if (latest && (latest.state.name === "gameEnd" || latest.state.id === 99)) {
+        return { acted: false, reason: "game_end", status: latest, assertionsPassed };
+      }
+      if (latest && suggestion.state && latest.state.name !== String(suggestion.state)) {
+        return { acted: false, reason: "state_changed", status: latest, assertionsPassed };
+      }
+
+      const sArgs =
+        suggestion.args && typeof suggestion.args === "object"
+          ? (suggestion.args as Record<string, any>)
+          : {};
       let actionDesc = "";
-      switch (cur.state.name) {
-        case "grandTichuBets": {
-          if (handCards.length !== 8) {
-            return { acted: false, reason: "waiting_8_cards", status: cur, assertionsPassed };
-          }
-          const curRound = Number(cur.round || 0);
-          const prevGtRound = lastGrandTichuBetRoundByPlayer[myPlayerId] ?? -1;
-          if (curRound < prevGtRound) {
-            delete lastGrandTichuBetRoundByPlayer[myPlayerId];
-          }
-          const myGtVal = Number(ui.gamedatas?.players?.[myPlayerId]?.call_grand_tichu ?? -1);
-          if (myGtVal >= 0 || lastGrandTichuBetRoundByPlayer[myPlayerId] === curRound) {
-            return { acted: false, reason: "already_bet_gt", status: cur, assertionsPassed };
-          }
-          const aces = handCards.filter((c: any) => Number(c.type_arg) === 14).length;
-          const kings = handCards.filter((c: any) => Number(c.type_arg) === 13).length;
-          const hasDragon = handCards.some(
-            (c: any) => Number(c.type) === 1 && Number(c.type_arg) === 1,
-          );
-          const hasPhoenix = handCards.some(
-            (c: any) => Number(c.type) === 2 && Number(c.type_arg) === 1,
-          );
-          const hasBomb = cv?.Combo ? findAllRealBombsInHand(handCards, cv).length > 0 : false;
-          const partnerBet = Boolean(
-            partner && (Number(partner.grandTichu) === 200 || Number(partner.tichu) === 100),
-          );
-          const shouldBetGt =
-            !partnerBet &&
-            (hasBomb || (hasDragon && hasPhoenix) || (hasDragon && aces + kings >= 2));
-          if (shouldBetGt) {
+
+      switch (String(suggestion.action || "")) {
+        case "grandTichuBet": {
+          const betVal = Number(sArgs.bet) === 200 ? 200 : 0;
+          if (betVal === 200) {
             await tt.betGrandTichu(200);
             await waitUntilIdle(5000, 30);
             await waitLitUpdates();
@@ -2954,441 +2591,97 @@ export function initStudioTestHelper(gameuiInstance: any): void {
           }
           break;
         }
-        case "giveCards": {
-          if (handCards.length < 14) {
-            return { acted: false, reason: "waiting_14_cards", status: cur, assertionsPassed };
-          }
-          const curRound = Number(cur.round || 0);
-          const prevGiveRound = lastGiveCardsRoundByPlayer[myPlayerId] ?? -1;
-          if (curRound < prevGiveRound) {
-            delete lastGiveCardsRoundByPlayer[myPlayerId];
-          }
-          if (lastGiveCardsRoundByPlayer[myPlayerId] === curRound) {
-            return { acted: false, reason: "already_gave_cards", status: cur, assertionsPassed };
-          }
-          if (myIdx === 0 && !cornerCases.resetPassTested) {
-            const sample = normalizeRealHand(handCards).slice(0, 3);
-            if (sample.length === 3 && ui.playerHand && typeof ui.onGiveCard === "function") {
-              for (let i = 0; i < 3; i++) {
-                ui.playerHand.unselectAll();
-                ui.playerHand.selectItem(String(sample[i]!.id));
-                ui.onGiveCard(i);
-              }
-              await waitLitUpdates();
-              if (typeof ui.onResetPassCards === "function") {
-                ui.onResetPassCards();
-              } else {
-                (window as any).gameModel?.resetPassCards?.();
-              }
-              ui.cardsToPass = [];
-              await waitLitUpdates();
-              const postSlots = (window as any).gameModel?.getState?.()?.passSlots;
-              const stillStagedInModel =
-                Array.isArray(postSlots) && postSlots.some((s: any) => s && s.givenCard);
-              const stillStagedInDom =
-                queryDeepAll("tichu-pass-area tichu-card.given-card").length > 0;
-              if (stillStagedInModel || stillStagedInDom) {
-                recordConsoleIssue("error", "resetPassCards", [
-                  "passArea did not clear after onResetPassCards",
-                ]);
-              }
-            }
-            cornerCases.resetPassTested = true;
-          }
-          const [opp0Card, partnerCard, opp1Card] = findSmartPassCards(handCards, cv);
-          passedOppRanksRound = Number(cur.round);
-          passedOppRanks = [opp0Card.type_arg, opp1Card.type_arg].filter((r) => r >= 2 && r <= 14);
-          const ids = [opp0Card, partnerCard, opp1Card].map((c) => `#${c.id}`);
-          await tt.giveCards(ids);
+        case "giveTheCards": {
+          const rawCards: string[] = Array.isArray(sArgs.cards)
+            ? sArgs.cards.map((id: any) => `#${String(id)}`)
+            : [];
+          const resolved = resolveCardsFromHand(rawCards, ui.gamedatas.hand || []) || [];
+          await tt.giveCards(rawCards);
           lastGiveCardsRoundByPlayer[myPlayerId] = curRound;
-          actionDesc = `giveCards(${[opp0Card, partnerCard, opp1Card].map((c) => formatCardCode(c)).join(",")})`;
+          actionDesc = `giveCards(${resolved.map((c) => formatCardCode(c)).join(",")})`;
           break;
         }
-        case "showPassedCards":
-        case "acceptPassedCards": {
+        case "acceptCards": {
           await tt.acceptCards();
           actionDesc = "acceptCards";
           break;
         }
-        case "playComboOpen":
-        case "playCombo": {
-          if (handCards.length === 0) {
-            throw new Error(`isMyTurn=true in ${cur.state.name} with 0 cards in hand`);
-          }
-          if (!cv || !cv.Hand || !cv.Combo) {
-            throw new Error("__tichuComboValidator is missing on window");
-          }
-
-          // Pre-first-card Tichu bet on 14 cards when strong and no GT/partner bet yet.
-          const myP = (cur.players || []).find((p: any) => Number(p.id) === myPlayerId);
-          const myGt = Number(myP?.grandTichu ?? -1);
-          const myTi = Number(myP?.tichu ?? -1);
-          const partnerBet = Boolean(
-            partner && (Number(partner.grandTichu) === 200 || Number(partner.tichu) === 100),
-          );
-          if (handCards.length === 14 && myGt === 0 && myTi === -1 && !partnerBet) {
-            const hasBomb = findAllRealBombsInHand(handCards, cv).length > 0;
-            const hasDragon = handCards.some(
-              (c: any) => Number(c.type) === 1 && Number(c.type_arg) === 1,
-            );
-            const hasPhoenix = handCards.some(
-              (c: any) => Number(c.type) === 2 && Number(c.type_arg) === 1,
-            );
-            const aces = handCards.filter((c: any) => Number(c.type_arg) === 14).length;
-            if (hasBomb || (hasDragon && (hasPhoenix || aces >= 2))) {
-              await tt.betTichu();
-              cornerCases.tichuBets++;
-              await waitUntilIdle(5000, 30);
-              await waitLitUpdates();
-              if (isConfirmTichuVisible()) {
-                await tt.confirmTichu(100);
-                await waitUntilIdle(5000, 30);
-                await waitLitUpdates();
-              }
-            }
-          }
-
-          const hand = new cv.Hand(handCards);
-          const effectiveLast = cur.state.name === "playComboOpen" ? cv.Combo.noCombo : lastCombo;
-          const activeWish =
-            wish >= 2 && wish <= 14 && hand.canFulFillWish(wish, effectiveLast) ? wish : 0;
-
-          if (cur.state.name === "playComboOpen") {
-            const rawCandidates = generateLegalCombos(handCards, cv.Combo.noCombo, activeWish, cv);
-            const bombs = findAllRealBombsInHand(handCards, cv);
-            const bombIds = getBombCardIdSet(bombs);
-            const preferClean = (list: any[]) => {
-              const clean = list.filter((c) => !comboBreaksBomb(c, handCards.length, bombIds));
-              return clean.length > 0 ? clean : list;
-            };
-
-            let chosen: any = null;
-            const onePlay = rawCandidates.find((c) => c.cards.length === handCards.length) || null;
-            if (onePlay) {
-              chosen = onePlay;
-            }
-            if (!chosen && !activeWish) {
-              const dogCombo = rawCandidates.find((c) => c.type === 0) || null;
-              if (
-                dogCombo &&
-                partner &&
-                Number(partner.handCount) > 0 &&
-                ((Number(cur.trick) + cornerCases.dogLeads + myIdx) % 2 === 0 ||
-                  handCards.length <= 4)
-              ) {
-                chosen = dogCombo;
-                cornerCases.dogLeads++;
-              }
-            }
-            if (!chosen) {
-              const mjAll = preferClean(
-                rawCandidates.filter((c) =>
-                  c.cards.some((x: any) => Number(x.type) === 4 && Number(x.type_arg) === 1),
-                ),
-              );
-              if (mjAll.length > 0) {
-                const mjStraight = mjAll.find((c) => c.type === 6);
-                chosen = mjStraight || mjAll.find((c) => c.type === 1) || mjAll[0]!;
-                cornerCases.mahjongLeads++;
-              }
-            }
-            if (!chosen) {
-              const ambigList = preferClean(rawCandidates).filter(
-                (c) => c.type !== 7 && Array.isArray(c.phoenixValue) && c.phoenixValue.length > 1,
-              );
-              if (
-                ambigList.length > 0 &&
-                (!cornerCases.phoenixAmbiguousPlays ||
-                  (Number(cur.round) + Number(cur.trick)) % 4 === 0)
-              ) {
-                chosen = ambigList[0]!;
-              }
-            }
-            if (!chosen) {
-              const nonBombs = rawCandidates.filter(
-                (c) => c.type !== 7 && (c.type !== 0 || (partner && Number(partner.handCount) > 0)),
-              );
-              const pool = nonBombs.length > 0 ? nonBombs : rawCandidates;
-              const rotations: number[][] = [
-                [4, 5, 6, 3, 2, 1],
-                [6, 4, 5, 2, 3, 1],
-                [5, 3, 4, 6, 2, 1],
-                [2, 6, 3, 4, 5, 1],
-                [3, 2, 6, 4, 5, 1],
-              ];
-              const order = rotations[(Number(cur.round) + Number(cur.trick) + myIdx) % 5]!;
-              for (let f = 0; f < order.length; f++) {
-                const famType = order[f]!;
-                const famList = preferClean(pool.filter((c) => c.type === famType));
-                if (famList.length === 0) continue;
-                famList.sort((a, b) => {
-                  const scoreSingle = (c: any): number => {
-                    if (c.type !== 1) return comboRankStrength(c);
-                    const card = c.cards[0];
-                    if (card && Number(card.type_arg) === 1 && Number(card.type) === 1) return 1000;
-                    if (card && Number(card.type_arg) === 1 && Number(card.type) === 2) return 990;
-                    if (card && Number(card.type_arg) === 14) return 500;
-                    return comboRankStrength(c);
-                  };
-                  return scoreSingle(a) - scoreSingle(b);
-                });
-                const pickIdx = Number(cur.trick) > 2 && famList.length > 2 ? 1 : 0;
-                chosen = famList[pickIdx]!;
-                break;
-              }
-            }
-            if (!chosen) {
-              chosen = hand.findPlayableCombo(cv.Combo.noCombo, activeWish);
-            }
-            if (!chosen) {
-              throw new Error("No playable combo found in playComboOpen");
-            }
-            if (chosen.cards.length > 1) {
-              cornerCases.multiCardLeads++;
-            }
-            if (Array.isArray(chosen.phoenixValue) && chosen.phoenixValue.length > 1) {
-              cornerCases.phoenixAmbiguousPlays++;
-            }
-            const ids = chosen.cards.map((c: any) => `#${c.id}`).join(";");
-            await tt.play(ids);
-            actionDesc = `play(${chosen.cards.map((c: any) => formatCardCode(c)).join(",")})`;
-            break;
-          }
-
-          // playCombo (following)
-          const rawCandidates = generateLegalCombos(handCards, effectiveLast, activeWish, cv);
-          const bombs = findAllRealBombsInHand(handCards, cv);
-          const bombIds = getBombCardIdSet(bombs);
-          const preferClean = (list: any[]) => {
-            const clean = list.filter((c) => !comboBreaksBomb(c, handCards.length, bombIds));
-            return clean.length > 0 ? clean : list;
-          };
-          const partnerOwnsTrick = Boolean(partner && Number(partner.id) === lastPlayerId);
-          const onePlay = rawCandidates.find((c) => c.cards.length === handCards.length) || null;
-
-          let chosen: any = null;
-          let shouldPass = false;
-
-          if (onePlay) {
-            chosen = onePlay;
-          } else if (partnerOwnsTrick && !activeWish) {
-            shouldPass = true;
-            cornerCases.partnerPasses++;
-          } else {
-            const nonBombs = rawCandidates.filter((c) => c.type !== 7);
-            const bombBeaters = rawCandidates.filter((c) => c.type === 7);
-
-            if (nonBombs.length > 0) {
-              const ambig = !activeWish
-                ? preferClean(nonBombs).filter(
-                    (c) => Array.isArray(c.phoenixValue) && c.phoenixValue.length > 1,
-                  )
-                : [];
-              if (ambig.length > 0 && !cornerCases.phoenixAmbiguousPlays) {
-                chosen = ambig[0]!;
-              } else {
-                const clean = preferClean(nonBombs);
-                clean.sort((a, b) => {
-                  const score = (c: any): number => {
-                    let s = comboRankStrength(c);
-                    if (
-                      c.type === 1 &&
-                      c.cards[0] &&
-                      Number(c.cards[0].type_arg) === 1 &&
-                      Number(c.cards[0].type) === 1
-                    ) {
-                      s += 1000;
-                    } else if (
-                      c.type === 1 &&
-                      c.cards[0] &&
-                      Number(c.cards[0].type_arg) === 1 &&
-                      Number(c.cards[0].type) === 2
-                    ) {
-                      s += 950;
-                    }
-                    return s;
-                  };
-                  return score(a) - score(b);
-                });
-                const candidate = clean[0]!;
-                const usesDragonOrPhoenixSingle =
-                  candidate.type === 1 &&
-                  candidate.cards[0] &&
-                  Number(candidate.cards[0].type_arg) === 1 &&
-                  (Number(candidate.cards[0].type) === 1 || Number(candidate.cards[0].type) === 2);
-                const highAceOnZero =
-                  candidate.type === 1 &&
-                  candidate.cards[0] &&
-                  Number(candidate.cards[0].type_arg) === 14 &&
-                  comboRankStrength(effectiveLast) >= 13;
-                if (
-                  !activeWish &&
-                  Number(cur.trickPoints || 0) === 0 &&
-                  handCards.length > 4 &&
-                  opps.every((o: any) => o.handCount === 0 || o.handCount > 5) &&
-                  (usesDragonOrPhoenixSingle || highAceOnZero)
-                ) {
-                  shouldPass = true;
-                } else {
-                  chosen = candidate;
-                }
-              }
-            } else if (bombBeaters.length > 0) {
-              if (
-                activeWish ||
-                Number(cur.trickPoints || 0) >= 10 ||
-                opps.some((o: any) => o.handCount > 0 && o.handCount <= 4)
-              ) {
-                chosen = bombBeaters[0]!;
-                cornerCases.bombsPlayed++;
-              } else {
-                shouldPass = true;
-              }
-            } else if (activeWish > 0) {
-              chosen = hand.findPlayableCombo(effectiveLast, activeWish);
-              if (!chosen) shouldPass = true;
-            } else {
-              shouldPass = true;
-            }
-          }
-
-          if (
-            lastPlayerId > 0 &&
-            lastPlayerId !== myPlayerId &&
-            lastPlayerId !== Number(partner?.id ?? -1) &&
-            (Number(cur.trickPoints || 0) >= 10 ||
-              opps.some((o: any) => o.handCount > 0 && o.handCount <= 4))
-          ) {
-            await new Promise((r) => setTimeout(r, 160));
-            await waitUntilIdle(2000, 20);
-            const recheck = tt.status(false);
-            if (!recheck || !recheck.isMyTurn || recheck.state.name !== "playCombo") {
-              return {
-                acted: false,
-                reason: "interrupted_by_bomb",
-                status: recheck || cur,
-                assertionsPassed,
-              };
-            }
-          }
-
-          if (shouldPass || !chosen) {
-            await tt.pass(true);
-            actionDesc = partnerOwnsTrick ? "pass(partner)" : "pass(once)";
-          } else {
-            if (activeWish > 0) {
-              cornerCases.wishesFulfilled++;
-            }
-            if (Array.isArray(chosen.phoenixValue) && chosen.phoenixValue.length > 1) {
-              cornerCases.phoenixAmbiguousPlays++;
-            }
-            const ids = chosen.cards.map((c: any) => `#${c.id}`).join(";");
-            await tt.play(ids);
-            actionDesc = `play(${chosen.cards.map((c: any) => formatCardCode(c)).join(",")})`;
-          }
-          break;
-        }
-        case "mahjongPlay": {
-          const handRanks = new Set(handCards.map((c: any) => Number(c.type_arg)));
-          let wishRank = 0;
-          if (passedOppRanksRound === Number(cur.round) && passedOppRanks.length > 0) {
-            for (let i = 0; i < passedOppRanks.length; i++) {
-              const r = passedOppRanks[i]!;
-              if (!handRanks.has(r) && r >= 2 && r <= 14) {
-                wishRank = r;
-                break;
-              }
-            }
-            if (!wishRank) {
-              wishRank = passedOppRanks[0] || 0;
-            }
-          }
-          if (!wishRank) {
-            const wishPool = [2, 5, 8, 10, 11, 13, 14, 15];
-            const startIdx =
-              (Number(cur.round) + Number(cur.trick) + Math.max(0, myIdx)) % wishPool.length;
-            for (let offset = 0; offset < wishPool.length; offset++) {
-              const cand = wishPool[(startIdx + offset) % wishPool.length]!;
-              if (cand === 15 || !handRanks.has(cand)) {
-                wishRank = cand;
-                break;
-              }
-            }
-            if (!wishRank) wishRank = 15;
-          }
+        case "makeAWish": {
+          const wishRank = Number(sArgs.wish || 15);
           await tt.wish(wishRank);
-          cornerCases.wishesMade++;
+          if (wishRank >= 2 && wishRank <= 14) {
+            cornerCases.wishesMade++;
+          }
           actionDesc = `wish(${wishRank})`;
           break;
         }
-        case "phoenixPlay": {
-          if (!cornerCases.phoenixCancelTested) {
-            cornerCases.phoenixCancelTested = true;
-            await tt.cancelPhoenix();
-            actionDesc = "cancelPhoenix(test)";
-          } else {
-            const allowed = getAllowedPhoenixValues(ui);
-            const chosenRank =
-              allowed.length > 0
-                ? allowed[
-                    (Number(cur.round) + Number(cur.trick) + Math.max(0, myIdx)) % allowed.length
-                  ]!
-                : undefined;
-            await tt.choosePhoenix(chosenRank);
-            actionDesc = `choosePhoenix(${chosenRank ?? "default"})`;
-          }
-          break;
-        }
-        case "confirmTrick": {
-          await tt.collect();
-          actionDesc = "collect";
+        case "choosePhoenix": {
+          const chosenRank =
+            sArgs.phoenixValue !== undefined ? Number(sArgs.phoenixValue) : undefined;
+          await tt.choosePhoenix(chosenRank);
+          actionDesc = `choosePhoenix(${chosenRank ?? "default"})`;
           break;
         }
         case "chooseDragonGift": {
-          const players = cur.players || [];
-          const opp0 = myIdx >= 0 && players.length === 4 ? players[(myIdx + 1) % 4] : null;
-          const opp1 = myIdx >= 0 && players.length === 4 ? players[(myIdx + 3) % 4] : null;
-          let enemyIndex = (Number(cur.round) + Number(cur.trick)) % 2;
-          if (opp0 && opp1) {
-            const c0 = Number(opp0.handCount ?? 0);
-            const c1 = Number(opp1.handCount ?? 0);
-            if (c0 > c1) enemyIndex = 0;
-            else if (c1 > c0) enemyIndex = 1;
-          }
+          const enemyIndex = Number(sArgs.player ?? 0);
           await tt.giveDragon(enemyIndex);
           cornerCases.dragonGifts++;
           actionDesc = `giveDragon(${enemyIndex})`;
           break;
         }
-        case "playBomb": {
-          if (!cornerCases.bombCancelTested) {
-            cornerCases.bombCancelTested = true;
-            lastCanceledBombSig = currentBombTrickSig;
-            await tt.cancelBomb();
-            actionDesc = "cancelBomb(test)";
-          } else {
-            const bombs = cv?.Combo
-              ? findAllRealBombsInHand(handCards, cv).filter(
-                  (b) =>
-                    (!lastCombo || lastCombo.type === 99 || b.canBeat(lastCombo)) &&
-                    (!mustWish || b.cards.some((c: any) => Number(c.type_arg) === mustWish)),
-                )
-              : [];
-            if (bombs.length > 0) {
-              const ids = bombs[0]!.cards.map((c: any) => `#${c.id}`).join(";");
-              await tt.play(ids);
-              cornerCases.bombsPlayed++;
-              actionDesc = `playBomb(${bombs[0]!.cards.map((c: any) => formatCardCode(c)).join(",")})`;
-            } else {
-              lastCanceledBombSig = currentBombTrickSig;
-              await tt.cancelBomb();
-              actionDesc = "cancelBomb(fallback)";
+        case "collect": {
+          await tt.collect();
+          actionDesc = "collect";
+          break;
+        }
+        case "cancel": {
+          await tt.cancelBomb();
+          actionDesc = "cancelBomb";
+          break;
+        }
+        case "playCombo": {
+          if (Boolean(suggestion.callTichuFirst)) {
+            await tt.betTichu();
+            cornerCases.tichuBets++;
+            await waitUntilIdle(5000, 30);
+            await waitLitUpdates();
+            if (isConfirmTichuVisible()) {
+              await tt.confirmTichu(100);
+              await waitUntilIdle(5000, 30);
+              await waitLitUpdates();
             }
           }
+          const rawCards: string[] = Array.isArray(sArgs.cards)
+            ? sArgs.cards.map((id: any) => `#${String(id)}`)
+            : [];
+          const resolved = resolveCardsFromHand(rawCards, ui.gamedatas.hand || []) || [];
+          if (resolved.length > 1 && cur.state.name === "playComboOpen") {
+            cornerCases.multiCardLeads++;
+          }
+          if (resolved.some((c) => c.type === 3 && c.type_arg === 1)) {
+            cornerCases.dogLeads++;
+          }
+          if (
+            cur.state.name === "playComboOpen" &&
+            resolved.some((c) => c.type === 4 && c.type_arg === 1)
+          ) {
+            cornerCases.mahjongLeads++;
+          }
+          if (Number(sArgs.wishFulfilled || 0) >= 2) {
+            cornerCases.wishesFulfilled++;
+          }
+          await tt.play(rawCards.join(";"));
+          actionDesc = `${suggestion.callTichuFirst ? "tichuBet+" : ""}play(${resolved.map((c) => formatCardCode(c)).join(",")})`;
+          break;
+        }
+        case "pass": {
+          const onlyOnce = sArgs.onlyOnce !== undefined ? Boolean(sArgs.onlyOnce) : true;
+          await tt.pass(onlyOnce);
+          actionDesc = onlyOnce ? "pass(once)" : "pass";
           break;
         }
         default:
-          throw new Error(`Unhandled active state in actMyTurn: ${cur.state.name}`);
+          throw new Error(`Unhandled bot suggestion action: ${String(suggestion.action)}`);
       }
 
       await waitUntilIdle(5000, 30);
@@ -3854,48 +3147,6 @@ export function initStudioTestHelper(gameuiInstance: any): void {
             if (!cur.isMyTurn && !confirmNowVisible) {
               waitingCardsSince = 0;
               waitingSeatResynced = false;
-              // Check out-of-turn bomb opportunity in playCombo.
-              if (
-                cur.state.name === "playCombo" &&
-                !ui.isSpectator &&
-                (ui.gamedatas?.hand || []).length >= 4
-              ) {
-                const issuesBefore = consoleIssues.length;
-                const actionLogBefore = actionErrorLog.length;
-                const ctrlErrBefore = autoPlayCtrl.actionErrors.length;
-                try {
-                  const bombRes = await tt.actMyTurn();
-                  autoPlayCtrl.assertionsPassed += bombRes.assertionsPassed || 0;
-                  if (bombRes.acted) {
-                    lastActedKey = "";
-                    autoPlayCtrl.movesPlayed++;
-                    lastProgressAt = Date.now();
-                    autoPlayCtrl.moveHistory.push({
-                      move: autoPlayCtrl.movesPlayed,
-                      round: cur.round,
-                      trick: cur.trick,
-                      state: bombRes.stateBefore || cur.state.name,
-                      action: bombRes.action || "",
-                    });
-                    if (autoPlayCtrl.moveHistory.length > 50) {
-                      autoPlayCtrl.moveHistory.shift();
-                    }
-                    writeLiveOutput(bombRes.status || tt.status(false));
-                    scheduleKick();
-                    return;
-                  }
-                } catch (bombErr: any) {
-                  const msg = (bombErr && bombErr.message) || String(bombErr);
-                  if (isTransientTurnRaceError(msg)) {
-                    consoleIssues.length = issuesBefore;
-                    actionErrorLog.length = actionLogBefore;
-                    autoPlayCtrl.actionErrors.length = ctrlErrBefore;
-                    return;
-                  }
-                  throw bombErr;
-                }
-              }
-
               if (
                 Date.now() - lastProgressAt > 15000 &&
                 Date.now() - lastResyncAt > 5000 &&
@@ -5378,6 +4629,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       bomb: tt.bomb,
       cancelBomb: tt.cancelBomb,
       step: tt.step,
+      suggest: tt.suggest,
       actForOthers: tt.actForOthers,
       runSmokeTest: tt.runSmokeTest,
       actMyTurn: tt.actMyTurn,

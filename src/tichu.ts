@@ -1474,6 +1474,7 @@ export class Tichu {
       acceptCards: 3000,
       passCards: 200,
       devConsole: 1,
+      botSuggestion: 1,
     };
     for (const [type, duration] of Object.entries(notifs)) {
       dojo.subscribe(type, this, "notif_" + type);
@@ -1483,6 +1484,10 @@ export class Tichu {
 
   notif_devConsole(notif: TypedNotif<"devConsole">) {
     window.console.log(`DEV NOTIF: ${notif.args.msg}`);
+  }
+
+  notif_botSuggestion(notif: TypedNotif<"botSuggestion">) {
+    (this as any).lastBotSuggestion = notif.args.suggestion;
   }
 
   notif_dealCards(notif: TypedNotif<"dealCards">) {

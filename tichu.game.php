@@ -860,12 +860,12 @@ class Tichu extends Table
     $this->setPlayerNonMultiactiveSafe((int) $player_id, "dealLastCards", true);
   }
 
-  function tichuBet($confirmed = false)
+  function tichuBet($confirmed = false, $player_id = null)
   {
     // A Tichu call only depends on the caller's own row and cards, which are read with the lock
     // held below, so it is accepted even if other players acted concurrently (stale snapshot).
     $this->acquireGameLock();
-    $player_id = (int) $this->getCurrentPlayerId();
+    $player_id = $player_id !== null ? (int) $player_id : (int) $this->getCurrentPlayerId();
     $player = $this->getObjectFromDB(
       "SELECT player_name name, player_call_tichu call_tichu, player_call_grand_tichu call_grand_tichu FROM player WHERE player_id = $player_id FOR UPDATE"
     );
@@ -1868,6 +1868,21 @@ class Tichu extends Table
     }
     $this->acquireGameLockOrFail();
     \TichuBot::actForOtherPlayers($this, (int) $this->getCurrentPlayerId());
+  }
+
+  public function debug_botSuggest(): void
+  {
+    if ($this->getBgaEnvironment() !== "studio") {
+      throw new VisibleSystemException("Debug actions are only available in Studio.");
+    }
+    $this->gamestate->reloadState();
+    $playerId = (int) $this->getCurrentPlayerId();
+    $players = $this->loadPlayersBasicInfos();
+    if ($playerId <= 0 || !isset($players[$playerId])) {
+      return;
+    }
+    $suggestion = \TichuBot::chooseNextAction($this, $playerId);
+    NotificationManager::botSuggestion($playerId, $suggestion);
   }
 
   ///////////////////////////////////////////////////////////////////////////////////:

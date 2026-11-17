@@ -66,6 +66,7 @@ export interface TichuNotificationMap {
   confirmTichu: { grand: boolean; msg: string };
   acceptCards: { cards: CardData[]; card1: string; card2: string; card3: string };
   passCards: { cardIds: string[]; card1: string; card2: string; card3: string };
+  botSuggestion: { suggestion: Record<string, unknown> };
 }
 
 /**

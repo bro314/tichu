@@ -1967,6 +1967,461 @@ function test_studio_debug_bot_step_and_bot_others(): void
     count(array_unique($moveIdsByAction)),
     'Each bot step in actForOtherPlayers must get its own distinct gamelog_move_id'
   );
+
+  // 7. Verify debug_botSuggest computes TichuBot's move read-only and emits a private botSuggestion notification
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [
+      [1, 14], [2, 14], [3, 14], [2, 1],
+      [1, 2], [2, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10],
+    ],
+    P1 => [[3, 2]],
+    P2 => [[4, 2]],
+    P3 => [[4, 3]],
+  ], 'distribute_14');
+  $game->gamestate->changeActivePlayer(P0);
+  $lockVerBefore = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT global_value FROM global WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION
+  );
+  $stateBefore = (string) ($game->gamestate->state()['name'] ?? '');
+  $p0HandBefore = array_map(
+    static fn($c) => (string) $c['id'],
+    array_values(\CardManager::getDeck()->getCardsInLocation('hand', P0))
+  );
+  $beforeSuggestPkt = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  $directChoice = \TichuBot::chooseNextAction($game, P0);
+
+  callDebugAction($game, P0, 'debug_botSuggest');
+
+  $lockVerAfter = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT global_value FROM global WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION
+  );
+  $p0HandAfter = array_map(
+    static fn($c) => (string) $c['id'],
+    array_values(\CardManager::getDeck()->getCardsInLocation('hand', P0))
+  );
+  assertSameVal($lockVerBefore, $lockVerAfter, 'debug_botSuggest must not bump GLOBAL_LOCK_VERSION');
+  assertSameVal($stateBefore, (string) ($game->gamestate->state()['name'] ?? ''), 'debug_botSuggest must not change state');
+  assertSameVal($p0HandBefore, $p0HandAfter, 'debug_botSuggest must not mutate hand cards');
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P0)['call_tichu'], 'debug_botSuggest must not call Tichu eagerly');
+
+  $suggestPacketsP0 = $game->getNotificationsSince($beforeSuggestPkt, P0, false);
+  $botNotif = null;
+  foreach ($suggestPacketsP0 as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      if (($notif['type'] ?? '') === 'botSuggestion') {
+        $botNotif = $notif;
+      }
+    }
+  }
+  assertTrueVal($botNotif !== null, 'P0 must receive private botSuggestion notification');
+  assertSameVal($directChoice, $botNotif['args']['suggestion'] ?? null, 'botSuggestion payload must match TichuBot::chooseNextAction');
+  assertTrueVal(!empty($botNotif['args']['suggestion']['acted']), 'botSuggestion should recommend acting for active P0');
+  assertSameVal('playCombo', (string) ($botNotif['args']['suggestion']['action'] ?? ''), 'Expected playCombo suggestion');
+  assertTrueVal(!empty($botNotif['args']['suggestion']['callTichuFirst']), 'Expected callTichuFirst=true for 14 cards + 4 high cards');
+
+  foreach ([P1, 0] as $otherViewer) {
+    $otherPackets = $game->getNotificationsSince($beforeSuggestPkt, $otherViewer, false);
+    foreach ($otherPackets as $pkt) {
+      foreach ($pkt['data'] ?? [] as $notif) {
+        assertTrueVal(($notif['type'] ?? '') !== 'botSuggestion', "Viewer $otherViewer must not receive P0's private botSuggestion");
+      }
+    }
+  }
+
+  $beforeSpecSuggest = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  callDebugAction($game, 0, 'debug_botSuggest');
+  $afterSpecSuggest = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  assertSameVal($beforeSpecSuggest, $afterSpecSuggest, 'Spectator debug_botSuggest must be a no-op with no notifications');
+}
+
+// ============================================================================
+// Test 18: test_smart_bot_strategy_and_decisions
+// ============================================================================
+function test_smart_bot_strategy_and_decisions(): void
+{
+  $game = new \Tichu();
+
+  // 1. Grand Tichu: bot calls GT (200) iff >= 2 of [4 Aces, Dragon, Phoenix]
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 14], [2, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7]], // Ace + Phoenix (2 high) -> GT
+    P1 => [[2, 14], [1, 13], [2, 13], [3, 13], [2, 2], [2, 3], [2, 4], [2, 5]], // 1 Ace only -> 0
+    P2 => [[3, 14], [4, 14], [3, 2], [3, 3], [3, 4], [3, 5], [3, 6], [3, 7]], // 2 Aces -> GT
+    P3 => [[1, 1], [4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [4, 8]], // Dragon only (1 high) -> 0
+  ], 'deck');
+
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P1);
+  \LocalTichuBot::stepSingleBotTurn($game, P2);
+  // Let P3 act as zombie (must bet 0 even if holding high cards; here verify normal bot first, zombie tested below)
+  \LocalTichuBot::stepSingleBotTurn($game, P3);
+
+  assertSameVal('200', (string) \PlayerManager::getPlayer(P0)['call_grand_tichu'], 'P0 with Ace+Phoenix should call Grand Tichu');
+  assertSameVal('0', (string) \PlayerManager::getPlayer(P1)['call_grand_tichu'], 'P1 with 1 Ace should not call Grand Tichu');
+  assertSameVal('200', (string) \PlayerManager::getPlayer(P2)['call_grand_tichu'], 'P2 with 2 Aces should call Grand Tichu');
+  assertSameVal('0', (string) \PlayerManager::getPlayer(P3)['call_grand_tichu'], 'P3 with Dragon only should not call Grand Tichu');
+
+  // 2. Mahjong wish: 90% wish in 2..7, never wish (15) when partner called Grand Tichu
+  assertSameVal(15, \TichuBot::pickMahjongWish(P0, 1, 4), 'P0 must wish 15 (none) when partner P2 called GT');
+  assertSameVal(15, \TichuBot::pickMahjongWish(P2, 1, 4), 'P2 must wish 15 (none) when partner P0 called GT');
+  // P1's partner is P3 (who did not call GT)
+  assertSameVal(4, \TichuBot::pickMahjongWish(P1, 1, 4), 'P1 should make wish in 2..7 on roll <= 90');
+  assertSameVal(7, \TichuBot::pickMahjongWish(P1, 90, 7), 'P1 should make wish in 2..7 on roll == 90');
+  assertSameVal(15, \TichuBot::pickMahjongWish(P1, 91, 4), 'P1 should make no wish (15) on roll > 90');
+  for ($i = 0; $i < 50; $i++) {
+    $w = \TichuBot::pickMahjongWish(P1);
+    assertTrueVal(($w >= 2 && $w <= 7) || $w === 15, "Random bot wish must be 2..7 or 15, got $w");
+  }
+
+  // Also test Mahjong wish via stepSingleBotTurn in mahjongPlay when partner called GT
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \PlayerManager::grandTichuBet(P2, 200);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  assertSameVal('mahjongPlay', $game->gamestate->state()['name']);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Bot in mahjongPlay must make no wish when partner called GT');
+
+  // 3. Card passing (giveCards): best to partner, lowest 2 to opponents + GT Dog exceptions
+  // 3a. Normal case (no GT): P1 passes to [opp0=P0, partner=P3, opp2=P2]
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  foreach ([P0, P1, P2, P3] as $pId) {
+    callAction($game, $pId, 'grandTichuBet', ['bet' => '0']);
+  }
+  \LocalTichuScenarios::assignPlayerHands([
+    P1 => [
+      [1, 1], // Dragon (best)
+      [1, 14], // Ace
+      [1, 13], // King
+      [3, 1], // Dog (must NOT go to opponents in normal case)
+      [1, 2], // 2 (lowest)
+      [1, 3], // 3 (2nd lowest)
+      [1, 5],
+      [1, 6],
+      [1, 7],
+      [1, 8],
+      [1, 9],
+      [1, 10],
+      [1, 11],
+      [1, 12],
+    ],
+  ], 'distribute_14');
+
+  $p1PassIds = \TichuBot::pickThreeCardsToGive(P1);
+  callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $p1PassIds)]);
+  $dragonId = (string) \LocalTichuScenarios::getCardId(1, 1);
+  $twoId = (string) \LocalTichuScenarios::getCardId(1, 2);
+  $threeId = (string) \LocalTichuScenarios::getCardId(1, 3);
+  $dogId = (string) \LocalTichuScenarios::getCardId(3, 1);
+  $tempForPartner = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P3));
+  $tempForOpp0 = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P0));
+  $tempForOpp2 = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P2));
+  assertSameVal($dragonId, (string) $tempForPartner[0]['id'], 'Partner P3 must receive Dragon (best card)');
+  assertSameVal($twoId, (string) $tempForOpp0[0]['id'], 'Opponent P0 must receive lowest card (2)');
+  assertSameVal($threeId, (string) $tempForOpp2[0]['id'], 'Opponent P2 must receive 2nd lowest card (3)');
+
+  // 3b. Self called GT with Dog: passes Dog to partner P3, low cards to P0 and P2
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  foreach ([P0, P1, P2, P3] as $pId) {
+    callAction($game, $pId, 'grandTichuBet', ['bet' => $pId === P1 ? '200' : '0']);
+  }
+  \LocalTichuScenarios::assignPlayerHands([
+    P1 => [
+      [1, 1], // Dragon
+      [2, 1], // Phoenix
+      [1, 14], // Ace
+      [3, 1], // Dog -> must go to partner P3
+      [1, 2],
+      [1, 3],
+      [1, 5],
+      [1, 6],
+      [1, 7],
+      [1, 8],
+      [1, 9],
+      [1, 10],
+      [1, 11],
+      [1, 12],
+    ],
+  ], 'distribute_14');
+  $p1PassGtDog = \TichuBot::pickThreeCardsToGive(P1);
+  callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $p1PassGtDog)]);
+  $dogId3b = (string) \LocalTichuScenarios::getCardId(3, 1);
+  $twoId3b = (string) \LocalTichuScenarios::getCardId(1, 2);
+  $threeId3b = (string) \LocalTichuScenarios::getCardId(1, 3);
+  $tempForPartner = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P3));
+  $tempForOpp0 = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P0));
+  $tempForOpp2 = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P2));
+  assertSameVal($dogId3b, (string) $tempForPartner[0]['id'], 'Self-GT bot with Dog must pass Dog to partner P3');
+  assertSameVal($twoId3b, (string) $tempForOpp0[0]['id'], 'Self-GT opponent P0 must receive lowest card (2)');
+  assertSameVal($threeId3b, (string) $tempForOpp2[0]['id'], 'Self-GT opponent P2 must receive 2nd lowest card (3)');
+
+  // 3c. Self called GT without Dog: passes a low card to partner P3 and low cards to opponents
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  foreach ([P0, P1, P2, P3] as $pId) {
+    callAction($game, $pId, 'grandTichuBet', ['bet' => $pId === P1 ? '200' : '0']);
+  }
+  \LocalTichuScenarios::assignPlayerHands([
+    P1 => [
+      [1, 1],
+      [2, 1],
+      [1, 14],
+      [2, 14],
+      [1, 2],
+      [1, 3],
+      [1, 4],
+      [1, 6],
+      [1, 7],
+      [1, 8],
+      [1, 9],
+      [1, 10],
+      [1, 11],
+      [1, 12],
+    ],
+  ], 'distribute_14');
+  $p1PassGtNoDog = \TichuBot::pickThreeCardsToGive(P1);
+  callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $p1PassGtNoDog)]);
+  $passedRanks = array_map(
+    static fn($c) => (int) $c['type_arg'],
+    array_values(\CardManager::getDeck()->getCards($p1PassGtNoDog))
+  );
+  sort($passedRanks);
+  assertSameVal([2, 3, 4], $passedRanks, 'Self-GT bot without Dog must pass 3 low cards (2, 3, 4) and keep high cards');
+
+  // 3d. Opponent called GT (P0 in slot 0, and P2 in slot 2): passes Dog to GT opponent
+  foreach ([P0, P2] as $gtOpp) {
+    $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+    foreach ([P0, P1, P2, P3] as $pId) {
+      callAction($game, $pId, 'grandTichuBet', ['bet' => $pId === $gtOpp ? '200' : '0']);
+    }
+    \LocalTichuScenarios::assignPlayerHands([
+      P1 => [
+        [1, 1], // Dragon -> partner P3
+        [3, 1], // Dog -> GT opponent
+        [1, 2],
+        [1, 3],
+        [1, 4],
+        [1, 6],
+        [1, 7],
+        [1, 8],
+        [1, 9],
+        [1, 10],
+        [1, 11],
+        [1, 12],
+        [1, 13],
+        [1, 14],
+      ],
+    ], 'distribute_14');
+    $passIds = \TichuBot::pickThreeCardsToGive(P1);
+    callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $passIds)]);
+    $dragonId3d = (string) \LocalTichuScenarios::getCardId(1, 1);
+    $dogId3d = (string) \LocalTichuScenarios::getCardId(3, 1);
+    $tempPartner = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', P3));
+    $tempGtOpp = array_values(\CardManager::getDeck()->getCardsInLocation('temporary', $gtOpp));
+    assertSameVal($dragonId3d, (string) $tempPartner[0]['id'], "When opp $gtOpp calls GT, partner P3 still gets Dragon");
+    assertSameVal($dogId3d, (string) $tempGtOpp[0]['id'], "When opp $gtOpp calls GT, $gtOpp must receive Dog");
+  }
+
+  // 4. Leading a trick (playComboOpen): lowest rank combined into Pair / Running Pairs / Straight / Full House / Single
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+
+  // 4a. Lowest card 2 in a Pair -> leads Pair of 2s
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [2, 2], [1, 7], [1, 9]],
+    P1 => [[2, 3]],
+    P2 => [[3, 3]],
+    P3 => [[4, 3]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  $ledPair = \LogManager::getLastCombo();
+  assertSameVal(PAIR_COMBO, (int) $ledPair->type, 'Leading with [2, 2, 7, 9] should lead Pair of 2s');
+  assertSameVal(2, (int) $ledPair->getFirstValue());
+
+  // 4b. Lowest card 2 in Running Pairs -> leads Running Pairs 2-2-3-3
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [2, 2], [1, 3], [2, 3], [1, 9]],
+    P1 => [[2, 4]],
+    P2 => [[3, 4]],
+    P3 => [[4, 4]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  $ledRp = \LogManager::getLastCombo();
+  assertSameVal(RUNNING_PAIRS_COMBO, (int) $ledRp->type, 'Leading with [2,2,3,3,9] should lead Running Pairs');
+  assertSameVal(4, count($ledRp->cards));
+
+  // 4c. Lowest card 2 in a Straight -> leads Straight 2..6 (not bomb when another suit breaks flush)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 6], [1, 11]],
+    P1 => [[2, 4]],
+    P2 => [[3, 4]],
+    P3 => [[4, 4]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  $ledStraight = \LogManager::getLastCombo();
+  assertSameVal(STRAIGHT_COMBO, (int) $ledStraight->type, 'Leading with [2,3,4,5,6] should lead Straight');
+  assertSameVal(5, count($ledStraight->cards));
+
+  // 4d. Lowest card 2 in a Full House -> leads Full House 5-5-5-2-2
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [2, 2], [1, 5], [2, 5], [3, 5], [1, 11]],
+    P1 => [[2, 4]],
+    P2 => [[3, 4]],
+    P3 => [[4, 4]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  $ledFh = \LogManager::getLastCombo();
+  assertSameVal(FULL_HOUSE_COMBO, (int) $ledFh->type, 'Leading with [2,2,5,5,5,J] should lead Full House');
+
+  // 4e. Lowest card 2 is singleton -> leads single 2
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [1, 5], [2, 5], [1, 8], [2, 8], [3, 8]],
+    P1 => [[2, 4]],
+    P2 => [[3, 4]],
+    P3 => [[4, 4]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  \LocalTichuBot::stepSingleBotTurn($game, P0);
+  $ledSingle = \LogManager::getLastCombo();
+  assertSameVal(SINGLE_COMBO, (int) $ledSingle->type, 'Leading with singleton 2 should lead single 2');
+  assertSameVal(2, (int) $ledSingle->getFirstValue());
+
+  // 5. Following in playCombo: always beat opponent, never beat partner, preserve Phoenix when natural combo exists
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 3], [1, 14]], // P0 plays 3
+    P1 => [[2, 4], [2, 5]], // P1 (opp) beats 3 with 4
+    P2 => [[2, 1], [3, 10], [3, 14]], // P2 (P0's partner) should pass when P1? Wait: P1 led over P0, so P2 beats P1! Let's test both!
+    P3 => [[4, 2]], // P3 passes on P2's 10
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P0);
+  callAction($game, P0, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 3)]);
+  // P1 is opponent of P0 -> MUST beat 3 with 4
+  $resP1 = \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('playCombo', $resP1['action'], 'P1 must beat opponent P0 single 3');
+  assertSameVal(4, (int) \LogManager::getLastCombo()->getFirstValue());
+  // P2 is opponent of P1 -> MUST beat 4 with 10 (not Phoenix)
+  $resP2 = \LocalTichuBot::stepSingleBotTurn($game, P2);
+  assertSameVal('playCombo', $resP2['action'], 'P2 must beat opponent P1 single 4');
+  assertSameVal(10, (int) \LogManager::getLastCombo()->getFirstValue());
+  // P3 passes (only has 2)
+  \LocalTichuBot::stepSingleBotTurn($game, P3);
+  // Now P0 (partner of P2!) holds Ace (14), but P2 is currently winning the trick -> P0 MUST pass!
+  $resP0 = \LocalTichuBot::stepSingleBotTurn($game, P0);
+  assertSameVal('pass', $resP0['action'], 'P0 must never play above partner P2');
+
+  // Test beating multi-card combos (Full House) and natural pair preference over Phoenix
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 3], [2, 3], [3, 3], [1, 2], [2, 2], [1, 12]], // Plays 3s full of 2s
+    P1 => [[1, 6], [2, 6], [3, 6], [3, 4], [4, 4]], // Beats with 6s full of 4s
+    P2 => [[2, 1], [1, 8], [2, 8], [4, 14]],
+    P3 => [[4, 2]],
+  ], 'captured_p0');
+  $fhP0Ids = \LocalTichuScenarios::getCardIds([[1, 3], [2, 3], [3, 3], [1, 2], [2, 2]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $fhP0Ids)]);
+  $resP1Fh = \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('playCombo', $resP1Fh['action'], 'P1 must always beat opponent Full House when able');
+  assertSameVal(FULL_HOUSE_COMBO, (int) \LogManager::getLastCombo()->type);
+
+  // Natural pair preference over Phoenix: against pair of 4s with [PH, 5, 6, 6], plays [6, 6]
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 4], [2, 4], [1, 12]],
+    P1 => [[2, 1], [1, 5], [1, 6], [2, 6]],
+    P2 => [[3, 2]],
+    P3 => [[4, 2]],
+  ], 'captured_p0');
+  $pair4Ids = \LocalTichuScenarios::getCardIds([[1, 4], [2, 4]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $pair4Ids)]);
+  \LocalTichuBot::stepSingleBotTurn($game, P1);
+  $pairPlayed = \LogManager::getLastCombo();
+  assertSameVal(PAIR_COMBO, (int) $pairPlayed->type);
+  assertSameVal(6, (int) $pairPlayed->getFirstValue(), 'Bot should prefer natural pair of 6s over [Phoenix, 5]');
+
+  // 6. Tichu call: only directly before playing a card when holding >= 4 of the 6 high cards
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  foreach ([P0, P1, P2, P3] as $pId) {
+    callAction($game, $pId, 'grandTichuBet', ['bet' => '0']);
+  }
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10], [1, 11], [1, 12], [1, 13], [3, 1]],
+    P1 => [[1, 14], [2, 14], [3, 14], [2, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8], [2, 9], [2, 10], [2, 11]],
+    P2 => [[3, 2], [3, 3], [3, 4], [3, 5], [3, 6], [3, 7], [3, 8], [3, 9], [3, 10], [3, 11], [3, 12], [3, 13], [2, 12], [2, 13]],
+    P3 => [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [4, 8], [4, 9], [4, 10], [4, 11], [4, 12], [4, 13], [4, 14], [1, 1]],
+  ], 'distribute_14');
+  // In giveCards, P1 has 14 cards & 4 high cards -> passing must NOT call Tichu
+  \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P1)['call_tichu'], 'Bot must NOT call Tichu during giveCards');
+
+  // In playCombo: P3 (P1 partner) leads 2, P0 passes, P1 passes with 14 cards & 4 high cards -> must NOT call Tichu when passing
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P3);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10], [1, 11], [1, 12], [1, 13], [3, 1]],
+    P1 => [[1, 14], [2, 14], [3, 14], [2, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8], [2, 9], [2, 10], [2, 11]], // 14 cards, 4 high cards
+    P2 => [[3, 2], [3, 3], [3, 4], [3, 5], [3, 6], [3, 7], [3, 8], [3, 9], [3, 10], [3, 11], [3, 12], [3, 13], [2, 12], [2, 13]],
+    P3 => [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [4, 8], [4, 9], [4, 10], [4, 11], [4, 12], [4, 13], [4, 14], [1, 1]],
+  ], 'distribute_14');
+  $game->gamestate->changeActivePlayer(P3);
+  callAction($game, P3, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(4, 2)]);
+  callAction($game, P0, 'pass', ['onlyOnce' => true]);
+  $p1PassRes = \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('pass', $p1PassRes['action']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P1)['call_tichu'], 'Bot must NOT call Tichu when passing');
+  // Now P2 plays 3 (beating P3's 2) -> P3 & P0 pass -> P1 beats opponent P2's 3 and calls Tichu directly before playing!
+  callAction($game, P2, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(3, 3)]);
+  callAction($game, P3, 'pass', ['onlyOnce' => true]);
+  callAction($game, P0, 'pass', ['onlyOnce' => true]);
+  $p1PlayRes = \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('playCombo', $p1PlayRes['action']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P1)['call_tichu'], 'Bot must call Tichu directly before playing card when holding >= 4 high cards');
+
+  // Also test Tichu call right before leading in playComboOpen
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P1);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10], [1, 11], [1, 12], [1, 13], [3, 1]],
+    P1 => [[1, 14], [2, 14], [3, 14], [1, 1], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8], [2, 9], [2, 10], [2, 11]], // 14 cards, 4 high cards
+    P2 => [[3, 2], [3, 3], [3, 4], [3, 5], [3, 6], [3, 7], [3, 8], [3, 9], [3, 10], [3, 11], [3, 12], [3, 13], [2, 12], [2, 13]],
+    P3 => [[4, 2], [4, 3], [4, 4], [4, 5], [4, 6], [4, 7], [4, 8], [4, 9], [4, 10], [4, 11], [4, 12], [4, 13], [4, 14], [2, 1]],
+  ], 'distribute_14');
+  $game->gamestate->changeActivePlayer(P1);
+  $p1LeadRes = \LocalTichuBot::stepSingleBotTurn($game, P1);
+  assertSameVal('playCombo', $p1LeadRes['action']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P1)['call_tichu'], 'Bot must call Tichu directly before leading in playComboOpen when holding >= 4 high cards');
+
+  // 7. Zombie contrast: zombieTurn must NOT apply smart bot rules (bets 0 in GT, passes on opp single, wishes 15)
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 14], [2, 14], [3, 14], [4, 14], [1, 1], [2, 1], [1, 2], [1, 3]], // 6 high cards!
+  ], 'deck');
+  $game->setCurrentPlayerId(P1);
+  $game->zombieTurn($game->gamestate->state(), P0);
+  assertSameVal('0', (string) \PlayerManager::getPlayer(P0)['call_grand_tichu'], 'Zombie with 6 high cards must still bet 0 in grandTichuBets');
+
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2]],
+    P1 => [[1, 14]], // holds Ace against opponent P0's 2
+    P2 => [[2, 3]],
+    P3 => [[3, 3]],
+  ], 'captured_p0');
+  callAction($game, P0, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 2)]);
+  $game->setCurrentPlayerId(P0);
+  $game->zombieTurn($game->gamestate->state(), P1);
+  assertSameVal((string) P2, (string) $game->getActivePlayerId(), 'Zombie P1 holding Ace against opponent 2 still passes');
 }
 
 $tests = [
@@ -1987,6 +2442,7 @@ $tests = [
   'test_stale_snapshot_multiactive_and_notif_ordering',
   'test_production_bug_sql_loader_and_player_id_remapping',
   'test_studio_debug_bot_step_and_bot_others',
+  'test_smart_bot_strategy_and_decisions',
 ];
 
 echo "====================================================================\n";
