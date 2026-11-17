@@ -5144,16 +5144,18 @@ abstract class Table extends Old\APP_GameClass
         $this->nbrZombieTurnCycle = 0;
         TableInfos::$tables_infos = [];
         $this->players = [];
-        if ($this->o_tableinfos !== null) {
-            $this->o_tableinfos->reload();
-        }
-        if ($this->gamestate !== null) {
-            $this->gamestate->loadStateMachine($this, $this->gamename, (int) ($this->table_id ?? 1));
-        }
-        $this->initTable();
         global $bgaContainer;
         /** @var \Bga\GameFramework\Old\Db $db */
         $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+        $db->query("SET SESSION transaction_isolation = 'SERIALIZABLE'");
+        $db->begin();
+        if ($this->o_tableinfos !== null) {
+            $this->o_tableinfos->db_load((bool) $this->bSelectGlobalsForUpdate);
+        }
+        if ($this->gamestate !== null) {
+            $this->gamestate->loadStateMachine($this, $this->gamename ?? $this->getGameName(), (int) ($this->table_id ?? 1));
+        }
+        $this->initTable();
 
         $db->query("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
         $db->query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
@@ -5177,6 +5179,9 @@ abstract class Table extends Old\APP_GameClass
             } else {
                 if (!empty($this->notifications)) {
                     $this->sendNotifications();
+                    if ($this->o_tableinfos !== null) {
+                        $this->o_tableinfos->setGlobal(0, time());
+                    }
                 }
                 $db->commit();
             }

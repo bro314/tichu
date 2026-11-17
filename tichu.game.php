@@ -74,7 +74,9 @@ class Tichu extends Table
   //  2. `initTable()` acquires a session-level MySQL advisory lock (`GET_LOCK('tichu_table_<id>', 20)`)
   //     and switches the session isolation level to `REPEATABLE-READ`.
   //  3. Every mutating entry point calls `acquireGameLock()` BEFORE any other DB statement to lock
-  //     `global` rows 1, 2, and 30 (`lockVersion`) with `FOR UPDATE` and reject stale snapshots.
+  //     the entire `global` table (`WHERE 1 FOR UPDATE`) in ascending PK order matching
+  //     `TableInfos::getGlobalsFromDB(true)` (preventing `global(1) -> global(0)` vs `global(0) -> global(1)`
+  //     AB-BA deadlocks with concurrent requests) and reject stale snapshots via `lockVersion` (30).
   //  4. Out-of-turn player-local actions (Tichu bets, passing cards, autopass toggles) rely on the
   //     row lock rather than failing on `lockVersion`; duplicate `collect` requests are ignored.
   //  5. Every shared-state mutation calls `bumpGameVersion()` so overlapping requests detect changes.
@@ -119,17 +121,15 @@ class Tichu extends Table
       return;
     }
     $this->acquireAdvisoryLock();
-    $this->freshStateId = (int) $this->getUniqueValueFromDB(
-      "SELECT global_value FROM global WHERE global_id = 1 FOR UPDATE"
+    $lockedGlobals = $this->getCollectionFromDB(
+      "SELECT global_id, global_value FROM global WHERE 1 FOR UPDATE",
+      true
     );
     $this->gameLockHeld = true;
-    $this->freshActivePlayerId = (int) $this->getUniqueValueFromDB(
-      "SELECT global_value FROM global WHERE global_id = 2 FOR UPDATE"
-    );
+    $this->freshStateId = (int) ($lockedGlobals[1] ?? 0);
+    $this->freshActivePlayerId = (int) ($lockedGlobals[2] ?? 0);
     $versionId = self::GLOBAL_LOCK_VERSION;
-    $currentVersion = (int) ($this->getUniqueValueFromDB(
-      "SELECT global_value FROM global WHERE global_id = $versionId FOR UPDATE"
-    ) ?? 0);
+    $currentVersion = (int) ($lockedGlobals[$versionId] ?? 0);
     $this->lockedVersion = $currentVersion;
     $snapshotVersion = (int) ($this->getUniqueValueFromDB(
       "SELECT global_value FROM global WHERE global_id = $versionId"
@@ -1875,6 +1875,7 @@ class Tichu extends Table
     if ($this->getBgaEnvironment() !== "studio") {
       throw new VisibleSystemException("Debug actions are only available in Studio.");
     }
+    $this->acquireGameLock();
     $this->gamestate->reloadState();
     $playerId = (int) $this->getCurrentPlayerId();
     $players = $this->loadPlayersBasicInfos();

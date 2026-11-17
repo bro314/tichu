@@ -145,6 +145,16 @@ function executeRequest(array $req): array
         $game->getFullClientPayload($playerId);
         $game->endPlayerAction(true);
         break;
+      case 'notifHistory':
+        $game->beginPlayerAction();
+        $game->getNotificationsSince(0, $playerId);
+        $game->endPlayerAction(false);
+        break;
+      case 'botSuggest':
+        $game->beginPlayerAction();
+        $game->debug_botSuggest();
+        $game->endPlayerAction(false);
+        break;
       default:
         throw new \RuntimeException('Unknown request kind ' . $req['kind']);
     }
@@ -907,9 +917,15 @@ function planBurst(\Tichu $game, array $s): array
     }
   }
 
-  // 3. Page loads, zombie turns and garbage.
+  // 3. Page loads, zombie turns, notificationHistory, botSuggest, and garbage.
   if (chance(0.25)) {
     $reqs[] = ['kind' => 'read', 'player' => pick($s['players']), 'label' => 'getAllDatas'];
+  }
+  if (chance(0.35)) {
+    $reqs[] = ['kind' => 'notifHistory', 'player' => pick($s['players']), 'label' => 'notificationHistory'];
+  }
+  if (chance(0.15)) {
+    $reqs[] = ['kind' => 'botSuggest', 'player' => pick($s['players']), 'label' => 'debug_botSuggest'];
   }
   if (chance(0.03)) {
     $reqs[] = ['kind' => 'zombie', 'player' => pick($s['players']), 'label' => 'zombieTurn'];
