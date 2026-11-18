@@ -1999,6 +1999,7 @@
     format_string_recursive(log, args) {
       if (!log) return "";
       if (!args || typeof args !== "object") return String(log);
+      const i18nSet = new Set(Array.isArray(args.i18n) ? args.i18n.map(String) : []);
 
       return String(log).replace(/\$\{([^}]+)\}/g, (_match, key) => {
         if (key === "you") {
@@ -2018,7 +2019,11 @@
         const val = args[key];
         if (val === undefined || val === null) return "";
         if (typeof val === "object" && val.log !== undefined) {
-          return this.format_string_recursive(val.log, val.args || {});
+          const subLog = typeof window._ === "function" ? window._(val.log) : val.log;
+          return this.format_string_recursive(subLog, val.args || {});
+        }
+        if (typeof val === "string" && i18nSet.has(key)) {
+          return typeof window._ === "function" ? window._(val) : val;
         }
         return String(val);
       });
@@ -2043,7 +2048,8 @@
       this._syncActivePlayerStatusBar(isMyTurn);
       const rawDesc =
         isMyTurn && st.descriptionmyturn ? st.descriptionmyturn : st.description || "";
-      const formatted = this.format_string_recursive(rawDesc, st.args || {});
+      const translatedDesc = typeof window._ === "function" ? window._(rawDesc) : rawDesc;
+      const formatted = this.format_string_recursive(translatedDesc, st.args || {});
       const titleEl = document.getElementById("pagemaintitletext");
       if (titleEl) {
         titleEl.innerHTML = formatted === "" ? "&nbsp;" : formatted;
@@ -2252,7 +2258,16 @@
         .then((r) => r.json())
         .then((payload) => {
           if (!payload || payload.status === 0 || payload.status === "0" || payload.error) {
-            const errMsg = (payload && payload.error) || "Action failed";
+            const rawErr = (payload && payload.error) || "Action failed";
+            const errMsg =
+              payload && payload.args && typeof payload.args === "object"
+                ? this.format_string_recursive(
+                    typeof window._ === "function" ? window._(rawErr) : rawErr,
+                    payload.args,
+                  )
+                : typeof window._ === "function"
+                  ? window._(rawErr)
+                  : rawErr;
             consoleAnnounce(
               "[TICHU ERROR]",
               `${actionName} failed: ${errMsg}`,

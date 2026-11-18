@@ -5,8 +5,6 @@ import { Card } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 const COLORS = [1, 2, 3, 4] as const;
 const VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] as const;
 const SPECIAL_LABELS: Record<number, string> = {
@@ -156,7 +154,7 @@ export class TichuPlayedCards extends LitElement {
         class="whiteblock"
         style="display: ${this.isAllInfoExposed ? "block" : "none"}"
       >
-        <h3>${t("Played Cards")}</h3>
+        <h3>${_("Played Cards")}</h3>
         <div id="playedCardsFlexRow">
           <div class="space"></div>
           <div id="playedCardsFlexCol">

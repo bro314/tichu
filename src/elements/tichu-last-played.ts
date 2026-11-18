@@ -1,6 +1,7 @@
 import { html, css, LitElement, PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
+import { formatLocalizedComboDescription, translateDynamic } from "./combo-validator";
 import { Card, LastComboState, LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
@@ -8,8 +9,6 @@ import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-status";
 import "./tichu-stock";
 import type { TichuStock } from "./tichu-stock";
-
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
 
 const POSITIONS = ["bottom", "right", "top", "left"] as const;
 
@@ -378,7 +377,10 @@ export class TichuLastPlayed extends LitElement {
 
     const showGrandTichuColor = player.callGrandTichu === 200;
     const showTichuColor = player.callTichu === 100;
-    const translatedDesc = combo.description ? t(combo.description) : "";
+    const translatedDesc = combo.passed
+      ? ""
+      : formatLocalizedComboDescription(combo) ||
+        (combo.description ? translateDynamic(combo.description) : "");
 
     return html`
       <div
@@ -400,9 +402,9 @@ export class TichuLastPlayed extends LitElement {
         <div class="last-played-player">
           <div class="playertablename" style="color: #${player.color}">${player.name}</div>
           <div class="last-played-icons">
-            <div class="icon hand" id="icon_hand_${id}" title=${t("Cards in hand")}></div>
+            <div class="icon hand" id="icon_hand_${id}" title=${_("Cards in hand")}></div>
             <div class="count handcount ${id}">${player.handcount}</div>
-            <div class="icon star" id="icon_star_${id}" title=${t("Points captured")}></div>
+            <div class="icon star" id="icon_star_${id}" title=${_("Points captured")}></div>
             <div class="count pointcount ${id}">${player.capturedPoints}</div>
           </div>
           <div>
@@ -410,13 +412,13 @@ export class TichuLastPlayed extends LitElement {
               id="grandtichucolor_${id}"
               class="icon big grandtichucolor ${id}"
               style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-              title=${t("Grand Tichu bet")}
+              title=${_("Grand Tichu bet")}
             ></div>
             <div
               id="tichucolor_${id}"
               class="icon big tichucolor ${id}"
               style="display: ${showTichuColor ? "inline-block" : "none"}"
-              title=${t("Tichu bet")}
+              title=${_("Tichu bet")}
             ></div>
           </div>
         </div>

@@ -66,7 +66,7 @@ export class TichuScoreBoard extends LitElement {
     const team2 = `${this.names[1]} ${this.names[3]}`;
     return html`
       <tr class="title">
-        <td>Round</td>
+        <td>${_("Round")}</td>
         <td>${team1}</td>
         <td>${team2}</td>
         <td>${team1}</td>

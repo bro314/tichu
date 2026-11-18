@@ -1,3 +1,7 @@
+if (typeof (globalThis as any)._ !== "function") {
+  (globalThis as any)._ = (s: string) => s;
+}
+
 import { GameModel } from "./game-model";
 import { Combo, Hand } from "./combo-validator";
 import "./tichu-card";

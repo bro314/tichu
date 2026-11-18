@@ -275,16 +275,16 @@ export class TichuPlayer extends LitElement {
       <div class="passed">
         <div class="passedCard partner">
           <tichu-card .card=${this.passedToPartner}></tichu-card>
-          <div class=${classMap({ bomb: partnerAfter && !partnerBefore })}>Partner</div>
+          <div class=${classMap({ bomb: partnerAfter && !partnerBefore })}>${_("Partner")}</div>
         </div>
         <div class="small">
           <div class="passedCard">
             <tichu-card half .card=${this.passedToPrevious}></tichu-card>
-            <div class=${classMap({ bomb: prevAfter && !prevBefore })}>Prev</div>
+            <div class=${classMap({ bomb: prevAfter && !prevBefore })}>${_("Prev")}</div>
           </div>
           <div class="passedCard">
             <tichu-card half .card=${this.passedToNext}></tichu-card>
-            <div class=${classMap({ bomb: nextAfter && !nextBefore })}>Next</div>
+            <div class=${classMap({ bomb: nextAfter && !nextBefore })}>${_("Next")}</div>
           </div>
         </div>
       </div>
@@ -298,9 +298,9 @@ export class TichuPlayer extends LitElement {
       case Bet.NO_BET:
         return html`<div></div>`;
       case Bet.TICHU:
-        return html`<div class="bet tichu">Tichu</div>`;
+        return html`<div class="bet tichu">${_("Tichu")}</div>`;
       case Bet.GRAND_TICHU:
-        return html`<div class="bet grandTichu">Grand Tichu</div>`;
+        return html`<div class="bet grandTichu">${_("Grand Tichu")}</div>`;
     }
   }
 }

@@ -19,6 +19,8 @@ import type {
   TypedNotif,
 } from "./types/tichu-contracts";
 
+declare const __TICHU_CODE_VERSION__: string | undefined;
+
 declare global {
   interface Window {
     gameModel: GameModel;
@@ -35,6 +37,7 @@ export class Tichu {
   allLastCombos: Record<number, Combo | undefined> = {};
   stateName = "";
   active_player?: string;
+  initialCodeVersion = "";
   private pendingConfirmTichu: { grand: boolean; msg: string; titleSave: string } | null = null;
   debugBreadcrumbs: Array<{
     ts: string;
@@ -217,24 +220,41 @@ export class Tichu {
     }
   }
 
-  checkVersion(serverVersion?: number | string): boolean {
-    const srv = Number(serverVersion ?? 0);
-    const cli = Number(this.gamedatas?.gameVersion ?? 0);
-    if (srv > 0 && cli > 0 && srv !== cli) {
-      if (!this.versionWarningShown) {
-        this.versionWarningShown = true;
-        this.recordBreadcrumb("warn", "version_mismatch", {
-          clientVersion: cli,
-          serverVersion: srv,
-        });
-        this.showMessage(
-          _("A new version of Tichu was deployed. Please refresh your browser page (F5)."),
-          "info",
-        );
-      }
-      return false;
+  private triggerVersionMismatchWarning(detail: Record<string, unknown>): void {
+    if (!this.versionWarningShown) {
+      this.versionWarningShown = true;
+      this.recordBreadcrumb("warn", "version_mismatch", detail);
+      this.showMessage(
+        _("A new version of Tichu was deployed. Please refresh your browser page (F5)."),
+        "info",
+      );
     }
-    return true;
+  }
+
+  checkVersion(serverCodeVersion?: unknown, serverDbVersion?: unknown): boolean {
+    if (this.isReadOnly()) return true;
+    const srvCode = typeof serverCodeVersion === "string" ? serverCodeVersion : "";
+    const effectiveDbVersion =
+      serverDbVersion !== undefined
+        ? serverDbVersion
+        : typeof serverCodeVersion === "number"
+          ? serverCodeVersion
+          : 0;
+    const srvDb = Number(effectiveDbVersion ?? 0);
+    const cliDb = Number(this.gamedatas?.gameVersion ?? 0);
+    const match =
+      srvCode !== "" && this.initialCodeVersion !== ""
+        ? srvCode === this.initialCodeVersion
+        : srvDb === 0 || cliDb === 0 || srvDb === cliDb;
+    if (!match) {
+      this.triggerVersionMismatchWarning({
+        clientCodeVersion: this.initialCodeVersion,
+        serverCodeVersion: srvCode,
+        clientVersion: cliDb,
+        serverVersion: srvDb,
+      });
+    }
+    return match;
   }
 
   verifyClientHandInvariant(context: string): void {
@@ -249,6 +269,7 @@ export class Tichu {
 
   getDebugSnapshot(): Record<string, unknown> {
     return {
+      codeVersion: this.initialCodeVersion,
       gameVersion: this.gamedatas?.gameVersion ?? 0,
       playerId: this.player_id,
       isSpectator: this.isSpectator,
@@ -270,7 +291,10 @@ export class Tichu {
   }
 
   private traceNotif(type: string, notif: any): void {
-    this.checkVersion(notif?.gameVersion ?? notif?.args?.gameVersion);
+    this.checkVersion(
+      notif?.args?.codeVersion ?? notif?.codeVersion,
+      notif?.args?.gameVersion ?? notif?.gameVersion,
+    );
     this.recordBreadcrumb("notif", type, {
       move: notif?.move_id ?? notif?.packet_id,
       player: notif?.args?.player_id,
@@ -675,6 +699,20 @@ export class Tichu {
   setup(gamedatas: Gamedatas) {
     this.installLegacyAccessors(this);
     this.gamedatas = gamedatas;
+    this.initialCodeVersion =
+      typeof gamedatas?.codeVersion === "string" ? gamedatas.codeVersion : "";
+    if (
+      !this.isReadOnly() &&
+      typeof __TICHU_CODE_VERSION__ !== "undefined" &&
+      __TICHU_CODE_VERSION__ !== "" &&
+      this.initialCodeVersion !== "" &&
+      __TICHU_CODE_VERSION__ !== this.initialCodeVersion
+    ) {
+      this.triggerVersionMismatchWarning({
+        bundleCodeVersion: __TICHU_CODE_VERSION__,
+        serverCodeVersion: this.initialCodeVersion,
+      });
+    }
     this.ensureGamestateReflexion(gamedatas?.gamestate);
     this.rehydrateModel();
 
@@ -906,10 +944,14 @@ export class Tichu {
 
   onEnteringStateNewTrick(_args?: any) {
     if (this.gamedatas) {
-      this.gamedatas.capturedCards = [
-        ...(this.gamedatas.capturedCards || []),
-        ...(this.gamedatas.currentTrick || []),
-      ];
+      if (Number(this.gamedatas.isAllInfoExposed) === 1) {
+        this.gamedatas.capturedCards = [
+          ...(this.gamedatas.capturedCards || []),
+          ...(this.gamedatas.currentTrick || []),
+        ];
+      } else {
+        this.gamedatas.capturedCards = [];
+      }
       this.gamedatas.currentTrick = [];
       this.gamedatas.currentTrickValue = 0;
       this.gamedatas.trick++;
@@ -978,12 +1020,16 @@ export class Tichu {
     const right = this.clockwise ? 1 : 0;
     const leftLabel = typeof enemies[left] === "object" ? enemies[left].name : enemies[left];
     const rightLabel = typeof enemies[right] === "object" ? enemies[right].name : enemies[right];
-    this.addActionButton("giveDragonBefore_button", _("Give cards to " + leftLabel), () =>
-      this.onGiveDragon(left),
-    );
-    this.addActionButton("giveDragonAfter_button", _("Give cards to " + rightLabel), () =>
-      this.onGiveDragon(right),
-    );
+    const giveLeftText =
+      typeof dojo !== "undefined" && typeof (dojo as any).string?.substitute === "function"
+        ? dojo.string.substitute(_("Give cards to ${player_name}"), { player_name: leftLabel })
+        : _("Give cards to ${player_name}").replace("${player_name}", String(leftLabel ?? ""));
+    const giveRightText =
+      typeof dojo !== "undefined" && typeof (dojo as any).string?.substitute === "function"
+        ? dojo.string.substitute(_("Give cards to ${player_name}"), { player_name: rightLabel })
+        : _("Give cards to ${player_name}").replace("${player_name}", String(rightLabel ?? ""));
+    this.addActionButton("giveDragonBefore_button", giveLeftText, () => this.onGiveDragon(left));
+    this.addActionButton("giveDragonAfter_button", giveRightText, () => this.onGiveDragon(right));
   }
 
   onEnteringStateConfirmTrick(_args?: any) {
@@ -1123,7 +1169,7 @@ export class Tichu {
           false,
           "red",
         );
-        this.addTooltip("makeGTBet", _("Bet 200 Points, tha you will finish first"), "");
+        this.addTooltip("makeGTBet", _("Bet 200 Points, that you will finish first"), "");
       }
     }
   }
@@ -1613,7 +1659,24 @@ export class Tichu {
     this.traceNotif("playCombo", notif);
     const playerId = Number(notif.args.player_id);
     const cards = notif.args.cards || [];
-    const comboName = notif.args.combo_name || "";
+    const rawComboName = notif.args.combo_name;
+    const formatRawLogPayload = (payload: any): string => {
+      if (typeof payload === "string") return payload;
+      if (!payload || typeof payload !== "object" || typeof payload.log !== "string") return "";
+      const rawArgs =
+        payload.args && typeof payload.args === "object" && !Array.isArray(payload.args)
+          ? (payload.args as Record<string, unknown>)
+          : {};
+      return String(payload.log).replace(/\$\{([^}]+)\}/g, (_m, k: string) => {
+        const v = rawArgs[k];
+        if (v === undefined || v === null) return "";
+        if (typeof v === "object" && "log" in (v as Record<string, unknown>)) {
+          return formatRawLogPayload(v);
+        }
+        return String(v);
+      });
+    };
+    let comboName = formatRawLogPayload(rawComboName);
     const points = Number(notif.args.points || 0);
     const rawType = notif.args.type !== undefined ? Number(notif.args.type) : undefined;
     const rawPhoenixValue = notif.args.phoenixValue;
@@ -1625,8 +1688,23 @@ export class Tichu {
         ? layer.preparePlayCombo(playerId, cards, comboName, this.stateName === "playBomb")
         : null;
 
-    window.gameModel?.applyPlayCombo(playerId, cards, comboName, points, rawType, rawPhoenixValue);
+    window.gameModel?.applyPlayCombo(
+      playerId,
+      cards,
+      comboName || rawComboName || "",
+      points,
+      rawType,
+      rawPhoenixValue,
+    );
     const resolvedLast = window.gameModel?.getState().trickLastCombo;
+    if (
+      !comboName &&
+      resolvedLast &&
+      String(resolvedLast.playerId) === String(playerId) &&
+      resolvedLast.description
+    ) {
+      comboName = resolvedLast.description;
+    }
     const comboType =
       resolvedLast && String(resolvedLast.playerId) === String(playerId)
         ? resolvedLast.type
@@ -1775,8 +1853,7 @@ export class Tichu {
     if (!this.pendingConfirmTichu) return;
     const { grand, titleSave } = this.pendingConfirmTichu;
     this.removeActionButtons();
-    const s = grand ? "grand " : "";
-    this.addActionButton("cancelTichu", _("no " + s + "tichu"), () => {
+    this.addActionButton("cancelTichu", grand ? _("no grand tichu") : _("no tichu"), () => {
       this.pendingConfirmTichu = null;
       if (this.gamedatas?.gamestate) {
         this.gamedatas.gamestate.descriptionmyturn = titleSave;

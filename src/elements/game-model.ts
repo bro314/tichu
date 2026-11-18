@@ -1,6 +1,6 @@
 import { BehaviorSubject, Observable } from "rxjs";
-import type { Card, CardData, TichuGamedatas } from "../types/tichu-contracts";
-import { Combo, normalizePhoenixValue } from "./combo-validator";
+import type { Card, CardData, I18nLogPayload, TichuGamedatas } from "../types/tichu-contracts";
+import { Combo, normalizeComboDescriptionInput, normalizePhoenixValue } from "./combo-validator";
 import type { TichuAnimationLayer } from "./tichu-animation-layer";
 import { select } from "./utils";
 
@@ -397,7 +397,7 @@ export class GameModel {
       if (hasComboCards) {
         lastCombos[pid] = {
           cards: comboCards,
-          description: String(combo?.description ?? ""),
+          description: normalizeComboDescriptionInput(combo?.description),
           passed: false,
           type: Number.isNaN(comboType) ? 0 : comboType,
           phoenixValue: normalizePhoenixValue(combo?.phoenixValue),
@@ -475,7 +475,7 @@ export class GameModel {
         rawStructuredLast?.phoenixValue !== undefined
           ? normalizePhoenixValue(rawStructuredLast.phoenixValue)
           : (fallbackCombo?.phoenixValue ?? null),
-      description: String(
+      description: normalizeComboDescriptionInput(
         rawStructuredLast?.description ??
           gamedatas?.lastComboDescription ??
           fallbackCombo?.description ??
@@ -523,11 +523,14 @@ export class GameModel {
     const isCurrentPlayerActive =
       !isSpectator && (activePlayerId === currentId || activePlayerIds.includes(currentId));
 
+    const isAllInfoExposed =
+      Number(gamedatas?.isAllInfoExposed ?? gamedatas?.is_all_info_exposed) === 1;
+
     this.setState({
       currentPlayerId: currentId,
       isSpectator: Boolean(isSpectator),
       isRealtime: Boolean(isRealtime),
-      isAllInfoExposed: Number(gamedatas?.isAllInfoExposed ?? gamedatas?.is_all_info_exposed) === 1,
+      isAllInfoExposed,
       players,
       playerOrderBottomToLeft,
       passSlots,
@@ -547,7 +550,7 @@ export class GameModel {
       currentTrickValue: Number(
         gamedatas?.currentTrickValue ?? gamedatas?.current_trick_value ?? 0,
       ),
-      capturedCards: normalizeCards(gamedatas?.capturedCards),
+      capturedCards: isAllInfoExposed ? normalizeCards(gamedatas?.capturedCards) : [],
       firstOutPlayerId,
       lastComboPlayerId,
       lastCombos,
@@ -736,7 +739,7 @@ export class GameModel {
         phoenixValue: null,
         description: "",
       },
-      capturedCards: [...prev.capturedCards, ...prev.currentTrick],
+      capturedCards: prev.isAllInfoExposed ? [...prev.capturedCards, ...prev.currentTrick] : [],
       currentTrick: [],
       currentTrickValue: 0,
       trick: prev.trick + 1,
@@ -994,7 +997,7 @@ export class GameModel {
   applyPlayCombo(
     playerId: string | number,
     cards: Card[],
-    comboName: string,
+    comboName: string | I18nLogPayload,
     points: number,
     type?: number,
     phoenixValue?: number | string | Array<number | string> | null,
@@ -1022,6 +1025,7 @@ export class GameModel {
         }
       : prev.players;
 
+    const normalizedComboName = normalizeComboDescriptionInput(comboName);
     const normalizedPhoenix =
       phoenixValue !== undefined ? normalizePhoenixValue(phoenixValue) : undefined;
     const needsInference =
@@ -1030,7 +1034,7 @@ export class GameModel {
       normalizedPhoenix === undefined ||
       Array.isArray(normalizedPhoenix);
     const inferred = needsInference
-      ? Combo.inferPlayedCombo(normalized, prev.trickLastCombo, comboName)
+      ? Combo.inferPlayedCombo(normalized, prev.trickLastCombo, normalizedComboName)
       : null;
     const comboType =
       type !== undefined && Number(type) > 0
@@ -1042,12 +1046,13 @@ export class GameModel {
       normalizedPhoenix !== undefined && !Array.isArray(normalizedPhoenix)
         ? normalizedPhoenix
         : (inferred?.phoenixValue ?? null);
+    const finalDescription = normalizedComboName || inferred?.description || "";
 
     const lastCombos = {
       ...prev.lastCombos,
       [pid]: {
         cards: normalized,
-        description: comboName,
+        description: finalDescription,
         passed: false,
         type: comboType,
         phoenixValue: comboPhoenix,
@@ -1065,7 +1070,7 @@ export class GameModel {
         type: comboType,
         cards: normalized,
         phoenixValue: comboPhoenix,
-        description: comboName,
+        description: finalDescription,
       },
       currentTrick: [...prev.currentTrick, ...normalized],
       currentTrickValue: prev.currentTrickValue + Number(points ?? 0),

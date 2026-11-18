@@ -3,31 +3,27 @@ import { property } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { Card } from "./model";
 
-function translate(text: string): string {
-  return typeof _ === "function" ? _(text) : text;
-}
-
 export function getDefaultCardTooltip(card: Card | undefined): string {
   if (!card) return "";
   const color = Number(card.type);
   const rank = Number(card.type_arg);
-  if (rank === 10 || rank === 13) return translate("Scores 10 points");
-  if (rank === 5) return translate("Scores 5 points");
+  if (rank === 10 || rank === 13) return _("Scores 10 points");
+  if (rank === 5) return _("Scores 5 points");
   if (rank === 1) {
     if (color === 1)
-      return translate(
+      return _(
         "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it.",
       );
     if (color === 2)
-      return translate(
+      return _(
         "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5.",
       );
     if (color === 3)
-      return translate(
+      return _(
         "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead.",
       );
     if (color === 4)
-      return translate("Scores 0 points. Owner of this card plays first. Player can make a wish.");
+      return _("Scores 0 points. Owner of this card plays first. Player can make a wish.");
   }
   return "";
 }
@@ -101,7 +97,7 @@ export class TichuCard extends LitElement {
 
   getComputedTooltip(): string {
     if (this.tooltip) return this.tooltip;
-    if (this.pass) return translate("Pass");
+    if (this.pass) return _("Pass");
     return getDefaultCardTooltip(this.card);
   }
 

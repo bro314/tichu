@@ -4,8 +4,6 @@ import { LivePlayer } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 export class TichuPlayerPanel extends LitElement {
   @property({ type: String }) playerId = "";
 
@@ -98,14 +96,14 @@ export class TichuPlayerPanel extends LitElement {
     // prettier-ignore
     return html`
       <div class="ha_board">
-        <div class="icon hand" title=${t("Cards in hand")}></div>&#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${t("Cards in hand")}>${handcount}</span>
-        <div class="icon star" title=${t("Points captured")}></div>&#x00D7;<span id="pointcount_${id}" class="count pointcount ${id}" title=${t("Points captured")}>${capturedPoints}</span>
-        <div id="grandtichublack_${id}" class="icon grandtichublack ${id}" style="display: ${showGrandTichuBlack ? "inline-block" : "none"}" title=${t("Grand Tichu bet yet to be made")}></div>
-        <div id="grandtichucolor_${id}" class="icon grandtichucolor ${id}" style="display: ${showGrandTichuColor ? "inline-block" : "none"}" title=${t("Grand Tichu bet")}></div>
-        <div id="tichublack_${id}" class="icon tichublack ${id}" style="display: ${showTichuBlack ? "inline-block" : "none"}" title=${t("Tichu bet yet to be made")}></div>
-        <div id="tichucolor_${id}" class="icon tichucolor ${id}" style="display: ${showTichuColor ? "inline-block" : "none"}" title=${t("Tichu bet")}></div>
-        <div id="firstoutcolor_${id}" class="icon firstoutcolor ${id}" style="display: ${isFirstOut ? "inline-block" : "none"}" title=${t("First player out")}></div>
-        <div id="cardback_${id}" class="icon cardback ${id}" style="display: ${isPassReady ? "inline-block" : "none"}" title=${t("has passed")}></div>
+        <div class="icon hand" title=${_("Cards in hand")}></div>&#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${_("Cards in hand")}>${handcount}</span>
+        <div class="icon star" title=${_("Points captured")}></div>&#x00D7;<span id="pointcount_${id}" class="count pointcount ${id}" title=${_("Points captured")}>${capturedPoints}</span>
+        <div id="grandtichublack_${id}" class="icon grandtichublack ${id}" style="display: ${showGrandTichuBlack ? "inline-block" : "none"}" title=${_("Grand Tichu bet yet to be made")}></div>
+        <div id="grandtichucolor_${id}" class="icon grandtichucolor ${id}" style="display: ${showGrandTichuColor ? "inline-block" : "none"}" title=${_("Grand Tichu bet")}></div>
+        <div id="tichublack_${id}" class="icon tichublack ${id}" style="display: ${showTichuBlack ? "inline-block" : "none"}" title=${_("Tichu bet yet to be made")}></div>
+        <div id="tichucolor_${id}" class="icon tichucolor ${id}" style="display: ${showTichuColor ? "inline-block" : "none"}" title=${_("Tichu bet")}></div>
+        <div id="firstoutcolor_${id}" class="icon firstoutcolor ${id}" style="display: ${isFirstOut ? "inline-block" : "none"}" title=${_("First player out")}></div>
+        <div id="cardback_${id}" class="icon cardback ${id}" style="display: ${isPassReady ? "inline-block" : "none"}" title=${_("has passed")}></div>
       </div>
     `;
   }

@@ -8,8 +8,6 @@ import "./tichu-action-bar";
 import "./tichu-stock";
 import type { TichuStock } from "./tichu-stock";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 const THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export class TichuHand extends LitElement {
@@ -195,14 +193,14 @@ export class TichuHand extends LitElement {
           ></tichu-stock>
         </div>
         <div id="prefs">
-          <span>${t("User Preferences:")}</span>
+          <span>${_("User Preferences:")}</span>
           <a
             href="#"
             class="reordercards"
             id="order_by_rank"
             style="display: ${this.handSortOrder === "color" ? "inline" : "none"}"
             @click=${this.onOrderByRank}
-            >[${t("Reorder cards by rank")}]</a
+            >[${_("Reorder cards by rank")}]</a
           >
           <a
             href="#"
@@ -210,7 +208,7 @@ export class TichuHand extends LitElement {
             id="order_by_color"
             style="display: ${this.handSortOrder === "rank" ? "inline" : "none"}"
             @click=${this.onOrderByColor}
-            >[${t("Reorder cards by color")}]</a
+            >[${_("Reorder cards by color")}]</a
           >
           <a
             href="#"
@@ -218,7 +216,7 @@ export class TichuHand extends LitElement {
             id="list_table"
             style="display: ${this.squareTable ? "inline" : "none"}"
             @click=${(e: Event) => this.onTableLayout(e, false)}
-            >[${t("List table")}]</a
+            >[${_("List table")}]</a
           >
           <a
             href="#"
@@ -226,29 +224,29 @@ export class TichuHand extends LitElement {
             id="square_table"
             style="display: ${this.squareTable ? "none" : "inline"}"
             @click=${(e: Event) => this.onTableLayout(e, true)}
-            >[${t("Square table")}]</a
+            >[${_("Square table")}]</a
           >
           <a
             href="#"
             class="reordercards"
             id="clockwise"
             style="display: ${this.clockwise ? "none" : "inline"}"
-            title=${t(
+            title=${_(
               "This will affect the arrangement of the square table and the order of players when passing the cards.",
             )}
             @click=${(e: Event) => this.onClockwiseChange(e, true)}
-            >[${t("Play clockwise")}]</a
+            >[${_("Play clockwise")}]</a
           >
           <a
             href="#"
             class="reordercards"
             id="counterClockwise"
             style="display: ${this.clockwise ? "inline" : "none"}"
-            title=${t(
+            title=${_(
               "This will affect the arrangement of the square table and the order of players when passing the cards.",
             )}
             @click=${(e: Event) => this.onClockwiseChange(e, false)}
-            >[${t("Play counterclockwise")}]</a
+            >[${_("Play counterclockwise")}]</a
           >
           <a
             href="#"
@@ -256,7 +254,7 @@ export class TichuHand extends LitElement {
             id="tiki_art"
             style="display: ${this.isTiki ? "none" : "inline"}"
             @click=${(e: Event) => this.onTikiClick(e, true)}
-            >[${t("Tiki cards")}]</a
+            >[${_("Tiki cards")}]</a
           >
           <a
             href="#"
@@ -264,7 +262,7 @@ export class TichuHand extends LitElement {
             id="standard_art"
             style="display: ${this.isTiki ? "inline" : "none"}"
             @click=${(e: Event) => this.onTikiClick(e, false)}
-            >[${t("Standard cards")}]</a
+            >[${_("Standard cards")}]</a
           >
           <a
             href="#"
@@ -272,7 +270,7 @@ export class TichuHand extends LitElement {
             id="enable_animations"
             style="display: ${this.animationsEnabled ? "none" : "inline"}"
             @click=${(e: Event) => this.onAnimationsClick(e, true)}
-            >[${t("Enable animations")}]</a
+            >[${_("Enable animations")}]</a
           >
           <a
             href="#"
@@ -280,7 +278,7 @@ export class TichuHand extends LitElement {
             id="disable_animations"
             style="display: ${this.animationsEnabled ? "inline" : "none"}"
             @click=${(e: Event) => this.onAnimationsClick(e, false)}
-            >[${t("Disable animations")}]</a
+            >[${_("Disable animations")}]</a
           >
           <a
             href="#"
@@ -288,11 +286,11 @@ export class TichuHand extends LitElement {
             id="expReplay"
             style="display: ${isArchiveMode ? "inline" : "none"}"
             @click=${this.onExpReplay}
-            >[${t("Experimental Replay")}]</a
+            >[${_("Experimental Replay")}]</a
           >
         </div>
         <div id="themes">
-          <span>${t("Color Themes:")}</span>
+          <span>${_("Color Themes:")}</span>
           ${THEME_NUMBERS.map(
             (themeNo) => html`
               <a

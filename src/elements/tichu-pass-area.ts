@@ -8,8 +8,6 @@ import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-card";
 import type { TichuCard } from "./tichu-card";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 export class TichuPassArea extends LitElement {
   @state() private stateName = "";
   @state() private isSpectator = false;
@@ -213,19 +211,19 @@ export class TichuPassArea extends LitElement {
               <div
                 class="icon big grandtichucolor ${slot.playerId}"
                 style="display: ${isGrandTichu ? "inline-block" : "none"}"
-                title=${t("Grand Tichu bet")}
+                title=${_("Grand Tichu bet")}
               ></div>
               <div
                 class="icon big tichucolor ${slot.playerId}"
                 style="display: ${isTichu ? "inline-block" : "none"}"
-                title=${t("Tichu bet")}
+                title=${_("Tichu bet")}
               ></div>
             </div>
             <div
               class="CardBack selectable playertabletext"
               style=${hasCard ? "display: none" : ""}
             >
-              <span>${t("Select a card and click here")}</span>
+              <span>${_("Select a card and click here")}</span>
             </div>
           </div>
           ${

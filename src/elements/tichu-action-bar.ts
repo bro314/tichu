@@ -13,8 +13,6 @@ import { Card, LivePlayer, TrickLastComboState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 export class TichuActionBar extends LitElement {
   @state() private stateName = "";
   @state() private isCurrentPlayerActive = false;
@@ -241,7 +239,7 @@ export class TichuActionBar extends LitElement {
                   id="myPlayBomb"
                   class="action-button bgabutton bgabutton_gray"
                   @click=${this.onPlayBomb}
-                  >${t("Play a Bomb")}</a
+                  >${_("Play a Bomb")}</a
                 >`
               : ""
           }
@@ -253,9 +251,9 @@ export class TichuActionBar extends LitElement {
                   href="#"
                   id="myMakeTichuBet"
                   class="action-button bgabutton bgabutton_green"
-                  title=${t("Bet 100 Points, tha you will finish first")}
+                  title=${_("Bet 100 Points, that you will finish first")}
                   @click=${this.onTichuBet}
-                  >${t("Tichu")}</a
+                  >${_("Tichu")}</a
                 >`
               : ""
           }
@@ -284,20 +282,20 @@ export class TichuActionBar extends LitElement {
   private renderWishBombCallout(callout: WishBombCallout) {
     return html`
       <div id="wishBombCallout">
-        <span class="callout-msg">${t(callout.message)}</span>
+        <span class="callout-msg">${callout.message}</span>
       </div>
     `;
   }
 
   private renderPlayButtonContent() {
     if (this.isReadOnly()) {
-      return html`<h3>${t("My hand")}</h3>`;
+      return html`<h3>${_("My hand")}</h3>`;
     }
     if (this.acceptingCardsCountdown) {
-      return html`<h3>${t("Auto accepting in 2 seconds ...")}</h3>`;
+      return html`<h3>${_("Auto accepting in 2 seconds ...")}</h3>`;
     }
     if (this.collectingTrickCountdown) {
-      return html`<h3>${t("Auto collecting in 2 seconds ...")}</h3>`;
+      return html`<h3>${_("Auto collecting in 2 seconds ...")}</h3>`;
     }
 
     const canPlayCombo =
@@ -312,9 +310,9 @@ export class TichuActionBar extends LitElement {
         href="#"
         id="myPlayCombo"
         class="action-button bgabutton bgabutton_blue ${validation.isValid ? "" : "disabled"}"
-        title=${t(validation.tooltip)}
+        title=${validation.tooltip}
         @click=${this.onPlayCombo}
-        >${t(validation.buttonLabel)}</a
+        >${validation.buttonLabel}</a
       >`;
     }
 
@@ -329,11 +327,11 @@ export class TichuActionBar extends LitElement {
         id="myConfirmTrick"
         class="action-button bgabutton bgabutton_blue"
         @click=${this.onCollect}
-        >${t("Collect")}</a
+        >${_("Collect")}</a
       >`;
     }
 
-    return html`<h3>${t("My hand")}</h3>`;
+    return html`<h3>${_("My hand")}</h3>`;
   }
 
   private renderPassButtonContent() {
@@ -349,9 +347,9 @@ export class TichuActionBar extends LitElement {
           href="#"
           id="myPass"
           class="action-button bgabutton bgabutton_red ${passCheck.canPass ? "" : "disabled"}"
-          title=${passCheck.tooltip ? t(passCheck.tooltip) : ""}
+          title=${passCheck.tooltip || ""}
           @click=${(e: Event) => this.onPass(e, true)}
-          >${t(passCheck.buttonLabel)}</a
+          >${passCheck.buttonLabel}</a
         >`;
       }
       if (this.stateName === "playBomb") {
@@ -360,7 +358,7 @@ export class TichuActionBar extends LitElement {
           id="myCancel"
           class="action-button bgabutton bgabutton_red"
           @click=${this.onCancelBomb}
-          >${t("Cancel")}</a
+          >${_("Cancel")}</a
         >`;
       }
       return "";
@@ -376,18 +374,18 @@ export class TichuActionBar extends LitElement {
           href="#"
           id="myPassOnce"
           class="action-button bgabutton bgabutton_red"
-          title=${t("Automatically pass next time(unless a new trick starts)")}
+          title=${_("Automatically pass next time (unless a new trick starts)")}
           @click=${(e: Event) => this.onPass(e, true)}
-          >${t("Auto-Pass once")}</a
+          >${_("Auto-Pass once")}</a
         >`;
       }
       return html`<a
         href="#"
         id="myCancelAutopass"
         class="action-button bgabutton bgabutton_red"
-        title=${t("You have chosen to automatically pass during this trick. Click to cancel")}
+        title=${_("You have chosen to automatically pass during this trick. Click to cancel")}
         @click=${this.onCancelAutopass}
-        >${t("Cancel Auto-Pass")}</a
+        >${_("Cancel Auto-Pass")}</a
       >`;
     }
 
@@ -414,15 +412,15 @@ export class TichuActionBar extends LitElement {
         : { canPass: true, tooltip: "" };
       const isDisabled = !passCheck.canPass;
       const tooltip = isDisabled
-        ? t(passCheck.tooltip)
-        : t("Automatically pass until the end of this trick.");
+        ? passCheck.tooltip
+        : _("Automatically pass until the end of this trick.");
       return html`<a
         href="#"
         id="myPassTrick"
         class="action-button bgabutton bgabutton_gray ${isDisabled ? "disabled" : ""}"
         title=${tooltip}
         @click=${(e: Event) => this.onPass(e, false)}
-        >${t("Auto-Pass this Trick")}</a
+        >${_("Auto-Pass this Trick")}</a
       >`;
     }
     return "";

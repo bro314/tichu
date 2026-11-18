@@ -1,4 +1,8 @@
-import type { CardData as TichuCard } from "../types/tichu-contracts";
+import type { CardData as TichuCard, I18nLogPayload } from "../types/tichu-contracts";
+
+if (typeof (globalThis as any)._ !== "function") {
+  (globalThis as any)._ = (s: string) => s;
+}
 
 // Combo & Special Card Constants (mirrors modules/Constants.php)
 export const INVALID_COMBO = -1;
@@ -109,8 +113,81 @@ export function cardToStr(cardOrVal: TichuCard | number, plural = false): string
   }
 }
 
-export function decodeHtmlEntities(text: string): string {
+export function decodeHtmlEntities(text: unknown): string {
+  if (typeof text !== "string") return "";
   return text.replace(/(\d)(?:&#39;|')s\b/g, "$1s").replace(/&#39;/g, "'");
+}
+
+export function substituteTemplate(tpl: string, args: Record<string, string | number>): string {
+  const dojoSubstitute = (globalThis as any).dojo?.string?.substitute;
+  if (typeof dojoSubstitute === "function") {
+    try {
+      return String(dojoSubstitute(tpl, args));
+    } catch (_e) {
+      // fall through to regex substitution
+    }
+  }
+  return String(tpl).replace(/\$\{([^}]+)\}/g, (_match, key: string) => {
+    const val = args[key];
+    return val !== undefined && val !== null ? String(val) : "";
+  });
+}
+
+export function translateDynamic(raw: string): string {
+  if (typeof raw !== "string" || raw === "") return "";
+  const fn = (globalThis as Record<string, unknown>)["_"];
+  return typeof fn === "function" ? (fn as (s: string) => string)(raw) : raw;
+}
+
+export function rankToLocalizedName(cardOrRank: TichuCard | number, plural = false): string {
+  const isCardObj = typeof cardOrRank === "object" && cardOrRank !== null;
+  const val = isCardObj ? cardRank(cardOrRank) : Number(cardOrRank);
+  switch (val) {
+    case 1:
+      if (!isCardObj) {
+        return "1";
+      }
+      switch (cardSuit(cardOrRank)) {
+        case TYPE_DRAGON:
+          return _("Dragon");
+        case TYPE_PHOENIX:
+          return _("Phoenix");
+        case TYPE_DOG:
+          return _("Dog");
+        case TYPE_MAHJONG:
+          return _("Mahjong");
+        default:
+          return "1";
+      }
+    case 2:
+      return plural ? _("2s") : "2";
+    case 3:
+      return plural ? _("3s") : "3";
+    case 4:
+      return plural ? _("4s") : "4";
+    case 5:
+      return plural ? _("5s") : "5";
+    case 6:
+      return plural ? _("6s") : "6";
+    case 7:
+      return plural ? _("7s") : "7";
+    case 8:
+      return plural ? _("8s") : "8";
+    case 9:
+      return plural ? _("9s") : "9";
+    case 10:
+      return plural ? _("10s") : "10";
+    case 11:
+      return plural ? _("Jacks") : _("Jack");
+    case 12:
+      return plural ? _("Queens") : _("Queen");
+    case 13:
+      return plural ? _("Kings") : _("King");
+    case 14:
+      return plural ? _("Aces") : _("Ace");
+    default:
+      return plural ? `${val}s` : String(val);
+  }
 }
 
 export function rankToDisplayName(rank: number, plural = false): string {
@@ -180,23 +257,23 @@ function parseRankWord(word: string): number | null {
 export function comboTypeToLabel(type: number): string {
   switch (type) {
     case SINGLE_COMBO:
-      return "single";
+      return _("single");
     case PAIR_COMBO:
-      return "pair";
+      return _("pair");
     case TRIP_COMBO:
-      return "triple";
+      return _("triple");
     case RUNNING_PAIRS_COMBO:
-      return "running pairs";
+      return _("running pairs");
     case STRAIGHT_COMBO:
-      return "straight";
+      return _("straight");
     case FULL_HOUSE_COMBO:
-      return "full house";
+      return _("full house");
     case BOMB_COMBO:
-      return "bomb";
+      return _("bomb");
     case DOG_COMBO:
-      return "Dog";
+      return _("Dog");
     default:
-      return "combo";
+      return _("combo");
   }
 }
 
@@ -204,9 +281,178 @@ export interface LastComboLike {
   cards?: TichuCard[];
   type?: number;
   phoenixValue?: number | string | Array<number | string> | null;
-  description?: string;
+  description?: string | I18nLogPayload;
   player?: string | number;
   playerId?: string;
+}
+
+export function formatI18nLogPayload(
+  payload: I18nLogPayload,
+  opts?: { translate?: boolean },
+): string {
+  const rawLog = typeof payload?.log === "string" ? payload.log : "";
+  if (!rawLog) return "";
+  const shouldTranslate = opts?.translate !== false;
+  const rawArgs =
+    payload?.args && typeof payload.args === "object" && !Array.isArray(payload.args)
+      ? payload.args
+      : {};
+  const i18nKeys = Array.isArray(rawArgs.i18n) ? rawArgs.i18n.map(String) : [];
+  const i18nSet = new Set(i18nKeys);
+  const subArgs: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(rawArgs)) {
+    if (k === "i18n") continue;
+    if (v && typeof v === "object" && "log" in (v as Record<string, unknown>)) {
+      subArgs[k] = formatI18nLogPayload(v as I18nLogPayload, { translate: shouldTranslate });
+    } else if (typeof v === "string") {
+      subArgs[k] = shouldTranslate && i18nSet.has(k) ? translateDynamic(v) : v;
+    } else if (typeof v === "number") {
+      subArgs[k] = v;
+    } else if (v !== null && v !== undefined) {
+      subArgs[k] = String(v);
+    }
+  }
+  const logStr = shouldTranslate ? translateDynamic(rawLog) : rawLog;
+  if (!shouldTranslate) {
+    return String(logStr).replace(/\$\{([^}]+)\}/g, (_match, key: string) => {
+      const val = subArgs[key];
+      return val !== undefined && val !== null ? String(val) : "";
+    });
+  }
+  return substituteTemplate(logStr, subArgs);
+}
+
+export function normalizeComboDescriptionInput(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (raw && typeof raw === "object" && typeof (raw as I18nLogPayload).log === "string") {
+    return formatI18nLogPayload(raw as I18nLogPayload, { translate: false });
+  }
+  return "";
+}
+
+export function formatLocalizedComboDescription(
+  combo: (LastComboLike & { passed?: boolean }) | Combo | null | undefined,
+): string {
+  if (!combo) return "";
+  if (!(combo instanceof Combo) && combo.passed) {
+    return "";
+  }
+  const rawDesc = normalizeComboDescriptionInput(combo.description);
+  const cards = Array.isArray(combo.cards) ? combo.cards : [];
+  if (cards.length === 0) {
+    if (
+      combo.description &&
+      typeof combo.description === "object" &&
+      typeof (combo.description as I18nLogPayload).log === "string"
+    ) {
+      return formatI18nLogPayload(combo.description as I18nLogPayload, { translate: true });
+    }
+    return rawDesc ? translateDynamic(decodeHtmlEntities(rawDesc)) : "";
+  }
+
+  const resolved =
+    combo instanceof Combo
+      ? combo
+      : Combo.fromLastComboState({
+          ...combo,
+          description: rawDesc,
+        });
+
+  if (
+    resolved.type === INVALID_COMBO ||
+    resolved.type === NO_COMBO ||
+    resolved.type === PASS_COMBO ||
+    resolved.cards.length === 0
+  ) {
+    return rawDesc ? translateDynamic(decodeHtmlEntities(rawDesc)) : "";
+  }
+
+  switch (resolved.type) {
+    case DOG_COMBO:
+      return _("Dog");
+
+    case SINGLE_COMBO: {
+      const card = resolved.cards[0]!;
+      if (isPhoenixCard(card)) {
+        const baseVal =
+          typeof resolved.phoenixValue === "number" && Number.isFinite(resolved.phoenixValue)
+            ? Math.round(resolved.phoenixValue - 0.5)
+            : 1;
+        return substituteTemplate(_("Phoenix a half step above ${rank}"), {
+          rank: rankToLocalizedName(baseVal, false),
+        });
+      }
+      return rankToLocalizedName(card, false);
+    }
+
+    case PAIR_COMBO:
+      return substituteTemplate(_("Pair of ${rank}"), {
+        rank: rankToLocalizedName(resolved.cards[1]!, true),
+      });
+
+    case TRIP_COMBO:
+      return substituteTemplate(_("Triple of ${rank}"), {
+        rank: rankToLocalizedName(resolved.cards[1]!, true),
+      });
+
+    case RUNNING_PAIRS_COMBO: {
+      const count = resolved.cards.length;
+      return substituteTemplate(
+        _("${pair_count} consecutive doubles from ${lowest} to ${highest}"),
+        {
+          pair_count: count / 2,
+          lowest: rankToLocalizedName(resolved.cards[0]!, false),
+          highest: rankToLocalizedName(resolved.cards[count - 2]!, false),
+        },
+      );
+    }
+
+    case STRAIGHT_COMBO: {
+      const count = resolved.cards.length;
+      let lowRank: number;
+      let highRank: number;
+      if (isPhoenixCard(resolved.cards[0])) {
+        highRank = cardRank(resolved.cards[count - 1]!);
+        lowRank =
+          typeof resolved.phoenixValue === "number"
+            ? resolved.phoenixValue
+            : Array.isArray(resolved.phoenixValue) && resolved.phoenixValue[1] !== undefined
+              ? resolved.phoenixValue[1]!
+              : highRank - count + 1;
+      } else {
+        lowRank = cardRank(resolved.cards[0]!);
+        highRank =
+          isPhoenixCard(resolved.cards[count - 1]) && typeof resolved.phoenixValue === "number"
+            ? resolved.phoenixValue
+            : cardRank(resolved.cards[count - 1]!);
+      }
+      return substituteTemplate(_("Run of ${count} cards from ${lowest} to ${highest}"), {
+        count,
+        lowest: rankToLocalizedName(lowRank, false),
+        highest: rankToLocalizedName(highRank, false),
+      });
+    }
+
+    case FULL_HOUSE_COMBO:
+      return substituteTemplate(_("${trip_rank} full of ${pair_rank}"), {
+        trip_rank: rankToLocalizedName(resolved.cards[1]!, true),
+        pair_rank: rankToLocalizedName(resolved.cards[3]!, true),
+      });
+
+    case BOMB_COMBO:
+      if (resolved.cards.length === 4) {
+        return substituteTemplate(_("Bomb of four ${rank}"), {
+          rank: rankToLocalizedName(resolved.cards[0]!, true),
+        });
+      }
+      return substituteTemplate(_("Straight flush bomb starting from ${lowest} to ${highest}"), {
+        lowest: rankToLocalizedName(resolved.cards[0]!, false),
+        highest: rankToLocalizedName(resolved.cards[resolved.cards.length - 1]!, false),
+      });
+
+    default:
+      return rawDesc ? translateDynamic(decodeHtmlEntities(rawDesc)) : "";
+  }
 }
 
 /**
@@ -279,6 +525,7 @@ export class Combo {
     const explicitType = rawType > 0 && rawType !== NO_COMBO ? rawType : null;
     const combo = new Combo(cards, null, null, null, Combo.noCombo);
     const scalarPhoenix = normalizePhoenixScalar(state.phoenixValue);
+    const rawDescription = normalizeComboDescriptionInput(state.description);
     if (explicitType === SINGLE_COMBO && combo.type === SINGLE_COMBO && scalarPhoenix !== null) {
       combo.phoenixValue = scalarPhoenix;
       const valBelow = scalarPhoenix - 0.5;
@@ -287,7 +534,7 @@ export class Combo {
       if (scalarPhoenix !== null && combo.phoenixValue.includes(scalarPhoenix)) {
         combo.setPhoenixValue(scalarPhoenix);
       } else {
-        Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
+        Combo.resolveMissingPhoenixMetadata(combo, cards, rawDescription);
       }
     } else if (combo.type === SINGLE_COMBO && isPhoenixCard(combo.cards[0])) {
       if (scalarPhoenix !== null) {
@@ -295,11 +542,11 @@ export class Combo {
         const valBelow = scalarPhoenix - 0.5;
         combo.description = `Phoenix a half step above ${cardToStr(valBelow)}`;
       } else {
-        Combo.resolveMissingPhoenixMetadata(combo, cards, state.description);
+        Combo.resolveMissingPhoenixMetadata(combo, cards, rawDescription);
       }
     }
-    if (state.description && !combo.description) {
-      combo.description = state.description;
+    if (rawDescription && !combo.description) {
+      combo.description = rawDescription;
     }
     combo.player = String(state.player ?? state.playerId ?? "");
     return combo;
@@ -308,27 +555,28 @@ export class Combo {
   public static inferPlayedCombo(
     cards: TichuCard[],
     prevLastCombo?: LastComboLike | Combo | null,
-    description?: string,
+    description?: string | I18nLogPayload,
   ): Combo {
     if (!Array.isArray(cards) || cards.length === 0) {
       return Combo.noCombo;
     }
+    const rawDescription = normalizeComboDescriptionInput(description);
     const prev =
       prevLastCombo instanceof Combo ? prevLastCombo : Combo.fromLastComboState(prevLastCombo);
     const combo = new Combo(cards, null, null, null, prev);
     if (Array.isArray(combo.phoenixValue)) {
-      Combo.resolveMissingPhoenixMetadata(combo, cards, description);
+      Combo.resolveMissingPhoenixMetadata(combo, cards, rawDescription);
     } else if (
       combo.type === SINGLE_COMBO &&
       combo.cards.length === 1 &&
       isPhoenixCard(combo.cards[0]) &&
       prev.type === NO_COMBO &&
-      description
+      rawDescription
     ) {
-      Combo.resolveMissingPhoenixMetadata(combo, cards, description);
+      Combo.resolveMissingPhoenixMetadata(combo, cards, rawDescription);
     }
-    if (description && !combo.description) {
-      combo.description = description;
+    if (rawDescription && !combo.description) {
+      combo.description = rawDescription;
     }
     return combo;
   }
@@ -1397,12 +1645,12 @@ export class Hand {
     };
 
     const findFullHouse = (): Combo | null => {
-      for (let t = 2; t <= 14; t++) {
-        const trip = pickRank(t, 3);
-        const pairFromT = pickRank(t, 2);
+      for (let tripRank = 2; tripRank <= 14; tripRank++) {
+        const trip = pickRank(tripRank, 3);
+        const pairFromT = pickRank(tripRank, 2);
         if (pairFromT === null) continue;
         for (let p = 2; p <= 14; p++) {
-          if (p === t) continue;
+          if (p === tripRank) continue;
           if (trip !== null) {
             const pair = pickRank(p, 2);
             if (pair !== null) {
@@ -1595,7 +1843,7 @@ export function analyzeSelection(params: {
 }): ComboValidationResult {
   const { selectedCards, handCards, lastCombo, stateName, mahjongWish } = params;
   const isPlayBombState = stateName === "playBomb";
-  const defaultButtonLabel = isPlayBombState ? "Play Bomb" : "Play";
+  const defaultButtonLabel = isPlayBombState ? _("Play Bomb") : _("Play");
 
   if (selectedCards.length === 0) {
     return {
@@ -1607,8 +1855,8 @@ export function analyzeSelection(params: {
       buttonLabel: defaultButtonLabel,
       reason: "empty",
       tooltip: isPlayBombState
-        ? "Select a bomb from your hand to play"
-        : "Select cards from your hand to play",
+        ? _("Select a bomb from your hand to play")
+        : _("Select cards from your hand to play"),
       requiresPhoenixChoice: false,
     };
   }
@@ -1616,6 +1864,7 @@ export function analyzeSelection(params: {
   const combo = new Combo(selectedCards, null, null, null, lastCombo);
   combo.recheckPhoenix(lastCombo);
   const cleanDescription = decodeHtmlEntities(combo.description || "");
+  const localizedDescription = formatLocalizedComboDescription(combo);
   const requiresPhoenixChoice = Array.isArray(combo.phoenixValue);
 
   if (combo.type === INVALID_COMBO) {
@@ -1627,7 +1876,7 @@ export function analyzeSelection(params: {
       cleanDescription: "",
       buttonLabel: defaultButtonLabel,
       reason: "invalid_combo",
-      tooltip: "Selected cards do not form a valid Tichu combination",
+      tooltip: _("Selected cards do not form a valid Tichu combination"),
       requiresPhoenixChoice: false,
     };
   }
@@ -1641,7 +1890,7 @@ export function analyzeSelection(params: {
       cleanDescription,
       buttonLabel: defaultButtonLabel,
       reason: "not_a_bomb",
-      tooltip: "Select a 4-of-a-kind or straight flush bomb",
+      tooltip: _("Select a 4-of-a-kind or straight flush bomb"),
       requiresPhoenixChoice: false,
     };
   }
@@ -1658,14 +1907,14 @@ export function analyzeSelection(params: {
       cleanDescription,
       buttonLabel: defaultButtonLabel,
       reason: "dog_not_lead",
-      tooltip: "The Dog can only be played when leading a trick",
+      tooltip: _("The Dog can only be played when leading a trick"),
       requiresPhoenixChoice: false,
     };
   }
 
   if (!combo.canBeat(lastCombo)) {
     const targetDesc =
-      decodeHtmlEntities(lastCombo.description) || comboTypeToLabel(lastCombo.type);
+      formatLocalizedComboDescription(lastCombo) || comboTypeToLabel(lastCombo.type);
     return {
       isValid: false,
       combo,
@@ -1674,7 +1923,10 @@ export function analyzeSelection(params: {
       cleanDescription,
       buttonLabel: defaultButtonLabel,
       reason: "cannot_beat",
-      tooltip: `Your ${cleanDescription || "combo"} does not beat ${targetDesc}`,
+      tooltip: substituteTemplate(_("Your ${combo} does not beat ${target}"), {
+        combo: localizedDescription || _("combo"),
+        target: targetDesc,
+      }),
       requiresPhoenixChoice: false,
     };
   }
@@ -1684,7 +1936,7 @@ export function analyzeSelection(params: {
     if (!selectedContainsWish) {
       const hand = new Hand(handCards);
       if (hand.canFulFillWish(mahjongWish, lastCombo)) {
-        const rankLabel = rankToDisplayName(mahjongWish);
+        const rankLabel = rankToLocalizedName(mahjongWish, false);
         return {
           isValid: false,
           combo,
@@ -1693,7 +1945,9 @@ export function analyzeSelection(params: {
           cleanDescription,
           buttonLabel: defaultButtonLabel,
           reason: "must_fulfill_wish",
-          tooltip: `You must fulfill the active Mahjong wish (${rankLabel})`,
+          tooltip: substituteTemplate(_("You must fulfill the active Mahjong wish (${rank})"), {
+            rank: rankLabel,
+          }),
           requiresPhoenixChoice: false,
         };
       }
@@ -1709,8 +1963,12 @@ export function analyzeSelection(params: {
     buttonLabel: defaultButtonLabel,
     reason: null,
     tooltip: requiresPhoenixChoice
-      ? `Play ${cleanDescription} (choose Phoenix value next)`
-      : `Play ${cleanDescription}`,
+      ? substituteTemplate(_("Play ${combo} (choose Phoenix value next)"), {
+          combo: localizedDescription,
+        })
+      : substituteTemplate(_("Play ${combo}"), {
+          combo: localizedDescription,
+        }),
     requiresPhoenixChoice,
   };
 }
@@ -1723,7 +1981,7 @@ export function validatePassAction(
   if (mahjongWish >= 2 && mahjongWish <= 14) {
     const hand = new Hand(handCards);
     if (hand.canFulFillWish(mahjongWish, lastCombo)) {
-      const rankLabel = rankToDisplayName(mahjongWish);
+      const rankLabel = rankToLocalizedName(mahjongWish, false);
       const playableCombo = hand.findPlayableCombo(lastCombo, mahjongWish);
       const isLeading =
         lastCombo.type === NO_COMBO || lastCombo.type === DOG_COMBO || lastCombo.cards.length === 0;
@@ -1733,14 +1991,20 @@ export function validatePassAction(
           (hand.getWishHighestSingle(mahjongWish, lastCombo)?.canBeat(lastCombo) ?? false));
 
       const requiredType = playableCombo?.type ?? null;
-      const comboName = requiredType !== null ? comboTypeToLabel(requiredType) : "combo";
+      const comboName = requiredType !== null ? comboTypeToLabel(requiredType) : _("combo");
       const tooltip = singleCanFulfill
-        ? `Cannot pass: you must fulfill the Mahjong wish by playing ${rankLabel}`
-        : `Cannot pass: you must fulfill the Mahjong wish (${rankLabel}) by playing a ${comboName}`;
+        ? substituteTemplate(
+            _("Cannot pass: you must fulfill the Mahjong wish by playing ${rank}"),
+            { rank: rankLabel },
+          )
+        : substituteTemplate(
+            _("Cannot pass: you must fulfill the Mahjong wish (${rank}) by playing a ${combo}"),
+            { rank: rankLabel, combo: comboName },
+          );
 
       return {
         canPass: false,
-        buttonLabel: "Pass",
+        buttonLabel: _("Pass"),
         reason: "must_fulfill_wish",
         tooltip,
         requiredComboType: requiredType,
@@ -1750,7 +2014,7 @@ export function validatePassAction(
 
   return {
     canPass: true,
-    buttonLabel: "Pass",
+    buttonLabel: _("Pass"),
     reason: null,
     tooltip: "",
     requiredComboType: null,
@@ -1845,26 +2109,37 @@ export function getWishBombOnlyCallout(
     return null;
   }
 
-  const wishLabel = rankToDisplayName(mahjongWish);
+  const wishLabel = rankToLocalizedName(mahjongWish, false);
   let bombKind: WishBombKind;
+  let bombKindLabel: string;
   let bombDescription: string;
   let combo: Combo;
 
   if (fourBomb !== null && sfBomb !== null) {
     bombKind = "4-of-a-kind or straight flush bomb";
-    bombDescription = `${decodeHtmlEntities(fourBomb.description)} / ${decodeHtmlEntities(sfBomb.description)}`;
+    bombKindLabel = _("4-of-a-kind or straight flush bomb");
+    bombDescription = `${formatLocalizedComboDescription(fourBomb)} / ${formatLocalizedComboDescription(sfBomb)}`;
     combo = sfBomb;
   } else if (fourBomb !== null) {
     bombKind = "4-of-a-kind bomb";
-    bombDescription = decodeHtmlEntities(fourBomb.description);
+    bombKindLabel = _("4-of-a-kind bomb");
+    bombDescription = formatLocalizedComboDescription(fourBomb);
     combo = fourBomb;
   } else {
     bombKind = "straight flush bomb";
-    bombDescription = decodeHtmlEntities(sfBomb!.description);
+    bombKindLabel = _("straight flush bomb");
+    bombDescription = formatLocalizedComboDescription(sfBomb!);
     combo = sfBomb!;
   }
 
-  const message = `You must fulfill the Mahjong wish (${wishLabel}) by playing a ${bombKind} (${bombDescription}).`;
+  const message = substituteTemplate(
+    _("You must fulfill the Mahjong wish (${rank}) by playing a ${bomb_kind} (${bomb})."),
+    {
+      rank: wishLabel,
+      bomb_kind: bombKindLabel,
+      bomb: bombDescription,
+    },
+  );
 
   return {
     wish: mahjongWish,

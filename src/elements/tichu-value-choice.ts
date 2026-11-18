@@ -4,8 +4,6 @@ import { classMap } from "lit/directives/class-map.js";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 const MAHJONG_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 export class TichuValueChoice extends LitElement {
@@ -108,7 +106,7 @@ export class TichuValueChoice extends LitElement {
     const isVisible = this.stateName === "mahjongPlay" && this.isCurrentPlayerActive;
     return html`
       <div id="mahjongpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
-        <h3>${t("Mahjong Wish")}</h3>
+        <h3>${_("Mahjong Wish")}</h3>
         <div id="mahjong" class="mahjongvalues">
           ${MAHJONG_VALUES.map((val) => {
             const idx = val - 2;
@@ -138,7 +136,7 @@ export class TichuValueChoice extends LitElement {
     const sortedPhoenixValues = [...this.phoenixAllowedValues].sort((a, b) => a - b);
     return html`
       <div id="phoenixpanel" class="whiteblock" style="display: ${isVisible ? "block" : "none"}">
-        <h3>${t("Phoenix Choice")}</h3>
+        <h3>${_("Phoenix Choice")}</h3>
         <div id="phoenixChoice" class="phoenixvalues">
           ${sortedPhoenixValues.map((val) => {
             const idx = val - 2;

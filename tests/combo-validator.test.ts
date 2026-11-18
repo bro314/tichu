@@ -19,7 +19,12 @@ import {
   TYPE_MAHJONG,
   TYPE_PHOENIX,
   analyzeSelection,
+  decodeHtmlEntities,
+  formatLocalizedComboDescription,
   getWishBombOnlyCallout,
+  rankToLocalizedName,
+  substituteTemplate,
+  translateDynamic,
   validatePassAction,
 } from "../src/elements/combo-validator";
 import { hasBomb } from "../src/elements/utils";
@@ -3017,4 +3022,349 @@ test("Bug #257052: 7-10 suited + Phoenix as Jack with string phoenixValue is a 7
   assert.equal(singlePhoenix.getFirstValue(), 10.5);
   assert.equal(new Combo([AJ]).canBeat(singlePhoenix), true);
   assert.equal(new Combo([A0]).canBeat(singlePhoenix), false);
+});
+
+test("Plan 01: GameModel and Tichu adapter gate capturedCards on isAllInfoExposed and checkVersion detects rollbacks", () => {
+  const basePlayers = {
+    1: { id: 1, name: "P1", color: "000000", no: 1, score: 0 },
+    2: { id: 2, name: "P2", color: "ff0000", no: 2, score: 0 },
+    3: { id: 3, name: "P3", color: "000000", no: 3, score: 0 },
+    4: { id: 4, name: "P4", color: "ff0000", no: 4, score: 0 },
+  };
+
+  // 1. Real-time (isAllInfoExposed: 0) -> capturedCards stays [] on hydrate and enterNewTrick
+  const realtimeModel = new GameModel();
+  realtimeModel.hydrateFromGamedatas(
+    {
+      players: basePlayers as any,
+      isAllInfoExposed: 0,
+      capturedCards: [A5, B0],
+      currentTrick: [DK],
+    },
+    1,
+    false,
+    true,
+  );
+  assert.equal(realtimeModel.getState().isAllInfoExposed, false);
+  assert.deepEqual(realtimeModel.getState().capturedCards, []);
+
+  realtimeModel.applyPlayCombo(2, [AA], "Ace", 0, SINGLE_COMBO);
+  realtimeModel.enterNewTrick();
+  assert.deepEqual(realtimeModel.getState().capturedCards, []);
+
+  // 2. Turn-based / exposed (isAllInfoExposed: 1) -> hydrates, appends on enterNewTrick, clears on enterNewRound
+  const exposedModel = new GameModel();
+  exposedModel.hydrateFromGamedatas(
+    {
+      players: basePlayers as any,
+      isAllInfoExposed: 1,
+      capturedCards: [A5],
+      currentTrick: [B0],
+    },
+    1,
+    false,
+    false,
+  );
+  assert.equal(exposedModel.getState().isAllInfoExposed, true);
+  assert.equal(exposedModel.getState().capturedCards.length, 1);
+  assert.equal(exposedModel.getState().capturedCards[0]?.id, A5.id);
+
+  exposedModel.applyPlayCombo(2, [DK], "King", 10, SINGLE_COMBO);
+  exposedModel.enterNewTrick();
+  assert.deepEqual(
+    exposedModel.getState().capturedCards.map((c) => c.id),
+    [A5.id, B0.id, DK.id],
+  );
+
+  exposedModel.enterNewRound();
+  assert.deepEqual(exposedModel.getState().capturedCards, []);
+
+  // 3. Tichu adapter onEnteringStateNewTrick capturedCards gate + rollback-aware checkVersion
+  const { Tichu } = loadTichuAdapterForNodeTests();
+  const ui: any = new Tichu();
+  const shownMessages: string[] = [];
+  ui.player_id = 1;
+  ui.isSpectator = false;
+  ui.showMessage = (msg: string) => {
+    shownMessages.push(msg);
+  };
+  ui.gamedatas = {
+    players: basePlayers,
+    codeVersion: "2026-11-18.2",
+    gameVersion: 5,
+    isAllInfoExposed: 0,
+    capturedCards: [],
+    currentTrick: [A5, DK],
+    trick: 1,
+  };
+  ui.initialCodeVersion = "2026-11-18.2";
+
+  ui.onEnteringStateNewTrick({});
+  assert.deepEqual(ui.gamedatas.capturedCards, []);
+
+  ui.gamedatas.isAllInfoExposed = 1;
+  ui.gamedatas.currentTrick = [B0];
+  ui.onEnteringStateNewTrick({});
+  assert.equal(ui.gamedatas.capturedCards.length, 1);
+  assert.equal(ui.gamedatas.capturedCards[0]?.id, B0.id);
+
+  // Read-only mode always skips version check
+  ui.isSpectator = true;
+  assert.equal(ui.checkVersion("2026-11-18.1", 5), true);
+  assert.equal(shownMessages.length, 0);
+
+  // Active player: matching codeVersion passes
+  ui.isSpectator = false;
+  assert.equal(ui.checkVersion("2026-11-18.2", 5), true);
+  assert.equal(shownMessages.length, 0);
+
+  // Rollback (V2 -> V1 where gameVersion stays 5, but codeVersion regresses to 2026-11-18.1)
+  assert.equal(ui.checkVersion("2026-11-18.1", 5), false);
+  assert.equal(shownMessages.length, 1);
+  assert.equal(ui.getDebugSnapshot().codeVersion, "2026-11-18.2");
+
+  // Legacy numeric single-argument fallback when codeVersion is absent
+  ui.versionWarningShown = false;
+  ui.initialCodeVersion = "";
+  assert.equal(ui.checkVersion(4), false);
+  assert.equal(shownMessages.length, 2);
+});
+
+test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, and I18nLogPayload tolerance", () => {
+  const g = globalThis as any;
+  const savedUnderscore = g._;
+  const savedDojo = g.dojo;
+
+  try {
+    // 1. Non-string decodeHtmlEntities guard
+    assert.equal(decodeHtmlEntities(null), "");
+    assert.equal(decodeHtmlEntities(undefined), "");
+    assert.equal(decodeHtmlEntities(42), "");
+    assert.equal(decodeHtmlEntities({ log: "Pair of ${rank}", args: { rank: "Queens" } }), "");
+    assert.equal(decodeHtmlEntities("Pair of 2&#39;s"), "Pair of 2s");
+
+    // 2. Bracket-mock globalThis._ ("«...»") in Node (without dojo.string.substitute)
+    delete g.dojo;
+    g._ = (s: string) => `«${s}»`;
+
+    assert.equal(
+      substituteTemplate(_("Give cards to ${player_name}"), { player_name: "Alice" }),
+      "«Give cards to Alice»",
+    );
+    assert.equal(translateDynamic("Custom Server String"), "«Custom Server String»");
+    assert.equal(rankToLocalizedName(2, false), "2");
+    assert.equal(rankToLocalizedName(2, true), "«2s»");
+    assert.equal(rankToLocalizedName(12, false), "«Queen»");
+    assert.equal(rankToLocalizedName(12, true), "«Queens»");
+    assert.equal(rankToLocalizedName(DR, false), "«Dragon»");
+    assert.equal(rankToLocalizedName(PH, false), "«Phoenix»");
+    assert.equal(rankToLocalizedName(DOG, false), "«Dog»");
+    assert.equal(rankToLocalizedName(MJ, false), "«Mahjong»");
+
+    // 3. formatLocalizedComboDescription across all 9 combo shapes (while Combo.description stays canonical English!)
+    const dogCombo = new Combo([DOG]);
+    assert.equal(dogCombo.description, "Dog");
+    assert.equal(formatLocalizedComboDescription(dogCombo), "«Dog»");
+
+    const singleNum = new Combo([A7]);
+    assert.equal(singleNum.description, "7");
+    assert.equal(formatLocalizedComboDescription(singleNum), "7");
+
+    const singleFace = new Combo([AQ]);
+    assert.equal(singleFace.description, "Queen");
+    assert.equal(formatLocalizedComboDescription(singleFace), "«Queen»");
+
+    const singleDragon = new Combo([DR]);
+    assert.equal(singleDragon.description, "Dragon");
+    assert.equal(formatLocalizedComboDescription(singleDragon), "«Dragon»");
+
+    const singlePhoenixOnJack = new Combo([PH], null, null, null, new Combo([AJ]));
+    assert.equal(singlePhoenixOnJack.description, "Phoenix a half step above Jack");
+    assert.equal(
+      formatLocalizedComboDescription(singlePhoenixOnJack),
+      "«Phoenix a half step above «Jack»»",
+    );
+
+    const pairNum = new Combo([A5, B5]);
+    assert.equal(pairNum.description, "Pair of 5s");
+    assert.equal(formatLocalizedComboDescription(pairNum), "«Pair of «5s»»");
+
+    const pairFace = new Combo([AJ, BJ]);
+    assert.equal(pairFace.description, "Pair of Jacks");
+    assert.equal(formatLocalizedComboDescription(pairFace), "«Pair of «Jacks»»");
+
+    const tripCombo = new Combo([AK, BK, CK]);
+    assert.equal(tripCombo.description, "Triple of Kings");
+    assert.equal(formatLocalizedComboDescription(tripCombo), "«Triple of «Kings»»");
+
+    const stairsCombo = new Combo([A0, B0, AJ, BJ, AQ, BQ]);
+    assert.equal(stairsCombo.description, "3 consecutive doubles from 10 to Queen");
+    assert.equal(
+      formatLocalizedComboDescription(stairsCombo),
+      "«3 consecutive doubles from 10 to «Queen»»",
+    );
+
+    const straightCombo = new Combo([A7, B8, C9, D0, AJ]);
+    assert.equal(straightCombo.description, "Run of 5 cards from 7 to Jack");
+    assert.equal(
+      formatLocalizedComboDescription(straightCombo),
+      "«Run of 5 cards from 7 to «Jack»»",
+    );
+
+    const fhCombo = new Combo([AQ, BQ, CQ, A2, B2]);
+    assert.equal(fhCombo.description, "Queens full of 2s");
+    assert.equal(formatLocalizedComboDescription(fhCombo), "««Queens» full of «2s»»");
+
+    const bomb4Combo = new Combo([AA, BA, CA, DA]);
+    assert.equal(bomb4Combo.description, "Bomb of four Aces");
+    assert.equal(formatLocalizedComboDescription(bomb4Combo), "«Bomb of four «Aces»»");
+
+    const sfBombCombo = new Combo([A9, A0, AJ, AQ, AK]);
+    assert.equal(sfBombCombo.description, "Straight flush bomb starting from 9 to King");
+    assert.equal(
+      formatLocalizedComboDescription(sfBombCombo),
+      "«Straight flush bomb starting from 9 to «King»»",
+    );
+
+    // Fallback when cards are absent
+    assert.equal(
+      formatLocalizedComboDescription({ cards: [], description: "Legacy combo text" }),
+      "«Legacy combo text»",
+    );
+
+    // 4. Localized analyzeSelection, validatePassAction, and getWishBombOnlyCallout
+    const cannotBeatRes = analyzeSelection({
+      selectedCards: [AQ, BQ],
+      handCards: [AQ, BQ, A5],
+      lastCombo: new Combo([AK, BK]),
+      stateName: "playCombo",
+      mahjongWish: 0,
+    });
+    assert.equal(cannotBeatRes.buttonLabel, "«Play»");
+    assert.equal(
+      cannotBeatRes.tooltip,
+      "«Your «Pair of «Queens»» does not beat «Pair of «Kings»»»",
+    );
+
+    const wishFailRes = analyzeSelection({
+      selectedCards: [DR],
+      handCards: [AQ, DR],
+      lastCombo: new Combo([A3]),
+      stateName: "playCombo",
+      mahjongWish: 12,
+    });
+    assert.equal(wishFailRes.tooltip, "«You must fulfill the active Mahjong wish («Queen»)»");
+
+    const passFailRes = validatePassAction([AQ, BQ], new Combo([A0, B0]), 12);
+    assert.equal(passFailRes.canPass, false);
+    assert.equal(passFailRes.buttonLabel, "«Pass»");
+    assert.equal(
+      passFailRes.tooltip,
+      "«Cannot pass: you must fulfill the Mahjong wish («Queen») by playing a «pair»»",
+    );
+
+    const calloutRes = getWishBombOnlyCallout([AQ, BQ, CQ, DQ], new Combo([AA]), 12);
+    assert.ok(calloutRes !== null);
+    assert.equal(calloutRes.wishLabel, "«Queen»");
+    assert.equal(
+      calloutRes.message,
+      "«You must fulfill the Mahjong wish («Queen») by playing a «4-of-a-kind bomb» («Bomb of four «Queens»»).»",
+    );
+
+    // 5. I18nLogPayload { log, args } in GameModel.applyPlayCombo and Tichu.notif_playCombo + Dragon gift (#175241)
+    const model = new GameModel();
+    model.hydrateFromGamedatas(
+      {
+        players: {
+          1: { id: 1, name: "P1", color: "000000", no: 1, score: 0 } as any,
+          2: { id: 2, name: "P2", color: "ff0000", no: 2, score: 0 } as any,
+        },
+        hand: [],
+      },
+      1,
+      false,
+      true,
+    );
+    model.applyPlayCombo(
+      2,
+      [AQ, BQ],
+      {
+        log: "Pair of ${rank}",
+        args: { rank: "Queens", i18n: ["rank"] },
+      },
+      0,
+      PAIR_COMBO,
+    );
+    assert.equal(model.getState().trickLastCombo.description, "Pair of Queens");
+    assert.equal(model.getState().lastCombos["2"]?.description, "Pair of Queens");
+    assert.equal(
+      formatLocalizedComboDescription(model.getState().trickLastCombo),
+      "«Pair of «Queens»»",
+    );
+
+    // Also test with dojo.string.substitute for Dragon gift (#175241) and confirmTichu buttons
+    const { Tichu } = loadTichuAdapterForNodeTests();
+    g._ = (s: string) => `«${s}»`;
+    g.dojo.string = {
+      substitute(tpl: string, args: Record<string, unknown>) {
+        return String(tpl).replace(/\$\{([^}]+)\}/g, (_m, k) => String(args[k] ?? ""));
+      },
+    };
+    const ui: any = new Tichu();
+    const addedButtons: Array<{ id: string; label: string }> = [];
+    ui.player_id = 1;
+    ui.isCurrentPlayerActive = () => true;
+    ui.removeActionButtons = () => {
+      addedButtons.length = 0;
+    };
+    ui.addActionButton = (id: string, label: string) => {
+      addedButtons.push({ id, label });
+    };
+    ui.notifqueue = {
+      setSynchronousDuration() {},
+    };
+    ui.gamedatas = {
+      players: { 1: { id: "1", name: "P1" }, 2: { id: "2", name: "P2" } },
+      gamestate: {
+        name: "chooseDragonGift",
+        args: { enemies: [{ name: "LeftEnemy" }, { name: "RightEnemy" }] },
+      },
+      hand: [],
+      handcount: { 1: 5, 2: 5 },
+      currentTrick: [],
+      currentTrickValue: 0,
+    };
+    ui.onEnteringStateChooseDragonGift(ui.gamedatas.gamestate.args);
+    assert.deepEqual(addedButtons, [
+      { id: "giveDragonBefore_button", label: "«Give cards to LeftEnemy»" },
+      { id: "giveDragonAfter_button", label: "«Give cards to RightEnemy»" },
+    ]);
+
+    ui.notif_playCombo({
+      args: {
+        player_id: 2,
+        player_name: "P2",
+        combo_name: {
+          log: "Pair of ${rank}",
+          args: { rank: "Queens", i18n: ["rank"] },
+        },
+        cards: [AQ, BQ],
+        points: 0,
+        type: PAIR_COMBO,
+      },
+    });
+    assert.equal(typeof ui.gamedatas.lastComboDescription, "string");
+    assert.equal(ui.gamedatas.lastComboDescription, "Pair of Queens");
+    assert.equal(ui.gamedatas.lastCombo.description, "Pair of Queens");
+
+    ui.pendingConfirmTichu = { grand: true, msg: "Confirm?", titleSave: "Turn" };
+    ui.renderConfirmTichuButtons();
+    assert.equal(addedButtons[0]?.label, "«no grand tichu»");
+    ui.pendingConfirmTichu = { grand: false, msg: "Confirm?", titleSave: "Turn" };
+    ui.renderConfirmTichuButtons();
+    assert.equal(addedButtons[0]?.label, "«no tichu»");
+  } finally {
+    g._ = savedUnderscore;
+    g.dojo = savedDojo;
+  }
 });

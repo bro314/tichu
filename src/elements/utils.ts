@@ -3,11 +3,15 @@ import { distinctUntilChanged, map, shareReplay } from "rxjs/operators";
 import { Hand } from "./combo-validator";
 import { Card } from "./model";
 
+if (typeof (globalThis as any)._ !== "function") {
+  (globalThis as any)._ = (s: string) => s;
+}
+
 export function fire(el: Element, eventName: string) {
   el.dispatchEvent(new CustomEvent(eventName, { composed: true, bubbles: true }));
 }
 
-export function select<A, B>(obs$: Observable<A>, mapper: (_: A) => B) {
+export function select<A, B>(obs$: Observable<A>, mapper: (value: A) => B) {
   return obs$.pipe(map(mapper), distinctUntilChanged(deepEqual), shareReplay(1));
 }
 

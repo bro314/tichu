@@ -5,8 +5,6 @@ import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-stock";
 
-const t = (s: string) => (typeof _ === "function" ? _(s) : s);
-
 export class TichuTrickModal extends LitElement {
   @state() private trickModalOpen = false;
   @state() private currentTrick: Card[] = [];
@@ -109,13 +107,13 @@ export class TichuTrickModal extends LitElement {
           <div id="popin_showLastTrickDialog">
             <div class="custom_popin_titlebar bga-popin-titlebar">
               <span id="popin_showCurrentTrickDialog_title" class="bga-popin-title">
-                ${t("Cards in current Trick")}
+                ${_("Cards in current Trick")}
               </span>
               <a
                 href="#"
                 id="popin_showCurrentTrickDialog_close"
                 class="bga-popin-close"
-                title="Close"
+                title=${_("Close")}
                 @click=${this.onClose}
                 ><span id="popin_showLastTrickDialog_close">&times;</span></a
               >

@@ -29,44 +29,85 @@ export interface TichuCombo {
   type: number;
 }
 
+export interface I18nLogPayload {
+  log: string;
+  args: Record<string, unknown>;
+}
+
 /**
  * Authoritative client-server notification contract.
  * Keys and payload properties mirror `modules/managers/NotificationManager.php`.
  */
 export interface TichuNotificationMap {
-  dealCards: { cards: CardData[] };
-  grandTichuBet: { player_id: number; player_name: string; bet: number };
-  tichuBet: { player_id: number; player_name: string; bet: number };
+  dealCards: { codeVersion?: string; cards: CardData[] };
+  grandTichuBet: { codeVersion?: string; player_id: number; player_name: string; bet: number };
+  tichuBet: { codeVersion?: string; player_id: number; player_name: string; bet: number };
   log: Record<string, unknown>;
   playCombo: {
+    codeVersion?: string;
     i18n?: string[];
     player_id: number;
     player_name: string;
-    combo_name: string;
+    combo_name: string | I18nLogPayload;
     cards: CardData[];
     points: number;
     type?: number;
     phoenixValue?: number | string | Array<number | string> | null;
   };
   wishMade: {
+    codeVersion?: string;
     i18n?: string[];
     player_id: number;
     player_name: string;
     wish: number;
     text_value: string;
   };
-  mahjongWishGranted: {};
-  playerGoOut: { firstout_id: number; player_id: number; player_name: string };
-  pass: { player_id: number; player_name: string };
-  devConsole: { msg: string };
-  tableWindow: { id: string; title: string; table: unknown[][]; closing: string };
-  newScores: { newScores: { [key: number]: number | string; [key: string]: number | string } };
-  captureCards: { player_id: number; player_name: string; trick_value: number };
-  autopass: { autopass: string | number };
-  confirmTichu: { grand: boolean; msg: string };
-  acceptCards: { cards: CardData[]; card1: string; card2: string; card3: string };
-  passCards: { cardIds: string[]; card1: string; card2: string; card3: string };
-  botSuggestion: { suggestion: Record<string, unknown> };
+  mahjongWishGranted: { codeVersion?: string };
+  playerGoOut: {
+    codeVersion?: string;
+    firstout_id: number;
+    player_id: number;
+    player_name: string;
+  };
+  pass: { codeVersion?: string; player_id: number; player_name: string };
+  devConsole: { codeVersion?: string; msg: string };
+  tableWindow: {
+    codeVersion?: string;
+    i18n?: string[];
+    id: string;
+    title: string;
+    table: unknown[][];
+    closing: string;
+  };
+  newScores: {
+    codeVersion?: string;
+    newScores: { [key: number]: number | string; [key: string]: number | string };
+  };
+  captureCards: {
+    codeVersion?: string;
+    player_id: number;
+    player_name: string;
+    trick_value: number;
+  };
+  autopass: { codeVersion?: string; autopass: string | number };
+  confirmTichu: { codeVersion?: string; grand: boolean; msg: string };
+  acceptCards: {
+    codeVersion?: string;
+    i18n?: string[];
+    cards: CardData[];
+    card1: string;
+    card2: string;
+    card3: string;
+  };
+  passCards: {
+    codeVersion?: string;
+    i18n?: string[];
+    cardIds: string[];
+    card1: string;
+    card2: string;
+    card3: string;
+  };
+  botSuggestion: { codeVersion?: string; suggestion: Record<string, unknown> };
 }
 
 /**
@@ -117,6 +158,7 @@ export interface TichuGamedatas {
   currentTrick: CardData[];
   currentTrickValue: number;
   firstoutplayer: number;
+  codeVersion?: string;
   gameVersion?: number;
   hand: CardData[];
   handcount: Record<number, number>;
