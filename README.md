@@ -122,7 +122,7 @@ tt.help(); // List all console test runner commands
 
 ## Syncing & Deploying to BGA Studio
 
-1. **SFTP Sync**: Run `npm run deploy:sftp` (or `npm run deploy:sftp:all`) to upload `tichu.js` and modified deployable game files to `/tichu/` on `1.studio.boardgamearena.com:2022` via `local/sftp-sync.sh` (using credentials in `.vscode/bga-credentials.json` or `.vscode/sftp.json`, with SSH keepalives and connection-error detection).
+1. **SFTP Sync**: Run `npm run deploy:sftp` (or `npm run deploy:sftp:all`) to upload `tichu.js` and modified deployable game files to `/tichu/` on `sftp.studio.boardgamearena.com:22` via `local/sftp-sync.sh` (using credentials in `.vscode/bga-credentials.json` or `.vscode/sftp.json`, with SSH keepalives and connection-error detection).
 2. **Testing on Studio**: Test single- or 4-player multiplayer flows using BGA Studio's multi-account sessions at `https://studio.boardgamearena.com` (`#studio-test-bar` / `window.tt`, including independent 4-tab `startAutoPlayMe` runs to `gameEnd`).
    - Restart the test table if you modify `dbmodel.sql`.
    - Reload game configurations in the BGA Studio Control Panel if you modify `gameinfos.inc.php`, `gameoptions.inc.php`, `states.inc.php`, or `stats.inc.php`.

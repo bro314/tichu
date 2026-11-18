@@ -884,6 +884,8 @@ $forbiddenPlatformTokens = [
   "fopen",
   "unlink",
   "scandir",
+  "opendir",
+  "readdir",
   "glob",
   "exec",
   "shell_exec",
@@ -891,6 +893,10 @@ $forbiddenPlatformTokens = [
   "passthru",
   "system",
   "popen",
+  "curl_init",
+  "curl_exec",
+  "fsockopen",
+  "stream_socket_client",
   "ReflectionClass",
   "ReflectionMethod",
   "ReflectionProperty",
@@ -930,6 +936,12 @@ foreach ($deployablePhpFiles as $phpFile) {
         $errors,
         "PlatformSafety",
         "$relPath:$line references \$bgaContainer (absolute NO-GO in deployed Studio/prod code)"
+      );
+    } elseif ($type === T_EVAL) {
+      addError(
+        $errors,
+        "PlatformSafety",
+        "$relPath:$line uses eval() (refused by BGA Studio security scan)"
       );
     } elseif ($type === T_STRING && in_array($text, $forbiddenPlatformTokens, true)) {
       addError(

@@ -18,8 +18,8 @@ This skill provides exact credentials locations, test accounts, SFTP sync comman
 All SFTP and BGA Studio web credentials are stored locally in `.vscode/bga-credentials.json` (and `.vscode/sftp.json`), which are gitignored under `.vscode` (**never** commit credentials to git).
 
 - **SFTP Server**:
-  - Host: `1.studio.boardgamearena.com`, Port: `2022`, Protocol: `sftp`, Remote Path: `/tichu/`
-  - Username and password: Read from `.vscode/bga-credentials.json` (`.sftp.username` / `.sftp.password`)
+  - Host: `sftp.studio.boardgamearena.com`, Port: `22`, Protocol: `sftp`, Remote Path: `/tichu/`
+  - Username and password: Read from `.vscode/bga-credentials.json` (`.sftp.username` / `.sftp.password`; optional `.sftp.privateKeyPath` is also supported by `local/sftp-sync.sh`). Note that registering an SSH public key in the Studio Control Panel (`SFTP login` card) disables SFTP password login until that key is removed; without `privateKeyPath`, `local/sftp-sync.sh` passes `-o PreferredAuthentications=password -o PubkeyAuthentication=no -o IdentityAgent=none` so unrelated `ssh-agent` keys don't exhaust auth retries.
 - **BGA Studio Web Accounts (`https://studio.boardgamearena.com`)**:
   - Password for all `dashwood0`..`dashwood9` accounts: Read from `.vscode/bga-credentials.json` (`.studioWeb.password`).
 
@@ -59,7 +59,7 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
   mkdir -p /tmp/studio_tichu
   /usr/bin/expect -c "
   set timeout 60
-  spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
+  spawn sftp -P 22 -o StrictHostKeyChecking=no -o PreferredAuthentications=password -o PubkeyAuthentication=no -o IdentityAgent=none ${USER}@sftp.studio.boardgamearena.com
   expect -nocase \"password:\"
   send \"${PW}\r\"
   expect \"sftp>\"
@@ -75,7 +75,7 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
   `local/sftp-sync.sh` automatically filters out non-deployable paths. Never upload `.agents`, `.vscode`, `.git`, `.gitignore`, `.gitattributes`, `.prettierrc`, `.prettierignore`, `AGENTS.md`, `README.md`, `bga-platform`, `docs`, `plans`, `local`, `tests`, `node_modules`, `dist`, `src`, `vendor`, `_ide_helper.php`, `bga-framework.d.ts`, `phpstan.neon`, or `version.php`.
 
 > [!CAUTION]
-> **ABSOLUTE NO-GO — BGA Platform Internals**: Never access BGA platform internals (`$bgaContainer`, `\Bga\GameFramework\Old\Db`, `bga_*` tables, `Reflection*`, `file_get_contents`, `exec`, etc.) in any file uploaded to BGA Studio or production (`tichu.*.php`, `modules/**`). Doing so trips BGA security alerts and causes BGA admins to revoke SFTP and project access. [`local/sftp-sync.sh`](file:///Users/brohlfs/git/tichu/local/sftp-sync.sh) runs `php local/check-contracts.php` before uploading and blocks any violation.
+> **ABSOLUTE NO-GO — BGA Platform Internals & Studio Security Scan**: Never access BGA platform internals (`$bgaContainer`, `\Bga\GameFramework\Old\Db`, `bga_*` tables, `Reflection*`, system commands, `eval`, file access like `file_get_contents`/`fopen`/`scandir`/`opendir`, network calls like `curl_*`/`fsockopen`, or hidden function calls) in any file uploaded to BGA Studio or production (`tichu.*.php`, `modules/**`). Since Nov 2026, your SFTP folder is an isolated workspace and only bundle allowlist files (`*.php`, `<game>.js/.css`, `<game>_<game>.tpl`, `dbmodel.sql`, `gameinfos/gameoptions/gamepreferences/stats (.json/.jsonc)` at root; `.php`/`.js`/`.css` in `modules/`; media in `img/`, `sounds/`, `fonts/`) reach the game server after passing BGA's security scan (which refuses violating files, keeps the previous version on the server, and displays a red banner with file/rule/line on the table and project page). [`local/sftp-sync.sh`](file:///Users/brohlfs/git/tichu/local/sftp-sync.sh) runs `php local/check-contracts.php` before uploading and blocks violations locally too.
 
 ---
 

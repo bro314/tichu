@@ -13,13 +13,15 @@ if [[ -f "$CRED_FILE" ]]; then
   HOST=$(jq -r '.sftp.host' "$CRED_FILE")
   PORT=$(jq -r '.sftp.port' "$CRED_FILE")
   USER=$(jq -r '.sftp.username' "$CRED_FILE")
-  PW=$(jq -r '.sftp.password' "$CRED_FILE")
+  PW=$(jq -r '.sftp.password // ""' "$CRED_FILE")
+  PRIVATE_KEY_PATH=$(jq -r '.sftp.privateKeyPath // ""' "$CRED_FILE")
   REMOTE_PATH=$(jq -r '.sftp.remotePath' "$CRED_FILE")
 elif [[ -f "$SFTP_FILE" ]]; then
   HOST=$(jq -r '.host' "$SFTP_FILE")
   PORT=$(jq -r '.port' "$SFTP_FILE")
   USER=$(jq -r '.username' "$SFTP_FILE")
-  PW=$(jq -r '.password' "$SFTP_FILE")
+  PW=$(jq -r '.password // ""' "$SFTP_FILE")
+  PRIVATE_KEY_PATH=$(jq -r '.privateKeyPath // ""' "$SFTP_FILE")
   REMOTE_PATH=$(jq -r '.remotePath' "$SFTP_FILE")
 else
   echo "Error: Missing $CRED_FILE and $SFTP_FILE" >&2
@@ -101,11 +103,17 @@ done
 
 echo "Uploading ${#FILES[@]} file(s) to ${USER}@${HOST}:${REMOTE_PATH}: ${FILES[*]}"
 
+if [[ -n "$PRIVATE_KEY_PATH" ]]; then
+  SSH_AUTH_OPTS="-i ${PRIVATE_KEY_PATH/#\~/$HOME} -o IdentitiesOnly=yes"
+else
+  SSH_AUTH_OPTS="-o PreferredAuthentications=password -o PubkeyAuthentication=no -o IdentityAgent=none"
+fi
+
 set +e
 OUTPUT=$(/usr/bin/expect -c "
 set timeout 30
 set sent_pw 0
-spawn sftp -P ${PORT} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 ${USER}@${HOST}
+spawn sftp -P ${PORT} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 ${SSH_AUTH_OPTS} ${USER}@${HOST}
 expect {
   -nocase \"password:\" {
     if {\$sent_pw > 0} { exit 2 }
