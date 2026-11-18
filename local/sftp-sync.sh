@@ -104,9 +104,9 @@ done
 echo "Uploading ${#FILES[@]} file(s) to ${USER}@${HOST}:${REMOTE_PATH}: ${FILES[*]}"
 
 if [[ -n "$PRIVATE_KEY_PATH" ]]; then
-  SSH_AUTH_OPTS="-i ${PRIVATE_KEY_PATH/#\~/$HOME} -o IdentitiesOnly=yes"
+  SSH_AUTH_OPTS="-F /dev/null -i ${PRIVATE_KEY_PATH/#\~/$HOME} -o IdentitiesOnly=yes -o IdentityAgent=none -o PreferredAuthentications=publickey"
 else
-  SSH_AUTH_OPTS="-o PreferredAuthentications=password -o PubkeyAuthentication=no -o IdentityAgent=none"
+  SSH_AUTH_OPTS="-F /dev/null -o PreferredAuthentications=password -o PubkeyAuthentication=no -o IdentityAgent=none"
 fi
 
 set +e
