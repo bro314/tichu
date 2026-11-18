@@ -1199,6 +1199,7 @@ function test_full_multi_round_game_to_completion(): void
 // ============================================================================
 function test_zombie_turns_across_all_states(): void
 {
+  global $g_config;
   $game = new \Tichu();
 
   // 1. grandTichuBets (multipleactiveplayer)
@@ -1435,6 +1436,113 @@ function test_zombie_turns_across_all_states(): void
   assertSameVal('playComboOpen', $afterDragonPayload['gamestate']['name'], 'Zombie P0 in chooseDragonGift should gift Dragon and start new trick');
   assertSameVal((string) P0, $afterDragonPayload['gamestate']['active_player'], 'P0 should lead the next trick');
   assertSameVal(35, (int) $afterDragonPayload['capturedpoints'][P1], 'Enemy 0 (P1) should receive the 35-point Dragon trick from zombie P0');
+
+  // 10a. End-to-end Production Sentry #808761 regression:
+  // Live pass.html -> checkZombieTurn() passes zombie P3 -> confirms trick won by zombie P0 (state 75)
+  // -> nested checkZombieTurn() -> zombieTurn(confirmTrick, P0) -> collect(false) -> playComboOpen lead.
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 14], [1, 2], [2, 3]],
+    P1 => [[1, 5], [1, 6]],
+    P2 => [[2, 5], [2, 6]],
+    P3 => [[3, 5], [3, 6]],
+  ], 'captured_p0');
+  $game->setGameStateValue('mahjongWish', 0);
+  $game->gamestate->changeActivePlayer(P0);
+  callAction($game, P0, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 14)]);
+
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1 WHERE player_id IN (' . P0 . ', ' . P3 . ')');
+  $game->reloadPlayersBasicInfos();
+
+  callAction($game, P1, 'pass', ['onlyOnce' => true]);
+  $beforeZombieChainPkt = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  $beforeZombieChainTricksWin = (float) $game->getStat('tricks_win', P0);
+
+  callAction($game, P2, 'pass', ['onlyOnce' => true]);
+
+  assertSameVal(
+    'playCombo',
+    $game->gamestate->state(true, false, true)['name'],
+    'Zombie P0 collecting trick in confirmTrick and leading Trick 2 must advance to playCombo'
+  );
+  assertSameVal(P1, (int) $game->getActivePlayerId(), 'Live player P1 must be active after zombie P0 leads');
+  assertSameVal(
+    $beforeZombieChainTricksWin + 1.0,
+    (float) $game->getStat('tricks_win', P0),
+    'Zombie P0 tricks_win should increment by 1 via collect(false)'
+  );
+  assertSameVal(1, (int) $deck->countCardInLocation('hand', P0), 'Zombie P0 should have led 1 of its 2 remaining cards');
+  foreach ($game->getNotificationsSince($beforeZombieChainPkt, P1) as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      assertTrueVal(
+        ($notif['type'] ?? '') !== 'zombieModeFail',
+        'Nested zombieTurn collect(false) flow (#808761) must never emit zombieModeFail'
+      );
+    }
+  }
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 0');
+  $game->reloadPlayersBasicInfos();
+
+  // 10b. End-to-end stale-snapshot multiactive transition into zombie giveCards:
+  // Concurrent P2 bet makes P3's grandTichuBet stale, then P3 finishes betting and transitions to
+  // giveCards where P0 is already a zombie; nested checkZombieTurn() must clear gameLockStale.
+  $zombieGame = new \Tichu();
+  $zombieGame->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  callAction($zombieGame, P0, 'grandTichuBet', ['bet' => '0']);
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1 WHERE player_id = ' . P0);
+  $zombieGame->reloadPlayersBasicInfos();
+  callAction($zombieGame, P1, 'grandTichuBet', ['bet' => '0']);
+
+  $otherDb = new \mysqli(
+    (string) ($g_config['db_host'] ?? 'localhost'),
+    (string) ($g_config['db_user'] ?? 'root'),
+    (string) ($g_config['db_password'] ?? ''),
+    (string) ($g_config['db_name'] ?? 'ebd_tichu_1'),
+    0,
+    (string) ($g_config['db_socket'] ?? '')
+  );
+  assertTrueVal(!$otherDb->connect_errno, 'Failed to open secondary MySQL connection: ' . $otherDb->connect_error);
+  try {
+    $beforeStaleZombiePkt = (int) \APP_DbObject::getUniqueValueFromDB(
+      'SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog'
+    );
+    $zombieGame->setCurrentPlayerId(P3);
+    $zombieGame->beginPlayerAction();
+
+    $otherDb->query('UPDATE player SET player_call_grand_tichu = 0, player_is_multiactive = 0 WHERE player_id = ' . P2);
+    $otherDb->query(
+      'UPDATE global SET global_value = global_value + 1 WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION
+    );
+
+    $zombieGame->grandTichuBet(0);
+    $zombieGame->endPlayerAction(false);
+
+    assertSameVal('giveCards', $zombieGame->gamestate->state(true, false, true)['name'], 'Game should reach giveCards');
+    assertSameVal(
+      11,
+      (int) \CardManager::getDeck()->countCardInLocation('hand', P0),
+      'Zombie P0 must pass 3 cards immediately on giveCards entry'
+    );
+    assertSameVal(
+      3,
+      (int) \APP_DbObject::getUniqueValueFromDB(
+        "SELECT COUNT(*) FROM card WHERE card_location = 'temporary' AND card_passed_from = " . P0
+      ),
+      'Zombie P0 should have 3 cards in temporary'
+    );
+    foreach ($zombieGame->getNotificationsSince($beforeStaleZombiePkt, P1) as $pkt) {
+      foreach ($pkt['data'] ?? [] as $notif) {
+        assertTrueVal(
+          ($notif['type'] ?? '') !== 'zombieModeFail',
+          'Stale multiactive transition into zombie giveCards must never emit zombieModeFail'
+        );
+      }
+    }
+  } finally {
+    $otherDb->close();
+  }
 }
 
 // ============================================================================

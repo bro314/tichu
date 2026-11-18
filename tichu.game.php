@@ -1131,13 +1131,18 @@ class Tichu extends Table
     // Clients auto-collect, so every open tab/device of the trick winner may send this.
     // Duplicates (the trick was already collected) are silently ignored.
     $this->acquireGameLock();
-    if ($this->freshStateId !== ST_CONFIRM_TRICK) {
+    $expectedStateId = $checkAction
+      ? $this->freshStateId
+      : (int) $this->gamestate->getCurrentMainStateId();
+    if ($expectedStateId !== ST_CONFIRM_TRICK) {
       $this->syncStaleReturnState();
       return;
     }
-    $this->acquireGameLockOrFail();
     if ($checkAction) {
+      $this->acquireGameLockOrFail();
       $this->checkAction("collect");
+    } else {
+      $this->bumpGameVersion();
     }
     $action = LogManager::getLastAction("confirm");
     if ($action === null) {
@@ -1732,7 +1737,17 @@ class Tichu extends Table
 	*/
   function zombieTurn($state, $active_player)
   {
-    $this->acquireGameLockOrFail();
+    if ($this->gameLockHeld) {
+      // Nested zombieTurn triggered via BGA checkZombieTurn() after an already-locked action
+      // transitioned the state machine in this request: refresh lock-tracked state/player and
+      // clear any pre-transition multiactive stale flag (#808761).
+      $this->gameLockStale = false;
+      $this->freshStateId = (int) $this->gamestate->getCurrentMainStateId();
+      $this->freshActivePlayerId = (int) $active_player;
+      $this->bumpGameVersion();
+    } else {
+      $this->acquireGameLockOrFail();
+    }
     $statename = $state["name"];
     $player = PlayerManager::getPlayer($active_player);
     $player_name = $player["name"] ?? $this->getActivePlayerName();
