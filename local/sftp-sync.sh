@@ -101,17 +101,34 @@ done
 
 echo "Uploading ${#FILES[@]} file(s) to ${USER}@${HOST}:${REMOTE_PATH}: ${FILES[*]}"
 
+set +e
 OUTPUT=$(/usr/bin/expect -c "
 set timeout 30
+set sent_pw 0
 spawn sftp -P ${PORT} -o StrictHostKeyChecking=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 ${USER}@${HOST}
-expect \"Password:\"
-send \"${PW}\r\"
-expect \"sftp>\"
+expect {
+  -nocase \"password:\" {
+    if {\$sent_pw > 0} { exit 2 }
+    set sent_pw 1
+    send \"${PW}\r\"
+    exp_continue
+  }
+  \"sftp>\" {}
+  -nocase \"permission denied\" { exit 2 }
+  eof { exit 2 }
+  timeout { exit 3 }
+}
 $(printf "%b" "$SFTP_CMDS")
 send \"bye\r\"
 expect eof
 ")
+EXPECT_RC=$?
+set -e
 printf "%s\n" "$OUTPUT"
+if [[ $EXPECT_RC -ne 0 ]]; then
+  echo "Error: SFTP connection or authentication failed (exit $EXPECT_RC)." >&2
+  exit 1
+fi
 
 AFTER_CONNECT=$(printf "%s\n" "$OUTPUT" | awk '/Connected to/{flag=1; next} flag')
 if [[ -z "$AFTER_CONNECT" ]]; then

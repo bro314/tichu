@@ -60,7 +60,7 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
   /usr/bin/expect -c "
   set timeout 60
   spawn sftp -P 2022 -o StrictHostKeyChecking=no ${USER}@1.studio.boardgamearena.com
-  expect \"Password:\"
+  expect -nocase \"password:\"
   send \"${PW}\r\"
   expect \"sftp>\"
   send \"lcd /tmp/studio_tichu\r\"
