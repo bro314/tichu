@@ -79,6 +79,7 @@ class TichuBot
     int $humanPlayerId,
     int $maxSteps = 40
   ): array {
+    $maxSteps = max(1, min($maxSteps, 40));
     $actions = [];
     $steps = 0;
 

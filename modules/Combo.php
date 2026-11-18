@@ -1,13 +1,16 @@
 <?php
 class Combo
 {
-  public $cards;
-  public $type;
-  public $phoenixValue;
-  public $description;
-  public $player;
+  /** @var array<int, array<string, mixed>>|null */
+  public ?array $cards = null;
+  public int $type = INVALID_COMBO;
+  /** @var int|float|array<int, int|float>|null */
+  public int|float|array|null $phoenixValue = null;
+  public ?string $description = null;
+  public int|string|null $player = null;
 
-  public static $comboNames = [
+  /** @var array<int, string> */
+  public static array $comboNames = [
     DOG_COMBO => "Dog",
     BOMB_COMBO => "Bomb",
     SINGLE_COMBO => "Single",
@@ -18,9 +21,9 @@ class Combo
     FULL_HOUSE_COMBO => "FullHouse",
   ];
 
-  public static $noCombo;
+  public static Combo $noCombo;
 
-  /*
+  /**
    * If a type is given, the members will just be set with the arguments. it can still be validated with checkType()
    * If no type is given, it will first sort the cards by value and color,
    * so the special cards will come first(by order of the types, see constants.php), then all the 2s, etc
@@ -30,9 +33,17 @@ class Combo
    * 		- the ordered cards,
    *		- the description,
    *		- the phoenixvalue (null if no phoenix, array if more than 1 possibilities)
+   *
+   * @param array<int|string, array<string, mixed>> $cards
+   * @param int|float|array<int, int|float>|null $phoenixValue
    */
-  public function __construct($cards, $type = null, $phoenixValue = null, $description = null)
-  {
+  public function __construct(
+    array $cards,
+    int|string|null $type = null,
+    int|float|array|null $phoenixValue = null,
+    ?string $description = null
+  ) {
+    $cards = array_values($cards);
     if (is_null($type)) {
       if (count($cards) == 0) {
         $this->type = INVALID_COMBO;
@@ -41,12 +52,12 @@ class Combo
       $colors = array_column($cards, "type");
       $values = array_column($cards, "type_arg");
       array_multisort($values, SORT_ASC, $colors, SORT_ASC, $cards);
-      foreach (self::$comboNames as $type => $name) {
+      foreach (self::$comboNames as $comboType => $name) {
         $res = call_user_func([self::class, "check$name"], $cards);
         if (!is_null($res)) {
           //combo is of that type
           $this->cards = $res["cards"];
-          $this->type = $type;
+          $this->type = $comboType;
           $this->phoenixValue = $res["phoenixValue"];
           $this->description = $res["description"];
           return;
@@ -55,19 +66,21 @@ class Combo
       $this->type = INVALID_COMBO;
     } else {
       $this->cards = $cards;
-      $this->type = $type;
+      $this->type = (int) $type;
       $this->phoenixValue = $phoenixValue;
       $this->description = $description ?? "";
     }
   }
 
   // check if the given type is valid, and set ordered cards, phoenixvalue and description, if so
-  public function checkType()
+  public function checkType(): bool
   {
+    $cards = $this->cards ?? [];
     $typeName = self::$comboNames[$this->type];
-    $colors = array_column($this->cards, "type");
-    $values = array_column($this->cards, "type_arg");
-    array_multisort($values, SORT_ASC, $colors, SORT_ASC, $this->cards);
+    $colors = array_column($cards, "type");
+    $values = array_column($cards, "type_arg");
+    array_multisort($values, SORT_ASC, $colors, SORT_ASC, $cards);
+    $this->cards = $cards;
     $res = call_user_func([self::class, "check$typeName"], $this->cards);
     if (is_null($res)) {
       $this->type = INVALID_COMBO;
@@ -81,16 +94,18 @@ class Combo
   }
 
   //check which phoenixvalues can be played
-  public function recheckPhoenix()
+  public function recheckPhoenix(): void
   {
     if (!is_array($this->phoenixValue)) {
       return;
     }
     $lastCombo = LogManager::getLastCombo();
-    if (is_null($lastCombo) || in_array($lastCombo->type, [NO_COMBO, DOG_COMBO])) {
+    if (in_array($lastCombo->type, [NO_COMBO, DOG_COMBO])) {
       return;
     }
-    if ($lastCombo->type != $this->type || count($lastCombo->cards) != count($this->cards)) {
+    $cards = $this->cards ?? [];
+    $lastCards = $lastCombo->cards ?? [];
+    if ($lastCombo->type != $this->type || count($lastCards) != count($cards)) {
       $this->setPhoenixValue($this->phoenixValue[0]); // will throw in completePlayCombo
       return;
     }
@@ -112,13 +127,13 @@ class Combo
   }
 
   // check if the combo can be played on a given combo
-  public function canBeat($combo)
+  public function canBeat(Combo $combo): bool
   {
     if ($combo->type == NO_COMBO || $combo->type == DOG_COMBO) {
       return true;
     } //opening, all can be played
-    $length = count($this->cards);
-    $cLength = count($combo->cards);
+    $length = count($this->cards ?? []);
+    $cLength = count($combo->cards ?? []);
 
     if ($this->type == BOMB_COMBO) {
       if ($combo->type == BOMB_COMBO) {
@@ -135,9 +150,16 @@ class Combo
     return $this->getFirstValue() > $combo->getFirstValue();
   }
 
-  // get the value of the first card for comparison, if phoenix, return the phoenixvalue, if dragon, return 15(higher than any single card)
-  public function getFirstValue()
+  /**
+   * get the value of the first card for comparison, if phoenix, return the phoenixvalue, if dragon, return 15(higher than any single card)
+   *
+   * @return int|float|array<int, int|float>|null
+   */
+  public function getFirstValue(): int|float|array|null
   {
+    if (empty($this->cards)) {
+      return 0;
+    }
     $card = $this->cards[0];
     $val = (int) $card["type_arg"];
     if ($card["type"] == TYPE_PHOENIX && $val == 1) {
@@ -154,16 +176,22 @@ class Combo
    * Since the cards are ordered and the mahjong can only be the only crd or the first in a straight,
    * we just need to check the first card.
    */
-  public function hasMahjong()
+  public function hasMahjong(): bool
   {
     //can only be the first card
+    if (empty($this->cards)) {
+      return false;
+    }
     $card = $this->cards[0];
     return $card["type"] == TYPE_MAHJONG && $card["type_arg"] == 1;
   }
 
-  public function hasDragon()
+  public function hasDragon(): bool
   {
     //can only be the only card
+    if (empty($this->cards)) {
+      return false;
+    }
     $card = $this->cards[0];
     return $card["type"] == TYPE_DRAGON && $card["type_arg"] == 1;
   }
@@ -174,32 +202,221 @@ class Combo
    * In a straight, if it can be the first or last.
    * In a full house when it's togehter with 2 pairs.
    */
-  public function setPhoenixValue($val)
+  public function setPhoenixValue(int|float|string $val): void
   {
     $val = is_numeric($val) ? (int) $val : $val;
+    $cards = $this->cards ?? [];
+    $prevPhoenix = is_array($this->phoenixValue) ? $this->phoenixValue : [0, 0];
     if ($this->type == STRAIGHT_COMBO) {
-      $count = count($this->cards);
-      if ($val == $this->phoenixValue[1]) {
+      $count = count($cards);
+      if ($val == $prevPhoenix[1]) {
         // lower value was chosen
-        $highest = CardManager::cardToStr($this->cards[$count - 1]);
+        $highest = CardManager::cardToStr($cards[$count - 1]);
         $lowest = $val; // lowest is always a number
       } else {
-        $this->cards[] = array_shift($this->cards); // move phoenix to the end
+        $cards[] = array_shift($cards); // move phoenix to the end
         $highest = CardManager::cardToStr($val);
-        $lowest = (int) $this->cards[0]["type_arg"]; // lowest is always a number
+        $lowest = (int) $cards[0]["type_arg"]; // lowest is always a number
       }
+      $this->cards = $cards;
       $this->description = "Run of $count cards from $lowest to $highest";
     } else {
       // full house
-      if ($val == $this->phoenixValue[1]) {
+      if ($val == $prevPhoenix[1]) {
         // just move the first pair to the end
-        array_splice($this->cards, 3, 0, array_splice($this->cards, 1, 2));
+        array_splice($cards, 3, 0, array_splice($cards, 1, 2));
       }
+      $this->cards = $cards;
       $trip = CardManager::cardToStr($val, true);
       $pair = CardManager::cardToStr($this->cards[4], true);
       $this->description = "$trip full of $pair";
     }
-    $this->phoenixValue = $val;
+    $this->phoenixValue = (int) $val;
+  }
+
+  /**
+   * Build a BGA Translation HQ static-extractable recursive `{ log, args }` spec (or scalar
+   * numeric rank string for numeric singles) without altering canonical `$this->description`.
+   *
+   * @return array{log: string, args: array<string, mixed>}|string
+   */
+  public function toLogSpec(): array|string
+  {
+    $cards = $this->cards ?? [];
+    $count = count($cards);
+    switch ($this->type) {
+      case DOG_COMBO:
+        return [
+          "log" => clienttranslate("Dog"),
+          "args" => [],
+        ];
+
+      case SINGLE_COMBO:
+        if ($count === 0) {
+          return $this->description ?? "";
+        }
+        $card = $cards[0];
+        if ((int) $card["type_arg"] === 1 && (int) $card["type"] === TYPE_PHOENIX) {
+          $rawBase = is_numeric($this->phoenixValue) ? (float) $this->phoenixValue - 0.5 : 1;
+          $baseVal =
+            (float) $rawBase == (int) $rawBase ? (int) $rawBase : strval($rawBase);
+          $args = ["rank" => CardManager::cardToStr($baseVal)];
+          if (CardManager::isTranslatableCardStr($baseVal)) {
+            $args["i18n"] = ["rank"];
+          }
+          return [
+            "log" => clienttranslate('Phoenix a half step above ${rank}'),
+            "args" => $args,
+          ];
+        }
+        if (CardManager::isTranslatableCardStr($card)) {
+          return [
+            "log" => CardManager::cardToStr($card),
+            "args" => [],
+          ];
+        }
+        return CardManager::cardToStr($card);
+
+      case PAIR_COMBO:
+        $args = ["rank" => CardManager::cardToStr($cards[1], true)];
+        if (CardManager::isTranslatableCardStr($cards[1], true)) {
+          $args["i18n"] = ["rank"];
+        }
+        return [
+          "log" => clienttranslate('Pair of ${rank}'),
+          "args" => $args,
+        ];
+
+      case TRIP_COMBO:
+        $args = ["rank" => CardManager::cardToStr($cards[1], true)];
+        if (CardManager::isTranslatableCardStr($cards[1], true)) {
+          $args["i18n"] = ["rank"];
+        }
+        return [
+          "log" => clienttranslate('Triple of ${rank}'),
+          "args" => $args,
+        ];
+
+      case RUNNING_PAIRS_COMBO:
+        $lowestCard = $cards[0];
+        $highestCard = $cards[$count - 2];
+        $i18n = [];
+        if (CardManager::isTranslatableCardStr($lowestCard, false)) {
+          $i18n[] = "lowest";
+        }
+        if (CardManager::isTranslatableCardStr($highestCard, false)) {
+          $i18n[] = "highest";
+        }
+        $args = [
+          "pair_count" => (int) ($count / 2),
+          "lowest" => CardManager::cardToStr($lowestCard, false),
+          "highest" => CardManager::cardToStr($highestCard, false),
+        ];
+        if (!empty($i18n)) {
+          $args["i18n"] = $i18n;
+        }
+        return [
+          "log" => clienttranslate('${pair_count} consecutive doubles from ${lowest} to ${highest}'),
+          "args" => $args,
+        ];
+
+      case STRAIGHT_COMBO:
+        $firstIsPhoenix =
+          (int) $cards[0]["type_arg"] === 1 && (int) $cards[0]["type"] === TYPE_PHOENIX;
+        $lastIsPhoenix =
+          (int) $cards[$count - 1]["type_arg"] === 1 &&
+          (int) $cards[$count - 1]["type"] === TYPE_PHOENIX;
+        if ($firstIsPhoenix) {
+          $lowestTarget = is_array($this->phoenixValue)
+            ? (int) $this->phoenixValue[1]
+            : (int) $this->phoenixValue;
+        } else {
+          $lowestTarget = (int) $cards[0]["type_arg"];
+        }
+        if ($lastIsPhoenix) {
+          $highestTarget = is_array($this->phoenixValue)
+            ? (int) $this->phoenixValue[0]
+            : (int) $this->phoenixValue;
+        } else {
+          $highestTarget = $cards[$count - 1];
+        }
+        $i18n = [];
+        if (CardManager::isTranslatableCardStr($lowestTarget, false)) {
+          $i18n[] = "lowest";
+        }
+        if (CardManager::isTranslatableCardStr($highestTarget, false)) {
+          $i18n[] = "highest";
+        }
+        $args = [
+          "count" => $count,
+          "lowest" => CardManager::cardToStr($lowestTarget, false),
+          "highest" => CardManager::cardToStr($highestTarget, false),
+        ];
+        if (!empty($i18n)) {
+          $args["i18n"] = $i18n;
+        }
+        return [
+          "log" => clienttranslate('Run of ${count} cards from ${lowest} to ${highest}'),
+          "args" => $args,
+        ];
+
+      case FULL_HOUSE_COMBO:
+        $tripCard = $cards[1];
+        $pairCard = $cards[3];
+        $i18n = [];
+        if (CardManager::isTranslatableCardStr($tripCard, true)) {
+          $i18n[] = "trip_rank";
+        }
+        if (CardManager::isTranslatableCardStr($pairCard, true)) {
+          $i18n[] = "pair_rank";
+        }
+        $args = [
+          "trip_rank" => CardManager::cardToStr($tripCard, true),
+          "pair_rank" => CardManager::cardToStr($pairCard, true),
+        ];
+        if (!empty($i18n)) {
+          $args["i18n"] = $i18n;
+        }
+        return [
+          "log" => clienttranslate('${trip_rank} full of ${pair_rank}'),
+          "args" => $args,
+        ];
+
+      case BOMB_COMBO:
+        if ($count === 4) {
+          $args = ["rank" => CardManager::cardToStr($cards[0], true)];
+          if (CardManager::isTranslatableCardStr($cards[0], true)) {
+            $args["i18n"] = ["rank"];
+          }
+          return [
+            "log" => clienttranslate('Bomb of four ${rank}'),
+            "args" => $args,
+          ];
+        }
+        $lowestCard = $cards[0];
+        $highestCard = $cards[$count - 1];
+        $i18n = [];
+        if (CardManager::isTranslatableCardStr($lowestCard, false)) {
+          $i18n[] = "lowest";
+        }
+        if (CardManager::isTranslatableCardStr($highestCard, false)) {
+          $i18n[] = "highest";
+        }
+        $args = [
+          "lowest" => CardManager::cardToStr($lowestCard, false),
+          "highest" => CardManager::cardToStr($highestCard, false),
+        ];
+        if (!empty($i18n)) {
+          $args["i18n"] = $i18n;
+        }
+        return [
+          "log" => clienttranslate('Straight flush bomb starting from ${lowest} to ${highest}'),
+          "args" => $args,
+        ];
+
+      default:
+        return $this->description ?? "";
+    }
   }
 
   /************************************************
@@ -207,13 +424,17 @@ class Combo
    * keep in mind the cards are sorted!
    ****************************************************/
 
-  public static function checkDog($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: null, description: string}|null
+   */
+  public static function checkDog(array $cards): ?array
   {
     if (count($cards) > 1) {
-      return;
+      return null;
     }
     if ($cards[0]["type"] != TYPE_DOG || $cards[0]["type_arg"] != 1) {
-      return;
+      return null;
     }
     return [
       "cards" => $cards,
@@ -222,15 +443,19 @@ class Combo
     ];
   }
 
-  public static function checkBomb($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: null, description: string}|null
+   */
+  public static function checkBomb(array $cards): ?array
   {
     if (count($cards) < 4 || $cards[0]["type_arg"] == 1) {
-      return;
+      return null;
     }
     $description = null;
     if (count($cards) == 4) {
       if ($cards[0]["type_arg"] != $cards[3]["type_arg"]) {
-        return;
+        return null;
       }
       $description = "Bomb of four " . CardManager::cardToStr($cards[0], true);
     } else {
@@ -238,10 +463,10 @@ class Combo
       $color = $cards[0]["type"];
       foreach ($cards as $idx => $card) {
         if ($card["type"] != $color) {
-          return;
+          return null;
         }
         if ($card["type_arg"] != $firstVal + $idx) {
-          return;
+          return null;
         }
       }
       $description =
@@ -257,23 +482,30 @@ class Combo
     ];
   }
 
-  public static function checkSingle($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: float|null, description: string}|null
+   */
+  public static function checkSingle(array $cards): ?array
   {
     if (count($cards) > 1) {
-      return;
+      return null;
     }
     $phoenixValue = null;
     $card = $cards[0];
     if ($card["type_arg"] == 1 && $card["type"] == TYPE_DOG) {
-      return;
+      return null;
     }
     if ($card["type_arg"] == 1 && $card["type"] == TYPE_PHOENIX) {
       //get Value from last combo of this trick
       $lastCombo = LogManager::getLastCombo();
-      $val =
-        $lastCombo->type == SINGLE_COMBO && !$lastCombo->hasDragon()
-          ? $lastCombo->getFirstValue()
-          : 1;
+      $val = 1;
+      if ($lastCombo->type == SINGLE_COMBO && !$lastCombo->hasDragon()) {
+        $firstVal = $lastCombo->getFirstValue();
+        if (is_numeric($firstVal)) {
+          $val = $firstVal + 0;
+        }
+      }
       $phoenixValue = $val + 0.5;
       $description = "Phoenix a half step above " . CardManager::cardToStr($val);
     } else {
@@ -287,23 +519,27 @@ class Combo
     ];
   }
 
-  public static function checkPair($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: int|null, description: string}|null
+   */
+  public static function checkPair(array $cards): ?array
   {
     if (count($cards) != 2) {
-      return;
+      return null;
     }
     $phoenixValue = null;
     if ($cards[0]["type_arg"] == 1) {
       if ($cards[0]["type"] != TYPE_PHOENIX) {
-        return;
+        return null;
       }
       $phoenixValue = (int) $cards[1]["type_arg"];
       if ($phoenixValue == 1) {
-        return;
+        return null;
       }
     } else {
       if ($cards[0]["type_arg"] != $cards[1]["type_arg"]) {
-        return;
+        return null;
       }
     }
 
@@ -314,26 +550,30 @@ class Combo
     ];
   }
 
-  public static function checkTrip($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: int|null, description: string}|null
+   */
+  public static function checkTrip(array $cards): ?array
   {
     if (count($cards) != 3) {
-      return;
+      return null;
     }
     $phoenixValue = null;
     if ($cards[0]["type_arg"] == 1) {
       if ($cards[0]["type"] != TYPE_PHOENIX) {
-        return;
+        return null;
       }
       $phoenixValue = (int) $cards[1]["type_arg"];
       if ($phoenixValue == 1 || $cards[2]["type_arg"] != $phoenixValue) {
-        return;
+        return null;
       }
     } else {
       if (
         $cards[0]["type_arg"] != $cards[1]["type_arg"] ||
         $cards[0]["type_arg"] != $cards[2]["type_arg"]
       ) {
-        return;
+        return null;
       }
     }
 
@@ -344,24 +584,28 @@ class Combo
     ];
   }
 
-  public static function checkRunningPair($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: int|null, description: string}|null
+   */
+  public static function checkRunningPair(array $cards): ?array
   {
     $count = count($cards);
     if ($count % 2 != 0 || $count < 4) {
-      return;
+      return null;
     }
     $phoenixValue = null;
-    $phoenixIndex = null;
+    $phoenixIndex = 0;
     $phoenix = null;
     if ($cards[0]["type_arg"] == 1) {
       if ($cards[0]["type"] != TYPE_PHOENIX) {
-        return;
+        return null;
       }
       $phoenix = array_shift($cards);
     }
     $value = (int) $cards[0]["type_arg"];
     if ($value == 1) {
-      return;
+      return null;
     }
     foreach ($cards as $i => $card) {
       if ($i == 0) {
@@ -372,19 +616,19 @@ class Combo
         //new Pair
         $value++;
         if ($card["type_arg"] != $value) {
-          return;
+          return null;
         }
       } else {
         if ($card["type_arg"] != $value) {
           //check if phoenix is available(and unused) and do the check for newPair
           if (is_null($phoenix) || !is_null($phoenixValue)) {
-            return;
+            return null;
           }
           $phoenixValue = $value;
           $phoenixIndex = $i;
           $value++;
           if ($card["type_arg"] != $value) {
-            return;
+            return null;
           }
         }
       }
@@ -413,11 +657,15 @@ class Combo
     ];
   }
 
-  public static function checkStraight($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: int|array<int, int>|null, description: string}|null
+   */
+  public static function checkStraight(array $cards): ?array
   {
     $count = count($cards);
     if ($count < 5) {
-      return;
+      return null;
     }
     $phoenixValue = null;
     $phoenixIndex = null;
@@ -426,27 +674,27 @@ class Combo
       switch ($cards[0]["type"]) {
         case TYPE_PHOENIX:
           if ($cards[1]["type_arg"] == 1 && $cards[1]["type"] != TYPE_MAHJONG) {
-            return;
+            return null;
           }
           $phoenix = array_shift($cards);
           break;
         case TYPE_MAHJONG:
           break;
         default:
-          return;
+          return null;
       }
     }
     $value = (int) $cards[0]["type_arg"];
     foreach ($cards as $i => $card) {
       if ($card["type_arg"] != $value) {
         if (is_null($phoenix) || !is_null($phoenixValue)) {
-          return;
+          return null;
         }
         $phoenixValue = $value;
         $phoenixIndex = $i;
         $value++;
         if ($card["type_arg"] != $value) {
-          return;
+          return null;
         }
       }
       $value++;
@@ -469,11 +717,11 @@ class Combo
         }
         $phoenixValue = count($values) == 1 ? $values[0] : $values;
       }
-      array_splice($cards, $phoenixIndex, 0, [$phoenix]); //if both are possible phoenixIndex is 0
+      array_splice($cards, (int) $phoenixIndex, 0, [$phoenix]); //if both are possible phoenixIndex is 0
     }
 
     $highest = CardManager::cardToStr(
-      $phoenixIndex == $count - 1 ? $phoenixValue : $cards[$count - 1]
+      $phoenixIndex === $count - 1 && !is_array($phoenixValue) ? $phoenixValue : $cards[$count - 1]
     );
     //description will be recalculated if phoenix is set.
     $description = "Run of $count cards from $lowest to $highest"; //lowest is always a number
@@ -484,21 +732,24 @@ class Combo
     ];
   }
 
-  public static function checkFullHouse($cards)
+  /**
+   * @param array<int, array<string, mixed>> $cards
+   * @return array{cards: array<int, array<string, mixed>>, phoenixValue: int|array<int, int>|null, description: string}|null
+   */
+  public static function checkFullHouse(array $cards): ?array
   {
     if (count($cards) != 5) {
-      return;
+      return null;
     }
     $phoenixValue = null;
-    $phoenixIndex = null;
     $distinct = array_unique(array_column($cards, "type_arg")); // get distinct values
     if ($cards[0]["type_arg"] == 1) {
       // special card, check if phoenix
       if ($cards[0]["type"] != TYPE_PHOENIX || $cards[1]["type_arg"] == 1) {
-        return;
+        return null;
       } //special card other than phoenix
       if (count($distinct) != 3) {
-        return;
+        return null;
       }
       $first = (int) $cards[1]["type_arg"];
       $last = (int) $cards[4]["type_arg"];
@@ -516,15 +767,15 @@ class Combo
       }
     } else {
       if (count($distinct) != 2) {
-        return;
+        return null;
       }
       $first = (int) $cards[0]["type_arg"];
       $last = (int) $cards[4]["type_arg"];
       if ($cards[1]["type_arg"] != $first) {
-        return;
+        return null;
       }
       if ($cards[3]["type_arg"] != $last) {
-        return;
+        return null;
       }
 
       if ($cards[2]["type_arg"] == $last) {

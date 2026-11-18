@@ -282,6 +282,8 @@ if (preg_match('#^/tichu/tichu/([a-zA-Z0-9_]+)\.html$#', $uri, $matches)) {
     return sendJsonResponse([
       'status' => 0,
       'error' => $e->getMessage(),
+      'args' =>
+        $e instanceof \Bga\GameFramework\GameException && $e->args !== null ? $e->args : null,
       'expected' => 1,
     ]);
   }
@@ -545,6 +547,8 @@ if ($uri === '/local/bot') {
     return sendJsonResponse([
       'status' => 0,
       'error' => $e->getMessage(),
+      'args' =>
+        $e instanceof \Bga\GameFramework\GameException && $e->args !== null ? $e->args : null,
       'expected' => 1,
     ]);
   }

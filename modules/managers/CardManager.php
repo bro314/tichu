@@ -5,7 +5,7 @@ use Bga\GameFramework\Table;
 class CardManager
 {
   private static ?CardManager $instance = null;
-  public static function getInstance()
+  public static function getInstance(): CardManager
   {
     if (self::$instance == null) {
       self::$instance = new CardManager();
@@ -13,7 +13,12 @@ class CardManager
     return self::$instance;
   }
 
+  /** @var \Bga\GameFramework\Components\Deck|null */
   private static $deck = null;
+
+  /**
+   * @return \Bga\GameFramework\Components\Deck
+   */
   public static function getDeck()
   {
     if (self::$deck == null) {
@@ -22,7 +27,7 @@ class CardManager
     return self::$deck;
   }
 
-  public static function setupCards()
+  public static function setupCards(): void
   {
     $cards = []; //(0 => 0)
     for ($color = 1; $color < 5; $color++) {
@@ -30,7 +35,7 @@ class CardManager
       for ($value = 1; $value <= 14; $value++) {
         //  2, 3, 4, ... K, A
         $cards[] = [
-          "type" => $color,
+          "type" => (string) $color,
           "type_arg" => $value,
           "nbr" => 1,
         ];
@@ -39,7 +44,10 @@ class CardManager
     self::getDeck()->createCards($cards, "deck");
   }
 
-  public static function getPassedCards()
+  /**
+   * @return array<int|string, array<int, array<string, mixed>>>
+   */
+  public static function getPassedCards(): array
   {
     $sql =
       "SELECT card_id id, card_type type, card_type_arg type_arg, card_location_arg location_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary'";
@@ -55,38 +63,52 @@ class CardManager
     return $ret;
   }
 
-  public static function getCardsInLocation($location, $location_arg)
+  /**
+   * @return array<int, array<string, mixed>>
+   */
+  public static function getCardsInLocation(string $location, int|string $location_arg): array
   {
+    $escapedLocation = Table::escapeStringForDB((string) $location);
+    $locArg = (int) $location_arg;
     $sql = "
     SELECT card_id id, card_type type, card_type_arg type_arg, card_location_arg location_arg, card_passed_from passed_from
     FROM card
-    WHERE card_location = '$location' AND card_location_arg = $location_arg
+    WHERE card_location = '$escapedLocation' AND card_location_arg = $locArg
     ";
     return Table::getObjectListFromDB($sql);
   }
 
-  public static function calculateCapturedPoints()
+  /**
+   * @return array<int|string, int>
+   */
+  public static function calculateCapturedPoints(): array
   {
-    $captured_points = [];
     $players = PlayerManager::getPlayerIds();
-    return Utils::map(function ($pId) {
-      return self::getTrickValue(self::getDeck()->getCardsInLocation("captured", $pId));
+    return Utils::map(function ($pId): int {
+      return (int) self::getTrickValue(
+        self::getDeck()->getCardsInLocation("captured", (int) $pId)
+      );
     }, $players);
   }
 
-  // Return array of three cards that were passed to this player.
-  // [0]: previous player
-  // [1]: partner
-  // [2]: next player
-  public static function getCardsPassedTo($pId)
+  /**
+   * Return array of three cards that were passed to this player.
+   * [0]: previous player
+   * [1]: partner
+   * [2]: next player
+   *
+   * @return array<int, array<string, mixed>|null>
+   */
+  public static function getCardsPassedTo(int|string $pId): array
   {
+    $playerId = (int) $pId;
     $cardsEntries = array_values(
       Table::getObjectListFromDB(
-        "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$pId"
+        "SELECT card_id id, card_type type, card_type_arg type_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_location_arg=$playerId"
       )
     );
     $cards = [null, null, null];
-    $nextPlayers = PlayerManager::getNextPlayers($pId);
+    $nextPlayers = PlayerManager::getNextPlayers($playerId);
     foreach ($cardsEntries as $card) {
       if ($card["passed_from"] == $nextPlayers[2]["id"]) {
         $cards[0] = $card;
@@ -99,75 +121,126 @@ class CardManager
     return $cards;
   }
 
-  public static function resetPassedCards()
+  public static function resetPassedCards(): void
   {
     Table::DbQuery("UPDATE card SET card_passed_from=NULL ");
   }
 
-  public static function setPassedCards($ids, $playerId)
+  /**
+   * @param array<int|string, int|string> $ids
+   */
+  public static function setPassedCards(array $ids, int|string $playerId): void
   {
-    $join = implode(",", $ids);
-    Table::DbQuery(
-      "UPDATE card SET card_passed_from=$playerId WHERE card_id IN ($join)"
+    $ids = array_values(
+      array_filter(array_map("intval", $ids), static fn(int $id): bool => $id > 0)
     );
+    if (empty($ids)) {
+      return;
+    }
+    $pId = (int) $playerId;
+    $join = implode(",", $ids);
+    Table::DbQuery("UPDATE card SET card_passed_from=$pId WHERE card_id IN ($join)");
   }
 
-  public static function cardToStr($card, $plural = false)
+  /**
+   * @param array<string, mixed>|int|float|string|null $card
+   */
+  public static function cardToStr(array|int|float|string|null $card, bool $plural = false): string
   {
-    $val = is_array($card) ? $card["type_arg"] : $card;
-    switch ($val) {
+    $val = is_array($card) ? $card["type_arg"] ?? "" : $card;
+    if (!is_numeric($val) || (float) $val != (int) $val) {
+      return $plural ? strval($val) . "s" : strval($val);
+    }
+    switch ((int) $val) {
       case 1:
         if (!is_array($card)) {
           return "1";
         }
-        switch ($card["type"]) {
+        switch ((int) ($card["type"] ?? 0)) {
           case 1:
-            return "Dragon";
+            return clienttranslate("Dragon");
           case 2:
-            return "Phoenix";
+            return clienttranslate("Phoenix");
           case 3:
-            return "Dog";
+            return clienttranslate("Dog");
           case 4:
-            return "Mahjong";
+            return clienttranslate("Mahjong");
         }
         break;
+      case 2:
+        return $plural ? clienttranslate("2s") : "2";
+      case 3:
+        return $plural ? clienttranslate("3s") : "3";
+      case 4:
+        return $plural ? clienttranslate("4s") : "4";
+      case 5:
+        return $plural ? clienttranslate("5s") : "5";
+      case 6:
+        return $plural ? clienttranslate("6s") : "6";
+      case 7:
+        return $plural ? clienttranslate("7s") : "7";
+      case 8:
+        return $plural ? clienttranslate("8s") : "8";
+      case 9:
+        return $plural ? clienttranslate("9s") : "9";
+      case 10:
+        return $plural ? clienttranslate("10s") : "10";
       case 11:
-        if ($plural) {
-          return "Jacks";
-        }
-        return "Jack";
+        return $plural ? clienttranslate("Jacks") : clienttranslate("Jack");
       case 12:
-        if ($plural) {
-          return "Queens";
-        }
-        return "Queen";
+        return $plural ? clienttranslate("Queens") : clienttranslate("Queen");
       case 13:
-        if ($plural) {
-          return "Kings";
-        }
-        return "King";
+        return $plural ? clienttranslate("Kings") : clienttranslate("King");
       case 14:
-        if ($plural) {
-          return "Aces";
-        }
-        return "Ace";
+        return $plural ? clienttranslate("Aces") : clienttranslate("Ace");
       default:
         if ($plural) {
           return strval($val) . "s";
         }
         return strval($val);
     }
+    return strval($val);
   }
 
-  public static function getTrickValue($cards, $asTable = false)
+  /**
+   * @param array<string, mixed>|int|string $card
+   */
+  public static function isTranslatableCardStr(array|int|string $card, bool $plural = false): bool
+  {
+    $val = is_array($card) ? $card["type_arg"] ?? null : $card;
+    if (!is_numeric($val) || (float) $val != (int) $val) {
+      return false;
+    }
+    $intVal = (int) $val;
+    if ($intVal === 1) {
+      if (!is_array($card)) {
+        return false;
+      }
+      $suit = (int) ($card["type"] ?? 0);
+      return $suit >= 1 && $suit <= 4;
+    }
+    if ($intVal >= 11 && $intVal <= 14) {
+      return true;
+    }
+    if ($plural && $intVal >= 2 && $intVal <= 10) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * @param array<int|string, array<string, mixed>> $cards
+   * @return ($asTable is true ? array{table: array<int, int>, special: array<int, int|string>, score: int} : int)
+   */
+  public static function getTrickValue(array $cards, bool $asTable = false): array|int
   {
     $score = 0;
-    $table = Utils::map(function ($i) {
+    $table = Utils::map(function (int $i): int {
       return 0;
     }, range(2, 14));
     $special = [];
     foreach ($cards as $card) {
-      $val = $card["type_arg"];
+      $val = (int) $card["type_arg"];
       if ($val == 1) {
         $special[] = $card["type"];
       } else {
@@ -191,17 +264,17 @@ class CardManager
     return $asTable ? ["table" => $table, "special" => $special, "score" => $score] : $score;
   }
 
-  public static function numPlayersStillInRound()
+  public static function numPlayersStillInRound(): int
   {
     return count(self::getDeck()->countCardsByLocationArgs("hand"));
   }
 
-  public static function canPass($pId, $wish, $lastCombo)
+  public static function canPass(int|string $pId, int|string $wish, ?Combo $lastCombo): bool
   {
     if ($wish == 0) {
       return true;
     }
-    $cards = self::getDeck()->getCardsInLocation("hand", $pId);
+    $cards = self::getDeck()->getCardsInLocation("hand", (int) $pId);
     $hand = new Hand($cards);
     return !$hand->canFulFillWish($wish, $lastCombo);
   }

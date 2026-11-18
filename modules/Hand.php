@@ -1,14 +1,19 @@
 <?php
 class Hand
 {
-  public $cards;
-  public $phoenix;
+  /** @var array<int, array<string, mixed>> */
+  public array $cards;
+  /** @var array<string, mixed>|null */
+  public ?array $phoenix = null;
 
-  public function __construct($cards)
+  /**
+   * @param array<int|string, array<string, mixed>> $cards
+   */
+  public function __construct(array $cards)
   {
-    $this->cards = $cards;
-    $values = array_column($cards, "type_arg");
-    $colors = array_column($cards, "type");
+    $this->cards = array_values($cards);
+    $values = array_column($this->cards, "type_arg");
+    $colors = array_column($this->cards, "type");
     array_multisort($values, SORT_ASC, $colors, SORT_ASC, $this->cards);
     if (count($this->cards) == 0) {
       return;
@@ -24,7 +29,7 @@ class Hand
     }
   }
 
-  public function canFulFillWish($wish, $combo)
+  public function canFulFillWish(int|string $wish, ?Combo $combo): bool
   {
     if (is_null($combo) || $combo->type == NO_COMBO || $combo->type == DOG_COMBO) {
       return in_array($wish, array_column($this->cards, "type_arg"));
@@ -32,7 +37,7 @@ class Hand
     if (!in_array($wish, array_column($this->cards, "type_arg"))) {
       return false;
     }
-    $length = count($combo->cards);
+    $length = count($combo->cards ?? []);
     $name = Combo::$comboNames[$combo->type];
     $highestCombo =
       $this->getWishHighestBomb($wish) ??
@@ -44,12 +49,12 @@ class Hand
     return $highestCombo->canBeat($combo);
   }
 
-  public function canBeat($combo)
+  public function canBeat(?Combo $combo): bool
   {
     return !is_null($this->findBeatingCombo($combo));
   }
 
-  public function findBeatingCombo($combo)
+  public function findBeatingCombo(?Combo $combo): ?Combo
   {
     if (count($this->cards) == 0) {
       return null;
@@ -58,12 +63,12 @@ class Hand
       is_null($combo) ||
       $combo->type == NO_COMBO ||
       $combo->type == DOG_COMBO ||
-      count($combo->cards) == 0
+      count($combo->cards ?? []) == 0
     ) {
       return new Combo([$this->cards[0]]);
     }
 
-    $length = count($combo->cards);
+    $length = count($combo->cards ?? []);
     $name = Combo::$comboNames[$combo->type];
     $beatingCombo = call_user_func([$this, "getHighest$name"], $length);
     if (!is_null($beatingCombo) && $beatingCombo->canBeat($combo)) {
@@ -78,18 +83,18 @@ class Hand
     return null;
   }
 
-  public function hasBomb()
+  public function hasBomb(): bool
   {
     return $this->getHighestBomb() != null;
   }
 
-  public function getHighestBomb()
+  public function getHighestBomb(): ?Combo
   {
     // straight bombs
     $highest = null;
     for ($color = 1; $color <= 4; $color++) {
       $values = array_column(
-        array_filter($this->cards, function ($card) use ($color) {
+        array_filter($this->cards, function (array $card) use ($color): bool {
           return $card["type"] == $color && $card["type_arg"] != 1;
         }),
         "type_arg"
@@ -99,9 +104,9 @@ class Hand
         for ($idy = $idx + 4; $idy < count($values); $idy++) {
           $length = $idy - $idx + 1;
           if ($values[$idy] == $values[$idx] + $length - 1) {
-            $cards = array_map(function ($val) use ($color) {
+            $cards = array_map(function ($val) use ($color): array {
               return ["type_arg" => $val, "type" => $color];
-            }, range($values[$idx], $values[$idx] + $length - 1));
+            }, range((int) $values[$idx], (int) $values[$idx] + $length - 1));
             $combo = new Combo($cards);
             if ($highest == null || $combo->canBeat($highest)) {
               $highest = $combo;
@@ -118,7 +123,7 @@ class Hand
     $values = array_column($this->cards, "type_arg");
     $fours = array_filter(
       $values,
-      function ($val, $idx) use ($values) {
+      function ($val, $idx) use ($values): bool {
         return $val > 1 && $idx > 2 && $values[$idx - 3] == $val;
       },
       ARRAY_FILTER_USE_BOTH
@@ -141,16 +146,16 @@ class Hand
    * Returns the rank of the highest card that is not part of a pair, triple or 4-bomb.
    * Returns 0, if the hand has no cards or only special cards, or no singles.
    */
-  public function getTopSingleRank()
+  public function getTopSingleRank(): int
   {
     foreach (range(14, 2) as $n) {
       $filtered = array_values(
-        array_filter($this->cards, function ($card) use ($n) {
+        array_filter($this->cards, function (array $card) use ($n): bool {
           return $card["type_arg"] == $n;
         })
       );
       if (count($filtered) == 1) {
-        return $filtered[0]["type_arg"];
+        return (int) $filtered[0]["type_arg"];
       }
     }
     return 0;
@@ -160,16 +165,16 @@ class Hand
    * Returns the rank of the highest card, not counting special cards.
    * Returns 0, if the hand has no cards or only special cards, or no singles.
    */
-  public function getTopRank()
+  public function getTopRank(): int
   {
     foreach (range(14, 2) as $n) {
       $filtered = array_values(
-        array_filter($this->cards, function ($card) use ($n) {
+        array_filter($this->cards, function (array $card) use ($n): bool {
           return $card["type_arg"] == $n;
         })
       );
       if (count($filtered) > 0) {
-        return $filtered[0]["type_arg"];
+        return (int) $filtered[0]["type_arg"];
       }
     }
     return 0;
@@ -185,15 +190,15 @@ class Hand
    *					because it's easier and we only need them to check if the combo can beat the last one
    */
 
-  public function getWishHighestSingle($wish)
+  public function getWishHighestSingle(int|string $wish): ?Combo
   {
-    $card = array_reduce($this->cards, function ($carry, $item) use ($wish) {
+    $card = array_reduce($this->cards, function ($carry, array $item) use ($wish) {
       return $carry ?? ($item["type_arg"] == $wish ? $item : null);
     });
     return is_null($card) ? null : new Combo([$card]);
   }
 
-  public function getHighestSingle()
+  public function getHighestSingle(): ?Combo
   {
     $highest = null;
     foreach ($this->cards as $card) {
@@ -208,11 +213,11 @@ class Hand
     return $highest;
   }
 
-  public function getWishHighestPair($wish)
+  public function getWishHighestPair(int|string $wish): ?Combo
   {
     // get all cards with the wished type_arg
     $filtered = array_values(
-      array_filter($this->cards, function ($card) use ($wish) {
+      array_filter($this->cards, function (array $card) use ($wish): bool {
         return $card["type_arg"] == $wish;
       })
     );
@@ -222,9 +227,10 @@ class Hand
     if (count($filtered) > 1) {
       return new Combo([$filtered[0], $filtered[1]]);
     }
+    return null;
   }
 
-  public function getHighestPair()
+  public function getHighestPair(): ?Combo
   {
     $highest = null;
     foreach ($this->cards as $i => $card) {
@@ -248,10 +254,10 @@ class Hand
     return $highest;
   }
 
-  public function getWishHighestTrip($wish)
+  public function getWishHighestTrip(int|string $wish): ?Combo
   {
     $filtered = array_values(
-      array_filter($this->cards, function ($card) use ($wish) {
+      array_filter($this->cards, function (array $card) use ($wish): bool {
         return $card["type_arg"] == $wish;
       })
     );
@@ -262,9 +268,10 @@ class Hand
     if ($count > 2) {
       return new Combo(array_slice($filtered, 0, 3));
     }
+    return null;
   }
 
-  public function getHighestTrip()
+  public function getHighestTrip(): ?Combo
   {
     $highest = null;
     foreach ($this->cards as $i => $card) {
@@ -288,16 +295,18 @@ class Hand
     return $highest;
   }
 
-  public function getWishHighestRunningPair($wish, $length)
+  public function getWishHighestRunningPair(int|string $wish, int $length): ?Combo
   {
+    $wish = (int) $wish;
     $values = array_column($this->cards, "type_arg"); // array of values only
     $distinct = array_values(array_unique($values, SORT_NUMERIC)); // array of all distinct values
     $doubles = Utils::getDoubles($values); // an array of values that have a duplicate
     $straights = [];
-    $off = $length / 2 - 1;
+    $off = (int) ($length / 2) - 1;
     $count = count($distinct);
     // first check if we can build a "straight" of half $length with the distinct values
     foreach ($distinct as $idx => $value) {
+      $value = (int) $value;
       if ($value == 1) {
         continue;
       }
@@ -338,24 +347,26 @@ class Hand
         $values = range($value, $value + $off); //values of the pair
         array_splice($values, 0, 0, range($value, $value + $off)); //add them to itself
         sort($values, SORT_NUMERIC);
-        $cards = array_map(function ($val) {
+        $cards = array_map(function (int $val): array {
           return ["type_arg" => $val, "type" => 1 + ($val % 4)];
         }, $values);
         return new Combo($cards);
       }
     }
+    return null;
   }
 
-  public function getHighestRunningPair($length)
+  public function getHighestRunningPair(int $length): ?Combo
   {
     return $this->getWishHighestRunningPair(0, $length);
   }
 
-  public function getWishHighestStraight($wish, $length)
+  public function getWishHighestStraight(int|string $wish, int $length): ?Combo
   {
+    $wish = (int) $wish;
     $count = count($this->cards);
     if ($count < 5) {
-      return;
+      return null;
     }
     $values = array_column($this->cards, "type_arg"); // array of values only
     $distinct = array_values(array_unique($values, SORT_NUMERIC)); // array of all distinct values
@@ -364,6 +375,7 @@ class Hand
     $count = count($distinct);
     if (is_null($this->phoenix)) {
       foreach ($distinct as $idx => $value) {
+        $value = (int) $value;
         //basically the same as for running pairs
         if ($value == 1) {
           continue;
@@ -383,6 +395,7 @@ class Hand
       }
     } else {
       foreach ($distinct as $idx => $value) {
+        $value = (int) $value;
         if ($value == 1) {
           continue;
         }
@@ -399,46 +412,47 @@ class Hand
           $straight = $value;
         }
       }
-      if ($straight + $off == 15) {
+      if ($straight !== null && $straight + $off == 15) {
         $straight--;
       } //happens if the best straight starts with phoenix and ends with ace
     }
     if (is_null($straight)) {
-      return;
+      return null;
     }
     // since we only need the combo to check if it can beat the other, we can create dummy cards
-    $cards = array_map(function ($val) {
+    $cards = array_map(function (int $val): array {
       return ["type_arg" => $val, "type" => 1 + ($val % 4)];
     }, range($straight, $straight + $off));
     return new Combo($cards);
   }
 
-  public function getHighestStraight($length)
+  public function getHighestStraight(int $length): ?Combo
   {
     return $this->getWishHighestStraight(0, $length);
   }
 
-  public function getWishHighestFullHouse($wish)
+  public function getWishHighestFullHouse(int|string $wish): ?Combo
   {
+    $wish = (int) $wish;
     // We need at least 5 cards.
     if (count($this->cards) < 5) {
-      return;
+      return null;
     }
     // just the values and no special cards
     $values = array_values(
-      array_filter(array_column($this->cards, "type_arg"), function ($val) {
+      array_filter(array_column($this->cards, "type_arg"), function ($val): bool {
         return $val > 1;
       })
     );
     $distinct = array_values(array_unique($values, SORT_NUMERIC));
     // We need at least 2 distinct values.
     if (count($distinct) < 2) {
-      return;
+      return null;
     }
     $doubles = Utils::getDoubles($values);
     // We need at least 2 doubles or a triple.
     if (count($doubles) < 2) {
-      return;
+      return null;
     }
     $distinctDoubles = array_values(array_unique($doubles, SORT_NUMERIC));
     // Utils::getDoubles basically removes the first occurence of each value, so if we apply it again on the result we get the triples
@@ -474,7 +488,7 @@ class Hand
         $tCount == 0 || // no triple
         count($distinctDoubles) < 2 // no double except the triple
       ) {
-        return;
+        return null;
       }
       $tVal = $triples[$tCount - 1]; // highest triple
       // If there is a wish, then we already know that a double exists fulfilling it.
@@ -488,7 +502,7 @@ class Hand
       $fullHouse = [$tVal, $dVal];
     }
     if (is_null($fullHouse)) {
-      return;
+      return null;
     }
     // since we only need the combo to check if it can beat the other, we can create dummy cards
     $cards = [];
@@ -501,27 +515,28 @@ class Hand
     return new Combo($cards);
   }
 
-  public function getHighestFullHouse()
+  public function getHighestFullHouse(): ?Combo
   {
     return $this->getWishHighestFullHouse(0);
   }
 
-  public function getWishHighestBomb($wish)
+  public function getWishHighestBomb(int|string $wish): ?Combo
   {
+    $wish = (int) $wish;
     // get all cards with the wished value
     $filtered = array_values(
-      array_filter($this->cards, function ($card) use ($wish) {
+      array_filter($this->cards, function (array $card) use ($wish): bool {
         return $card["type_arg"] == $wish;
       })
     );
-    $val = null;
+    $val = 0;
     $length = 0;
     // first check for straight flush containing one of the filtered cards
     foreach ($filtered as $card) {
       $color = $card["type"];
       // get the values of all cards of that color (except special cards ofc)
       $values = array_column(
-        array_filter($this->cards, function ($card) use ($color) {
+        array_filter($this->cards, function (array $card) use ($color): bool {
           return $card["type"] == $color && $card["type_arg"] != 1;
         }),
         "type_arg"
@@ -532,7 +547,7 @@ class Hand
       }
 
       for ($idx = 0; $idx < count($values) - 4; $idx++) {
-        $value = $values[$idx];
+        $value = (int) $values[$idx];
         if ($value > $wish) {
           break;
         } // no need to search for running straights that start higher than wish
@@ -556,7 +571,7 @@ class Hand
     // since we only need the combo to check if it can beat the other, we can create dummy cards
     if ($length > 4) {
       return new Combo(
-        array_map(function ($v) {
+        array_map(function (int $v): array {
           return ["type_arg" => $v, "type" => 1];
         }, range($val, $val + $length - 1))
       );
@@ -564,6 +579,7 @@ class Hand
     if (count($filtered) == 4) {
       return new Combo($filtered);
     }
+    return null;
   }
 
   /**
@@ -571,7 +587,7 @@ class Hand
    * (preserving card `id`, `type`, and `type_arg`, with any ambiguous Phoenix value
    * resolved to a concrete rank) that beats $lastCombo and, when $wish > 0, contains $wish.
    */
-  public function findPlayableCombo($lastCombo = null, int $wish = 0): ?Combo
+  public function findPlayableCombo(?Combo $lastCombo = null, int $wish = 0): ?Combo
   {
     if (empty($this->cards)) {
       return null;

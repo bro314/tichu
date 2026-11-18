@@ -5,7 +5,7 @@ use Bga\GameFramework\Table;
 class PlayerManager
 {
   private static ?PlayerManager $instance = null;
-  public static function getInstance()
+  public static function getInstance(): PlayerManager
   {
     if (self::$instance == null) {
       self::$instance = new PlayerManager();
@@ -13,7 +13,10 @@ class PlayerManager
     return self::$instance;
   }
 
-  public static function setupPlayers($players)
+  /**
+   * @param array<int|string, array<string, mixed>> $players
+   */
+  public static function setupPlayers(array $players): void
   {
     // Set the colors (red & black) of the players with HTML color code
     $default_colors = ["000000", "ff0000", "000000", "ff0000"];
@@ -36,7 +39,10 @@ class PlayerManager
 
     $playerIds = array_keys($players);
     if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_RANDOM) {
-      shuffle($playerIds);
+      for ($i = count($playerIds) - 1; $i > 0; $i--) {
+        $j = bga_rand(0, $i);
+        [$playerIds[$i], $playerIds[$j]] = [$playerIds[$j], $playerIds[$i]];
+      }
     }
 
     foreach ($playerIds as $player_id) {
@@ -47,7 +53,7 @@ class PlayerManager
       $counter++;
 
       if (Tichu::$instance->getGameStateValue("playerTeams") == TEAM_RANDOM) {
-        $color = array_shift($default_colors);
+        $color = (string) array_shift($default_colors);
         $player_no = $counter;
         $player_team = ($counter - 1) % 2;
       } elseif (isset($player["player_table_order"])) {
@@ -68,17 +74,25 @@ class PlayerManager
         }
       }
 
+      $pIdInt = (int) $player_id;
+      $pNoInt = (int) $player_no;
+      $pTeamInt = (int) $player_team;
+      $escapedColor = Table::escapeStringForDB($color);
+      $escapedCanal = Table::escapeStringForDB((string) ($player["player_canal"] ?? ""));
+      $escapedName = Table::escapeStringForDB((string) ($player["player_name"] ?? ""));
+      $escapedAvatar = Table::escapeStringForDB((string) ($player["player_avatar"] ?? ""));
+
       $values[] =
         "('" .
-        $player_id .
+        $pIdInt .
         "','" .
-        $player_no .
-        "',0,'$player_team','$color','" .
-        $player["player_canal"] .
+        $pNoInt .
+        "',0,'$pTeamInt','$escapedColor','" .
+        $escapedCanal .
         "','" .
-        addslashes($player["player_name"]) .
+        $escapedName .
         "','" .
-        addslashes($player["player_avatar"]) .
+        $escapedAvatar .
         "')";
     }
 
@@ -86,20 +100,25 @@ class PlayerManager
     Table::DbQuery($sql);
   }
 
-  private static function getSelectStmnt($where = [])
+  /**
+   * @param array<string, scalar> $where
+   */
+  public static function getSelectStmnt(array $where = []): string
   {
     $fields = ["id", "team", "name", "no", "score", "call_grand_tichu", "call_tichu", "pass"];
     $selects = implode(
       ", ",
-      array_map(function ($s) {
+      array_map(function (string $s): string {
         return "player_$s $s";
       }, $fields)
     );
     $sql = "SELECT $selects FROM player";
     if (count($where) > 0) {
       $conditions = array_map(
-        function ($key, $value) {
-          return substr($key, 0, 7) == "player_" ? $key : "player_$key" . " = '$value'";
+        function (string $key, mixed $value): string {
+          $col = substr($key, 0, 7) === "player_" ? $key : "player_$key";
+          $escaped = Table::escapeStringForDB((string) $value);
+          return "$col = '$escaped'";
         },
         array_keys($where),
         $where
@@ -109,35 +128,50 @@ class PlayerManager
     return $sql;
   }
 
-  public static function getPlayerIds()
+  /**
+   * @return array<int, string>
+   */
+  public static function getPlayerIds(): array
   {
     return Table::getObjectListFromDB("SELECT player_id FROM player", true);
   }
 
-  public static function getPlayers()
+  /**
+   * @return array<int|string, array<string, mixed>>
+   */
+  public static function getPlayers(): array
   {
     return Table::getCollectionFromDb(self::getSelectStmnt());
   }
 
-  public static function getPlayer($id)
+  /**
+   * @return array<string, mixed>|null
+   */
+  public static function getPlayer(int|string $id): ?array
   {
     return Table::getObjectFromDB(self::getSelectStmnt(["id" => $id]));
   }
 
-  public static function getHighestScore()
+  public static function getHighestScore(): int|float
   {
-    return Table::getUniqueValueFromDB("SELECT MAX(player_score) FROM player");
+    return (int) Table::getUniqueValueFromDB("SELECT MAX(player_score) FROM player");
   }
 
-  public static function getPartner($pId)
+  /**
+   * @return array<string, mixed>
+   */
+  public static function getPartner(int|string $pId): array
   {
     $next_players = self::getNextPlayers($pId);
     return $next_players[1];
   }
 
-  public static function getNextPlayers($pId = null, $desc = false)
+  /**
+   * @return array<int, array<string, mixed>>
+   */
+  public static function getNextPlayers(int|string $pId, bool $desc = false): array
   {
-    $id = $pId ?? Tichu::getCurrentId();
+    $id = (int) $pId;
     $sql = self::getSelectStmnt() . " ORDER BY player_no";
     if ($desc) {
       $sql .= " DESC";
@@ -150,8 +184,14 @@ class PlayerManager
     return $players;
   }
 
-  public static function getNextPlayerWithCards($mixed, $lastPlayerId = null, $amount = 1)
-  {
+  /**
+   * @param array<int, array<string, mixed>>|int|string $mixed
+   */
+  public static function getNextPlayerWithCards(
+    array|int|string $mixed,
+    int|string|null $lastPlayerId = null,
+    int $amount = 1
+  ): int|string|null {
     $next_players = is_array($mixed) ? $mixed : self::getNextPlayers($mixed);
     $handCounts = CardManager::getDeck()->countCardsByLocationArgs("hand");
     foreach ($next_players as $player) {
@@ -162,57 +202,66 @@ class PlayerManager
         return $player["id"];
       }
     }
+    return null;
   }
 
-  public static function getScores()
+  /**
+   * @return array<int|string, mixed>
+   */
+  public static function getScores(): array
   {
-    return Table::getCollectionFromDb(
-      "SELECT player_id, player_score FROM player",
-      true
-    );
+    return Table::getCollectionFromDb("SELECT player_id, player_score FROM player", true);
   }
 
-  public static function resetTichus()
+  public static function resetTichus(): void
   {
+    Table::DbQuery("UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1");
+  }
+
+  public static function grandTichuBet(int|string $pId, int|string $bet): void
+  {
+    $playerId = (int) $pId;
+    $betVal = (int) $bet;
     Table::DbQuery(
-      "UPDATE player SET player_call_tichu=-1, player_call_grand_tichu=-1"
+      "UPDATE player SET player_call_grand_tichu=$betVal WHERE player_id=$playerId"
     );
-  }
-
-  public static function grandTichuBet($pId, $bet)
-  {
-    Table::DbQuery(
-      "UPDATE player SET player_call_grand_tichu=$bet WHERE player_id=$pId"
-    );
-    if ($bet > 0) {
-      Table::DbQuery("UPDATE player SET player_call_tichu=0 WHERE player_id='$pId' ");
+    if ($betVal > 0) {
+      Table::DbQuery("UPDATE player SET player_call_tichu=0 WHERE player_id=$playerId");
     }
   }
 
-  public static function tichuBet($pId, $bet)
+  public static function tichuBet(int|string $pId, int|string $bet): void
   {
+    $playerId = (int) $pId;
+    $betVal = (int) $bet;
     Table::DbQuery(
-      "UPDATE player SET player_call_tichu=$bet, player_call_grand_tichu=0 WHERE player_id=$pId"
+      "UPDATE player SET player_call_tichu=$betVal, player_call_grand_tichu=0 WHERE player_id=$playerId"
     );
   }
 
-  public static function updateScores($team_points)
+  /**
+   * @param array<int, int> $team_points
+   */
+  public static function updateScores(array $team_points): void
   {
     for ($t = 0; $t < 2; $t++) {
-      $points = $team_points[$t];
+      $points = (int) $team_points[$t];
+      $team = (int) $t;
       if ($points != 0) {
         $sql = "UPDATE player SET player_score=player_score+$points
-									WHERE player_team='$t' ";
+									WHERE player_team='$team' ";
         Table::DbQuery($sql);
       }
     }
   }
 
-  public static function setAutopass($val, $pId = null)
+  public static function setAutopass(int|string $val, int|string|null $pId = null): void
   {
-    $sql = "UPDATE player SET player_pass=$val";
+    $passVal = (int) $val;
+    $sql = "UPDATE player SET player_pass=$passVal";
     if (!is_null($pId)) {
-      $sql .= " WHERE player_id=$pId";
+      $playerId = (int) $pId;
+      $sql .= " WHERE player_id=$playerId";
     }
     Table::DbQuery($sql);
   }

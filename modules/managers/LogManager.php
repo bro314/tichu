@@ -5,7 +5,7 @@ use Bga\GameFramework\Table;
 class LogManager
 {
   private static ?LogManager $instance = null;
-  public static function getInstance()
+  public static function getInstance(): LogManager
   {
     if (self::$instance == null) {
       self::$instance = new LogManager();
@@ -14,11 +14,11 @@ class LogManager
   }
 
   // Clunky workaround for being able to unit test the Combo class, which requires to know about the last combo to assess the phoenix value.
-  public static $lastComboForTesting = null;
+  public static ?Combo $lastComboForTesting = null;
 
-  public static function insert($playerId, $action, $args = [])
+  public static function insert(int|string $playerId, string $action, mixed $args = []): void
   {
-    $playerId = $playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId;
+    $pId = (int) ($playerId == -1 ? Tichu::$instance->getActivePlayerId() : $playerId);
     $current = self::getCurrentDbRoundAndTrick();
     $round = (int) ($current["round"] ?? 0);
     $trick = (int) ($current["trick"] ?? 0);
@@ -31,16 +31,29 @@ class LogManager
       $trick = 0;
     }
 
-    $actionArgs = json_encode($args);
+    $rawJson = json_encode($args);
+    $escapedAction = Table::escapeStringForDB($action);
+    $actionArgs = Table::escapeStringForDB($rawJson !== false ? $rawJson : "{}");
     Table::DbQuery(
-      "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($playerId, $round, $trick, '$action', '$actionArgs')"
+      "INSERT INTO actionlog (`log_player`, `log_round`, `log_trick`, `log_action`, `log_arg`) VALUES ($pId, $round, $trick, '$escapedAction', '$actionArgs')"
     );
   }
 
-  public static function getLastActions($action, $currentTrick = true, $single = false)
-  {
+  /**
+   * @param string|array<int, string> $action
+   * @return ($single is true ? array<string, mixed>|null : array<int, array<string, mixed>>)
+   */
+  public static function getLastActions(
+    string|array $action,
+    bool $currentTrick = true,
+    bool $single = false
+  ): ?array {
     $arr = is_array($action) ? $action : [$action];
-    $actions = implode("','", $arr);
+    $escapedArr = array_map(
+      static fn($a): string => Table::escapeStringForDB((string) $a),
+      $arr
+    );
+    $actions = implode("','", $escapedArr);
 
     $sql = "SELECT log_id id, log_player player, log_round round, log_trick trick, log_action action, log_arg arg	FROM actionlog WHERE log_action in ('$actions')";
 
@@ -55,7 +68,7 @@ class LogManager
     }
     $ret = [];
     foreach ($res as $row) {
-      $row["arg"] = json_decode($row["arg"], true);
+      $row["arg"] = json_decode((string) $row["arg"], true);
       if ($single) {
         return $row;
       }
@@ -64,45 +77,64 @@ class LogManager
     return $ret;
   }
 
-  public static function getLastAction($action, $currentTrick = true)
+  /**
+   * @param string|array<int, string> $action
+   * @return array<string, mixed>|null
+   */
+  public static function getLastAction(string|array $action, bool $currentTrick = true): ?array
   {
     return self::getLastActions($action, $currentTrick, true);
   }
 
-  public static function getCurrentDbRoundAndTrick()
+  /**
+   * @return array<string, mixed>|null
+   */
+  public static function getCurrentDbRoundAndTrick(): ?array
   {
     return Table::getObjectFromDB(
       "SELECT IFNULL(MAX(log_round),0) AS round, IFNULL(MAX(log_trick),0) AS trick FROM actionlog WHERE log_round = (SELECT IFNULL(MAX(log_round), 0) FROM actionlog)"
     );
   }
 
-  public static function getCurrentRoundAndTrick()
+  /**
+   * @return array<string, mixed>|null
+   */
+  public static function getCurrentRoundAndTrick(): ?array
   {
     return Table::getObjectFromDB(
       "SELECT IFNULL(MAX(log_round),0) AS round, COUNT(DISTINCT CASE WHEN log_trick > 0 THEN log_trick END) AS trick FROM actionlog WHERE log_round = (SELECT IFNULL(MAX(log_round), 0) FROM actionlog)"
     );
   }
 
-  public static function getCurrentTrickCond()
+  public static function getCurrentTrickCond(): string
   {
     $curr = self::getCurrentDbRoundAndTrick();
-    return "log_round=" . ((int) $curr["round"]) . " AND log_trick=" . ((int) $curr["trick"]);
+    return "log_round=" .
+      ((int) ($curr["round"] ?? 0)) .
+      " AND log_trick=" .
+      ((int) ($curr["trick"] ?? 0));
   }
 
-  private static function normalizePhoenixValue($phoenixValue)
+  /**
+   * @return int|float|array<int, int|float>|null
+   */
+  private static function normalizePhoenixValue(mixed $phoenixValue): int|float|array|null
   {
     if (is_array($phoenixValue)) {
       return array_values(
-        array_map(static fn($v) => is_numeric($v) ? $v + 0 : $v, $phoenixValue)
+        array_map(static fn($v) => is_numeric($v) ? $v + 0 : (int) $v, $phoenixValue)
       );
     }
     if (is_numeric($phoenixValue)) {
       return $phoenixValue + 0;
     }
-    return $phoenixValue;
+    return null;
   }
 
-  public static function getLastCombos()
+  /**
+   * @return array{0: array<int|string, mixed>, 1: array<int, int>}
+   */
+  public static function getLastCombos(): array
   {
     // All "combo" and "pass" actions from the current trick.
     // Sorted descending by log id. So let's iterate over the array and find
@@ -125,7 +157,7 @@ class LogManager
         $passes[] = intval($playerId);
       }
       if ($action["action"] == "combo") {
-        if (array_key_exists("phoenixValue", $action["arg"])) {
+        if (is_array($action["arg"]) && array_key_exists("phoenixValue", $action["arg"])) {
           $action["arg"]["phoenixValue"] = self::normalizePhoenixValue(
             $action["arg"]["phoenixValue"]
           );
@@ -136,7 +168,7 @@ class LogManager
     return [$combos, $passes];
   }
 
-  public static function getLastCombo($skip = 0, $action = "combo")
+  public static function getLastCombo(int $skip = 0, string $action = "combo"): Combo
   {
     if (self::$lastComboForTesting != null) {
       return self::$lastComboForTesting;
@@ -157,15 +189,15 @@ class LogManager
     return Combo::$noCombo;
   }
 
-  public static function getLastComboPlayer()
+  public static function getLastComboPlayer(): int|string
   {
     $lastComboAction = self::getLastAction("combo");
     return is_null($lastComboAction) ? 0 : $lastComboAction["player"];
   }
 
-  public static function playCombo($playerId, $combo)
+  public static function playCombo(int|string $playerId, Combo $combo): void
   {
-    $cards = Utils::filterColumns($combo->cards, ["id", "type", "type_arg"]);
+    $cards = Utils::filterColumns($combo->cards ?? [], ["id", "type", "type_arg"]);
     self::insert($playerId, "combo", [
       "description" => $combo->description,
       "type" => $combo->type,
@@ -174,9 +206,9 @@ class LogManager
     ]);
   }
 
-  public static function askPhoenix($playerId, $combo)
+  public static function askPhoenix(int|string $playerId, Combo $combo): void
   {
-    $cards = Utils::filterColumns($combo->cards, ["id", "type", "type_arg"]);
+    $cards = Utils::filterColumns($combo->cards ?? [], ["id", "type", "type_arg"]);
     self::insert($playerId, "phoenix", [
       "description" => $combo->description,
       "type" => $combo->type,

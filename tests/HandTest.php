@@ -1,8 +1,15 @@
 <?php declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 
-require_once "modules/Hand.php";
+require_once "tests/stubs.php";
 require_once "modules/Constants.php";
+require_once "modules/Utils.php";
+require_once "modules/managers/CardManager.php";
+require_once "modules/managers/LogManager.php";
+require_once "modules/managers/PlayerManager.php";
+require_once "modules/managers/NotificationManager.php";
+require_once "modules/Combo.php";
+require_once "modules/Hand.php";
 require_once "tests/TestUtils.php";
 
 final class HandTest extends TestCase

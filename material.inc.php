@@ -31,10 +31,10 @@ require_once "modules/Bot.php";
 
 $this->colors = [
   // type
-  1 => ["name" => clienttranslate("Swords"), "nametr" => self::_("Swords")],
-  2 => ["name" => clienttranslate("Stars"), "nametr" => self::_("Stars")],
-  3 => ["name" => clienttranslate("Pagodas"), "nametr" => self::_("Pagodas")],
-  4 => ["name" => clienttranslate("Jade"), "nametr" => self::_("Jade")],
+  1 => ["name" => clienttranslate("Swords"), "nametr" => clienttranslate("Swords")],
+  2 => ["name" => clienttranslate("Stars"), "nametr" => clienttranslate("Stars")],
+  3 => ["name" => clienttranslate("Pagodas"), "nametr" => clienttranslate("Pagodas")],
+  4 => ["name" => clienttranslate("Jade"), "nametr" => clienttranslate("Jade")],
 ];
 $this->values_label = [
   // type_arg

@@ -28,7 +28,7 @@
 class action_tichu extends APP_GameAction
 {
   // Constructor: please do not modify
-  public function __default()
+  public function __default(): void
   {
     if ($this->isArg("notifwindow")) {
       $this->view = "common_notifwindow";
@@ -41,15 +41,15 @@ class action_tichu extends APP_GameAction
 
   // TODO: defines your action entry points there
 
-  public function grandTichuBet()
+  public function grandTichuBet(): void
   {
     $this->setAjaxMode();
     $bet = $this->getArg("bet", AT_enum, true, false, ["0", "200"]);
-    $result = $this->game->grandTichuBet($bet);
+    $this->game->grandTichuBet($bet);
     $this->ajaxResponse();
   }
 
-  public function tichuBet()
+  public function tichuBet(): void
   {
     $this->setAjaxMode();
     $bet = $this->getArg("bet", AT_enum, true, false, ["100"]);
@@ -57,7 +57,7 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function confirmTichu()
+  public function confirmTichu(): void
   {
     $this->setAjaxMode();
     $bet = $this->getArg("bet", AT_enum, true, false, ["0", "100", "200"]);
@@ -65,7 +65,7 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function makeAWish()
+  public function makeAWish(): void
   {
     $this->setAjaxMode();
     $wish = $this->getArg("wish", AT_posint, true);
@@ -73,7 +73,7 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function choosePhoenix()
+  public function choosePhoenix(): void
   {
     $this->setAjaxMode();
     $phoenixValue = $this->getArg("phoenixValue", AT_posint, false, null);
@@ -81,10 +81,10 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function playCombo()
+  public function playCombo(): void
   {
     $this->setAjaxMode();
-    $cards_raw = $this->getArg("cards", AT_numberlist, true);
+    $cards_raw = (string) $this->getArg("cards", AT_numberlist, true);
 
     $cards = strlen($cards_raw) == 0 ? [] : explode(";", $cards_raw);
 
@@ -92,10 +92,10 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function playBomb()
+  public function playBomb(): void
   {
     $this->setAjaxMode();
-    $cards_raw = $this->getArg("cards", AT_numberlist, true);
+    $cards_raw = (string) $this->getArg("cards", AT_numberlist, true);
 
     $cards = strlen($cards_raw) == 0 ? [] : explode(";", $cards_raw);
 
@@ -103,7 +103,7 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function pass()
+  public function pass(): void
   {
     $this->setAjaxMode();
     $onlyOnce = $this->getArg("onlyOnce", AT_bool, false, null);
@@ -111,7 +111,7 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function cancelAutopass()
+  public function cancelAutopass(): void
   {
     $this->setAjaxMode();
     $this->game->cancelAutopass();
@@ -119,10 +119,10 @@ class action_tichu extends APP_GameAction
   }
 
   // DANGER: The actual action is named "giveCards".
-  public function giveTheCards()
+  public function giveTheCards(): void
   {
     $this->setAjaxMode();
-    $cards_raw = $this->getArg("cards", AT_numberlist, true);
+    $cards_raw = (string) $this->getArg("cards", AT_numberlist, true);
     // Removing last ';' if exists
     if (substr($cards_raw, -1) == ";") {
       $cards_raw = substr($cards_raw, 0, -1);
@@ -133,35 +133,35 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
-  public function acceptCards()
+  public function acceptCards(): void
   {
     $this->setAjaxMode();
     $this->game->acceptCards();
     $this->ajaxResponse();
   }
 
-  public function collect()
+  public function collect(): void
   {
     $this->setAjaxMode();
     $this->game->collect();
     $this->ajaxResponse();
   }
 
-  public function cancelPhoenix()
+  public function cancelPhoenix(): void
   {
     $this->setAjaxMode();
     $this->game->cancelPhoenix();
     $this->ajaxResponse();
   }
 
-  public function cancel()
+  public function cancel(): void
   {
     $this->setAjaxMode();
     $this->game->cancel();
     $this->ajaxResponse();
   }
 
-  public function chooseDragonGift()
+  public function chooseDragonGift(): void
   {
     $this->setAjaxMode();
     $playertogive = $this->getArg("player", AT_posint, true);

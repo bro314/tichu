@@ -54,4 +54,6 @@ define("AUTOPASS_TRICK", 2);
 
 // time in s after a called (grand) tichu, where player have to confirm to call antoher tichu
 define("TICHU_CONFIRMATION_TRESHOLD", 60);
+
+define("TICHU_CODE_VERSION", "2026-11-18.1");
 ?>

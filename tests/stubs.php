@@ -1,5 +1,7 @@
 <?php
 
+namespace {
+
 if (!defined('APP_GAMEMODULE_PATH')) {
     define('APP_GAMEMODULE_PATH', '');
 }
@@ -41,49 +43,70 @@ class APP_Object {
 
 class APP_DbObject extends APP_Object {
     public $query;
+    public static ?string $lastQuery = null;
+    public static ?array $mockObjectListResult = null;
+    public static bool $quietQueries = false;
 
-    function DbQuery($str) {
-        $this->query = $str;
-        echo "dbquery: $str\n";
+    public static function DbQuery($str) {
+        self::$lastQuery = $str;
+        if (!self::$quietQueries) {
+            echo "dbquery: $str\n";
+        }
     }
 
-    function getUniqueValueFromDB($sql) {
+    public static function getUniqueValueFromDB($sql) {
+        self::$lastQuery = $sql;
         return 0;
     }
 
-    function getCollectionFromDB($query, $single = false) {
-        echo "dbquery coll: $query\n";
+    public static function getCollectionFromDB($query, $single = false) {
+        self::$lastQuery = $query;
+        if (!self::$quietQueries) {
+            echo "dbquery coll: $query\n";
+        }
         return array();
     }
 
-    function getNonEmptyCollectionFromDB($sql) {
+    public static function getNonEmptyCollectionFromDB($sql) {
+        self::$lastQuery = $sql;
         return array();
     }
 
-    function getObjectFromDB($sql) {
+    public static function getObjectFromDB($sql) {
+        self::$lastQuery = $sql;
         return array();
     }
 
-    function getNonEmptyObjectFromDB($sql) {
+    public static function getNonEmptyObjectFromDB($sql) {
+        self::$lastQuery = $sql;
         return array();
     }
 
-    function getObjectListFromDB($query, $single = false) {
-        echo "dbquery list: $query\n";
+    public static function getObjectListFromDB($query, $single = false) {
+        self::$lastQuery = $query;
+        if (self::$mockObjectListResult !== null) {
+            return self::$mockObjectListResult;
+        }
+        if (!self::$quietQueries) {
+            echo "dbquery list: $query\n";
+        }
         return array();
     }
 
-    function getDoubleKeyCollectionFromDB($sql, $bSingleValue = false) {
+    public static function getDoubleKeyCollectionFromDB($sql, $bSingleValue = false) {
+        self::$lastQuery = $sql;
         return array();
     }
 
-    function DbGetLastId() {
+    public static function DbGetLastId() {
     }
 
-    function DbAffectedRow() {
+    public static function DbAffectedRow() {
+        return 0;
     }
 
-    function escapeStringForDB($string) {
+    public static function escapeStringForDB($string) {
+        return addslashes((string) $string);
     }
 }
 
@@ -490,8 +513,13 @@ abstract class Table extends APP_DbObject {
     function undoRestorePoint() {
     }
 
-    function getBgaEnvironment() {
-        return "studio";
+    public static string $mockBgaEnvironment = "studio";
+
+    public static function getBgaEnvironment(): string {
+        return self::$mockBgaEnvironment;
+    }
+
+    function sendNotifications(): void {
     }
 
     function say($text) {
@@ -583,4 +611,53 @@ function getKeysWithMaximum($array, $bWithMaximum = true) {
 
 function getKeyWithMaximum($array) {
     return '';
+}
+
+if (!class_exists('Bga\\GameFramework\\Table', false)) {
+    class_alias('Table', 'Bga\\GameFramework\\Table');
+}
+
+}
+
+namespace Bga\GameFramework {
+
+if (!class_exists(NotificationMessage::class, false)) {
+    class NotificationMessage {
+        public function __construct(
+            public string $message = '',
+            public array $args = [],
+        ) {}
+    }
+}
+
+if (!class_exists(GameException::class, false)) {
+    abstract class GameException extends \feException {
+        public ?array $args = null;
+
+        public function __construct(
+            string|NotificationMessage $message,
+            bool $expected = false,
+            bool $visibility = true
+        ) {
+            parent::__construct(
+                $message instanceof NotificationMessage ? $message->message : $message,
+                $expected,
+                $visibility,
+                100
+            );
+            if ($message instanceof NotificationMessage) {
+                $this->args = $message->args;
+            }
+        }
+    }
+}
+
+if (!class_exists(UserException::class, false)) {
+    class UserException extends GameException {
+        public function __construct(string|NotificationMessage $message) {
+            parent::__construct($message, true, true);
+        }
+    }
+}
+
 }
