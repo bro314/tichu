@@ -127,7 +127,7 @@ tt.help(); // List all console test runner commands
    - Restart the test table if you modify `dbmodel.sql`.
    - Reload game configurations in the BGA Studio Control Panel if you modify `gameinfos.inc.php`, `gameoptions.inc.php`, `states.inc.php`, or `stats.inc.php`.
 3. **Deploying to Production**: Build a new release from the BGA Studio Control Panel once all changes are synced and verified.
-4. **Bug Tracker**: Production bug reports for Tichu on BGA are tracked at [https://boardgamearena.com/bugs?game=1237](https://boardgamearena.com/bugs?game=1237).
+4. **Bug Tracker & Triage**: Production bug reports and suggestions for Tichu on BGA are tracked at [https://boardgamearena.com/bugs?game=1237](https://boardgamearena.com/bugs?game=1237) and mirrored locally in gitignored `local/bugs/open-issues.json` (triaged via Chrome DevTools MCP `evaluate_script` and reproduced locally via `npm run bug:import`; see [`.agents/skills/bga-bug-triage/SKILL.md`](./.agents/skills/bga-bug-triage/SKILL.md)).
 5. **Production Error Monitoring**: Frontend/backend Sentry issues and PHP syntax errors are available at [https://studio.boardgamearena.com/studioissues?game=tichu](https://studio.boardgamearena.com/studioissues?game=tichu) (checked via `local/check-prod-errors.js` with Chrome DevTools MCP).
 
 For detailed architectural notes, task playbooks, and AI agent guidelines, see [AGENTS.md](./AGENTS.md), [`.agents/skills/`](./.agents/skills), and [docs/BGA_OPEN_SOURCE_ECOSYSTEM.md](./docs/BGA_OPEN_SOURCE_ECOSYSTEM.md).

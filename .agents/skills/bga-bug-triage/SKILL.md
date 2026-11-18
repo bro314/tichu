@@ -89,16 +89,21 @@ async () => {
   return typeof rawExport === "string" ? JSON.parse(rawExport) : rawExport;
 };
 
-// 3) Optional: dump metadata for a specific reportId
+// 3) Optional: dump & table metadata for a specific reportId / tableId
 // await bgaPost("/bugs/bugs/getBugReportDumpInformations.html", { report_id: 243761 });
+// const tableRes = await fetch(`/table/table/tableinfos.html?id=${tableId}`, {
+//   credentials: "same-origin",
+//   headers: { "X-Request-Token": window.bgaConfig?.requestToken ?? "" },
+// }).then((r) => r.json()); // Inspect status, progression, options, result.endgame_reason, player[].is_ai/score, Tichu stats
 
 // 4) Post an approved triage decision (ONLY after explicit user approval!)
+//    (Always pass waitForStableDom: false; never take screenshots, click UI, switch tabs, or close pre-existing user Chrome tabs.)
 // const { report: r } = await bgaPost("/bug/bug/getPageData.html", { id: 248565 });
 // await bgaPost("/bug/bug/report.html", {
 //   id: r.id,
-//   type: r.type, // numeric bug type ID from getPageData.html (e.g. 50..54)
-//   bugaction: "fixed",
-//   text: "...",
+//   type: r.type, // numeric bug type ID from getPageData.html (e.g. 50..55, or 56 for suggestions)
+//   bugaction: "fixed", // use "infoneeded" for bugs vs "inforequest" for suggestions
+//   text: "...", // plain text only — never include Markdown backticks
 //   location: r.location ?? "",
 //   internal_note: 0,
 //   admin_tag_id: 0,
@@ -108,7 +113,12 @@ async () => {
 //   table: Number(r.table_id),
 //   game: Number(r.game_id),
 // });
+//
+// 5) Re-export kept-open tickets (acknowledged/confirmed/inforequest/infoneeded) to update local/bugs/open-issues.json in-place:
+// await bgaPost("/bug/bug/exportAsJson.html", { ids: JSON.stringify([36912]) });
 ```
+
+- **Pagination & Response Quirk**: `/bugs/bugs/getBugs.html` returns `{ items, total }` directly inside `json.data` and rejects non-standard `per_page` values like `45` (use `20` or `200`).
 
 ### Fallback Mode — `browser` Subagent (`webview_browser` Playwright)
 
@@ -192,13 +202,40 @@ return { pageCount: batch.length, updatedReturned: updated.length, summaries, up
 
 - **Gitignored Local Store**: Maintain exported open issues in `local/bugs/open-issues.json` (gitignored via `local/bugs/` in [`.gitignore`](file:///Users/brohlfs/git/tichu/.gitignore) so BGA reporter usernames/comments stay out of git, and never uploaded via SFTP because `local/` is excluded). Schema:
   - Top-level metadata: `gameId` (`1237`), `gameName` (`"tichu"`), `sourceUrl`, `lastSyncedAt` (UTC ISO-8601), `openCount`.
-  - `issues`: object keyed by string bug `id`, each holding `{ "bga": <raw export object>, "triage": { "triageState": "untriaged" | "investigating" | "drafted" | "confirmed", "cluster": string | null, "duplicateOf": number | null, "proposedStatus": string | null, "proposedReply": string | null, "notes": string | null } }`.
-  - `recentlyClosed`: object keyed by string bug `id`, preserving closed tickets (`status`, `duplicateOf`, `closedAt`, `summary`) so future deduplication matches recently resolved incidents too.
+  - `issues`: object keyed by string bug `id`, each holding `{ "bga": <raw export object>, "triage": { "triageState": "untriaged" | "proposed" | "triaged" | "investigating", "cluster": string | null, "duplicateOf": number | null, "proposedStatus": string | null, "proposedReply": string | null, "notes": string | null } }`. Daily read-only checks skip re-flagging tickets already marked `"triaged"` or `"investigating"` unless `lastUpdateDate` changed.
+  - `recentlyClosed`: object keyed by string bug `id`, preserving closed tickets (`status`, `duplicateOf`, `tableId`, `closedAt`, `summary`) so future deduplication matches recently resolved incidents too.
 - **Incremental Daily Sync**: Because `sort=lastupdate_desc` orders most-recently-updated tickets first, exporting Page 1 (top 20) detects all new reports and new player replies since the previous sync — paginate further only if all 20 items are newer than `lastSyncedAt` or have changed `lastUpdateDate`. Run a full multi-page sweep periodically to prune tickets closed externally on BGA.
 - **3-Layer Deduplication** (compare new tickets against both `issues` and `recentlyClosed` before replying):
   1. **Exact `tableId` match (`tableId > 0`)**: Same game table almost always shares one incident (e.g. reporter files an `access` ticket and a `block` ticket minutes apart).
   2. **Same `authorName` within 24 hours**: Check for split or follow-up tickets by the same player.
   3. **Root-Cause / Topic Clustering**: Tag tickets by cluster (`zombie-turn`, `mahjong-wish`, `dog-bomb`, `pass-cards`, `trick-points`, `replay`, `sound`, `clock-desync`, `game-length-suggestion`). Keep the oldest or highest-vote ticket as canonical and mark newer duplicates as `Duplicate` (`duplicate_linked_id`).
+- **Active Backlog Cross-Reference (`23` Triaged Open Tickets as of `2026-11-18`, `70` Closed)**:
+
+| Bug ID    | Status         | Votes | Cluster                        | Scope / Plan Mapping                                                                                    |
+| :-------- | :------------- | :---- | :----------------------------- | :------------------------------------------------------------------------------------------------------ |
+| `#22264`  | `acknowledged` | `37`  | `hand-organization`            | Custom drag/reorder hand cards (`plans/08`)                                                             |
+| `#31597`  | `acknowledged` | `28`  | `passing-unpass-ux`            | Auto-reopen pass confirmation if Tichu called during pass (`plans/08`)                                  |
+| `#97310`  | `acknowledged` | `14`  | `tichu-bet-ui`                 | Optional Tichu/Grand Tichu confirmation & pass button placement (`src/tichu.ts`)                        |
+| `#36912`  | `acknowledged` | `13`  | `round-score-sheet`            | Live round-by-round scorepad modal (`plans/10`)                                                         |
+| `#36963`  | `acknowledged` | `13`  | `concede-suggestion`           | Partner-agreement forfeit/concede option                                                                |
+| `#36611`  | `acknowledged` | `8`   | `card-art-resolution`          | Higher-resolution 2x card sprite artwork (`img/tichu-cards.png`, `img/tiki-cards.png`)                  |
+| `#106651` | `acknowledged` | `8`   | `bomb-staging-preselect`       | Keep `"Play a Bomb"` stable on own turn (`plans/09`)                                                    |
+| `#25627`  | `acknowledged` | `7`   | `mahjong-wish`                 | Dedicated `"No wish"` button next to `"Make a wish"` (`tichu-value-choice.ts`)                          |
+| `#78193`  | `confirmed`    | `6`   | `i18n-translation`             | Umbrella untranslated PHP combo logs & client `t()` labels (`Combo.php`, `CardManager.php`, `plans/12`) |
+| `#95467`  | `acknowledged` | `4`   | `team-selection-default`       | Make `"At random"` (`101 = 4`) the default Teams option (`gameoptions.inc.php`)                         |
+| `#119164` | `acknowledged` | `4`   | `tichu-bet-ui`                 | Optional Tichu confirm pref & prevent Bomb/Tichu button layout shift (`tichu-action-bar.ts`)            |
+| `#217733` | `acknowledged` | `4`   | `bomb-staging-preselect`       | Pre-select/delayed bomb in turn-based without re-prompt info leak (`plans/09`)                          |
+| `#95469`  | `inforequest`  | `3`   | `team-selection-lobby-display` | Awaiting reporter clarification on exact BGA lobby view                                                 |
+| `#142475` | `acknowledged` | `2`   | `phoenix-combo-log`            | Indicate `(with Phoenix)` in non-single combo logs (`Combo.php`, `NotificationManager.php`, `plans/12`) |
+| `#204088` | `acknowledged` | `2`   | `status-bar-height-jump`       | Reserve stable min-height on `#page-title` (canonical for `#204090`, `#202049`, `#95606`)               |
+| `#52829`  | `acknowledged` | `1`   | `round-indicator-pass`         | Keep round number visible during card exchange (`tichu-last-played.ts`, `plans/10`)                     |
+| `#80004`  | `acknowledged` | `1`   | `tichu-bet-ui`                 | Always confirm Tichu if partner already called this round (`tichu.game.php`)                            |
+| `#95874`  | `acknowledged` | `1`   | `sound-effects-palette`        | Optional responsive sound cues for plays, bombs, and Tichu calls (`plans/12`, `plans/13`)               |
+| `#99318`  | `acknowledged` | `1`   | `remaining-cards-label`        | Rename `"Played Cards"` heading to `"Remaining Cards"` (`tichu-played-cards.ts`)                        |
+| `#161585` | `acknowledged` | `1`   | `phoenix-value-display`        | Show realized Phoenix value badge on table (`tichu-last-played.ts`)                                     |
+| `#164400` | `acknowledged` | `1`   | `mobile-viewport-layout`       | Mobile viewport / 14-card 2-row hand layout (`plans/06`)                                                |
+| `#175241` | `confirmed`    | `1`   | `i18n-translation`             | Untranslated dynamic `"Give cards to <player>"` button (`src/tichu.ts`)                                 |
+| `#218304` | `acknowledged` | `1`   | `passing-unpass-ux`            | Manual `"Undo Pass"` (`unpassCards`) while waiting in `ST_GIVE_CARDS` (`plans/08`)                      |
 
 ---
 
@@ -250,7 +287,9 @@ _(Note: `claimed` is admin/bounty-hunter only.)_
 
 ### `dashwood314` Bilingual Reply Guidelines
 
-- **Language Rule**: Always include **English**. When the report is written in another language (e.g. French, German, Korean, Spanish), write the reply in **both** the reporter's language first and English second, separated by `\n\n---\n\n`. When the report is in English, write in English only.
+- **Language Rule**: Always include **English**. When the report is written in another language (e.g. French, German, Korean, Spanish, Portuguese, Chinese), write the reply in **both** the reporter's language first and English second, separated by `\n\n---\n\n`. When the report is in English, write in English only.
+- **Plain-Text Formatting & Maintainer Voice**: BGA renders `/bug/bug/report.html` `text` payloads as plain text — **never** include Markdown backticks in bug replies. Refer to `dashwood314` simply as **the maintainer** (never `"new maintainer"`).
+- **Info-Request Slug & Roadmap Refresh**: Use `bugaction: "infoneeded"` for bugs (`type: 50..55`) and `bugaction: "inforequest"` for suggestions (`type: 56`). For long-lived roadmap items (`acknowledged` / `confirmed`), posting a status update with `bugaction: "acknowledged"` / `"confirmed"` refreshes `lastUpdateDate` so BGA does not auto-close them as `notupdated`.
 - Keep replies concise (`1–3` sentences per language), polite, and concrete:
   - When queueing a fix: _"Thanks for the report. Fix is in the works!"_
   - When live in production: _"Fixed in release <YYMMDD-HHMM> (now live). Refreshing the page (F5) will <effect> — thanks again for the report!"_
