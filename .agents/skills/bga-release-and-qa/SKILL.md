@@ -25,6 +25,10 @@ description: >-
      - Click **`⇨ Dry run build (to check code warnings)`** first and verify there are no blocking warnings or errors in the modal popup.
      - Fill in the **`Release note: what has changed since the last release?`** input field (max 250 chars).
      - Click **`⇨ Commit & build a new version now`**. This snapshots the SFTP `/tichu/` files into BGA's internal SVN/release system and builds a numbered release package (e.g., `YYMMDD-HHMM`).
+     - **Fast `chrome-devtools` MCP `evaluate_script` alternative** (once the user confirms building without deploying):
+       - Prefer reusing an already-open `https://studio.boardgamearena.com/*` tab (e.g., `/controlpanel` or `/studiogame?game=tichu`), because BGA Studio's `SameSite` session cookie redirects cold `new_page` top-level navigations to `/account?warn` while same-origin `fetch()` calls carry the session cleanly.
+       - Check `POST /studiogame/studiogame/getStudioGamePageData.html` (`{ game: "tichu" }`) -> verify `data.workspace["blocked-files"]` is `[]` and `error` is `null`.
+       - Run `POST /studio/project/dryRunBuild.html` (`{ gamename: "tichu" }`) and `POST /studio/project/build.html` (`{ gamename: "tichu", comment }`) with `Accept: "application/json"` and `X-Request-Token: window.bgaConfig.requestToken` (both return `{ blocks, buildInfos }` directly without a `{ status: 1 }` wrapper), then verify `POST /studiogame/studiogame/getStudioGameVersions.html` (`{ game: "tichu" }`).
   3. Under the **Versions available for production** section:
      - Locate the newly built version row and click its **Deploy** button (`Deploy to production`) to push it live to `boardgamearena.com`.
   4. **Rolling Back a Production Release**:

@@ -182,6 +182,10 @@ try {
 return { pageCount: batch.length, updatedReturned: updated.length, summaries, updated };
 ```
 
+### Production Sentry & PHP Syntax Error Check (`local/check-prod-errors.js`)
+
+[`local/check-prod-errors.js`](file:///Users/brohlfs/git/tichu/local/check-prod-errors.js) queries `/studiogame/studiogame/getStudioGameVersions.html`, `/studioissues/studioissues/getIssues.html` (plus `getIssueDetails.html` + `getEventDetails.html` for recent 48h issues), and `/studio/project/getSyntaxErrorsFromProduction.html` in ~1s via `chrome-devtools` MCP `evaluate_script` (`format: "function"`, `waitForStableDom: false`, passed inline via `function` rather than `sourcePath`; excluded in `.prettierignore` so Prettier never appends a trailing `;`). Baseline state for incremental delta checks (and the `tichu-daily-prod-errors` scheduled automation) lives in gitignored `local/bugs/prod-errors-state.json`.
+
 ---
 
 ## 3. Local Open-Issues Index & Deduplication (`local/bugs/open-issues.json`)

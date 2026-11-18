@@ -15,11 +15,7 @@ async () => {
     };
   }
 
-  if (
-    window.location.pathname.includes("/account") ||
-    (!window.bgaConfig?.requestToken &&
-      Boolean(document.querySelector('input[type="password"], #username_input')))
-  ) {
+  if (!window.bgaConfig?.requestToken) {
     return { ok: false, error: "AUTH_REQUIRED", url: window.location.href };
   }
 
@@ -67,7 +63,11 @@ async () => {
   const authFailed = [versionsRes, issuesRes].some((r) =>
     /logged|auth|permission|denied/i.test(JSON.stringify(r?.error ?? "")),
   );
-  if (authFailed && !versionsRes?.data && !issuesRes?.data) {
+  if (
+    !versionsRes?.data &&
+    !issuesRes?.data &&
+    (authFailed || window.location.pathname.includes("/account"))
+  ) {
     return {
       ok: false,
       error: "AUTH_REQUIRED",
