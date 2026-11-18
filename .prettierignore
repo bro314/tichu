@@ -1,3 +1,4 @@
 ./img
 ./local/Bga
 ./_ide_helper.php
+./local/check-prod-errors.js

@@ -26,14 +26,95 @@ description: >-
 
 ### Authentication & Human-in-the-Loop Guardrails
 
-- **Browser Access (`dashwood314`)**: Always inspect `boardgamearena.com` via the `browser` subagent (`Model: "flash"`), where `dashwood314` (`player_id = 94570277`) is authenticated with developer/moderator triage permissions (`Developer tools`, status changes, duplicate linking, bulk actions). Never run `curl` or CLI HTTP scripts against `boardgamearena.com`. If the session is ever signed out, stop and ask the user to log in.
-- **Strictly READ-ONLY by Default**: **Never** click `Post comment`, change a ticket's status, reclassify `bug`/`suggestion`, or link duplicates unless the user has explicitly approved the exact status and reply text for that ticket.
+- **Browser Access (`dashwood314`)**: Always inspect `boardgamearena.com` via `chrome-devtools` MCP (if enabled) or the `browser` subagent (`Model: "flash"`), where `dashwood314` (`player_id = 94570277`) is authenticated with developer/moderator triage permissions (`Developer tools`, status changes, duplicate linking, bulk actions). Never run `curl` or standalone CLI HTTP scripts against `boardgamearena.com`. If the session is ever signed out, stop and ask the user to log in.
+- **Strictly READ-ONLY by Default**: **Never** submit `/bug/bug/report.html`, click `Post comment`, change a ticket's status, reclassify `bug`/`suggestion`, or link duplicates unless the user has explicitly approved the exact status and reply text for that ticket.
+- **Posting Approved Triage Decisions**: Once the user approves a ticket's status and reply, post it on BGA and move the ticket from `issues` to `recentlyClosed` in `local/bugs/open-issues.json`. Watch for two BGA Svelte gotchas:
+  1. **Close canonical ticket FIRST, mark duplicate SECOND**: When closing a canonical ticket and marking another ticket as its `Duplicate`, always post the canonical ticket **first** (while it has `0` linked reports) and the `Duplicate` ticket **second** — otherwise BGA intercepts with a `"Close linked tickets"` confirmation modal on the canonical ticket.
+  2. **Plain digits for `duplicate_linked_id`**: In the `Duplicate` `"Ticket id"` input (`duplicate_linked_id`), enter plain digits only (e.g. `252716`, never `#252716`), because BGA validates `Number(value) > 0`.
 
 ---
 
-## 2. `"Export as JSON"` & Client-Side Pagination Playbook (`browser` Subagent)
+## 2. Fetching & Updating Bug Reports: JS Console (`chrome-devtools` MCP) vs. `browser` Subagent
 
-### Verified BGA Svelte Tracker Mechanics
+### Fastest Execution Mode — Pure JS Console (`chrome-devtools` MCP `evaluate_script`)
+
+Whenever the `chrome-devtools` MCP server (`evaluate_script`) is enabled in `<mcp_servers>`, **prefer pure in-page `fetch()` calls** on an authenticated `boardgamearena.com` tab instead of clicking UI buttons or taking screenshots. BGA authenticates every tracker API call via same-origin cookies plus the CSRF header `X-Request-Token: window.bgaConfig?.requestToken ?? ""`:
+
+```javascript
+// 1) Find an existing https://boardgamearena.com tab via list_pages, or open one silently:
+//    new_page({ url: "https://boardgamearena.com/bugs?game=1237", background: true })
+//    (and close_page({ pageId }) when done if opened temporarily; never close a user's existing tab!)
+// 2) Run inside evaluate_script({ pageId, waitForStableDom: false, filePath: "/tmp/bga-open.json" }):
+async () => {
+  async function bgaPost(path, params) {
+    const res = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Request-Token": window.bgaConfig?.requestToken ?? "",
+      },
+      body: new URLSearchParams(
+        Object.entries(params).filter(([, v]) => v !== null && v !== undefined),
+      ),
+    });
+    const json = await res.json();
+    if (json?.status !== 1) throw new Error(JSON.stringify(json));
+    return json.data;
+  }
+
+  // Collect all open report IDs (supports up to 200 per page; page is 0-indexed)
+  const statuses =
+    "open,infoneeded,confirmed,waitingfordeploy,claimed,awaiting,inforequest,acknowledged,deploysuggestion";
+  const allIds = [];
+  for (let page = 0; page < 20; page++) {
+    const data = await bgaPost("/bugs/bugs/getBugs.html", {
+      game: 1237,
+      statuses,
+      preset: "open_reports",
+      sort: "lastupdate_desc",
+      page,
+      per_page: 200,
+      with_pagination: 1,
+    });
+    const items = data?.items || [];
+    allIds.push(...items.map((x) => Number(x.id)).filter((n) => n > 0));
+    if (allIds.length >= Number(data?.total ?? 0) || items.length < 200) break;
+  }
+
+  // Export ALL open reports in a single request (no pagination or modal!)
+  const rawExport = await bgaPost("/bug/bug/exportAsJson.html", {
+    ids: JSON.stringify(allIds),
+  });
+  return typeof rawExport === "string" ? JSON.parse(rawExport) : rawExport;
+};
+
+// 3) Optional: dump metadata for a specific reportId
+// await bgaPost("/bugs/bugs/getBugReportDumpInformations.html", { report_id: 243761 });
+
+// 4) Post an approved triage decision (ONLY after explicit user approval!)
+// const { report: r } = await bgaPost("/bug/bug/getPageData.html", { id: 248565 });
+// await bgaPost("/bug/bug/report.html", {
+//   id: r.id,
+//   type: r.type, // numeric bug type ID from getPageData.html (e.g. 50..54)
+//   bugaction: "fixed",
+//   text: "...",
+//   location: r.location ?? "",
+//   internal_note: 0,
+//   admin_tag_id: 0,
+//   close_linked_duplicates: 0,
+//   close_linked_comment: "",
+//   duplicate_linked_id: 0,
+//   table: Number(r.table_id),
+//   game: Number(r.game_id),
+// });
+```
+
+### Fallback Mode — `browser` Subagent (`webview_browser` Playwright)
+
+When `chrome-devtools` MCP is not enabled (or during unattended scheduled `/automation` runs that use Antigravity's built-in browser), use the `browser` subagent (`Model: "flash"`), whose sandbox forbids `page.evaluate` and `waitForFunction`.
+
+#### Verified BGA Svelte Tracker UI Mechanics
 
 - **Endpoint & Modal**: Clicking `"Export as JSON"` on `/bugs` or `/bug?id=<ID>` calls `POST /bug/bug/exportAsJson.html` and opens a modal showing formatted JSON inside `<pre>`, plus `Copy` and `Download` (`bug-reports.json`).
 - **Identical Schema on List & Detail Pages**: Both list and detail exports return a JSON array of objects with the exact same keys:
@@ -50,50 +131,47 @@ description: >-
   3. Table mode, clock settings, end reason (`☯` timeout/abandon vs normal end), and player scores on `/table?table=<TABLE_ID>`,
   4. Posting an approved status/reply update.
 - **20-Row Client-Side Pagination Gotcha**: `/bugs` loads `20` items per page (`replaceData: true`). Unchecked `"Export as JSON"` exports **only the 20 items on the active page**. Adding `&page=2` to the URL is ignored by BGA; to advance pages, click `>` (`page.locator('a.bga-button--xsmall').filter({ hasText: /^>$/ })`) and wait for the first row's bug ID (or `<page> / <totalPages>` indicator) to change.
-- **Browser Sandbox Extraction & Cleanup Rules**:
+- **Browser Sandbox Extraction, Size Limit & Cleanup Rules**:
   - Read `await page.locator('pre').first().textContent()` directly from the modal (since Blob `download.path()` returns `null` in the browser sandbox).
   - Close the modal via `await page.locator('.bga-popup-modal__header [role="button"]').click()`.
+  - **`10,240`-byte return cap & `30,000ms` script cap**: `webview_browser` rejects any return object exceeding `10,240` bytes (`OUTPUT_TOO_LARGE`, while 20 items on a page average ~30–40 KB). Return compact summaries (`id, status, lastUpdateDate, tableId, title, commentCount`) plus only newly updated full items packed under `8,500` bytes (chunking across calls if many items updated). Never loop more than ~2–3 pages per single `webview_browser` call so you stay well under `30,000ms`.
   - Never pass `page.evaluate`, `waitForFunction`, or unsupported `page.on` listeners (`console`, `pageerror`, `framenavigated`); set `captureScreenshot: false`, keep every `waitFor` timeout `<= 24000ms`, and always close the tab when done (`try { await page.close(); } catch (_e) { await page.goto("about:blank"); }`).
 
-### Copy-Paste Playwright Export Snippet (Page 1 or Full Multi-Page Loop)
+#### Copy-Paste Playwright Incremental Sync Snippet (Page 1, Safe Under 10 KB)
 
 ```javascript
+const sinceIso = "1970-01-01T00:00:00+00:00"; // Replace with local/bugs/open-issues.json lastSyncedAt
 const url =
   "https://boardgamearena.com/bugs?game=1237&statuses=open%2Cinfoneeded%2Cconfirmed%2Cwaitingfordeploy%2Cclaimed%2Cawaiting%2Cinforequest%2Cacknowledged%2Cdeploysuggestion&preset=open_reports&sort=lastupdate_desc";
 await page.goto(url, { waitUntil: "domcontentloaded" });
 await page.locator("table tbody tr a").first().waitFor({ state: "attached", timeout: 20000 });
 
-const maxPages = 1; // Set e.g. to 10 for a full sweep of all open_reports pages
-const allItems = [];
+const exportBtn = page.getByRole("link", { name: "Export as JSON", exact: true });
+await exportBtn.scrollIntoViewIfNeeded();
+await exportBtn.click();
 
-for (let p = 1; p <= maxPages; p++) {
-  const firstId = (await page.locator("table tbody tr a").first().innerText()).trim();
-  const exportBtn = page.getByRole("link", { name: "Export as JSON", exact: true });
-  await exportBtn.scrollIntoViewIfNeeded();
-  await exportBtn.click();
+const pre = page.locator("pre").first();
+await pre.waitFor({ state: "visible", timeout: 15000 });
+const batch = JSON.parse(await pre.textContent());
 
-  const pre = page.locator("pre").first();
-  await pre.waitFor({ state: "visible", timeout: 15000 });
-  const batch = JSON.parse(await pre.textContent());
-  allItems.push(...batch);
+await page.locator('.bga-popup-modal__header [role="button"]').click();
+await pre.waitFor({ state: "hidden", timeout: 10000 });
 
-  await page.locator('.bga-popup-modal__header [role="button"]').click();
-  await pre.waitFor({ state: "hidden", timeout: 10000 });
-
-  const nextBtn = page.locator("a.bga-button--xsmall").filter({ hasText: /^>$/ });
-  if (p >= maxPages || (await nextBtn.count()) === 0) break;
-  const disabled = await nextBtn.getAttribute("disabled");
-  const cls = (await nextBtn.getAttribute("class")) || "";
-  if (disabled !== null || cls.includes("disabled") || cls.includes("opacity-50")) break;
-
-  await nextBtn.click();
-  await page
-    .locator(`table tbody tr a:not(:text-is("${firstId}"))`)
-    .first()
-    .waitFor({ state: "attached", timeout: 15000 })
-    .catch(() => {});
-  const nextFirstId = (await page.locator("table tbody tr a").first().innerText()).trim();
-  if (nextFirstId === firstId) break;
+const summaries = batch.map((x) => ({
+  id: x.id,
+  status: x.status,
+  lastUpdateDate: x.lastUpdateDate,
+  tableId: x.tableId,
+  comments: x.comments?.length ?? 0,
+}));
+const updated = [];
+let bytes = JSON.stringify(summaries).length + 300;
+for (const item of batch) {
+  if (item.lastUpdateDate <= sinceIso) continue;
+  const s = JSON.stringify(item).length + 2;
+  if (updated.length > 0 && bytes + s > 8500) break;
+  updated.push(item);
+  bytes += s;
 }
 
 try {
@@ -101,16 +179,19 @@ try {
 } catch (_e) {
   await page.goto("about:blank");
 }
-return { count: allItems.length, items: allItems };
+return { pageCount: batch.length, updatedReturned: updated.length, summaries, updated };
 ```
 
 ---
 
 ## 3. Local Open-Issues Index & Deduplication (`local/bugs/open-issues.json`)
 
-- **Local Store**: Maintain exported open issues in `local/bugs/open-issues.json` (excluded from SFTP uploads because `local/` is never deployed). Upsert records by `id` so raw BGA fields (`bga`) sit alongside local triage state (`triage`: `triageState`, `cluster`, `duplicateOf`, `proposedStatus`, `proposedReply`, `notes`).
-- **Incremental Daily Sync**: Because `sort=lastupdate_desc` orders most-recently-updated tickets first, exporting Page 1 (top 20) detects all new reports and new player replies since the previous sync — stop paginating once hitting an issue whose `lastUpdateDate` already matches `local/bugs/open-issues.json`. Run a full multi-page sweep periodically to prune tickets closed externally on BGA.
-- **3-Layer Deduplication** (compare new tickets against all stored open and recently closed tickets before replying):
+- **Gitignored Local Store**: Maintain exported open issues in `local/bugs/open-issues.json` (gitignored via `local/bugs/` in [`.gitignore`](file:///Users/brohlfs/git/tichu/.gitignore) so BGA reporter usernames/comments stay out of git, and never uploaded via SFTP because `local/` is excluded). Schema:
+  - Top-level metadata: `gameId` (`1237`), `gameName` (`"tichu"`), `sourceUrl`, `lastSyncedAt` (UTC ISO-8601), `openCount`.
+  - `issues`: object keyed by string bug `id`, each holding `{ "bga": <raw export object>, "triage": { "triageState": "untriaged" | "investigating" | "drafted" | "confirmed", "cluster": string | null, "duplicateOf": number | null, "proposedStatus": string | null, "proposedReply": string | null, "notes": string | null } }`.
+  - `recentlyClosed`: object keyed by string bug `id`, preserving closed tickets (`status`, `duplicateOf`, `closedAt`, `summary`) so future deduplication matches recently resolved incidents too.
+- **Incremental Daily Sync**: Because `sort=lastupdate_desc` orders most-recently-updated tickets first, exporting Page 1 (top 20) detects all new reports and new player replies since the previous sync — paginate further only if all 20 items are newer than `lastSyncedAt` or have changed `lastUpdateDate`. Run a full multi-page sweep periodically to prune tickets closed externally on BGA.
+- **3-Layer Deduplication** (compare new tickets against both `issues` and `recentlyClosed` before replying):
   1. **Exact `tableId` match (`tableId > 0`)**: Same game table almost always shares one incident (e.g. reporter files an `access` ticket and a `block` ticket minutes apart).
   2. **Same `authorName` within 24 hours**: Check for split or follow-up tickets by the same player.
   3. **Root-Cause / Topic Clustering**: Tag tickets by cluster (`zombie-turn`, `mahjong-wish`, `dog-bomb`, `pass-cards`, `trick-points`, `replay`, `sound`, `clock-desync`, `game-length-suggestion`). Keep the oldest or highest-vote ticket as canonical and mark newer duplicates as `Duplicate` (`duplicate_linked_id`).
@@ -163,9 +244,10 @@ _(Note: `claimed` is admin/bounty-hunter only.)_
 | `rejected`                          | **Rejected**           | **Yes**                      | Out of scope / would clutter options or violate standard rules; decline politely. |
 | `duplicate`                         | **Duplicate**          | **Yes**                      | Duplicate of an existing suggestion/ticket.                                       |
 
-### `dashwood314` Reply Guidelines
+### `dashwood314` Bilingual Reply Guidelines
 
-- Keep replies concise (`1–3` sentences), polite, and concrete:
+- **Language Rule**: Always include **English**. When the report is written in another language (e.g. French, German, Korean, Spanish), write the reply in **both** the reporter's language first and English second, separated by `\n\n---\n\n`. When the report is in English, write in English only.
+- Keep replies concise (`1–3` sentences per language), polite, and concrete:
   - When queueing a fix: _"Thanks for the report. Fix is in the works!"_
   - When live in production: _"Fixed in release <YYMMDD-HHMM> (now live). Refreshing the page (F5) will <effect> — thanks again for the report!"_
   - When fixed in the Nov 2026 rewrite or un-reproducible clock expulsion: note that major client/timeout fixes landed in mid-November 2026, and clarify when relevant that game developers cannot remove or refund BGA clock/karma (`☯`) or ELO penalties.

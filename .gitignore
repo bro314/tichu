@@ -9,3 +9,4 @@ local/*.db
 local/*.db-*
 local/*.sqlite
 local/.mysql/
+local/bugs/
