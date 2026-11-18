@@ -5039,7 +5039,10 @@ abstract class Table extends Old\APP_GameClass
      * Key emulation invariants:
      * - `beginPlayerAction()` reloads `o_tableinfos` and calls `loadStateMachine()` BEFORE
      *   `$this->initTable()` (`COMMIT` -> `GET_LOCK`), mirroring BGA's production `Table::setTable()`
-     *   ordering, and then starts a fresh `REPEATABLE-READ` consistent snapshot.
+     *   ordering, relying directly on `initTable()` to start the `REPEATABLE-READ` consistent-snapshot
+     *   transaction (just as in BGA Production).
+     * - `endPlayerAction(false)` validates `$this->checkReturnState()` before committing, rolling back
+     *   if validation throws.
      * - `getNotificationsSince()` groups `gamelog` rows by `gamelog_move_id` and interleaves
      *   private-channel rows into public-channel rows by their `"synchro"` index, emulating
      *   BGA's production `Notify` WebSocket delivery order (e.g., `dealCards` after `newRound`).
@@ -5156,10 +5159,16 @@ abstract class Table extends Old\APP_GameClass
             $this->gamestate->loadStateMachine($this, $this->gamename ?? $this->getGameName(), (int) ($this->table_id ?? 1));
         }
         $this->initTable();
-
-        $db->query("SET SESSION transaction_isolation = 'REPEATABLE-READ'");
-        $db->query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
         $this->inPlayerAction = true;
+    }
+
+    private function clearPendingNotifications(): void
+    {
+        $this->notifications = [];
+        $this->target_to_notification_packet = [];
+        $this->notification_packet_to_target = [];
+        $this->chatmessage_notification = false;
+        $this->not_a_move_notification = false;
     }
 
     public function endPlayerAction(bool $rollback = false): void
@@ -5167,16 +5176,16 @@ abstract class Table extends Old\APP_GameClass
         global $bgaContainer;
         /** @var \Bga\GameFramework\Old\Db $db */
         $db = $bgaContainer->get(\Bga\GameFramework\Old\Db::class);
+        $wasInPlayerAction = $this->inPlayerAction;
 
         try {
             if ($rollback) {
-                $this->notifications = [];
-                $this->target_to_notification_packet = [];
-                $this->notification_packet_to_target = [];
-                $this->chatmessage_notification = false;
-                $this->not_a_move_notification = false;
+                $this->clearPendingNotifications();
                 $db->rollback();
             } else {
+                if ($wasInPlayerAction) {
+                    $this->checkReturnState();
+                }
                 if (!empty($this->notifications)) {
                     $this->sendNotifications();
                     if ($this->o_tableinfos !== null) {
@@ -5185,6 +5194,13 @@ abstract class Table extends Old\APP_GameClass
                 }
                 $db->commit();
             }
+        } catch (\Throwable $e) {
+            $this->clearPendingNotifications();
+            try {
+                $db->rollback();
+            } catch (\Throwable $_) {
+            }
+            throw $e;
         } finally {
             $this->inPlayerAction = false;
             try {

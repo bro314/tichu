@@ -1570,6 +1570,63 @@ function test_table_lock_version_and_duplicate_requests(): void
   \APP_DbObject::DbQuery('DELETE FROM global WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION);
   callAction($game, P1, 'grandTichuBet', ['bet' => '0']);
   assertSameVal(1, $version(), 'The lock version row must be re-created for running games');
+
+  // 1. Post-initTable() transaction rollback check:
+  // acquireAdvisoryLock() must leave an active MySQL transaction open so throwing UserException
+  // after bumpGameVersion() rolls back cleanly (Production has no debugSaveState(4) begin()).
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'makeAWish', ['wish' => '99']),
+    '',
+    'Calling makeAWish out of state must throw UserException'
+  );
+  assertSameVal(1, $version(), 'Rollback must undo lockVersion bump after UserException');
+
+  // 2. Duplicate collect with pre-lock cached state 50 (ST_NEW_TRICK, Production Issue #807743):
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = ' . ST_NEW_TRICK . ' WHERE global_id = 1');
+  \Bga\GameFramework\TableInfos::$tables_infos = [];
+  $game->o_tableinfos->db_load(false);
+  $game->gamestate->loadStateMachine($game, 'tichu', 1);
+  assertSameVal(
+    ST_NEW_TRICK,
+    (int) $game->gamestate->state_id(),
+    'Pre-lock cached state should simulate ST_NEW_TRICK (50)'
+  );
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = ' . ST_PLAY_COMBO_OPEN . ' WHERE global_id = 1');
+  \APP_DbObject::DbQuery(
+    'UPDATE global SET global_value = global_value + 1 WHERE global_id = ' . \Tichu::GLOBAL_LOCK_VERSION
+  );
+  $game->onRequestEnd();
+  $game->setCurrentPlayerId(P0);
+  $game->inPlayerAction = true;
+  $game->collect();
+  $game->endPlayerAction(false);
+  assertSameVal(
+    ST_PLAY_COMBO_OPEN,
+    (int) $game->gamestate->state_id(),
+    'Duplicate collect must reload stale cached state 50 to 55 before checkReturnState()'
+  );
+
+  // 3. Pre-mutation validation in completePlayCombo():
+  $mahjongId = (int) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => (string) $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
+  $tenId = (int) \LocalTichuScenarios::getCardId(2, 10);
+  $game->setCurrentPlayerId(P1);
+  $game->beginPlayerAction();
+  $threwWish = false;
+  try {
+    $game->playCombo([$tenId]);
+  } catch (\Bga\GameFramework\UserException $e) {
+    $threwWish = true;
+    assertSameVal(
+      1,
+      (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM actionlog WHERE log_action = 'combo'"),
+      'completePlayCombo() must throw before LogManager::playCombo() writes to actionlog'
+    );
+  }
+  $game->endPlayerAction(true);
+  assertTrueVal($threwWish, 'Playing 10 when wish=9 is fulfillable must throw UserException');
 }
 
 function test_stale_snapshot_multiactive_and_notif_ordering(): void

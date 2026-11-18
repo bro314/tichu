@@ -148,7 +148,7 @@ function executeRequest(array $req): array
       case 'notifHistory':
         $game->beginPlayerAction();
         $game->getNotificationsSince(0, $playerId);
-        $game->endPlayerAction(false);
+        $game->endPlayerAction(true);
         break;
       case 'botSuggest':
         $game->beginPlayerAction();

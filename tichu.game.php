@@ -107,8 +107,10 @@ class Tichu extends Table
     if ((int) $acquired !== 1) {
       $this->logProdWarn("advisory_lock_timeout", ["acquired" => $acquired]);
     }
-    // Start a fresh REPEATABLE-READ snapshot now that GET_LOCK is held.
-    $this->DbQuery("COMMIT");
+    // Start a fresh REPEATABLE-READ transaction & consistent snapshot now that GET_LOCK is held
+    // (on Studio, debugSaveState(4) commits this empty transaction, runs snapshot dump under
+    // GET_LOCK, and calls begin(); on Production, no framework begin() runs after initTable()).
+    $this->DbQuery("START TRANSACTION WITH CONSISTENT SNAPSHOT");
   }
 
   /**
@@ -184,6 +186,20 @@ class Tichu extends Table
   public function isGameLockStale(): bool
   {
     return $this->gameLockStale;
+  }
+
+  /**
+   * Refreshes cached TableInfos & GamestateMachine from the post-GET_LOCK snapshot when an
+   * action accepts a stale request without calling gamestate->nextState(), so Table::checkReturnState()
+   * never inspects outdated pre-lock state (e.g. intermediate game state 50 on duplicate collect).
+   */
+  private function syncStaleReturnState(): void
+  {
+    if (!$this->gameLockStale) {
+      return;
+    }
+    $this->reloadPlayersBasicInfos();
+    $this->gamestate->reloadState();
   }
 
   public function refreshLockStateAfterBotStep(): void
@@ -298,6 +314,7 @@ class Tichu extends Table
       // row directly and broadcast the authoritative locked active player list instead.
       $this->DbQuery("UPDATE player SET player_is_multiactive = 0 WHERE player_id = $playerId");
       $this->notifyAllPlayers("gameStateMultipleActiveUpdate", "", $otherActiveIds);
+      $this->syncStaleReturnState();
       return;
     }
     if (!$staleTransitionSafe) {
@@ -468,23 +485,13 @@ class Tichu extends Table
   function completePlayCombo($playerId, $combo)
   {
     $player = PlayerManager::getPlayer($playerId);
-    $mahjongOwner = $this->getGameStateValue("mahjongOwner");
     $wish = $this->getGameStateValue("mahjongWish");
     $cards = $combo->cards;
     $cardIds = array_column($combo->cards, "id");
     $deck = CardManager::getDeck();
     $cardsInHand = $deck->getCardsInLocation("hand", $playerId);
     $currentHand = new Hand($cardsInHand);
-    $remainingCards = array_values(
-      array_filter($cardsInHand, function ($card) use ($cardIds) {
-        return !in_array($card["id"], $cardIds);
-      })
-    );
-    $remainingHand = new Hand($remainingCards);
-    $lastCombo = LogManager::getLastCombo(1);
-    if ($lastCombo->type == NO_COMBO) {
-      PlayerManager::setAutopass(0);
-    }
+    $lastCombo = LogManager::getLastCombo();
 
     if ($combo->type == DOG_COMBO && $lastCombo->type != NO_COMBO) {
       throw new UserException(clienttranslate("the Dog can only be played as a lead"));
@@ -493,17 +500,26 @@ class Tichu extends Table
       throw new UserException(clienttranslate("This combo can't beat the last combo"));
     }
 
+    $wishGranted = false;
     $notification_description = clienttranslate('${player_name} plays ${combo_name}');
     if ($wish != 0) {
       if (in_array($wish, array_column($cards, "type_arg"))) {
+        $wishGranted = true;
         $notification_description = clienttranslate(
           '${player_name} plays ${combo_name} and grants Mahjong\'s owner wish'
         );
-        $this->setGameStateValue("mahjongWish", 0);
-        NotificationManager::mahjongGranted();
       } else {
         $this->checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand);
       }
+    }
+
+    LogManager::playCombo($playerId, $combo);
+    if ($lastCombo->type == NO_COMBO) {
+      PlayerManager::setAutopass(0);
+    }
+    if ($wishGranted) {
+      $this->setGameStateValue("mahjongWish", 0);
+      NotificationManager::mahjongGranted();
     }
 
     if (count($cardsInHand) == 14 && $player["call_tichu"] == -1) {
@@ -694,7 +710,6 @@ class Tichu extends Table
       );
     }
     $combo->setPhoenixValue($phoenixValue);
-    LogManager::playCombo($pId, $combo);
     $this->completePlayCombo($pId, $combo);
   }
 
@@ -737,7 +752,6 @@ class Tichu extends Table
       LogManager::askPhoenix($playerId, $combo);
       $this->gamestate->nextState("phoenixPlay");
     } else {
-      LogManager::playCombo($playerId, $combo);
       $this->completePlayCombo($playerId, $combo);
     }
   }
@@ -764,6 +778,7 @@ class Tichu extends Table
         }
         PlayerManager::setAutopass($onlyOnce ? 1 : 2, $player_id);
         NotificationManager::autopass($onlyOnce ? 1 : 2, $player_id);
+        $this->syncStaleReturnState();
         return;
       }
     } else {
@@ -811,6 +826,7 @@ class Tichu extends Table
     $this->acquireGameLock();
     PlayerManager::setAutopass(0, $this->getCurrentPlayerId());
     NotificationManager::autopass(0, $this->getCurrentPlayerId());
+    $this->syncStaleReturnState();
   }
 
   function cancel($checkAction = true)
@@ -838,6 +854,7 @@ class Tichu extends Table
     // fresh multiactive check above (both bets and Tichu calls end the player's turn here).
     $player = PlayerManager::getPlayer($player_id);
     if ($player["call_tichu"] != -1) {
+      $this->syncStaleReturnState();
       return;
     }
     $handcount = CardManager::getDeck()->countCardInLocation("hand", $player_id);
@@ -859,6 +876,7 @@ class Tichu extends Table
         $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
       ) {
         NotificationManager::confirmTichu($player_id, true);
+        $this->syncStaleReturnState();
         return;
       }
       LogManager::insert($player_id, "tichuCall", $now);
@@ -932,6 +950,7 @@ class Tichu extends Table
       $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
     ) {
       NotificationManager::confirmTichu($player_id, false);
+      $this->syncStaleReturnState();
       return;
     }
     $firstOutPlayer = (int) $this->getUniqueValueFromDB(
@@ -943,6 +962,7 @@ class Tichu extends Table
         false,
         clienttranslate("You can't win this tichu bet anymore. Are you sure?")
       );
+      $this->syncStaleReturnState();
       return;
     }
     $this->bumpGameVersion();
@@ -952,6 +972,8 @@ class Tichu extends Table
     NotificationManager::tichuBet($player_id, $player["name"], 100);
     if ($stateId == ST_GRAND_TICHU_BETS) {
       $this->setPlayerNonMultiactiveSafe($player_id, "dealLastCards", true);
+    } else {
+      $this->syncStaleReturnState();
     }
   }
 
@@ -1110,6 +1132,7 @@ class Tichu extends Table
     // Duplicates (the trick was already collected) are silently ignored.
     $this->acquireGameLock();
     if ($this->freshStateId !== ST_CONFIRM_TRICK) {
+      $this->syncStaleReturnState();
       return;
     }
     $this->acquireGameLockOrFail();
@@ -1740,7 +1763,6 @@ class Tichu extends Table
           if ($combo === null) {
             $combo = new Combo([$cards[0]]);
           }
-          LogManager::playCombo($active_player, $combo);
           $this->completePlayCombo($active_player, $combo);
           return;
         case "playCombo":
@@ -1759,7 +1781,6 @@ class Tichu extends Table
             if ($mustLead || $mustFulfillWish) {
               $combo = $hand->findPlayableCombo($lastCombo, $mustFulfillWish ? $wish : 0);
               if ($combo !== null) {
-                LogManager::playCombo($active_player, $combo);
                 $this->completePlayCombo($active_player, $combo);
                 return;
               }
