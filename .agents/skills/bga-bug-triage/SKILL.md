@@ -209,33 +209,34 @@ return { pageCount: batch.length, updatedReturned: updated.length, summaries, up
   1. **Exact `tableId` match (`tableId > 0`)**: Same game table almost always shares one incident (e.g. reporter files an `access` ticket and a `block` ticket minutes apart).
   2. **Same `authorName` within 24 hours**: Check for split or follow-up tickets by the same player.
   3. **Root-Cause / Topic Clustering**: Tag tickets by cluster (`zombie-turn`, `mahjong-wish`, `dog-bomb`, `pass-cards`, `trick-points`, `replay`, `sound`, `clock-desync`, `game-length-suggestion`). Keep the oldest or highest-vote ticket as canonical and mark newer duplicates as `Duplicate` (`duplicate_linked_id`).
-- **Active Backlog Cross-Reference (`23` Triaged Open Tickets as of `2026-11-18`, `70` Closed)**:
+- **Active Backlog Cross-Reference (`24` Open Tickets as of `2026-11-18`, `70` Closed)**:
 
-| Bug ID    | Status         | Votes | Cluster                        | Scope / Plan Mapping                                                                                    |
-| :-------- | :------------- | :---- | :----------------------------- | :------------------------------------------------------------------------------------------------------ |
-| `#22264`  | `acknowledged` | `37`  | `hand-organization`            | Custom drag/reorder hand cards (`plans/08`)                                                             |
-| `#31597`  | `acknowledged` | `28`  | `passing-unpass-ux`            | Auto-reopen pass confirmation if Tichu called during pass (`plans/08`)                                  |
-| `#97310`  | `acknowledged` | `14`  | `tichu-bet-ui`                 | Optional Tichu/Grand Tichu confirmation & pass button placement (`src/tichu.ts`)                        |
-| `#36912`  | `acknowledged` | `13`  | `round-score-sheet`            | Live round-by-round scorepad modal (`plans/10`)                                                         |
-| `#36963`  | `acknowledged` | `13`  | `concede-suggestion`           | Partner-agreement forfeit/concede option                                                                |
-| `#36611`  | `acknowledged` | `8`   | `card-art-resolution`          | Higher-resolution 2x card sprite artwork (`img/tichu-cards.png`, `img/tiki-cards.png`)                  |
-| `#106651` | `acknowledged` | `8`   | `bomb-staging-preselect`       | Keep `"Play a Bomb"` stable on own turn (`plans/09`)                                                    |
-| `#25627`  | `acknowledged` | `7`   | `mahjong-wish`                 | Dedicated `"No wish"` button next to `"Make a wish"` (`tichu-value-choice.ts`)                          |
-| `#78193`  | `confirmed`    | `6`   | `i18n-translation`             | Umbrella untranslated PHP combo logs & client `t()` labels (`Combo.php`, `CardManager.php`, `plans/12`) |
-| `#95467`  | `acknowledged` | `4`   | `team-selection-default`       | Make `"At random"` (`101 = 4`) the default Teams option (`gameoptions.inc.php`)                         |
-| `#119164` | `acknowledged` | `4`   | `tichu-bet-ui`                 | Optional Tichu confirm pref & prevent Bomb/Tichu button layout shift (`tichu-action-bar.ts`)            |
-| `#217733` | `acknowledged` | `4`   | `bomb-staging-preselect`       | Pre-select/delayed bomb in turn-based without re-prompt info leak (`plans/09`)                          |
-| `#95469`  | `inforequest`  | `3`   | `team-selection-lobby-display` | Awaiting reporter clarification on exact BGA lobby view                                                 |
-| `#142475` | `acknowledged` | `2`   | `phoenix-combo-log`            | Indicate `(with Phoenix)` in non-single combo logs (`Combo.php`, `NotificationManager.php`, `plans/12`) |
-| `#204088` | `acknowledged` | `2`   | `status-bar-height-jump`       | Reserve stable min-height on `#page-title` (canonical for `#204090`, `#202049`, `#95606`)               |
-| `#52829`  | `acknowledged` | `1`   | `round-indicator-pass`         | Keep round number visible during card exchange (`tichu-last-played.ts`, `plans/10`)                     |
-| `#80004`  | `acknowledged` | `1`   | `tichu-bet-ui`                 | Always confirm Tichu if partner already called this round (`tichu.game.php`)                            |
-| `#95874`  | `acknowledged` | `1`   | `sound-effects-palette`        | Optional responsive sound cues for plays, bombs, and Tichu calls (`plans/12`, `plans/13`)               |
-| `#99318`  | `acknowledged` | `1`   | `remaining-cards-label`        | Rename `"Played Cards"` heading to `"Remaining Cards"` (`tichu-played-cards.ts`)                        |
-| `#161585` | `acknowledged` | `1`   | `phoenix-value-display`        | Show realized Phoenix value badge on table (`tichu-last-played.ts`)                                     |
-| `#164400` | `acknowledged` | `1`   | `mobile-viewport-layout`       | Mobile viewport / 14-card 2-row hand layout (`plans/06`)                                                |
-| `#175241` | `confirmed`    | `1`   | `i18n-translation`             | Untranslated dynamic `"Give cards to <player>"` button (`src/tichu.ts`)                                 |
-| `#218304` | `acknowledged` | `1`   | `passing-unpass-ux`            | Manual `"Undo Pass"` (`unpassCards`) while waiting in `ST_GIVE_CARDS` (`plans/08`)                      |
+| Bug ID    | Status         | Votes | Cluster                        | Scope / Plan Mapping                                                                                  |
+| :-------- | :------------- | :---- | :----------------------------- | :---------------------------------------------------------------------------------------------------- |
+| `#22264`  | `acknowledged` | `37`  | `hand-organization`            | Custom drag/reorder, high-special descending sort & combo groups (`plans/05`)                         |
+| `#31597`  | `acknowledged` | `28`  | `passing-unpass-ux`            | Auto-reopen pass confirmation if Tichu called during pass (`plans/07`)                                |
+| `#97310`  | `acknowledged` | `14`  | `tichu-bet-ui`                 | Optional Tichu/Grand Tichu confirmation Pref `106` & pass button placement (`plans/06`)               |
+| `#36912`  | `acknowledged` | `13`  | `round-score-sheet`            | Live round-by-round scorepad modal & `player.team` replay fix (`plans/10`)                            |
+| `#36963`  | `acknowledged` | `13`  | `concede-suggestion`           | Partnership mutual forfeit/concede option (`global 31`, `plans/15`)                                   |
+| `#36611`  | `acknowledged` | `8`   | `card-art-resolution`          | HiDPI 2x card sprites & table legibility (`plans/14`)                                                 |
+| `#106651` | `acknowledged` | `8`   | `bomb-staging-preselect`       | Keep `"Play a Bomb"` stable on own turn for self-bombing (`plans/08`)                                 |
+| `#25627`  | `acknowledged` | `7`   | `mahjong-wish`                 | Dedicated `"No wish"` button next to `"Make a wish"` (`plans/03`)                                     |
+| `#78193`  | `confirmed`    | `6`   | `i18n-translation`             | Umbrella untranslated PHP combo logs & static JS `_()` extraction (`plans/02`)                        |
+| `#95467`  | `acknowledged` | `4`   | `team-selection-default`       | Make `"At random"` (`101 = 4`) the default Teams option (`plans/16`)                                  |
+| `#119164` | `acknowledged` | `4`   | `tichu-bet-ui`                 | Prevent Bomb/Tichu shift (`plans/03`) & optional Tichu confirm Pref `106` (`plans/06`)                |
+| `#217733` | `acknowledged` | `4`   | `bomb-staging-preselect`       | Delayed bomb in turn-based without re-prompt info leak (`plans/08`, `plans/09`)                       |
+| `#95469`  | `inforequest`  | `3`   | `team-selection-lobby-display` | Open-table lobby `tmdisplay` team badge behavior (`plans/16`)                                         |
+| `#142475` | `acknowledged` | `2`   | `phoenix-combo-log`            | Indicate `(with Phoenix)` in non-single combo logs (`plans/12`)                                       |
+| `#204088` | `acknowledged` | `2`   | `status-bar-height-jump`       | Reserve stable min-height on `#page-title` (`plans/03`, canonical for `#204090`, `#202049`, `#95606`) |
+| `#52829`  | `acknowledged` | `1`   | `round-indicator-pass`         | Keep round number visible during card exchange (`plans/11`)                                           |
+| `#80004`  | `acknowledged` | `1`   | `tichu-bet-ui`                 | Always confirm Tichu if partner already called this round (`plans/06`)                                |
+| `#95874`  | `acknowledged` | `1`   | `sound-effects-palette`        | Polyphonic `sounds/` audio pool & Pref `107` (`plans/13`)                                             |
+| `#99318`  | `acknowledged` | `1`   | `remaining-cards-label`        | Rename `"Played Cards"` heading to `"Remaining Cards"` (`plans/11`)                                   |
+| `#161585` | `acknowledged` | `1`   | `phoenix-value-display`        | Show realized Phoenix value badge on table (`plans/11`)                                               |
+| `#164400` | `acknowledged` | `1`   | `mobile-viewport-layout`       | Responsive 2-row 14-card hand (`plans/04`) & combo grouping (`plans/05`)                              |
+| `#175241` | `confirmed`    | `1`   | `i18n-translation`             | Untranslated dynamic `"Give cards to <player>"` button (`plans/02`)                                   |
+| `#218304` | `acknowledged` | `1`   | `passing-unpass-ux`            | Manual `"Undo Pass"` (`unpassCards`) while waiting in `ST_GIVE_CARDS` (`plans/07`)                    |
+| `#257135` | `awaiting`     | `1`   | `ui-text-suggestion`           | Modern compact controls & clean spectator/gameEnd chrome (`plans/04`)                                 |
 
 ---
 

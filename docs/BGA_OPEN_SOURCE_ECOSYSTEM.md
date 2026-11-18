@@ -2,7 +2,7 @@
 
 This progressive-disclosure reference preserves curated open-source Board Game Arena (BGA) documentation links, inspiration repositories, tools/libraries, ecosystem census data, and architectural guardrails discovered while auditing open-source BGA projects for **Tichu**. Consult this file on demand when researching how other BGA games solve UX/platform problems or planning new improvements.
 
-For concrete, prioritized implementation blueprints derived from this research, see [`plans/`](file:///Users/brohlfs/git/tichu/plans).
+For concrete, prioritized implementation blueprints derived from this research, see [`plans/00-roadmap-index.md`](file:///Users/brohlfs/git/tichu/plans/00-roadmap-index.md).
 
 ---
 
@@ -115,7 +115,7 @@ For concrete, prioritized implementation blueprints derived from this research, 
 
 ---
 
-## 4. Meta-Research Findings Not Covered by `plans/00..14`
+## 4. Meta-Research Findings Beyond Individual Roadmap Plans
 
 ### Ecosystem Census (`742` Verified Unique Open-Source BGA Repos)
 

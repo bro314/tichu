@@ -16,7 +16,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 - **Authoritative Stubs (Beat the Wiki)**: [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS). Re-download `/tichu/_ide_helper.php` via SFTP if checking newer Studio APIs.
 - **Official BGA Docs**: https://doc.studio.boardgamearena.com/ (2025–2026 PHP 8.4/ES2022) and https://en.doc.boardgamearena.com/Studio (classic `Deck`/`ebg/stock`).
 - **Community & Bug Tracker**: https://github.com/rbellec/claude-code-bga (`TECHNICAL_NOTES.md`, `references/*`) and Tichu bugs at https://boardgamearena.com/bugs?game=1237 (`bug?id=<BUG_ID>`).
-- **Ecosystem Research & Plans**: [`docs/BGA_OPEN_SOURCE_ECOSYSTEM.md`](file:///Users/brohlfs/git/tichu/docs/BGA_OPEN_SOURCE_ECOSYSTEM.md) and [`plans/`](file:///Users/brohlfs/git/tichu/plans) (`00`–`14`).
+- **Ecosystem Research & Plans**: [`docs/BGA_OPEN_SOURCE_ECOSYSTEM.md`](file:///Users/brohlfs/git/tichu/docs/BGA_OPEN_SOURCE_ECOSYSTEM.md) and [`plans/00-roadmap-index.md`](file:///Users/brohlfs/git/tichu/plans/00-roadmap-index.md) (`00`–`18`).
 - **Classic BGA Architecture**: Tichu uses `tichu.game.php`, `states.inc.php`, `tichu.action.php`, `Deck`, `ebg/stock`, and Dojo `bgagame.tichu` — not the 2025+ `modules/php/States/*.php` / `BgaCards` scaffold.
 
 ---
@@ -53,7 +53,7 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 | `tests/` (`stubs.php`, `TestUtils.php`, `ComboTest.php`, `HandTest.php`, `combo-validator.test.ts`)                                                         | PHPUnit unit test suite (~15ms) and TS client combo/hand parity tests (~130ms)                                                                                                                               |
 | `local/` (`Bga/GameFramework/`, `mysql-ctl.sh`, `router.php`, `bga-backend.php`, `bot.php`, `scenarios.php`)                                                | Local BGA PHP 8 + MySQL 8.0 runner (`ebd_tichu_1`), `LocalTichuBot` (`autoPlayUntilPlayer` + transaction wrapper over `TichuBot`), and deterministic test scenarios                                          |
 | `local/` (`integration-tests.php`, `check-contracts.php`, `race-tests.php`, `import-bug-sql.php`, `check-prod-errors.js`, `sftp-sync.sh`, `js/bga-shim.js`) | 18-suite backend integration tests, static contract check, multi-worker race stress test, bug SQL CLI importer/inspector, Studio Sentry/PHP error checker, SFTP sync, frontend shim                          |
-| `docs/`, `plans/`, `img/`                                                                                                                                   | Ecosystem reference, plans (`00`–`14`), sprite sheets (`tichu-cards.png`, `tiki-cards.png`, `tichu-icons*.png`), `tichu_laser.mp3`/`.ogg`                                                                    |
+| `docs/`, `plans/`, `img/`                                                                                                                                   | Ecosystem reference, roadmap plans (`00`–`18`), sprite sheets (`tichu-cards.png`, `tiki-cards.png`, `tichu-icons*.png`), `tichu_laser.mp3`/`.ogg`                                                            |
 
 ---
 
