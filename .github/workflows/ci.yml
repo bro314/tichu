@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: Build, Test & Verify Contracts
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: tichu_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ptichu_ci --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure MySQL 8.0 SERIALIZABLE isolation & SQL mode
+        run: >-
+          mysql -h127.0.0.1 -P3306 -uroot -ptichu_ci -e
+          "SET PERSIST transaction_isolation='SERIALIZABLE';
+          SET PERSIST sql_mode='STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION';
+          SET PERSIST time_zone='+00:00';
+          SET PERSIST character_set_server='utf8mb4';
+          SELECT @@GLOBAL.transaction_isolation;"
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mysqli, mbstring, json
+          coverage: none
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run PHPUnit unit tests
+        run: npm run test:unit
+
+      - name: Run TypeScript validator & replay stream tests
+        run: npm run test:validator
+
+      - name: Compile TypeScript & bundle client
+        run: npm run compile && npm run bundle
+
+      - name: Check static cross-stack contracts
+        run: npm run test:contracts
+
+      - name: Run PHPStan static analysis
+        run: npm run phpstan
+
+      - name: Run MySQL 8.0 integration tests
+        env:
+          TICHU_MYSQL_HOST: 127.0.0.1
+          TICHU_MYSQL_PORT: "3306"
+          TICHU_MYSQL_USER: root
+          TICHU_MYSQL_PASS: tichu_ci
+          TICHU_MYSQL_DB: ebd_tichu_test
+        run: npm run test:integration
+
+      - name: Check Prettier formatting
+        run: npx prettier --check "src/**/*.ts" "tests/**/*.ts" "*.css" "plans/*.md" "AGENTS.md" ".agents/**/*.md"
+
+  race:
+    name: Multi-Worker Concurrency Race Stress Test
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: ci
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: tichu_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -ptichu_ci --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure MySQL 8.0 SERIALIZABLE isolation & SQL mode
+        run: >-
+          mysql -h127.0.0.1 -P3306 -uroot -ptichu_ci -e
+          "SET PERSIST transaction_isolation='SERIALIZABLE';
+          SET PERSIST sql_mode='STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION';
+          SET PERSIST time_zone='+00:00';
+          SET PERSIST character_set_server='utf8mb4';
+          SELECT @@GLOBAL.transaction_isolation;"
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mysqli, mbstring, json
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run MySQL 8.0 race stress test
+        env:
+          TICHU_MYSQL_HOST: 127.0.0.1
+          TICHU_MYSQL_PORT: "3306"
+          TICHU_MYSQL_USER: root
+          TICHU_MYSQL_PASS: tichu_ci
+          TICHU_MYSQL_DB: ebd_tichu_race
+        run: npm run test:race -- --duration=20 --reps=10

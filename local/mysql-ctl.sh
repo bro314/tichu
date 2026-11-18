@@ -5,6 +5,10 @@ set -euo pipefail
 # Runs an isolated mysqld instance on a Unix socket inside local/.mysql/ with
 # BGA Studio's exact transaction isolation (SERIALIZABLE) and zero global system changes.
 
+if [[ -n "${TICHU_MYSQL_HOST:-}" && ( "${1:-ensure}" == "ensure" || "${1:-ensure}" == "start" ) ]]; then
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MYSQL_DIR="${SCRIPT_DIR}/.mysql"
 DATA_DIR="${MYSQL_DIR}/data"

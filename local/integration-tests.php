@@ -1500,7 +1500,7 @@ function test_zombie_turns_across_all_states(): void
     (string) ($g_config['db_user'] ?? 'root'),
     (string) ($g_config['db_password'] ?? ''),
     (string) ($g_config['db_name'] ?? 'ebd_tichu_1'),
-    0,
+    (int) ($g_config['db_port'] ?? 0),
     (string) ($g_config['db_socket'] ?? '')
   );
   assertTrueVal(!$otherDb->connect_errno, 'Failed to open secondary MySQL connection: ' . $otherDb->connect_error);
@@ -1776,7 +1776,7 @@ function test_stale_snapshot_multiactive_and_notif_ordering(): void
     (string) ($g_config['db_user'] ?? 'root'),
     (string) ($g_config['db_password'] ?? ''),
     (string) ($g_config['db_name'] ?? 'ebd_tichu_1'),
-    0,
+    (int) ($g_config['db_port'] ?? 0),
     (string) ($g_config['db_socket'] ?? '')
   );
   assertTrueVal(!$otherDb->connect_errno, 'Failed to open secondary MySQL connection: ' . $otherDb->connect_error);
@@ -2656,6 +2656,358 @@ function test_smart_bot_strategy_and_decisions(): void
   assertSameVal((string) P2, (string) $game->getActivePlayerId(), 'Zombie P1 holding Ace against opponent 2 still passes');
 }
 
+// ============================================================================
+// Test 19: test_day1_security_version_i18n_and_zombie_128k_guard
+// ============================================================================
+function test_day1_security_version_i18n_and_zombie_128k_guard(): void
+{
+  $game = new \Tichu();
+  $callGetAllDatas = static function (\Tichu $g, int $pid): array {
+    $fn = \Closure::bind(fn() => $this->getAllDatas($pid), $g, \Tichu::class);
+    return $fn();
+  };
+
+  // 1. Real-time (isAllInfoExposed == 0) getAllDatas()['capturedCards'] === [] vs isAllInfoExposed == 1 populated capturedCards
+  \LocalTichuScenarios::setupScenario($game, 'dragon_gift', P0);
+  callAction($game, P3, 'pass', ['onlyOnce' => true]);
+  callAction($game, P0, 'collect');
+  callAction($game, P0, 'chooseDragonGift', ['player' => 0]);
+
+  $capturedInDb = (int) \CardManager::getDeck()->countCardInLocation('captured');
+  assertTrueVal($capturedInDb > 0, 'Cards must be present in captured location after Dragon trick');
+
+  $rtDatas = $callGetAllDatas($game, P0);
+  assertSameVal(0, (int) ($rtDatas['isAllInfoExposed'] ?? -1), 'Real-time game must have isAllInfoExposed == 0');
+  assertSameVal([], $rtDatas['capturedCards'], 'Real-time getAllDatas() must never expose capturedCards');
+
+  $game->setGameStateValue('isAllInfoExposed', 1);
+  $tbDatas = $callGetAllDatas($game, P0);
+  assertSameVal(1, (int) ($tbDatas['isAllInfoExposed'] ?? 0), 'Turn-based flag must expose all info');
+  assertSameVal($capturedInDb, count($tbDatas['capturedCards']), 'isAllInfoExposed == 1 must populate capturedCards');
+
+  // 2. Zero devConsole notifications recorded in gamelog when getBgaEnvironment() !== 'studio'
+  //    (spawn clean subprocess setting app_domain = '0.boardgamearena.com' before Table::getBgaEnvironment() caches static value)
+  $prodSubscript = <<<'PHP'
+$projectRoot = $argv[1];
+require_once $projectRoot . '/local/bga-backend.php';
+$g_config['app_domain'] = '0.boardgamearena.com';
+require_once $projectRoot . '/tichu.game.php';
+require_once $projectRoot . '/tichu.action.php';
+require_once $projectRoot . '/local/scenarios.php';
+if (\Tichu::getBgaEnvironment() !== 'prod') {
+  fwrite(STDERR, 'Expected prod env, got ' . \Tichu::getBgaEnvironment());
+  exit(2);
+}
+$g = new \Tichu();
+$g->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 1]);
+$p0 = \LocalTichuScenarios::P0;
+$p1 = \LocalTichuScenarios::P1;
+$p2 = \LocalTichuScenarios::P2;
+$p3 = \LocalTichuScenarios::P3;
+foreach ([$p0, $p1, $p2, $p3] as $pid) {
+  $g->setCurrentPlayerId($pid);
+  (new \action_tichu($g, ['bet' => '0']))->grandTichuBet();
+}
+foreach ([$p0, $p1, $p2, $p3] as $pid) {
+  $cards = array_values(\CardManager::getDeck()->getCardsInLocation('hand', $pid));
+  $ids = [$cards[0]['id'], $cards[1]['id'], $cards[2]['id']];
+  $g->setCurrentPlayerId($pid);
+  (new \action_tichu($g, ['cards' => implode(';', $ids)]))->giveTheCards();
+}
+$beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog');
+$st = $g->gamestate->state(true, false, true);
+$starter = (int) $st['active_player'];
+$starterCards = array_values(\CardManager::getDeck()->getCardsInLocation('hand', $starter));
+$leadId = (int) $starterCards[0]['id'];
+foreach ($starterCards as $c) {
+  if ((int) $c['type'] === TYPE_MAHJONG && (int) $c['type_arg'] === 1) {
+    $leadId = (int) $c['id'];
+    break;
+  }
+}
+$g->setCurrentPlayerId($starter);
+(new \action_tichu($g, ['cards' => (string) $leadId]))->playCombo();
+if ($g->gamestate->state(true, false, true)['name'] === 'mahjongPlay') {
+  $g->setCurrentPlayerId($starter);
+  (new \action_tichu($g, ['wish' => '15']))->makeAWish();
+}
+\NotificationManager::devConsole('secret opponent hand info');
+$g->sendNotifications();
+$devConsoleCount = (int) \APP_DbObject::getUniqueValueFromDB(
+  "SELECT COUNT(*) FROM gamelog WHERE gamelog_packet_id > {$beforePkt} AND gamelog_notification LIKE '%\"devConsole\"%'"
+);
+if ($devConsoleCount !== 0) {
+  fwrite(STDERR, "Found {$devConsoleCount} devConsole packets in prod mode");
+  exit(3);
+}
+echo "PROD_NO_DEVCONSOLE_OK";
+PHP;
+  $cmd = escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($prodSubscript) . ' ' . escapeshellarg(dirname(__DIR__)) . ' 2>&1';
+  $subOut = [];
+  $subExit = 0;
+  exec($cmd, $subOut, $subExit);
+  $subOutputStr = implode("\n", $subOut);
+  assertSameVal(0, $subExit, 'Prod non-studio devConsole check failed: ' . $subOutputStr);
+  assertTrueVal(str_contains($subOutputStr, 'PROD_NO_DEVCONSOLE_OK'), 'Expected PROD_NO_DEVCONSOLE_OK marker');
+
+  // 3. getAllDatas()['codeVersion'] === TICHU_CODE_VERSION and outgoing NotificationManager notifications include codeVersion
+  $game->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  $freshDatas = $callGetAllDatas($game, P0);
+  assertSameVal(TICHU_CODE_VERSION, $freshDatas['codeVersion'] ?? null, 'getAllDatas() must expose codeVersion === TICHU_CODE_VERSION');
+
+  $beforeVerPkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P0, 'grandTichuBet', ['bet' => '200']);
+  callAction($game, P1, 'grandTichuBet', ['bet' => '0']);
+  callAction($game, P2, 'grandTichuBet', ['bet' => '0']);
+  callAction($game, P3, 'grandTichuBet', ['bet' => '0']);
+  $p0Pass = \LocalTichuBot::pickThreeCardsToGive(P0);
+  callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0Pass)]);
+
+  $verPackets = $game->getNotificationsSince($beforeVerPkt, P0, false);
+  $checkedNotifTypes = [];
+  $customNotifSet = [
+    'dealCards',
+    'grandTichuBet',
+    'tichuBet',
+    'log',
+    'playCombo',
+    'wishMade',
+    'mahjongWishGranted',
+    'playerGoOut',
+    'pass',
+    'devConsole',
+    'tableWindow',
+    'newScores',
+    'captureCards',
+    'autopass',
+    'confirmTichu',
+    'acceptCards',
+    'passCards',
+    'botSuggestion',
+  ];
+  foreach ($verPackets as $pkt) {
+    foreach ($pkt['data'] ?? [] as $notif) {
+      $nType = (string) ($notif['type'] ?? '');
+      if (in_array($nType, $customNotifSet, true)) {
+        assertSameVal(
+          TICHU_CODE_VERSION,
+          $notif['args']['codeVersion'] ?? null,
+          "Notification '{$nType}' must carry codeVersion === TICHU_CODE_VERSION"
+        );
+        $checkedNotifTypes[$nType] = true;
+      }
+    }
+  }
+  assertTrueVal(isset($checkedNotifTypes['grandTichuBet']), 'Should have verified broadcast grandTichuBet codeVersion');
+  assertTrueVal(isset($checkedNotifTypes['dealCards']), 'Should have verified private dealCards codeVersion');
+  assertTrueVal(isset($checkedNotifTypes['passCards']), 'Should have verified private passCards codeVersion');
+
+  // 4. LogManager single-quote escaping, CardManager::setPassedCards([]) safe no-op, PlayerManager::getSelectStmnt & getNextPlayers
+  $quoteAction = "q'test";
+  $quotePayload = [
+    'note' => "O'Malley's \"Grand\" Tichu \\ backslash 'quote'",
+    'nested' => ["it's fine"],
+  ];
+  \LogManager::insert(P0, $quoteAction, $quotePayload);
+  $fetchedLogs = \LogManager::getLastActions([$quoteAction], 1);
+  assertSameVal(1, count($fetchedLogs), 'LogManager::getLastActions must find action containing single quote');
+  assertSameVal((string) P0, (string) $fetchedLogs[0]['player'], 'Round-tripped log player should be P0');
+  assertSameVal($quotePayload, $fetchedLogs[0]['arg'], 'LogManager::insert & getLastActions must round-trip single quotes cleanly');
+
+  $tempCountBefore = (int) \CardManager::getDeck()->countCardInLocation('temporary');
+  \CardManager::setPassedCards([], P0);
+  \CardManager::setPassedCards([0, -1], P0);
+  $tempCountAfter = (int) \CardManager::getDeck()->countCardInLocation('temporary');
+  assertSameVal($tempCountBefore, $tempCountAfter, 'CardManager::setPassedCards([]) must be a safe no-op');
+
+  $selectSql = \PlayerManager::getSelectStmnt(['player_id' => P0, 'name' => "D'Artagnan"]);
+  assertTrueVal(
+    str_contains($selectSql, "player_id = '" . P0 . "'"),
+    "PlayerManager::getSelectStmnt(['player_id' => P0]) must retain = '<id>' comparison, got: $selectSql"
+  );
+  assertTrueVal(
+    str_contains($selectSql, "D\\'Artagnan"),
+    "PlayerManager::getSelectStmnt must escape single quotes, got: $selectSql"
+  );
+  $queriedPlayers = \APP_DbObject::getCollectionFromDb(\PlayerManager::getSelectStmnt(['player_id' => P0]));
+  assertSameVal(1, count($queriedPlayers), 'getSelectStmnt([player_id => P0]) query must return exactly P0');
+  assertSameVal((string) P0, (string) $queriedPlayers[P0]['id']);
+
+  $game->setCurrentPlayerId(0);
+  $nextAsc = array_map(static fn($p) => (int) $p['id'], \PlayerManager::getNextPlayers(P0, false));
+  $nextDesc = array_map(static fn($p) => (int) $p['id'], \PlayerManager::getNextPlayers(P0, true));
+  assertSameVal([P1, P2, P3, P0], $nextAsc, 'PlayerManager::getNextPlayers(P0, false) must order [P1, P2, P3, P0] without session');
+  assertSameVal([P3, P2, P1, P0], $nextDesc, 'PlayerManager::getNextPlayers(P0, true) must order [P3, P2, P1, P0] without session');
+
+  // 5. Mahjong wish UserException carrying NotificationMessage template and $e->args['rank'] (face card + numeric rank)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 11]); // Jack (translatable rank)
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 2]],
+    P1 => [[1, 11], [1, 10]], // holds Jack (11) and 10
+    P2 => [[3, 2]],
+    P3 => [[4, 2]],
+  ], 'captured_p0');
+  $game->gamestate->changeActivePlayer(P1);
+
+  // 5a. playCombo violation on Jack wish -> template + args['rank'] = 'Jack' + args['i18n'] = ['rank']
+  $caughtPlayJack = null;
+  try {
+    callAction($game, P1, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 10)]);
+  } catch (\Bga\GameFramework\UserException $e) {
+    $caughtPlayJack = $e;
+  }
+  assertTrueVal($caughtPlayJack !== null, 'Playing 10 when holding wished Jack must throw UserException');
+  assertSameVal(
+    'You must grant the Mahjong Wish and play a ${rank}',
+    $caughtPlayJack->getMessage(),
+    'Mahjong wish playCombo UserException must preserve NotificationMessage template'
+  );
+  assertSameVal('Jack', $caughtPlayJack->args['rank'] ?? null, 'Mahjong wish args[rank] should be Jack');
+  assertSameVal(['rank'], $caughtPlayJack->args['i18n'] ?? null, 'Translatable Jack wish must include i18n => [rank]');
+
+  // 5b. pass violation on numeric 9 wish -> template + args['rank'] = '9' (no i18n on bare number)
+  $game->setGameStateValue('mahjongWish', 9);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 2]],
+    P1 => [[1, 9], [1, 10]],
+    P2 => [[3, 2]],
+    P3 => [[4, 2]],
+  ], 'captured_p0');
+  $caughtPassNine = null;
+  try {
+    callAction($game, P1, 'pass', ['onlyOnce' => true]);
+  } catch (\Bga\GameFramework\UserException $e) {
+    $caughtPassNine = $e;
+  }
+  assertTrueVal($caughtPassNine !== null, 'Passing when holding wished 9 must throw UserException');
+  assertSameVal(
+    'You must grant the Mahjong Wish and play a ${rank}',
+    $caughtPassNine->getMessage(),
+    'Mahjong wish pass UserException must preserve NotificationMessage template'
+  );
+  assertSameVal('9', $caughtPassNine->args['rank'] ?? null, 'Mahjong wish args[rank] should be 9');
+  assertTrueVal(!isset($caughtPassNine->args['i18n']), 'Numeric wish 9 must omit i18n array');
+
+  // 6a. All-4-zombie cascade terminating cleanly in ST_GAME_END (99)
+  $allZombieGame = new \Tichu();
+  $allZombieGame->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1');
+  $allZombieGame->reloadPlayersBasicInfos();
+  $allZombieGame->setCurrentPlayerId(P0);
+  $allZombieGame->beginPlayerAction();
+  foreach ([P0, P1, P2, P3] as $zPid) {
+    $curSt = $allZombieGame->gamestate->state(true, false, true);
+    if ((int) ($curSt['id'] ?? 0) === ST_GAME_END) {
+      break;
+    }
+    $allZombieGame->zombieTurn($curSt, $zPid);
+  }
+  $allZombieGame->endPlayerAction(false);
+  assertSameVal(
+    ST_GAME_END,
+    (int) $allZombieGame->gamestate->state_id(),
+    'All-4-zombie table must jump cleanly to ST_GAME_END (99)'
+  );
+  // Subsequent zombieTurn in ST_GAME_END must be a clean no-op
+  $allZombieGame->zombieTurn($allZombieGame->gamestate->state(true, false, true), P1);
+  assertSameVal(ST_GAME_END, (int) $allZombieGame->gamestate->state_id(), 'zombieTurn at ST_GAME_END must stay at 99');
+
+  // 6b. Multi-turn 3-zombie cascade flushing packets mid-request (% 15) with per-packet size well below 131072 bytes
+  $cascadeGame = new \Tichu();
+  \LocalTichuScenarios::setupScenario($cascadeGame, 'mahjong_wish', P0);
+  // Set gameLength = 3 (2000 pts) so round end transitions into Round 2 rather than ending immediately if scores stay low
+  $cascadeGame->setGameStateValue('gameLength', 3);
+  // Give P0 just 1 card ([1, 2]) and distribute 14 cards each to zombies P1, P2, P3 (42 cards), rest captured by P0 (13 cards)
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2]],
+    P1 => [
+      [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9],
+      [1, 10], [1, 11], [1, 12], [1, 13], [1, 14], [2, 2], [2, 3],
+    ],
+    P2 => [
+      [2, 4], [2, 5], [2, 6], [2, 7], [2, 8], [2, 9], [2, 10],
+      [2, 11], [2, 12], [2, 13], [2, 14], [3, 2], [3, 3], [3, 4],
+    ],
+    P3 => [
+      [3, 5], [3, 6], [3, 7], [3, 8], [3, 9], [3, 10], [3, 11],
+      [3, 12], [3, 13], [3, 14], [4, 2], [4, 3], [4, 4], [4, 5],
+    ],
+  ], 'captured_p0');
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1 WHERE player_id IN (' . P1 . ', ' . P2 . ', ' . P3 . ')');
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 0 WHERE player_id = ' . P0);
+  $cascadeGame->reloadPlayersBasicInfos();
+  $cascadeGame->gamestate->changeActivePlayer(P0);
+
+  // P0 plays its single remaining card -> zombies P1, P2, P3 pass -> P0 collects its going-out trick ->
+  // now P0 has 0 cards so zombies P1, P2, P3 cascade through all remaining tricks of Round 1 and into
+  // Round 2's grandTichuBets (where P0 becomes multiactive again) in a single HTTP collect request!
+  callAction($cascadeGame, P0, 'playCombo', ['cards' => (string) \LocalTichuScenarios::getCardId(1, 2)]);
+  assertSameVal('confirmTrick', $cascadeGame->gamestate->state(true, false, true)['name'], 'P0 should confirm its going-out trick');
+
+  $beforeCascadePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COALESCE(MAX(gamelog_packet_id), 0) FROM gamelog');
+  $beforeZombieTurnRows = (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM actionlog WHERE log_action = 'zombieTurn'");
+
+  callAction($cascadeGame, P0, 'collect');
+
+  $afterZombieTurnRows = (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM actionlog WHERE log_action = 'zombieTurn'");
+  $zombieStepsExecuted = $afterZombieTurnRows - $beforeZombieTurnRows;
+  assertTrueVal(
+    $zombieStepsExecuted >= 30,
+    "Expected >= 30 zombie steps in 3-zombie cascade, got {$zombieStepsExecuted}"
+  );
+
+  $cascadeRows = \APP_DbObject::getObjectListFromDB(
+    "SELECT gamelog_packet_id, gamelog_move_id, LENGTH(gamelog_notification) AS byte_len, gamelog_notification FROM gamelog WHERE gamelog_packet_id > {$beforeCascadePkt} ORDER BY gamelog_packet_id ASC"
+  );
+  assertTrueVal(count($cascadeRows) > 0, 'Cascade must record notification packets in gamelog');
+  $distinctMoves = [];
+  $maxPacketBytes = 0;
+  $zombieLogMsgCount = 0;
+  foreach ($cascadeRows as $cRow) {
+    $byteLen = (int) $cRow['byte_len'];
+    if ($byteLen > $maxPacketBytes) {
+      $maxPacketBytes = $byteLen;
+    }
+    assertTrueVal(
+      $byteLen < 131072,
+      "Every gamelog packet must stay well below 131072 bytes (got {$byteLen})"
+    );
+    if ($cRow['gamelog_move_id'] !== null) {
+      $distinctMoves[(string) $cRow['gamelog_move_id']] = true;
+    }
+    $decodedNotifs = json_decode((string) $cRow['gamelog_notification'], true);
+    if (is_array($decodedNotifs)) {
+      foreach ($decodedNotifs as $dn) {
+        if (($dn['type'] ?? '') === 'log' && str_contains((string) ($dn['log'] ?? ''), 'makes a zombie turn')) {
+          $zombieLogMsgCount++;
+        }
+      }
+    }
+  }
+  assertTrueVal(
+    count($distinctMoves) >= 3,
+    'Mid-request sendNotifications() (% 15) must flush multiple move batches (got ' . count($distinctMoves) . ')'
+  );
+  assertTrueVal(
+    $maxPacketBytes < 65536,
+    "Mid-request flushes should keep max packet size < 64 KB (got {$maxPacketBytes} bytes)"
+  );
+  assertSameVal(
+    3,
+    $zombieLogMsgCount,
+    'Zombie turn log message must be deduplicated to once per zombie player (3) per request'
+  );
+  $afterCascadeStateName = (string) ($cascadeGame->gamestate->state(true, false, true)['name'] ?? '');
+  assertTrueVal(
+    in_array($afterCascadeStateName, ['grandTichuBets', 'giveCards'], true),
+    "Cascade must pause cleanly at Round 2 multiactive state where live P0 is active (got {$afterCascadeStateName})"
+  );
+  assertTrueVal($cascadeGame->gamestate->isPlayerActive(P0), 'Live player P0 must be active after 3-zombie cascade');
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -2675,6 +3027,7 @@ $tests = [
   'test_production_bug_sql_loader_and_player_id_remapping',
   'test_studio_debug_bot_step_and_bot_others',
   'test_smart_bot_strategy_and_decisions',
+  'test_day1_security_version_i18n_and_zombie_128k_guard',
 ];
 
 echo "====================================================================\n";

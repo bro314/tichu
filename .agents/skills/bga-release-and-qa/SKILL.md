@@ -16,7 +16,7 @@ description: >-
 
 - **CRITICAL SAFETY GUARDRAIL**: **NEVER** build a release or deploy a new version to production without getting **explicit, clear confirmation from the user first**. Safe actions like `Reload game informations` or `Dry run build (to check code warnings)` can be clicked anytime, but committing/building/deploying a release requires user approval.
 - Once confirmed by the user, follow these steps on `https://studio.boardgamearena.com/studiogame?game=tichu`:
-  1. Ensure all local changes are tested and compiled (`npm run build`, which runs `npm test` + `compile` + `bundle`, plus `npm run test:contracts`, `npm run phpstan`, and `await tt.runSuite({ speed: "instant" })` in the local runner if frontend code changed), synced via SFTP to `/tichu/` (`npm run deploy:sftp`), and verified on a Studio test table (**including with BGA Studio's `"Use minified JS"` / `"Use minified CSS"` modes ON** whenever JS bundling or CSS changed).
+  1. Bump `TICHU_CODE_VERSION` in [`modules/Constants.php`](file:///Users/brohlfs/git/tichu/modules/Constants.php) together with `"version"` in [`package.json`](file:///Users/brohlfs/git/tichu/package.json) and [`package-lock.json`](file:///Users/brohlfs/git/tichu/package-lock.json) (e.g., `YYYY-MM-DD.N` — **never** edit `version.php`). Ensure all local changes are tested and compiled (`npm run build`, which runs `npm test` + `compile` + `bundle` injecting `__TICHU_CODE_VERSION__`, plus `npm run test:contracts`, `npm run phpstan`, and `await tt.runSuite({ speed: "instant" })` in the local runner if frontend code changed), synced via SFTP to `/tichu/` (`npm run deploy:sftp`), and verified on a Studio test table (**including with BGA Studio's `"Use minified JS"` / `"Use minified CSS"` modes ON** whenever JS bundling or CSS changed).
      - **Svelte Control Panel DOM Selectors (`studiogame?game=tichu`)**:
        - All Studio action buttons (`Reload game informations`, `Reload statistics configuration`, `Reload game options configuration`, `⇨ Dry run build (to check code warnings)`, `Use minified JS`, `Use minified CSS`, `Revert`) render as `a.bga-button` links (not `<button>` tags).
        - Clicking any action button mounts `div.studio-command-modal` on `document.body`, showing `div[aria-busy="true"]` while running and then `div#studioCommandResults` (warnings/errors use `.studio-command-blocks__alert--warning` / `.studio-command-blocks__alert--error`). Dismiss between actions via `div.studio-command-modal a.bga-button` (`"Close"`).
@@ -69,11 +69,10 @@ Explicit invariant: every state transition that resets or advances trick/round p
 3. **Rollback Live-Tab Skew (`NEW JS open tab <-> OLD PHP`)**: `NEW` JS (`src/tichu.ts`, `GameModel`, `Combo`) must gracefully handle `undefined` for newly added `getAllDatas` or `NotificationManager` fields (especially when client-side validators disable/gate Play or Pass buttons!) and must not depend on brand-new action endpoints unless phased across releases.
 4. **Rollback DB / Log Forwards Compatibility (`NEW DB/Logs -> OLD PHP + OLD JS`)**: Because BGA has no `downgradeTableDb`, never drop/rename columns or card locations, park tables in newly added states, or change `actionlog` round/trick query invariants expected by `OLD` PHP in a single release. Use a **two-release expand-then-contract** rollout for any breaking schema, action, or log change.
 
-### Client Version Reload Banner (`checkVersion` in `src/tichu.ts`) Caveats
+### Client Version Reload Banner (`checkVersion` in `src/tichu.ts`)
 
-- `checkVersion` only runs in tabs that already loaded a release containing it (never in older clients).
-- Notifications do **not** carry `gameVersion` automatically unless explicitly added by PHP (e.g., in `NotificationManager`), so `traceNotif` will not see version changes unless `gameVersion` is emitted on notifications/state changes.
-- Reading `global[300]` (`getGameStateValue("game_db_version", 0)`) detects forward upgrades (`V1 -> V2` once `Table::setTable()` bumps `global[300]`), **not** rollbacks (`V2 -> V1`, where `global[300]` remains `V2` on touched tables). Detecting rollbacks requires comparing against the deployed code's own build/version identifier rather than `global[300]`.
+- `TICHU_CODE_VERSION` (`modules/Constants.php`, synced with `package.json` & `package-lock.json` `"version"` and injected into `tichu.js` via `--define:__TICHU_CODE_VERSION__`) is emitted as `codeVersion` on `getAllDatas()` and every `NotificationManager` notification (`broadcast()` / `notifyPlayerWithVersion()`).
+- In live non-read-only tabs (`!this.isReadOnly()`), `setup()` compares `__TICHU_CODE_VERSION__` against `gamedatas.codeVersion` (catching CDN-cached stale JS on initial load), and `traceNotif()` -> `checkVersion()` compares each incoming notification's `codeVersion` against `this.initialCodeVersion` — detecting **both** forward upgrades (`V1 -> V2`) and rollbacks (`V2 -> V1`, where `global[300]` `game_db_version` stays monotonic). Notifications from pre-`codeVersion` builds fall back to `gameVersion` (`global[300]`) parity.
 
 ### Schema, DB & Platform Rules
 
@@ -92,9 +91,9 @@ Explicit invariant: every state transition that resets or advances trick/round p
 ## 4. Translations (`clienttranslate`), Dark Mode & Safari CSS Checklist
 
 - **Translations**:
-  - `clienttranslate()` is statically extracted — pass literal strings only (no variables or string concatenation inside `clienttranslate()`), and wrap all player-facing `UserException` messages in `clienttranslate()`.
-  - When a notification argument is used both for client logic/CSS and for log display, pass two separate keys (raw value + `clienttranslate()` label listed in `'i18n' => [...]`).
-  - Append `&dummyTranslations` to a Studio table URL to wrap all translated client `_()` strings in `«»` (any bare English text indicates a missing `_()` wrapper).
+  - `clienttranslate()` (PHP) and global `_("...")` (`tichu.js`) are statically extracted by BGA Translation HQ — pass single quoted literal strings only (no variables, `+` concatenation, backtick templates, or local `const t` / `function translate` wrappers, which `esbuild` mangles into invisible `t5(...)` calls in `tichu.js`). Enforced on both `src/**/*.ts` and built `tichu.js` by `npm run test:contracts`.
+  - When a notification argument is used both for client logic/CSS and for log display, pass two separate keys (raw value + `clienttranslate()` label listed in `'i18n' => [...]`, omitting bare numeric strings `"0"` / `"2".."10"` via `CardManager::isTranslatableCardStr()`).
+  - Append `&dummyTranslations` to a Studio table URL to wrap all translated client `_()` strings in `«»` (note: `&dummyTranslations` hooks runtime `globalThis._`, so always pair it with `npm run test:contracts` to guarantee static extractability).
 - **BGA Dark Mode**: BGA toggles dark mode via `html[data-theme="dark"]` (not `@media (prefers-color-scheme: dark)`). Any custom UI container with a fixed light background must specify an explicit dark text `color`.
 - **Safari CSS Filter Caveat (`.dj_safari`)**: Never apply `filter: drop-shadow(...)` across many card nodes simultaneously (causes severe Safari GPU lag on BGA; use `box-shadow` instead).
 

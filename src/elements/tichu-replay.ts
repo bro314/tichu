@@ -1,27 +1,27 @@
 import { html, css, LitElement } from "lit";
 import { state } from "lit/decorators.js";
-import { Bet, Model, PlayerScore, RoundScore, ScoreBoard, State } from "./model";
-import type { TichuNotificationMap } from "../types/tichu-contracts";
+import { Model, ScoreBoard } from "./model";
 import "./tichu-player";
 import "./tichu-stock";
 import "./tichu-card";
 import "./tichu-score-board";
-import { playerIdFromChannel } from "./utils";
+import "./utils";
 import { subscribe } from "./subscription-controller";
+import {
+  createScoreBoard,
+  isIgnoredReplayNotif,
+  NotifsPacket,
+  ReplayEngine,
+  ReplayNotif,
+  segmentNotifMoves,
+  tidyUpGamelogs,
+} from "./replay-engine";
+
+export { createScoreBoard, isIgnoredReplayNotif, ReplayEngine, segmentNotifMoves, tidyUpGamelogs };
+export type { NotifsPacket, ReplayNotif };
 
 const fakeGamelogs: NotifsPacket[] = [];
 const fakePlayers = {};
-
-export interface NotifsPacket {
-  packet_type: "single" | "sequence" | "resend" | "history";
-  data: Notif[];
-  channel: string;
-  move_id: string;
-  table_id?: number;
-  packet_id: string;
-  prevpacket?: Record<number, number>;
-  time?: string;
-}
 
 declare global {
   interface Window {
@@ -41,14 +41,11 @@ export class TichuReplay extends LitElement {
 
   @state() private ignoredNotifType = "";
 
-  @state() private scoreBoard!: ScoreBoard;
+  @state() private scoreBoard: ScoreBoard = { rounds: [] };
 
   private model: Model = new Model();
 
-  private notifs: (Notif & { player_id: number })[] = [];
-
-  /** State at index i is the state before replaying notification i. */
-  private states: State[] = [];
+  private engine: ReplayEngine;
 
   static override get styles() {
     return [
@@ -246,20 +243,8 @@ export class TichuReplay extends LitElement {
     super();
 
     window.model = this.model;
-    let gamelogs = window.g_archive_mode ? window.g_gamelogs : fakeGamelogs;
-    if (typeof (gamelogs as any)?.data?.data === "object") {
-      gamelogs = (gamelogs as any)?.data?.data as NotifsPacket[];
-    }
-    tidyUpGamelogs(gamelogs);
-    for (const packet of gamelogs) {
-      this.notifs.push(
-        ...packet.data.map((data) => {
-          const player_id = playerIdFromChannel(packet.channel);
-          return { ...data, player_id, move_id: packet.move_id };
-        }),
-      );
-    }
-    segmentNotifMoves(this.notifs);
+    const gamelogs = window.g_archive_mode ? window.g_gamelogs : fakeGamelogs;
+    this.engine = new ReplayEngine(gamelogs, undefined, this.model);
 
     subscribe(
       this,
@@ -274,7 +259,7 @@ export class TichuReplay extends LitElement {
     subscribe(
       this,
       () => this.model.playerIds$,
-      (x) => (this.scoreBoard = createScoreBoard(this.notifs, x)),
+      (x) => (this.scoreBoard = createScoreBoard(this.engine.getNotifs(), x)),
     );
   }
 
@@ -312,9 +297,9 @@ export class TichuReplay extends LitElement {
     const players = window.g_archive_mode
       ? Object.values(window.gameui.gamedatas.players)
       : (fakePlayers as Player[]);
-    this.model.init(players);
-    this.recordState();
-    this.nextRound();
+    this.engine.init(players);
+    this.engine.nextRound();
+    this.syncFromEngine();
   }
 
   override render() {
@@ -324,21 +309,22 @@ export class TichuReplay extends LitElement {
 
     const ids = this.playerIds;
     if (!ids || !ids[0] || ids[0] <= 0) return;
-    const last = this.notifs[this.notifIndex - 1];
-    const next = this.notifs.find((n, i) => i >= this.notifIndex && !isIgnored(n));
+    const notifs = this.engine.getNotifs();
+    const last = notifs[this.notifIndex - 1];
+    const next = notifs.find((n, i) => i >= this.notifIndex && !isIgnoredReplayNotif(n));
     return html`
       <div class="squareTable">
         <div class="grid">
           <div class="controls">
             <div class="buttons">
-              <button class="red debug" @click=${this.prev}>Previous Notif</button>
-              <button class="red" @click=${this.prevMove}>Previous Move (←)</button>
-              <button class="red" @click=${this.prevRound}>Previous Round (Shift ←)</button>
+              <button class="red debug" @click=${this.prev}>${_("Previous Notif")}</button>
+              <button class="red" @click=${this.prevMove}>${_("Previous Move (←)")}</button>
+              <button class="red" @click=${this.prevRound}>${_("Previous Round (Shift ←)")}</button>
             </div>
             <div class="buttons">
-              <button class="green debug" @click=${this.next}>Next Notif</button>
-              <button class="green" @click=${this.nextMove}>Next Move (→)</button>
-              <button class="green" @click=${this.nextRound}>Next Round (Shift →)</button>
+              <button class="green debug" @click=${this.next}>${_("Next Notif")}</button>
+              <button class="green" @click=${this.nextMove}>${_("Next Move (→)")}</button>
+              <button class="green" @click=${this.nextRound}>${_("Next Round (Shift →)")}</button>
             </div>
           </div>
           <div class="wishCell">${this.renderWish()}</div>
@@ -357,14 +343,14 @@ export class TichuReplay extends LitElement {
           <tichu-score-board .board=${this.scoreBoard}></tichu-score-board>
           <div class="exit">
             <div>
-              <button class="darkgray" @click=${this.exit}>Back to Classic View</button>
+              <button class="darkgray" @click=${this.exit}>${_("Back to Classic View")}</button>
             </div>
           </div>
         </div>
         <div class="debug">
           <div class="subtitle">
             <span>notifIndex: ${this.notifIndex}</span>
-            <span>moveId: ${this.notifs[this.notifIndex]?.move_id}</span>
+            <span>moveId: ${notifs[this.notifIndex]?.move_id}</span>
           </div>
           <div class="subtitle">
             <span
@@ -377,8 +363,8 @@ export class TichuReplay extends LitElement {
           </div>
           <button class="darkgray" @click=${this.dumpState}>Dump State</button>
           <div>g_archive_mode: ${window.g_archive_mode}</div>
-          <div>notifs: ${this.notifs.length}</div>
-          <div>notif: ${JSON.stringify(this.notifs[this.notifIndex])}</div>
+          <div>notifs: ${notifs.length}</div>
+          <div>notif: ${JSON.stringify(notifs[this.notifIndex])}</div>
         </div>
       </div>
     `;
@@ -403,349 +389,40 @@ export class TichuReplay extends LitElement {
     console.log(JSON.stringify(this.model.getState()));
   }
 
+  private syncFromEngine() {
+    this.notifIndex = this.engine.getNotifIndex();
+    this.ignoredNotifType = this.engine.getIgnoredNotifType();
+    this.scoreBoard = this.engine.getScoreBoard();
+  }
+
   private prevMove() {
-    let sameMove = true;
-    const moveId = this.notifs[this.notifIndex - 1]?.move_id;
-    while (sameMove) {
-      this.prev();
-      const prev = this.notifs[this.notifIndex - 1];
-      sameMove = !!prev && moveId === prev?.move_id;
-    }
+    this.engine.prevMove();
+    this.syncFromEngine();
   }
 
   private nextMove() {
-    let sameMove = true;
-    let moveId = this.notifs[this.notifIndex]?.move_id;
-    while (sameMove) {
-      this.next();
-      const next = this.notifs[this.notifIndex];
-      sameMove = !!next && next?.move_id === moveId;
-    }
+    this.engine.nextMove();
+    this.syncFromEngine();
   }
 
   private prevRound() {
-    while (this.notifIndex > 0) {
-      this.prevMove();
-      const cards = this.model.getState().passedCards;
-      if (cards.length === 12 && !cards.some((c) => c.accepted)) return;
-    }
+    this.engine.prevRound();
+    this.syncFromEngine();
   }
 
   private nextRound() {
-    while (this.notifs[this.notifIndex]) {
-      this.nextMove();
-      const cards = this.model.getState().passedCards;
-      if (cards.length === 12 && !cards.some((c) => c.accepted)) return;
-    }
+    this.engine.nextRound();
+    this.syncFromEngine();
   }
 
   private prev() {
-    if (this.notifIndex === 0) return;
-    this.notifIndex--;
-    this.model.setState(this.states[this.notifIndex]!);
+    this.engine.stepBack();
+    this.syncFromEngine();
   }
 
   private next() {
-    const notif = this.notifs[this.notifIndex];
-    this.notifIndex++;
-    if (!notif) return;
-    const type = notif.type as string;
-    const args = notif.args as any;
-    if (type === "dealCards") {
-      const playerId = Number(args.cards[0].location_arg);
-      this.model.dealCards(playerId, args.cards);
-    } else if (type === "playCombo") {
-      const playerId = Number(args.player_id);
-      this.model.playCombo(playerId, args.cards, args.points);
-    } else if (type === "pass") {
-      const playerId = Number(args.player_id);
-      this.model.pass(playerId);
-    } else if (type === "grandTichuBet") {
-      const playerId = Number(args.player_id);
-      this.model.setBet(playerId, Number(args.bet) === 200 ? Bet.GRAND_TICHU : Bet.NO_BET_YET);
-    } else if (type === "tichuBet") {
-      const playerId = Number(args.player_id);
-      this.model.setBet(playerId, Number(args.bet) === 100 ? Bet.TICHU : Bet.NO_BET);
-    } else if (type === "gameStateMultipleActiveUpdate") {
-      const playerIds = args.map((id: string) => Number(id));
-      this.model.setActive(playerIds);
-    } else if (type === "gameStateChange" && args.type === "activeplayer") {
-      const playerId = Number(args.active_player);
-      this.model.setActive([playerId]);
-    } else if (type === "acceptCards") {
-      this.model.acceptCards(notif.player_id);
-    } else if (type === "passCards") {
-      const cardIds: string[] = args.cardIds;
-      this.model.passCards(notif.player_id, cardIds);
-    } else if (type === "wishMade") {
-      const wish = Number(args.wish);
-      this.model.setWish(wish);
-    } else if (type === "mahjongWishGranted") {
-      this.model.setWish(0);
-    } else if (type === "captureCards") {
-      const playerId = Number(args.player_id);
-      const trickValue = Number(args.trick_value);
-      this.model.captureCards(playerId, trickValue);
-    } else if (type === "newScores") {
-      const playerIds = this.model.getPlayerIds();
-      for (const playerId of playerIds) {
-        const gamePoints = args.newScores[`${playerId}`];
-        this.model.setGamePoints(playerId, gamePoints);
-      }
-      this.model.beginNewRound();
-    } else if (isIgnored(notif)) {
-      // fine
-    } else {
-      this.ignoredNotifType = type;
-    }
-    this.recordState();
-  }
-
-  recordState() {
-    this.states[this.notifIndex] = { ...this.model.getState() };
+    this.engine.stepForward();
+    this.syncFromEngine();
   }
 }
 customElements.define("tichu-replay", TichuReplay);
-
-function isIgnored(notif: Notif) {
-  const type = notif.type as string;
-  const args = notif.args as any;
-  if (type === "autopass") return true;
-  if (type === "botSuggestion") return true;
-  if (type === "confirmTichu") return true;
-  if (type === "devConsole") return true;
-  if (type === "hasBomb") return true;
-  if (type === "log") return true;
-  if (type === "playerGoOut") return true;
-  if (type === "simpleNode") return true;
-  if (type === "tableWindow") return true;
-  if (type === "updateReflexionTime") return true;
-  if (type === "wakeupPlayers") return true;
-  if (type === "gameStateChangePrivateArg") return true;
-  if (type === "gameStateChange" && args.type === "game") return true;
-  if (type === "gameStateChange" && args.type === "manager") return true;
-  if (type === "gameStateChange" && args.type === "multipleactiveplayer") return true;
-  return false;
-}
-
-function createScoreBoard(notifs: Notif[], playerIds: number[]): ScoreBoard {
-  const rounds: RoundScore[] = [];
-  let roundCount = 1;
-  let newScores: Record<string, string | number> = {};
-  let oldScores: Record<string, string | number> = {};
-  for (const notif of notifs) {
-    if ((notif.type as string) !== "newScores") continue;
-
-    oldScores = newScores;
-    newScores = (notif.args as TichuNotificationMap["newScores"]).newScores;
-
-    const scores: PlayerScore[] = [];
-    for (const id of playerIds) {
-      const oldGamePoints = toNumber(oldScores[`${id}`]);
-      const gamePoints = toNumber(newScores[`${id}`]);
-      const roundPoints = gamePoints - oldGamePoints;
-      scores.push({ id, gamePoints, roundPoints });
-    }
-    const round: RoundScore = { round: roundCount++, scores };
-    rounds.push(round);
-  }
-  return { rounds };
-}
-
-function toNumber(s?: string | number) {
-  const n = Number(s ?? "") ?? 0;
-  return isNaN(n) ? 0 : n;
-}
-
-export function tidyUpGamelogs(gamelogs: NotifsPacket[]) {
-  for (let index = 0; index < gamelogs.length; index++) {
-    const thisPacket = gamelogs[index];
-    if (!thisPacket) continue;
-
-    const allIgnored = thisPacket.data.every(isIgnored);
-    if (allIgnored) {
-      gamelogs.splice(index, 1);
-      index -= 1;
-      continue;
-    }
-
-    const prevPacket = gamelogs[index - 1];
-    if (!prevPacket) continue;
-
-    // All GT bets should be one move.
-    const thisgt = thisPacket.data.some((notif) => (notif.type as string) === "grandTichuBet");
-    const prevgt = prevPacket.data.some((notif) => (notif.type as string) === "grandTichuBet");
-    if (thisgt && prevgt) thisPacket.move_id = prevPacket.move_id;
-
-    // The last passCards
-    const thispcjoined =
-      thisPacket.data.length > 1 &&
-      thisPacket.data.some((notif) => (notif.type as string) === "passCards");
-    if (thispcjoined) {
-      const pcData = thisPacket.data.filter((notif) => (notif.type as string) === "passCards");
-      const otherData = thisPacket.data.filter((notif) => (notif.type as string) !== "passCards");
-      const pcPacket = { ...thisPacket, data: pcData };
-      thisPacket.data = otherData;
-      gamelogs.splice(index, 0, pcPacket);
-      index -= 1;
-      continue;
-    }
-
-    // All PassCards moves should be one.
-    const thispc =
-      thisPacket.data.length === 1 &&
-      thisPacket.data.some(
-        (notif) =>
-          (notif.type as string) === "passCards" ||
-          (notif.type as string) === "gameStateMultipleActiveUpdate",
-      );
-    const prevpc =
-      prevPacket.data.length === 1 &&
-      prevPacket.data.some(
-        (notif) =>
-          (notif.type as string) === "passCards" ||
-          (notif.type as string) === "gameStateMultipleActiveUpdate",
-      );
-    if (thispc && prevpc) thisPacket.move_id = prevPacket.move_id;
-
-    // Make sure that public updates (/table) come before private updates (/player),
-    // except do not swap public updates before passCards.
-    if (thisPacket?.move_id !== prevPacket?.move_id) continue;
-    if (!thisPacket?.channel.startsWith("/table/t")) continue;
-    if (!prevPacket?.channel.startsWith("/player/p")) continue;
-    if (prevPacket.data.some((notif) => (notif.type as string) === "passCards")) continue;
-    swap(gamelogs, index, index - 1);
-    index -= 2;
-  }
-}
-
-/**
- * Re-assign sequential logical `move_id` values across flattened replay notifications so
- * batched bot steps, auto-passes, and round-end/new-round transitions each step individually.
- */
-export function segmentNotifMoves(notifs: (Notif & { player_id: number })[]): void {
-  let moveCounter = 1;
-  let currentPhase = "newScores";
-  let dealCountInRound = 0;
-  let acceptCountInRound = 0;
-  let pendingPrefixForPlayer: number | null = null;
-
-  for (let i = 0; i < notifs.length; i++) {
-    const notif = notifs[i]!;
-    const type = notif.type as string;
-    const args = (notif.args ?? {}) as any;
-
-    if (type === "newScores") {
-      moveCounter++;
-      currentPhase = "newScores";
-      dealCountInRound = 0;
-      acceptCountInRound = 0;
-      pendingPrefixForPlayer = null;
-    } else if (acceptCountInRound < 4) {
-      if (type === "dealCards") {
-        if (dealCountInRound < 4) {
-          if (currentPhase !== "newScores" && currentPhase !== "deal8") {
-            moveCounter++;
-          }
-          currentPhase = "deal8";
-        } else if (dealCountInRound === 4) {
-          moveCounter++;
-          currentPhase = "deal6";
-        }
-        dealCountInRound++;
-      } else if (type === "grandTichuBet" || (type === "tichuBet" && dealCountInRound <= 4)) {
-        if (currentPhase !== "gt") {
-          moveCounter++;
-          currentPhase = "gt";
-        }
-      } else if (
-        type === "passCards" ||
-        (type === "tichuBet" && dealCountInRound > 4 && acceptCountInRound === 0)
-      ) {
-        if (currentPhase !== "passCards") {
-          moveCounter++;
-          currentPhase = "passCards";
-        }
-      } else if (type === "gameStateChange" && args.type === "activeplayer") {
-        if (currentPhase === "passCards") {
-          moveCounter++;
-          currentPhase = "acceptCards";
-        }
-      } else if (type === "acceptCards") {
-        if (currentPhase !== "acceptCards") {
-          moveCounter++;
-          currentPhase = "acceptCards";
-        }
-        acceptCountInRound++;
-      }
-    } else {
-      if (type === "mahjongWishGranted") {
-        let nextPlayPlayer: number | null = null;
-        for (let j = i + 1; j < notifs.length; j++) {
-          const nextNotif = notifs[j]!;
-          const nextType = nextNotif.type as string;
-          if (nextType === "playCombo") {
-            nextPlayPlayer = Number((nextNotif.args as any)?.player_id);
-            break;
-          }
-          if (nextType !== "tichuBet" && !isIgnored(nextNotif)) break;
-        }
-        if (
-          currentPhase !== "prePlay" ||
-          (pendingPrefixForPlayer !== null &&
-            nextPlayPlayer !== null &&
-            pendingPrefixForPlayer !== nextPlayPlayer)
-        ) {
-          moveCounter++;
-        }
-        currentPhase = "prePlay";
-        pendingPrefixForPlayer = nextPlayPlayer;
-      } else if (type === "tichuBet") {
-        const betPlayer = Number(args.player_id);
-        if (
-          currentPhase !== "prePlay" ||
-          (pendingPrefixForPlayer !== null && pendingPrefixForPlayer !== betPlayer)
-        ) {
-          moveCounter++;
-        }
-        currentPhase = "prePlay";
-        pendingPrefixForPlayer = betPlayer;
-      } else if (type === "playCombo") {
-        const playPlayer = Number(args.player_id);
-        if (
-          currentPhase === "prePlay" &&
-          (pendingPrefixForPlayer === null || pendingPrefixForPlayer === playPlayer)
-        ) {
-          // Group with preceding mahjongWishGranted / tichuBet from the same turn
-        } else {
-          moveCounter++;
-        }
-        currentPhase = "playCombo";
-        pendingPrefixForPlayer = null;
-      } else if (type === "wishMade") {
-        if (currentPhase !== "playCombo") {
-          moveCounter++;
-        }
-        currentPhase = "wishMade";
-      } else if (type === "pass") {
-        moveCounter++;
-        currentPhase = "pass";
-        pendingPrefixForPlayer = null;
-      } else if (type === "captureCards") {
-        moveCounter++;
-        currentPhase = "capture";
-        pendingPrefixForPlayer = null;
-      }
-    }
-
-    notif.move_id = String(moveCounter);
-  }
-}
-
-function swap(gamelogs: NotifsPacket[], i: number, j: number) {
-  if (!gamelogs[i]) return;
-  if (!gamelogs[j]) return;
-  const temp = gamelogs[i];
-  gamelogs[i] = gamelogs[j]!;
-  gamelogs[j] = temp!;
-}

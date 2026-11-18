@@ -646,6 +646,7 @@ namespace {
     $fwDir = __DIR__ . '/Bga/GameFramework';
 
     require_once $fwDir . '/StateType.php';
+    require_once $fwDir . '/NotificationMessage.php';
     require_once $fwDir . '/GameException.php';
     require_once $fwDir . '/UserException.php';
     require_once $fwDir . '/SystemException.php';
@@ -727,10 +728,11 @@ namespace {
 
     $g_config = [
         'db_host' => getenv('TICHU_MYSQL_HOST') ?: 'localhost',
+        'db_port' => getenv('TICHU_MYSQL_PORT') ? (int) getenv('TICHU_MYSQL_PORT') : null,
         'db_user' => getenv('TICHU_MYSQL_USER') ?: 'root',
         'db_password' => getenv('TICHU_MYSQL_PASS') ?: '',
         'db_name' => getenv('TICHU_MYSQL_DB') ?: 'ebd_tichu_1',
-        'db_socket' => getenv('TICHU_MYSQL_SOCKET') ?: (__DIR__ . '/.mysql/mysql.sock'),
+        'db_socket' => getenv('TICHU_MYSQL_SOCKET') ?: (getenv('TICHU_MYSQL_HOST') ? null : (__DIR__ . '/.mysql/mysql.sock')),
         'db_timeout' => 30,
         'db_job_timeout' => 300,
         'trace_sql_queries' => false,
@@ -860,6 +862,7 @@ namespace {
                                 "CREATE DATABASE IF NOT EXISTS `{$safeDbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
                             );
                             $bootstrapDb->close();
+                            $db->disconnect();
                             $db->connect();
                         } else {
                             throw $e;

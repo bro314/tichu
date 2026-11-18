@@ -30,6 +30,7 @@ export interface State {
   wish: number;
   players: PlayerState[];
   passedCards: PassedCard[];
+  capturedCards: Card[];
 }
 
 export interface Trick {
@@ -92,6 +93,7 @@ export const initialState: State = {
   wish: 0,
   players: [EMPTY_PLAYER, EMPTY_PLAYER, EMPTY_PLAYER, EMPTY_PLAYER],
   passedCards: [],
+  capturedCards: [],
 };
 
 export class Model {
@@ -140,17 +142,24 @@ export class Model {
 
   init(players: Player[]) {
     if (players.length != 4) throw new Error("model requires 4 player ids");
-    players = players.sort((p1, p2) => {
+    players = [...players].sort((p1, p2) => {
       const p1No = Number(p1.no) ?? 0;
       const p2No = Number(p2.no) ?? 0;
       return p1No - p2No;
     });
     this.updateState({
+      step: 0,
       round: 1,
+      trick: { id: 0, combos: [] },
+      activePlayerId: 0,
+      firstoutPlayerId: 0,
+      wish: 0,
       players: players.map((p) => ({
         ...EMPTY_PLAYER,
-        player: p,
+        player: { ...p, id: Number(p.id), no: Number(p.no) },
       })),
+      passedCards: [],
+      capturedCards: [],
     });
   }
 
@@ -195,7 +204,7 @@ export class Model {
 
   acceptCards(playerId: number) {
     const passedCards = this.getState().passedCards.filter(
-      (passedCard) => passedCard.to === playerId,
+      (passedCard) => passedCard.to === playerId && !passedCard.accepted,
     );
     const cards = passedCards.map((passedCard) => passedCard.card);
     for (const card of cards) {
@@ -223,7 +232,7 @@ export class Model {
 
   acceptPassedCard(to: number, card: Card) {
     const passedCards = [...this.getState().passedCards];
-    const i = passedCards.findIndex((passedCard) => passedCard.card.id === card.id);
+    const i = passedCards.findIndex((passedCard) => String(passedCard.card.id) === String(card.id));
     const updatedPassedCard: PassedCard = { ...passedCards[i]!, accepted: true };
     passedCards[i] = updatedPassedCard;
     this.updateState({ passedCards });
@@ -231,12 +240,13 @@ export class Model {
 
   getCardById(playerId: number, cardId: string) {
     const playerState = this.getPlayerState(playerId);
-    return playerState.cards.find((c) => c.id === cardId);
+    return playerState.cards.find((c) => String(c.id) === String(cardId));
   }
 
   removeCardsById(playerId: number, cardIds: string[]) {
+    const normalizedIds = cardIds.map((id) => String(id));
     const playerState = this.getPlayerState(playerId);
-    const cards = [...playerState.cards].filter((c) => !cardIds.includes(c.id));
+    const cards = [...playerState.cards].filter((c) => !normalizedIds.includes(String(c.id)));
     this.updatePlayerState(playerId, { cards });
   }
 
@@ -251,7 +261,11 @@ export class Model {
     // remove cards from player's hand
     const playerState = this.getPlayerState(playerId);
     const remainingCards = playerState.cards.filter((c) => {
-      return playedCards.find((d) => c.type === d.type && c.type_arg === d.type_arg) === undefined;
+      return (
+        playedCards.find(
+          (d) => String(c.type) === String(d.type) && String(c.type_arg) === String(d.type_arg),
+        ) === undefined
+      );
     });
     this.updatePlayerState(playerId, { cards: remainingCards });
 
@@ -298,6 +312,7 @@ export class Model {
       firstoutPlayerId: 0,
       wish: 0,
       passedCards: [],
+      capturedCards: [],
     });
   }
 
@@ -307,7 +322,9 @@ export class Model {
     this.updatePlayerState(playerId, { roundPoints });
 
     const currentTrick = this.getState().trick;
+    const trickCards = currentTrick.combos.flatMap((c) => c.cards);
+    const capturedCards = [...this.getState().capturedCards, ...trickCards];
     const trick: Trick = { id: currentTrick.id + 1, combos: [] };
-    this.updateState({ trick });
+    this.updateState({ trick, capturedCards });
   }
 }
