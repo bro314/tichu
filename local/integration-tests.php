@@ -467,6 +467,22 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
   $wishedBomb = \LocalTichuScenarios::getCardIds([[1, 11], [2, 11], [3, 11], [4, 11]]);
   callAction($game, P3, 'playCombo', ['cards' => implode(';', $wishedBomb)]);
   assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Playing the wished bomb of Jacks should grant the wish');
+
+  // 6. Verify wish = 15 ("No wish") clears wish and allows next player holding a 9 to pass cleanly
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  assertSameVal('mahjongPlay', $game->gamestate->state(P0)['name'], 'Playing Mahjong should enter mahjongPlay state');
+
+  callAction($game, P0, 'makeAWish', ['wish' => 15]);
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'wish=15 should keep mahjongWish global at 0');
+  $noWishLog = \LogManager::getLastAction('mahjongWish', false);
+  assertTrueVal($noWishLog !== null && (int) ($noWishLog['arg']['wish'] ?? 0) === 15, 'mahjongWish=15 should be recorded in actionlog');
+
+  assertSameVal('playCombo', $game->gamestate->state(P1)['name'], 'After wish=15, state should advance to playCombo');
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'P1 should be active after wish=15');
+  callAction($game, P1, 'pass', ['onlyOnce' => true]);
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'P1 must be allowed to pass when wish=15 (no wish)');
 }
 
 // ============================================================================

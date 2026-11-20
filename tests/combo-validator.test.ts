@@ -1679,6 +1679,8 @@ function withMockLitEnv(
     TichuLastPlayed: any;
     TichuPassArea: any;
     TichuStock: any;
+    TichuActionBar: any;
+    TichuValueChoice: any;
   }) => Promise<void> | void,
 ): Promise<void> {
   const g = globalThis as any;
@@ -1753,6 +1755,8 @@ function withMockLitEnv(
     TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
     TichuPassArea: require("../src/elements/tichu-pass-area").TichuPassArea,
     TichuStock: require("../src/elements/tichu-stock").TichuStock,
+    TichuActionBar: require("../src/elements/tichu-action-bar").TichuActionBar,
+    TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
   };
 
   return Promise.resolve(fn(mods)).finally(() => {
@@ -3367,4 +3371,276 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     g._ = savedUnderscore;
     g.dojo = savedDojo;
   }
+});
+
+function serializeLitTemplate(val: any): string {
+  if (val === null || val === undefined || val === false) return "";
+  if (Array.isArray(val)) return val.map(serializeLitTemplate).join("");
+  if (typeof val === "object" && Array.isArray(val.strings) && Array.isArray(val.values)) {
+    let out = "";
+    for (let i = 0; i < val.strings.length; i++) {
+      out += val.strings[i];
+      if (i < val.values.length) {
+        out += serializeLitTemplate(val.values[i]);
+      }
+    }
+    return out;
+  }
+  return String(val);
+}
+
+test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/gameEnd, and adds one-click Mahjong 'No wish'", async () => {
+  await withMockLitEnv(({ TichuActionBar, TichuValueChoice }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+
+    try {
+      const { Tichu } = loadTichuAdapterForNodeTests();
+      g._ = (s: string) => `«${s}»`;
+
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "2385074": {
+              id: "2385074",
+              name: "P0",
+              color: "000000",
+              no: 1,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+              pass: "0",
+            } as any,
+            "2385075": {
+              id: "2385075",
+              name: "P1",
+              color: "ff0000",
+              no: 2,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+              pass: "0",
+            } as any,
+          },
+          playerorder: ["2385074", "2385075"],
+          gamestate: {
+            id: "65",
+            name: "mahjongPlay",
+            type: "activeplayer",
+            active_player: "2385074",
+            args: {},
+          } as any,
+          hand: [A2, B5, C9],
+        },
+        "2385074",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+
+      // 1. Tichu adapter: mahjongPlay buttons + onNoWish + onMakeAWish
+      const ui: any = new Tichu();
+      const addedButtons: Array<{ id: string; label: string; callback: string; color?: string }> =
+        [];
+      const takenActions: Array<{ action: string; args: any }> = [];
+      const errorMessages: Array<{ msg: string; type: string }> = [];
+      let allowMahjongAction = true;
+
+      ui.player_id = 2385074;
+      ui.isSpectator = false;
+      ui.isReadOnly = () => false;
+      ui.isCurrentPlayerActive = () => true;
+      ui.getActivePlayerId = () => 2385074;
+      ui.removeActionButtons = () => {
+        addedButtons.length = 0;
+      };
+      ui.addActionButton = (
+        id: string,
+        label: string,
+        callback: string,
+        _dest?: any,
+        _blinking?: boolean,
+        color?: string,
+      ) => {
+        addedButtons.push({ id, label, callback, color });
+      };
+      ui.checkAction = (action: string) => action === "makeAWish" && allowMahjongAction;
+      ui.takeAction = (action: string, args: any) => {
+        takenActions.push({ action, args });
+      };
+      ui.showMessage = (msg: string, type: string) => {
+        errorMessages.push({ msg, type });
+      };
+      ui.gamedatas = {
+        players: {
+          "2385074": { id: "2385074", name: "P0", call_grand_tichu: "0" },
+        },
+        gamestate: { name: "mahjongPlay", active_player: "2385074", args: {} },
+      };
+
+      ui.onUpdateActionButtons("mahjongPlay", {});
+      assert.deepEqual(addedButtons, [
+        { id: "chooseWish", label: "«Make a wish»", callback: "onMakeAWish", color: undefined },
+        { id: "noWish_button", label: "«No wish»", callback: "onNoWish", color: "gray" },
+      ]);
+
+      // Selecting an 8 then clicking "No wish" resets selection and sends wish: 15
+      model.setSelectedMahjongWish(8);
+      ui.onNoWish({ preventDefault() {}, stopPropagation() {} });
+      assert.equal(model.getState().selectedMahjongWish, null);
+      assert.deepEqual(takenActions, [{ action: "makeAWish", args: { wish: 15 } }]);
+
+      // Legacy tile 15 + Make a wish remains compatible
+      model.setSelectedMahjongWish(15);
+      ui.onMakeAWish({ preventDefault() {}, stopPropagation() {} });
+      assert.equal(model.getState().selectedMahjongWish, null);
+      assert.deepEqual(takenActions.at(-1), { action: "makeAWish", args: { wish: 15 } });
+
+      // Empty Make a wish still warns
+      ui.onMakeAWish();
+      assert.equal(errorMessages.length, 1);
+      assert.equal(errorMessages[0]?.msg, "«You need to choose ONE value to wish»");
+
+      // Both no-op when checkAction returns false
+      allowMahjongAction = false;
+      const countBeforeDenied = takenActions.length;
+      ui.onNoWish();
+      ui.onMakeAWish();
+      assert.equal(takenActions.length, countBeforeDenied);
+
+      // 2. TichuValueChoice: accessible tile 15 attributes + keyboard activation (Enter keydown / Space keyup)
+      const valueChoice = new TichuValueChoice();
+      valueChoice.mode = "mahjong";
+      valueChoice.performUpdate = () => {};
+      valueChoice.connectedCallback();
+      try {
+        const renderedChoice = serializeLitTemplate(valueChoice.render());
+        assert.match(renderedChoice, /id="mahjong_item_15"/);
+        assert.equal(renderedChoice.includes("mahjong-no-wish-label"), false);
+        assert.match(renderedChoice, /role="button"/);
+        assert.match(renderedChoice, /aria-label=["']?«No wish»["']?/);
+        assert.match(renderedChoice, /title=["']?«No wish»["']?/);
+        assert.match(renderedChoice, /aria-label=["']?«Queen»["']?/);
+
+        let prevented = 0;
+        const makeKeyEvt = (key: string) =>
+          ({
+            key,
+            preventDefault() {
+              prevented++;
+            },
+          }) as any;
+        valueChoice.onTileKeyDown(makeKeyEvt(" "), () => valueChoice.onMahjongClick(15));
+        assert.equal(
+          model.getState().selectedMahjongWish,
+          null,
+          "Space keydown must not activate yet",
+        );
+        assert.equal(prevented, 1);
+
+        valueChoice.onTileKeyUp(makeKeyEvt(" "), () => valueChoice.onMahjongClick(15));
+        assert.equal(model.getState().selectedMahjongWish, 15, "Space keyup selects tile");
+
+        valueChoice.onTileKeyDown(makeKeyEvt("Enter"), () => valueChoice.onMahjongClick(15));
+        assert.equal(model.getState().selectedMahjongWish, null, "Enter keydown toggles selection");
+      } finally {
+        valueChoice.disconnectedCallback();
+      }
+
+      // 3. TichuActionBar: CSS Grid styles, readOnly/gameEnd suppression, zero "My hand", fixed slot stability
+      const actionBarCss = (TichuActionBar.styles || [])
+        .map((s: any) => s.cssText || String(s))
+        .join("\n");
+      assert.match(actionBarCss, /display:\s*grid/);
+      assert.match(actionBarCss, /grid-template-columns:/);
+
+      const bar = new TichuActionBar();
+      bar.performUpdate = () => {};
+      let mockReadOnly = false;
+      g.window.gameui = { isReadOnly: () => mockReadOnly };
+      bar.connectedCallback();
+      try {
+        for (const [stateName, activeId] of [
+          ["grandTichuBets", "2385074"],
+          ["giveCards", "2385074"],
+          ["playComboOpen", "2385074"],
+          ["playCombo", "2385075"],
+          ["mahjongPlay", "2385074"],
+          ["confirmTrick", "2385074"],
+        ] as const) {
+          model.setGameState(stateName, {
+            activePlayerId: activeId,
+            activePlayerIds: [activeId],
+            isCurrentPlayerActive: activeId === "2385074",
+          });
+          const htmlOut = serializeLitTemplate(bar.render());
+          assert.equal(
+            htmlOut.includes("My hand"),
+            false,
+            `Action bar must not render "My hand" in ${stateName}`,
+          );
+          for (const slotId of [
+            "play_button",
+            "pass_button",
+            "pass_trick_button",
+            "bomb_button",
+            "tichu_button",
+          ]) {
+            assert.ok(
+              htmlOut.includes(`id="${slotId}"`),
+              `Slot #${slotId} must stay mounted in ${stateName}`,
+            );
+          }
+        }
+
+        // Flip showBomb true <-> false: all slot wrappers including #bomb_button & #tichu_button remain present
+        model.setGameState("playCombo", {
+          activePlayerId: "2385075",
+          activePlayerIds: ["2385075"],
+          isCurrentPlayerActive: false,
+        });
+        const outWithBomb = serializeLitTemplate(bar.render());
+        assert.ok(outWithBomb.includes('id="myPlayBomb"'));
+        assert.ok(outWithBomb.includes('id="myMakeTichuBet"'));
+
+        model.setGameState("playComboOpen", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        const outWithoutBomb = serializeLitTemplate(bar.render());
+        assert.equal(outWithoutBomb.includes('id="myPlayBomb"'), false);
+        assert.ok(outWithoutBomb.includes('id="bomb_button"'));
+        assert.ok(outWithoutBomb.includes('id="tichu_button"'));
+        assert.ok(outWithoutBomb.includes('id="myMakeTichuBet"'));
+
+        // Countdown class spans columns 1..3 cleanly
+        model.setCollectingTrickCountdown(true);
+        const outCountdown = serializeLitTemplate(bar.render());
+        assert.match(outCountdown, /id="play_button"\s+class=["']?countdown["']?/);
+        model.setCollectingTrickCountdown(false);
+
+        // Suppressed at gameEnd and for read-only / spectators
+        model.setGameState("gameEnd", { activePlayerId: "", isCurrentPlayerActive: false });
+        assert.equal(serializeLitTemplate(bar.render()), "");
+
+        model.setGameState("playCombo", {
+          activePlayerId: "2385075",
+          activePlayerIds: ["2385075"],
+          isCurrentPlayerActive: false,
+        });
+        mockReadOnly = true;
+        assert.equal(serializeLitTemplate(bar.render()), "");
+      } finally {
+        bar.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+    }
+  });
 });

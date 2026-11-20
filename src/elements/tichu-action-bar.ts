@@ -41,21 +41,56 @@ export class TichuActionBar extends LitElement {
           display: block;
         }
         #buttons {
-          padding: 10px 5px 10px 5px;
+          padding: 10px 15px;
           min-height: 30px;
           box-sizing: content-box;
-          display: flex;
+          display: grid;
+          grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr);
+          column-gap: 10px;
+          align-items: center;
           background-color: var(--bg-color-lighter);
           box-shadow: var(--elevation);
         }
+        #buttons > div {
+          min-width: 0;
+        }
         #buttons h3 {
-          line-height: 20px;
+          margin: 0;
+          font-size: 16px;
+          line-height: 30px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        #buttons #play_button {
+          grid-column: 1;
+        }
+        #buttons #play_button.countdown {
+          grid-column: 1 / 4;
+        }
+        #buttons #play_button.countdown ~ #pass_button,
+        #buttons #play_button.countdown ~ #pass_trick_button {
+          display: none;
+        }
+        #buttons #pass_button {
+          grid-column: 2;
+        }
+        #buttons #pass_trick_button {
+          grid-column: 3;
         }
         #buttons .space1 {
-          flex-grow: 1;
+          grid-column: 4;
+        }
+        #buttons #bomb_button {
+          grid-column: 5;
+          min-height: 30px;
+        }
+        #buttons #tichu_button {
+          grid-column: 6;
+          min-height: 30px;
         }
         #buttons .space2 {
-          flex-grow: 1.6;
+          grid-column: 7;
         }
         :host-context(.lockedInterface) #buttons .bgabutton {
           visibility: hidden;
@@ -68,26 +103,26 @@ export class TichuActionBar extends LitElement {
           box-shadow: none;
           text-shadow: none;
         }
-        #buttons #bomb_button {
-          min-width: 100px;
-          margin-left: 10px;
-        }
-        #buttons #play_button {
-          min-width: 150px;
-          margin-left: 10px;
-        }
-        #buttons #pass_button {
-          min-width: 150px;
-          margin-left: 10px;
-        }
-        #buttons #pass_trick_button {
-          min-width: 150px;
-          margin-left: 10px;
-        }
-        #buttons #tichu_button {
-          min-width: 100px;
-          margin-left: 10px;
-          margin-right: 15px;
+        @media (max-width: 760px) {
+          #buttons {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            row-gap: 8px;
+          }
+          #buttons #play_button.countdown {
+            grid-column: 1 / 4;
+          }
+          #buttons .space1,
+          #buttons .space2 {
+            display: none;
+          }
+          #buttons #bomb_button {
+            grid-column: 1;
+            grid-row: 2;
+          }
+          #buttons #tichu_button {
+            grid-column: 2;
+            grid-row: 2;
+          }
         }
         #wishBombCallout {
           display: flex;
@@ -209,25 +244,30 @@ export class TichuActionBar extends LitElement {
 
   override render() {
     const readOnly = this.isReadOnly();
+    if (readOnly || this.stateName === "gameEnd") {
+      return "";
+    }
+
     const showBomb =
-      !readOnly &&
-      ((this.isCurrentPlayerActive && this.stateName === "confirmTrick") ||
-        (!this.isCurrentPlayerActive &&
-          (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
-          this.hand.length > 0));
+      (this.isCurrentPlayerActive && this.stateName === "confirmTrick") ||
+      (!this.isCurrentPlayerActive &&
+        (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
+        this.hand.length > 0);
 
     const showTichu =
-      !readOnly &&
       this.currentPlayer !== null &&
       this.currentPlayer.callTichu === -1 &&
       this.currentPlayer.callGrandTichu !== 200 &&
       !this.firstOutPlayerId;
 
+    const isCountdown = this.acceptingCardsCountdown || this.collectingTrickCountdown;
     const wishBombCallout = this.getWishBombCallout();
 
     return html`
       <div id="buttons">
-        <div id="play_button">${this.renderPlayButtonContent()}</div>
+        <div id="play_button" class=${isCountdown ? "countdown" : ""}>
+          ${this.renderPlayButtonContent()}
+        </div>
         <div id="pass_button">${this.renderPassButtonContent()}</div>
         <div id="pass_trick_button">${this.renderPassTrickButtonContent()}</div>
         <div class="space1"></div>
@@ -289,7 +329,7 @@ export class TichuActionBar extends LitElement {
 
   private renderPlayButtonContent() {
     if (this.isReadOnly()) {
-      return html`<h3>${_("My hand")}</h3>`;
+      return "";
     }
     if (this.acceptingCardsCountdown) {
       return html`<h3>${_("Auto accepting in 2 seconds ...")}</h3>`;
@@ -331,7 +371,7 @@ export class TichuActionBar extends LitElement {
       >`;
     }
 
-    return html`<h3>${_("My hand")}</h3>`;
+    return "";
   }
 
   private renderPassButtonContent() {

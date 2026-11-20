@@ -285,7 +285,9 @@ export const styles = css`
   }
   .stockitem.stockitem_selected {
     border: 1px solid #dda !important;
-    box-shadow: 0px 0px 4px 1px #ff8;
+    box-shadow:
+      0px 0px 4px 1px #ff8,
+      2px 2px 5px 3px #666;
     translate: 0 -20px;
   }
 

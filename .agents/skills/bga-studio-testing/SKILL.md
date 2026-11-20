@@ -90,9 +90,10 @@ The user does **not** use the VS Code SFTP extension; all SFTP syncing is handle
    - Never rely on screenshots to inspect BGA Studio pages or game state. Read `#tt_test_output`, `#logs`, `.stockitem`, or DOM attributes directly in milliseconds.
 4. **`/tableview` and `/tablereplay` Use an `iframe`**:
    - The entire BGA game UI (`#studio-test-bar`, `#tt_btn_smoke`, `#tt_test_output`, `#noBet`, `#passCards_button`, `#myhand`, `#myPlayCombo`, `#myPass`) lives inside the child `iframe` (`/1/tichu/tichu/...`)!
-   - Always use `const frame = page.frameLocator('iframe');` for locators inside the game.
+   - Note that `/tableview` can render **2 `iframe` elements** on the page (so `page.frameLocator('iframe')` may trigger Playwright strict-mode errors if multiple frames match). Prefer `page.locator('iframe[src*="/tichu/"]').contentFrame()` or `page.frameLocator('iframe').first()` (checking `#tt_btn_collapse` count if needed).
 5. **Always Do an "Express stop / CANCEL" Check at Both Beginning and End**:
    - At the **beginning** on `https://studio.boardgamearena.com/gamepanel?game=tichu`:
+     - Note: if the `gamepanel` lobby mode dropdown is set to **`Turn-based`** instead of **`Real-time`**, `Express start` only appears after clicking **`Start`** (`#quick-play`), and clicking `Express start` stays on `?game=tichu&table=<ID>#quick-play` showing a **`Go to game`** button instead of auto-redirecting to `/tableview?table=<ID>` — either switch to `Real-time`, or click `Go to game` / navigate directly to `https://studio.boardgamearena.com/tableview?table=<ID>`.
      - If an unstarted lobby table was left open, BGA Studio hides the **Express start** button and shows a **CANCEL** button instead. Click `CANCEL` first so **Express start** appears!
      - If a running table was left open, click **Express stop** first.
    - At the **end** of the test:

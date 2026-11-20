@@ -1,12 +1,13 @@
-# 03 — Layout Stability (Anti-Jump Status & Action Bar) and Dedicated Mahjong 'No Wish' Button
+# 03 — Layout Stability (Anti-Jump Action Bar), Clutter Removal & Dedicated Mahjong 'No Wish' Button
 
 - **Priority**: P1
 - **Recommended Roadmap Day**: Day 2
 - **Scope**: `tichu.css`, `src/elements/tichu-action-bar.ts`, `src/tichu.ts`, `src/elements/tichu-value-choice.ts`, `tests/combo-validator.test.ts` (audited read-only: `src/elements/game-model.ts`, `local/css/bga-shim.css`, `tichu.game.php`, `tichu.action.php`, `states.inc.php`)
 - **Open BGA Tickets / Prod Issues Covered**:
-  - [`#204088`](https://boardgamearena.com/bug?id=204088) (`2` votes, `acknowledged` — canonical for duplicate tickets [`#204090`](https://boardgamearena.com/bug?id=204090), [`#202049`](https://boardgamearena.com/bug?id=202049), and [`#95606`](https://boardgamearena.com/bug?id=95606))
+  - [`#204088`](https://boardgamearena.com/bug?id=204088) (`2` votes, `acknowledged` — canonical for duplicate tickets [`#204090`](https://boardgamearena.com/bug?id=204090), [`#202049`](https://boardgamearena.com/bug?id=202049), and [`#95606`](https://boardgamearena.com/bug?id=95606) — **validated on Studio**: BGA's `gameserver.css` `min-height: 42px` / `52px` outer height already keeps desktop `768px–1440px` 1-line prompts steady with `0px` bounce; `#page-title` CSS changes intentionally skipped per user decision)
   - [`#25627`](https://boardgamearena.com/bug?id=25627) (`7` votes, `acknowledged`)
   - [`#119164`](https://boardgamearena.com/bug?id=119164) (`4` votes, `acknowledged` — **button-shift half only**; the optional Tichu/Grand Tichu confirmation preference `106` half belongs to Plan 06)
+  - `"My hand"` UI clutter removal (`<h3>My hand</h3>` and empty spectator/`gameEnd` `<tichu-action-bar>` suppression, coordinating with Plan 04 / `#257135`)
 - **Estimated Effort**: Small–Medium (~0.5 day; pure CSS + Lit/TS UI + unit/browser tests, zero PHP/DB changes)
 - **Dependencies & Shared ID Reservations**: Coordinates cleanly with **Plan 06** (owns `$game_preferences[106]` Tichu confirmation and the confirm-pref half of `#119164`, plus mobile viewport responsive breakpoints) and **Plan 08** (owns `#106651` persistent `#myPlayBomb` visibility on own turn and `armDelayedBomb` / `cancelDelayedBomb` `actionlog` events). Plan 03 consumes **zero** new preference, stat, global, or `actionlog` IDs.
 
@@ -40,13 +41,12 @@ Goal: Lock `#page-title` and `<tichu-action-bar>` geometry across all states/tur
 
 ## 3. Architectural Decisions & Trade-offs
 
-1. **How to stabilize `#page-title` without breaking BGA inline visibility toggles, dark mode, or turn-based float icons**:
-   - **Recommended (Option A)**: Reserve height on `#maintitlebar_content` (`min-height: 70px` desktop at `line-height: 28px`, rising to `min-height: 92px` under `@media (max-width: 760px)` / `.mobile_version`), reset `#page-title #gameaction_status_wrap { min-height: 0; }`, tighten `@media (hover: none)` `#page-title .bgabutton` vertical margins from `8px` to `3px`, and use `align-content: center` on block `#maintitlebar_content` (keeping `#page-title { display: block }`).
-   - **Rejected (Option B)**: Putting `display: flex` on `#page-title`, `#maintitlebar_content`, `#pagemaintitle_wrap`, or `#gameaction_status_wrap`. `ly_studio.js:L23771–23812` toggles `display: none/block` inline on the two inner wraps, and `display: flex` on `#maintitlebar_content` breaks `float: right` on BGA's `#gotonexttable_wrap`, `#undo_button`, and `#redo_button` (`gameserver.css:L484–489,698–718`). Block-level `align-content: center` centers vertically in Chrome/Safari/Firefox while keeping `float: right` and `.experimentalArchiveMode #page-title { display: none }` intact.
-   - _BGA UX Alignment_: Matches official Studio UI guidelines (zero layout shift between active/waiting/AJAX states) and keeps `var(--game-palette-bga-gray-244)` untouched for `html[data-theme="dark"]` / `html.dark`.
+1. **How to handle `#page-title` (`#204088`)**:
+   - **Decision — Skip `#page-title` CSS changes**: Live Studio measurements (`1440px`, `1280px`, `1024px`, `768px`) and `bga-platform/css/gameserver.css:637-640` confirmed BGA already enforces `#gameaction_status_wrap, #maintitlebar_content { min-height: 42px; }` (`52px` outer height), giving `0px` vertical jump on desktop across 1-line prompts, action buttons, and `"Sending move to server ..."` / `"Updating game situation ..."`. `#page-title` in `tichu.css` was left untouched per user direction.
+   - _(Historical rejected option)_: Putting `display: flex` on `#maintitlebar_content` would break `float: right` on `#gotonexttable_wrap` / `#undo_button`.
 
-2. **How to eliminate horizontal shift in `<tichu-action-bar>` (`#119164`) while coordinating with Plan 08 (`#106651`)**:
-   - **Recommended (Option A)**: Replace `#buttons`'s `display: flex` + `min-width` + `.space1`/`.space2` grow spacers with a **7-column CSS Grid** on desktop (`grid-template-columns: 180px 160px 170px minmax(12px, 1fr) 130px 105px minmax(12px, 1.6fr); gap: 10px; align-items: center;`) where every button slot (`#play_button`, `#pass_button`, `#pass_trick_button`, `#bomb_button`, `#tichu_button`) always occupies its fixed track even when empty (and `.bgabutton` clips long localized labels cleanly with `text-overflow: ellipsis` via `min-width: 0` on slots). Below `760px` (if Plan 06 enables narrow `#game_play_area`), switch `#buttons` to a 2-row fixed-track Grid keeping `#bomb_button` and `#tichu_button` in dedicated fixed tracks on row 2. Also update `tichu.css:L253–305` light-DOM fallback selectors for parity.
+2. **How to eliminate horizontal shift in `<tichu-action-bar>` (`#119164`) and remove `"My hand"` clutter**:
+   - **Recommended (Option A)**: Replace `#buttons`'s `display: flex` + `min-width` + `.space1`/`.space2` grow spacers with a **7-column CSS Grid** on desktop (`grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr); column-gap: 10px; align-items: center;`) where every button slot (`#play_button`, `#pass_button`, `#pass_trick_button`, `#bomb_button`, `#tichu_button`) always occupies its fixed track even when empty (with `.countdown` spanning `1 / 4`). Remove both `<h3>${_("My hand")}</h3>` fallbacks completely and suppress `<tichu-action-bar>` rendering when `isReadOnly()` or `stateName === "gameEnd"`, while keeping `#buttons` (`min-height: 30px`) rendered on active player turns so `#myhand` never bounces vertically. Below `760px`, switch `#buttons` to a 2-row fixed-track Grid. Update `tichu.css` `#buttons` rules for parity.
    - **Rejected (Option B)**: Rendering a hidden dummy `visibility: hidden` `<a id="myPlayBomb">` when `showBomb` is false. Pollutes `#myPlayBomb` DOM presence assertions (`bga-shim.js:L4117`) and still lets `#play_button` / `#pass_trick_button` label changes push `#myMakeTichuBet` horizontally. Fixed Grid tracks guarantee 0px shift now AND seamlessly host Plan 08's persistent `#myPlayBomb` (`#106651`).
 
 3. **Dedicated `"No wish"` UX (`#25627`)**:
@@ -71,45 +71,37 @@ Goal: Lock `#page-title` and `<tichu-action-bar>` geometry across all states/tur
 
 ## 5. Step-by-Step Implementation Blueprint
 
-1. **Stabilize `#page-title` across desktop, touch, and mobile ([`tichu.css`](file:///Users/brohlfs/git/tichu/tichu.css#L144-L154))**:
-   - Keep `#page-title { display: block; box-sizing: border-box; margin: 0px 10px 10px 10px; border-radius: var(--border-radius); box-shadow: none; }` and `.experimentalArchiveMode #page-title { display: none; }` (`L768–770`), without overriding `background-color` or `color` (preserves `var(--game-palette-bga-gray-244)` in `html[data-theme="dark"]` / `html.dark`).
-   - Add rules targeting `#maintitlebar_content` and `#gameaction_status_wrap` (loaded after `gameserver.css` and `local/css/bga-shim.css`, overriding `min-height: 42px` cleanly):
-     - `#maintitlebar_content`: `min-height: 70px; box-sizing: border-box; padding: 2px 6px; line-height: 28px; align-content: center;`
-     - `#page-title #pagemaintitletext, #page-title #gameaction_status`: `line-height: 28px;`
-     - `#page-title #gameaction_status_wrap`: `min-height: 0;`
-     - `#page-title .action-button, #page-title .bgabutton`: `margin-top: 2px; margin-bottom: 2px; vertical-align: middle;`
-     - `@media (hover: none) { #page-title .action-button, #page-title .bgabutton { margin-top: 3px; margin-bottom: 3px; } }`
-     - `@media (max-width: 760px), (hover: none)` and `.mobile_version #maintitlebar_content`: `min-height: 92px;` (absorbs 3-line narrow-screen wraps + buttons cleanly).
-   - Verify `#page-title.fixed-page-title` (`L150–154`) and `ly_studio.js:L22305–22325` `adaptStatusBar()` keep `#after-page-title` synced with zero scroll jump.
+1. **`#page-title` (`tichu.css`) — Intentionally Skipped**:
+   - Confirmed on Studio (`1440px`, `1280px`, `1024px`, `768px`) that BGA's `gameserver.css` `min-height: 42px` (`52px` outer height) already holds `#page-title` at `52px` across 1-line prompts, desktop action buttons, and `"Sending move to server ..."` updates (`0px` desktop jump). Left `#page-title` in `tichu.css` untouched per user confirmation.
 
-2. **Lock button slot geometry in `<tichu-action-bar>` ([`tichu-action-bar.ts`](file:///Users/brohlfs/git/tichu/src/elements/tichu-action-bar.ts#L45-L93))**:
-   - Replace `#buttons` flex rules (`L45–93`) with deterministic CSS Grid tracks so hiding `#myPlayBomb`, hiding `#myPassTrick`, or changing `#myPlayCombo` text cannot shift `#myMakeTichuBet`:
-     - `#buttons`: `padding: 10px 15px 10px 15px; min-height: 32px; box-sizing: content-box; display: grid; grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr); column-gap: 10px; align-items: center; background-color: var(--bg-color-lighter); box-shadow: var(--elevation);`
+2. **Lock button slot geometry & remove `"My hand"` in `<tichu-action-bar>` ([`tichu-action-bar.ts`](file:///Users/brohlfs/git/tichu/src/elements/tichu-action-bar.ts#L43-L108))**:
+   - Replace `#buttons` flex rules with deterministic CSS Grid tracks so hiding `#myPlayBomb`, hiding `#myPassTrick`, or changing `#myPlayCombo` text cannot shift `#myMakeTichuBet`:
+     - `#buttons`: `padding: 10px 15px; min-height: 30px; box-sizing: content-box; display: grid; grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr); column-gap: 10px; align-items: center; background-color: var(--bg-color-lighter); box-shadow: var(--elevation);`
      - `#buttons > div`: `min-width: 0;` (prevents long i18n labels from stretching grid columns past their reserved px track).
-     - Explicit track placement (matching DOM order in `L231–264`): `#play_button` (col 1), `#pass_button` (col 2), `#pass_trick_button` (col 3), `.space1` (col 4), `#bomb_button` (col 5, `min-height: 30px`), `#tichu_button` (col 6, `min-height: 30px`), `.space2` (col 7). Remove obsolete `margin-left: 10px` / `margin-right: 15px` and variable `min-width` overrides from `#bomb_button`, `#play_button`, `#pass_button`, `#pass_trick_button`, `#tichu_button`.
-     - Add `@media (max-width: 760px)` responsive 2-row Grid fallback (`grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px;` with `#bomb_button { grid-column: 1; grid-row: 2; }` and `#tichu_button { grid-column: 2; grid-row: 2; }`, `.space1, .space2 { display: none; }`) for future Plan 06 narrow viewports.
-   - Mirror the updated `#buttons` grid rules in [`tichu.css`](file:///Users/brohlfs/git/tichu/tichu.css#L253-L305) for consistency.
+     - Explicit track placement: `#play_button` (col 1; `.countdown` spans `1 / 4`), `#pass_button` (col 2), `#pass_trick_button` (col 3), `.space1` (col 4), `#bomb_button` (col 5, `min-height: 30px`), `#tichu_button` (col 6, `min-height: 30px`), `.space2` (col 7).
+     - Remove both `<h3>${_("My hand")}</h3>` fallbacks in `renderPlayButtonContent()`, and return `""` from `render()` when `isReadOnly()` or `stateName === "gameEnd"` so spectators and finished games show no empty bar.
+     - Add `@media (max-width: 760px)` responsive 2-row Grid fallback (`grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px;` with `#bomb_button { grid-column: 1; grid-row: 2; }` and `#tichu_button { grid-column: 2; grid-row: 2; }`, `.space1, .space2 { display: none; }`).
+   - Mirror the updated `#buttons` grid rules in [`tichu.css`](file:///Users/brohlfs/git/tichu/tichu.css#L253-L320) for consistency.
 
-3. **Add one-click `"No wish"` action button ([`src/tichu.ts`](file:///Users/brohlfs/git/tichu/src/tichu.ts#L1078-L1080))**:
-   - In `onUpdateActionButtons()` under `case "mahjongPlay":` (`L1078–1080`), register `noWish_button` right after `chooseWish`:
+3. **Add one-click `"No wish"` action button ([`src/tichu.ts`](file:///Users/brohlfs/git/tichu/src/tichu.ts#L1124-L1127))**:
+   - In `onUpdateActionButtons()` under `case "mahjongPlay":`, register `noWish_button` right after `chooseWish`:
      ```ts
      case "mahjongPlay":
        this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
        this.addActionButton("noWish_button", _("No wish"), "onNoWish", undefined, false, "gray");
        break;
      ```
-   - Add `onNoWish(evt?: Event)` alongside `onMakeAWish(evt?: Event)` (`L1419–1431`):
+   - Add `onNoWish(evt?: Event)` alongside `onMakeAWish(evt?: Event)`:
      - `evt?.preventDefault?.(); evt?.stopPropagation?.();`
-     - Guard with `if (!this.checkAction("makeAWish")) return;`
+     - Guard with `if (typeof this.checkAction === "function" && !this.checkAction("makeAWish")) return;`
      - Clear `window.gameModel?.setSelectedMahjongWish(null);`
      - Call `this.takeAction("makeAWish", { wish: 15 });`
-   - In `onMakeAWish()`, also guard with `if (!this.checkAction("makeAWish")) return;` before validating `selectedMahjongWish !== null`. Pass literal `"No wish"` only to `_()` so BGA's translation extractor picks it up (`&dummyTranslations` safe).
+   - In `onMakeAWish()`, also guard with `checkAction("makeAWish")` before validating `selectedMahjongWish !== null`. Pass literal `"No wish"` only to `_()` so BGA's translation extractor picks it up (`&dummyTranslations` safe).
 
-4. **Polish tile `15` and accessibility inside `<tichu-value-choice>` ([`src/elements/tichu-value-choice.ts`](file:///Users/brohlfs/git/tichu/src/elements/tichu-value-choice.ts#L107-L134))**:
-   - Keep `MAHJONG_VALUES = [2..15]` and `#mahjong` `grid-template-columns: repeat(7, 70px)` (`L9, L41–42`).
-   - Add a static rank-label map using literal `t(...)` entries for `11..14` (`t("Jack")`, `t("Queen")`, `t("King")`, `t("Ace")`) and `15` (`t("No wish")`) — zero dynamic string concatenation inside `t()`.
-   - On each `#mahjong_item_${val}` tile (`L119–128`): bind `role="button"`, `tabindex="0"`, `aria-label`, `title`, and keyboard `Enter`/Space trigger calling `onMahjongClick(val)`.
-   - Inside `#mahjong_item_15` (`val === 15`), render `<span class="mahjong-no-wish-label">${t("No wish")}</span>` positioned cleanly at the bottom of the `70x105` card (`position: absolute; bottom: 4px; left: 3px; right: 3px; font-size: 11px; line-height: 1.15; font-weight: 700; text-align: center; background: rgba(255, 255, 255, 0.92); color: #1f2328; border-radius: 3px; padding: 2px;`) so high-contrast dark text on light badge stays legible in all themes and dark mode.
+4. **Polish tile `15` accessibility inside `<tichu-value-choice>` ([`src/elements/tichu-value-choice.ts`](file:///Users/brohlfs/git/tichu/src/elements/tichu-value-choice.ts#L105-L170))**:
+   - Keep `MAHJONG_VALUES = [2..15]` and `#mahjong` `grid-template-columns: repeat(7, 70px)`.
+   - Resolve tile labels via `val === 15 ? _("No wish") : rankToLocalizedName(val, false)` (static single-literal `_()` calls only).
+   - On each `#mahjong_item_${val}` and `#phoenixChoice_item_${val}` tile: bind `role="button"`, `tabindex="0"`, `aria-pressed`, `aria-label`, `title`, `.stockitem:focus-visible` outline (`3px solid #0b72b5; outline-offset: 2px;`), and keyboard `Enter` (`keydown`) / `Space` (`keyup`) activation (without a visual overlay badge over tile `15`, relying on the dedicated top `#noWish_button` and `title`/`aria-label`).
 
 ---
 

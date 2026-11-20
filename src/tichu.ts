@@ -1123,6 +1123,7 @@ export class Tichu {
 
         case "mahjongPlay":
           this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
+          this.addActionButton("noWish_button", _("No wish"), "onNoWish", undefined, false, "gray");
           break;
 
         case "phoenixPlay":
@@ -1467,6 +1468,7 @@ export class Tichu {
       evt.preventDefault?.();
       evt.stopPropagation?.();
     }
+    if (typeof this.checkAction === "function" && !this.checkAction("makeAWish")) return;
     const wish = window.gameModel?.getState().selectedMahjongWish ?? null;
     if (wish === null) {
       this.showMessage(_("You need to choose ONE value to wish"), "error");
@@ -1474,6 +1476,16 @@ export class Tichu {
     }
     window.gameModel?.setSelectedMahjongWish(null);
     this.takeAction("makeAWish", { wish });
+  }
+
+  onNoWish(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    if (typeof this.checkAction === "function" && !this.checkAction("makeAWish")) return;
+    window.gameModel?.setSelectedMahjongWish(null);
+    this.takeAction("makeAWish", { wish: 15 });
   }
 
   onGiveDragon(player: number) {

@@ -1,5 +1,5 @@
-./img
-./local/Bga
-./_ide_helper.php
-./local/check-prod-errors.js
-./tests/fixtures
+img
+local/Bga
+_ide_helper.php
+local/check-prod-errors.js
+tests/fixtures

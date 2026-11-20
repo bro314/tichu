@@ -617,8 +617,8 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tichu — Local BGA Runner</title>
-  <link rel="stylesheet" href="/local/css/bga-shim.css">
-  <link rel="stylesheet" href="/tichu.css">
+  <link rel="stylesheet" href="/local/css/bga-shim.css?v=<?php echo (int) @filemtime(__DIR__ . '/css/bga-shim.css'); ?>">
+  <link rel="stylesheet" href="/tichu.css?v=<?php echo (int) @filemtime($projectRoot . '/tichu.css'); ?>">
 </head>
 <body id="ebd-body" class="notouch-device theme0<?php echo $isViewerActive ? ' current_player_is_active' : ''; ?>">
   <div id="local-dev-bar"></div>
@@ -696,8 +696,8 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   <script>
     window.BGA_LOCAL_INIT = <?php echo json_encode($bootstrapData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
   </script>
-  <script src="/local/js/bga-shim.js"></script>
-  <script src="/tichu.js"></script>
+  <script src="/local/js/bga-shim.js?v=<?php echo (int) @filemtime(__DIR__ . '/js/bga-shim.js'); ?>"></script>
+  <script src="/tichu.js?v=<?php echo (int) @filemtime($projectRoot . '/tichu.js'); ?>"></script>
 </body>
 </html>
   <?php

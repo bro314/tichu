@@ -1,6 +1,7 @@
 import { html, css, LitElement } from "lit";
 import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
+import { rankToLocalizedName } from "./combo-validator";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
@@ -51,13 +52,25 @@ export class TichuValueChoice extends LitElement {
         .stockitem {
           width: 70px;
           height: 105px;
+          background-color: #fff;
           background-image: var(--table-icons-url);
           background-repeat: no-repeat;
+          background-origin: border-box;
           border-radius: var(--border-radius);
           box-shadow: 2px 2px 5px 3px #666;
           cursor: pointer;
           position: relative;
           user-select: none;
+        }
+        #mahjong_item_15 {
+          background-color: #e5e7eb;
+        }
+        .stockitem.stockitem_selected {
+          z-index: 1;
+        }
+        .stockitem:focus-visible {
+          outline: 3px solid #0b72b5;
+          outline-offset: 2px;
         }
       `,
     ];
@@ -102,6 +115,26 @@ export class TichuValueChoice extends LitElement {
     return this.renderMahjong();
   }
 
+  private getTileLabel(val: number): string {
+    return val === 15 ? _("No wish") : rankToLocalizedName(val, false);
+  }
+
+  private onTileKeyDown(e: KeyboardEvent, onActivate: () => void) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onActivate();
+    } else if (e.key === " ") {
+      e.preventDefault();
+    }
+  }
+
+  private onTileKeyUp(e: KeyboardEvent, onActivate: () => void) {
+    if (e.key === " ") {
+      e.preventDefault();
+      onActivate();
+    }
+  }
+
   private renderMahjong() {
     const isVisible = this.stateName === "mahjongPlay" && this.isCurrentPlayerActive;
     return html`
@@ -113,16 +146,25 @@ export class TichuValueChoice extends LitElement {
             const col = idx % 7;
             const row = Math.floor(idx / 7);
             const isSelected = this.selectedMahjongWish === val;
+            const label = this.getTileLabel(val);
             return html`
               <div
                 id="mahjong_item_${val}"
                 data-value="${val}"
+                role="button"
+                tabindex="0"
+                aria-pressed=${isSelected ? "true" : "false"}
+                aria-label=${label}
+                title=${label}
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,
                 })}
                 style="background-position: -${col * 70}px -${row * 105}px"
                 @click=${() => this.onMahjongClick(val)}
+                @keydown=${(e: KeyboardEvent) =>
+                  this.onTileKeyDown(e, () => this.onMahjongClick(val))}
+                @keyup=${(e: KeyboardEvent) => this.onTileKeyUp(e, () => this.onMahjongClick(val))}
               ></div>
             `;
           })}
@@ -143,16 +185,25 @@ export class TichuValueChoice extends LitElement {
             const col = idx % 7;
             const row = Math.floor(idx / 7);
             const isSelected = this.selectedPhoenixValue === val;
+            const label = this.getTileLabel(val);
             return html`
               <div
                 id="phoenixChoice_item_${val}"
                 data-value="${val}"
+                role="button"
+                tabindex="0"
+                aria-pressed=${isSelected ? "true" : "false"}
+                aria-label=${label}
+                title=${label}
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,
                 })}
                 style="background-position: -${col * 70}px -${row * 105}px"
                 @click=${() => this.onPhoenixClick(val)}
+                @keydown=${(e: KeyboardEvent) =>
+                  this.onTileKeyDown(e, () => this.onPhoenixClick(val))}
+                @keyup=${(e: KeyboardEvent) => this.onTileKeyUp(e, () => this.onPhoenixClick(val))}
               ></div>
             `;
           })}

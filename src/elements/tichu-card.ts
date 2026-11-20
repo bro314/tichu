@@ -73,17 +73,21 @@ export class TichuCard extends LitElement {
         div#card.wish-match {
           box-shadow:
             0 0 0 2px #f5b041,
-            0 0 10px rgba(245, 176, 65, 0.75);
+            0 0 10px rgba(245, 176, 65, 0.75),
+            2px 2px 5px 3px #666;
         }
         div#card.stockitem_selected {
           translate: 0 -20px;
           border: 1px solid #dda !important;
-          box-shadow: 0px 0px 4px 1px #ff8;
+          box-shadow:
+            0px 0px 4px 1px #ff8,
+            2px 2px 5px 3px #666;
         }
         div#card.wish-match.stockitem_selected {
           box-shadow:
             0 0 0 2px #f5b041,
-            0 0 12px 2px #ff8;
+            0 0 12px 2px #ff8,
+            2px 2px 5px 3px #666;
         }
         div#card.pass {
           background-size: cover;
