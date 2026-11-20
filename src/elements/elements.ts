@@ -17,6 +17,7 @@ import "./tichu-action-bar";
 import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
+import "./tichu-settings-modal";
 import "./tichu-game";
 
 export { GameModel } from "./game-model";
@@ -30,6 +31,7 @@ export { TichuActionBar } from "./tichu-action-bar";
 export { TichuHand } from "./tichu-hand";
 export { TichuPlayedCards } from "./tichu-played-cards";
 export { TichuTrickModal } from "./tichu-trick-modal";
+export { TichuSettingsModal } from "./tichu-settings-modal";
 export {
   TichuAnimationLayer,
   shouldAnimate,

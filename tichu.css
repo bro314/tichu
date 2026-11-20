@@ -10,6 +10,39 @@ html {
   --border-radius: 6px;
 
   --elevation: 0px 1px 2px 0px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);
+
+  --tichu-dialog-scheme: light;
+  --tichu-dialog-bg: #faf6ef;
+  --tichu-dialog-surface: #ffffff;
+  --tichu-dialog-surface-hover: #f2ece2;
+  --tichu-dialog-segment-bg: #ebe4d8;
+  --tichu-dialog-border: rgba(31, 35, 40, 0.14);
+  --tichu-dialog-text: #1f2328;
+  --tichu-dialog-text-muted: #57606a;
+  --tichu-dialog-accent: #0b72b5;
+  --tichu-dialog-accent-hover: #085c94;
+  --tichu-dialog-accent-fg: #ffffff;
+  --tichu-dialog-switch-off: #c2bab0;
+  --tichu-dialog-switch-border: rgba(31, 35, 40, 0.28);
+  --tichu-dialog-shadow: 0 20px 50px rgba(15, 23, 42, 0.36), 0 4px 14px rgba(15, 23, 42, 0.16);
+}
+
+html.dark,
+html[data-theme="dark"] {
+  --tichu-dialog-scheme: dark;
+  --tichu-dialog-bg: #262936;
+  --tichu-dialog-surface: #303445;
+  --tichu-dialog-surface-hover: #3a3f54;
+  --tichu-dialog-segment-bg: #202330;
+  --tichu-dialog-border: rgba(229, 231, 235, 0.16);
+  --tichu-dialog-text: #e5e7eb;
+  --tichu-dialog-text-muted: #aeb6c2;
+  --tichu-dialog-accent: #4aa3df;
+  --tichu-dialog-accent-hover: #6bb6e8;
+  --tichu-dialog-accent-fg: #0f172a;
+  --tichu-dialog-switch-off: #4c5266;
+  --tichu-dialog-switch-border: rgba(229, 231, 235, 0.28);
+  --tichu-dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 6px 18px rgba(0, 0, 0, 0.35);
 }
 
 body {

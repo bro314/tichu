@@ -11,6 +11,7 @@ import "./tichu-pass-area";
 import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
+import "./tichu-settings-modal";
 import { getAnimationLayer } from "./tichu-animation-layer";
 import "./tichu-replay";
 
@@ -102,6 +103,13 @@ export class TichuGame extends LitElement {
       !document.querySelector("tichu-trick-modal")
     ) {
       document.body.appendChild(document.createElement("tichu-trick-modal"));
+    }
+    if (
+      typeof document !== "undefined" &&
+      document.body &&
+      !document.querySelector("tichu-settings-modal")
+    ) {
+      document.body.appendChild(document.createElement("tichu-settings-modal"));
     }
     getAnimationLayer();
   }

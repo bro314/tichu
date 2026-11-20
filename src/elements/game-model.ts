@@ -118,6 +118,7 @@ export interface LiveGameState {
   animationsEnabled: boolean;
   experimentalReplayOpen: boolean;
   trickModalOpen: boolean;
+  settingsModalOpen: boolean;
   betAnimations: BetAnimation[];
 }
 
@@ -179,6 +180,7 @@ export const initialLiveGameState: LiveGameState = {
   animationsEnabled: true,
   experimentalReplayOpen: false,
   trickModalOpen: false,
+  settingsModalOpen: false,
   betAnimations: [],
 };
 
@@ -307,6 +309,7 @@ export class GameModel {
   public readonly animationsEnabled$ = select(this.state$, (s) => s.animationsEnabled);
   public readonly experimentalReplayOpen$ = select(this.state$, (s) => s.experimentalReplayOpen);
   public readonly trickModalOpen$ = select(this.state$, (s) => s.trickModalOpen);
+  public readonly settingsModalOpen$ = select(this.state$, (s) => s.settingsModalOpen);
   public readonly betAnimations$ = select(this.state$, (s) => s.betAnimations);
 
   getState(): LiveGameState {
@@ -584,6 +587,7 @@ export class GameModel {
       animationsEnabled,
       experimentalReplayOpen: false,
       trickModalOpen: false,
+      settingsModalOpen: false,
       betAnimations: [],
     });
   }
@@ -1320,6 +1324,10 @@ export class GameModel {
 
   setTrickModalOpen(trickModalOpen: boolean): void {
     this.update({ trickModalOpen });
+  }
+
+  setSettingsModalOpen(settingsModalOpen: boolean): void {
+    this.update({ settingsModalOpen: Boolean(settingsModalOpen) });
   }
 
   setAcceptingCardsCountdown(acceptingCardsCountdown: boolean): void {

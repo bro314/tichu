@@ -1683,6 +1683,8 @@ function withMockLitEnv(
     TichuValueChoice: any;
     TichuCardEl: any;
     TichuHand: any;
+    TichuSettingsModal: any;
+    getThemeLabel: (themeNo: number) => string;
     buildPassedOriginsMap: any;
     computeCardVisibleWidthPx: any;
   }) => Promise<void> | void,
@@ -1757,6 +1759,7 @@ function withMockLitEnv(
   const stockMod = require("../src/elements/tichu-stock");
   const handMod = require("../src/elements/tichu-hand");
   const cardMod = require("../src/elements/tichu-card");
+  const settingsModalMod = require("../src/elements/tichu-settings-modal");
   const mods = {
     TichuAnimationLayer: require("../src/elements/tichu-animation-layer").TichuAnimationLayer,
     TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
@@ -1766,6 +1769,8 @@ function withMockLitEnv(
     TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
     TichuCardEl: cardMod.TichuCard,
     TichuHand: handMod.TichuHand,
+    TichuSettingsModal: settingsModalMod.TichuSettingsModal,
+    getThemeLabel: settingsModalMod.getThemeLabel,
     buildPassedOriginsMap: handMod.buildPassedOriginsMap,
     computeCardVisibleWidthPx: stockMod.computeCardVisibleWidthPx,
   };
@@ -3385,7 +3390,7 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
 });
 
 function serializeLitTemplate(val: any): string {
-  if (val === null || val === undefined || val === false) return "";
+  if (val === null || val === undefined || val === false || typeof val === "symbol") return "";
   if (Array.isArray(val)) return val.map(serializeLitTemplate).join("");
   if (typeof val === "object" && "_$litDirective$" in val && Array.isArray(val.values)) {
     if (Array.isArray(val.values[0]) && typeof val.values[val.values.length - 1] === "function") {
@@ -3886,4 +3891,200 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
       }
     },
   );
+});
+
+test("Settings modal: GameModel state, pref 102 two-way sync, TichuHand gear button, and TichuSettingsModal controls", async () => {
+  await withMockLitEnv(({ TichuHand, TichuSettingsModal, getThemeLabel }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+    const savedArchiveMode = g.g_archive_mode;
+    const { Tichu, declaredClass } = loadTichuAdapterForNodeTests();
+
+    try {
+      g._ = (s: string) => s;
+
+      // 1. GameModel settingsModalOpen$ lifecycle
+      const model = new GameModel();
+      const observedOpen: boolean[] = [];
+      const sub = model.settingsModalOpen$.subscribe((v) => observedOpen.push(v));
+      assert.equal(model.getState().settingsModalOpen, false);
+      model.setSettingsModalOpen(true);
+      assert.equal(model.getState().settingsModalOpen, true);
+      model.setSettingsModalOpen(false);
+      assert.equal(model.getState().settingsModalOpen, false);
+      model.setSettingsModalOpen(true);
+
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" } as any,
+          },
+          gamestate: {
+            id: "50",
+            name: "playCombo",
+            type: "activeplayer",
+            active_player: "2385074",
+            args: {},
+          } as any,
+          hand: [A5, B6],
+        },
+        "2385074",
+        false,
+        true,
+      );
+      assert.equal(
+        model.getState().settingsModalOpen,
+        false,
+        "hydrateFromGamedatas resets settingsModalOpen to false",
+      );
+      assert.deepEqual(observedOpen, [false, true, false, true, false]);
+      sub.unsubscribe();
+
+      // 2. Tichu pref 102 two-way sync
+      g.window.gameModel = model;
+      const ui = new (declaredClass || Tichu)();
+      ui.player_id = 2385074;
+      ui.isSpectator = false;
+      ui.isReadOnly = () => false;
+      const persistedPrefs: Array<[number, number]> = [];
+      ui.prefs = { 102: { value: 1 } };
+      ui.getGameUserPreference = (id: number) => ui.prefs[id]?.value ?? 1;
+      ui.setGameUserPreference = (id: number, val: number) => {
+        persistedPrefs.push([id, val]);
+        ui.prefs[id] = { value: val };
+      };
+      ui.changeConfirmPassWithSelection(false);
+      assert.equal(model.getState().confirmPassWithSelection, false);
+      assert.deepEqual(persistedPrefs.at(-1), [102, 2]);
+      ui.changeConfirmPassWithSelection(true);
+      assert.equal(model.getState().confirmPassWithSelection, true);
+      assert.deepEqual(persistedPrefs.at(-1), [102, 1]);
+      ui.onPreferenceChange(102, 2);
+      assert.equal(model.getState().confirmPassWithSelection, false);
+      ui.onPreferenceChange(102, 1);
+      assert.equal(model.getState().confirmPassWithSelection, true);
+
+      // 3. TichuHand omits #prefs/#themes, renders gear button, and opens settings modal
+      const hand = new TichuHand();
+      hand.performUpdate = () => {};
+      hand.connectedCallback();
+      try {
+        const handHtml = serializeLitTemplate(hand.render());
+        assert.equal(handHtml.includes('id="prefs"'), false);
+        assert.equal(handHtml.includes('id="themes"'), false);
+        assert.ok(handHtml.includes('id="settings_button"'));
+        assert.ok(handHtml.includes('aria-haspopup="dialog"'));
+        assert.match(handHtml, /aria-expanded=(?:"false"|false)/);
+        assert.equal(handHtml.includes("spectator-settings-bar"), false);
+
+        hand.onOpenSettings();
+        assert.equal(model.getState().settingsModalOpen, true);
+        const handHtmlOpen = serializeLitTemplate(hand.render());
+        assert.match(handHtmlOpen, /aria-expanded=(?:"true"|true)/);
+
+        // Spectator mode keeps gear button accessible in .spectator-settings-bar
+        model.update({ isSpectator: true });
+        const specHandHtml = serializeLitTemplate(hand.render());
+        assert.ok(specHandHtml.includes("spectator-settings-bar"));
+        assert.ok(specHandHtml.includes('id="settings_button"'));
+        model.update({ isSpectator: false });
+      } finally {
+        hand.disconnectedCallback();
+      }
+
+      // 4. TichuSettingsModal rendering, labels, and handler delegation
+      for (let t = 0; t <= 10; t++) {
+        assert.ok(getThemeLabel(t).length > 0, `Theme ${t} should have a non-empty label`);
+      }
+
+      const calls: Array<[string, unknown]> = [];
+      const mockUi = {
+        onReorderByRank: () => calls.push(["rank", true]),
+        onReorderByColor: () => calls.push(["color", true]),
+        onReorderTable: (sq: boolean) => calls.push(["table", sq]),
+        changeOrder: (cw: boolean) => calls.push(["order", cw]),
+        changeTiki: (tiki: boolean) => calls.push(["tiki", tiki]),
+        changeAnimations: (en: boolean) => calls.push(["animations", en]),
+        changeConfirmPassWithSelection: (en: boolean) => calls.push(["confirmPass", en]),
+        setTheme: (th: number) => calls.push(["theme", th]),
+        toggleExperimentalReplay: (en: boolean) => calls.push(["replay", en]),
+      };
+      g.window.gameui = mockUi;
+
+      const modal = new TichuSettingsModal();
+      modal.performUpdate = () => {};
+      modal.connectedCallback();
+      try {
+        g.g_archive_mode = false;
+        g.window.g_archive_mode = false;
+        const modalHtml = serializeLitTemplate(modal.render());
+        assert.ok(modalHtml.includes('id="tichu-settings-dialog"'));
+        assert.ok(modalHtml.includes('closedby="any"'));
+        assert.ok(modalHtml.includes("Card order"));
+        assert.ok(modalHtml.includes("Table Layout"));
+        assert.ok(modalHtml.includes("Order of play"));
+        assert.ok(modalHtml.includes("Tiki Edition Art"));
+        assert.ok(modalHtml.includes("Animations"));
+        assert.ok(modalHtml.includes("Prevent passing when cards are selected"));
+        assert.ok(modalHtml.includes("Color Theme"));
+        assert.equal(modalHtml.includes('id="expReplay"'), false);
+        for (let t = 0; t <= 10; t++) {
+          assert.ok(modalHtml.includes(`theme${t}`), `Expected theme${t} card in settings modal`);
+        }
+
+        g.g_archive_mode = true;
+        g.window.g_archive_mode = true;
+        const modalArchiveHtml = serializeLitTemplate(modal.render());
+        assert.ok(modalArchiveHtml.includes('id="expReplay"'));
+
+        modal.onHandSortChange("color");
+        modal.onHandSortChange("rank");
+        modal.onTableLayoutChange(true);
+        modal.onClockwiseChange(true);
+        modal.onTikiChange(true);
+        modal.onAnimationsChange(false);
+        modal.onConfirmPassChange(false);
+        modal.onThemeSelect(7);
+        modal.onExpReplay();
+
+        assert.deepEqual(calls, [
+          ["color", true],
+          ["rank", true],
+          ["table", true],
+          ["order", true],
+          ["tiki", true],
+          ["animations", false],
+          ["confirmPass", false],
+          ["theme", 7],
+          ["replay", true],
+        ]);
+        assert.equal(model.getState().handSortOrder, "rank");
+        assert.equal(model.getState().squareTable, true);
+        assert.equal(model.getState().clockwise, true);
+        assert.equal(model.getState().isTiki, true);
+        assert.equal(model.getState().animationsEnabled, false);
+        assert.equal(model.getState().confirmPassWithSelection, false);
+        assert.equal(model.getState().theme, 7);
+        assert.equal(model.getState().experimentalReplayOpen, true);
+        assert.equal(model.getState().settingsModalOpen, false);
+
+        model.setSettingsModalOpen(true);
+        modal.onDialogClose();
+        assert.equal(model.getState().settingsModalOpen, false);
+        model.setSettingsModalOpen(true);
+        modal.onClose();
+        assert.equal(model.getState().settingsModalOpen, false);
+      } finally {
+        modal.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+      g.g_archive_mode = savedArchiveMode;
+      g.window.g_archive_mode = savedArchiveMode;
+    }
+  });
 });

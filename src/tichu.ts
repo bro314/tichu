@@ -457,7 +457,7 @@ export class Tichu {
         this.onDirectionChange(val === 2);
         break;
       case 102:
-        window.gameModel?.setConfirmPassWithSelection(val !== 2);
+        this.onConfirmPassChange(val !== 2);
         break;
       case 103:
         this.onTikiChange(val === 1);
@@ -519,6 +519,9 @@ export class Tichu {
     }
     if (document.body && !document.querySelector("tichu-trick-modal")) {
       document.body.appendChild(document.createElement("tichu-trick-modal"));
+    }
+    if (document.body && !document.querySelector("tichu-settings-modal")) {
+      document.body.appendChild(document.createElement("tichu-settings-modal"));
     }
     clearTimeout(this.acceptFlightTimeout);
     this.pendingAcceptFlush = null;
@@ -1299,6 +1302,15 @@ export class Tichu {
   changeAnimations(enabled: boolean) {
     this.onAnimationsChange(enabled);
     this.persistUserPreference(105, enabled ? 1 : 2);
+  }
+
+  onConfirmPassChange(enabled: boolean) {
+    window.gameModel?.setConfirmPassWithSelection(Boolean(enabled));
+  }
+
+  changeConfirmPassWithSelection(enabled: boolean) {
+    this.onConfirmPassChange(enabled);
+    this.persistUserPreference(102, enabled ? 1 : 2);
   }
 
   toggleExperimentalReplay(enable?: boolean) {

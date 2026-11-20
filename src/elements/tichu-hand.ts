@@ -1,4 +1,4 @@
-import { html, css, LitElement } from "lit";
+import { html, css, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { Combo, Hand, substituteTemplate } from "./combo-validator";
 import { Card, LivePlayer, TrickLastComboState, getNextPlayersDesc } from "./game-model";
@@ -8,8 +8,6 @@ import "./tichu-action-bar";
 import type { PassedOriginInfo } from "./tichu-card";
 import "./tichu-stock";
 import type { TichuStock } from "./tichu-stock";
-
-const THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export interface BuildPassedOriginsParams {
   hand: Card[];
@@ -91,10 +89,8 @@ export class TichuHand extends LitElement {
   @state() private handSortOrder: "rank" | "color" = "rank";
   @state() private stateName = "";
   @state() private isTiki = false;
-  @state() private animationsEnabled = true;
   @state() private clockwise = true;
-  @state() private squareTable = false;
-  @state() private theme = 0;
+  @state() private settingsModalOpen = false;
   @state() private mahjongWish = 0;
   @state() private players: Record<string, LivePlayer> = {};
   @state() private currentPlayerId = "";
@@ -116,53 +112,80 @@ export class TichuHand extends LitElement {
           display: block;
         }
         #myhandwrap {
-          padding-top: 10px;
+          position: relative;
+          padding: 10px 0 12px;
           font-size: 14px;
         }
         #myhand {
           margin: 15px 250px 6px 15px;
           min-height: 184px;
         }
-        #prefs {
-          padding: 10px;
-          border-top: 1px solid var(--bg-color-lighter);
-          color: #1f2328;
-        }
-        #prefs a {
-          color: var(--bg-color-lighter);
-        }
-        .reordercards {
-          margin-left: 10px;
-          cursor: pointer;
-        }
-        #themes {
+        .spectator-settings-bar {
           display: flex;
+          justify-content: flex-end;
+          padding: 8px 15px 12px;
+        }
+        #myhandwrap .settings-btn {
+          position: absolute;
+          top: 14px;
+          right: 15px;
+          z-index: 2;
+        }
+        .settings-btn {
+          width: 36px;
+          height: 36px;
+          padding: 0;
+          display: inline-flex;
           align-items: center;
-          flex-wrap: wrap;
-          padding: 0px 0px 10px 10px;
-          line-height: 16px;
+          justify-content: center;
+          border-radius: 8px;
+          border: 1.5px solid rgba(31, 35, 40, 0.24);
+          background: var(--bg-color-lighter);
           color: #1f2328;
-        }
-        #themes > * {
-          margin-right: 15px;
-        }
-        a.themelink {
-          display: flex;
-          border: 1px solid rgba(255, 255, 255, 0.3);
+          box-shadow: var(--elevation);
           cursor: pointer;
+          transition:
+            background-color 140ms ease,
+            box-shadow 140ms ease,
+            transform 140ms ease;
         }
-        a.themelink .bg {
-          width: 14px;
-          height: 14px;
+        .settings-btn:hover {
+          filter: brightness(1.05);
+          box-shadow:
+            0 2px 6px rgba(15, 23, 42, 0.24),
+            0 1px 2px rgba(15, 23, 42, 0.14);
         }
-        a.themelink .bg1 {
-          background-color: var(--bg-color-html);
+        .settings-btn:active {
+          transform: translateY(1px);
         }
-        a.themelink .bg2 {
-          background-color: var(--bg-color-play-area);
+        .settings-icon {
+          transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
         }
-        a.themelink .bg3 {
-          background-color: var(--bg-color-lighter);
+        .settings-btn:hover .settings-icon {
+          transform: rotate(30deg);
+        }
+        .settings-btn:focus-visible {
+          outline: 2px solid #0b72b5;
+          outline-offset: 2px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .settings-btn,
+          .settings-icon {
+            transition: none;
+          }
+          .settings-btn:active,
+          .settings-btn:hover .settings-icon {
+            transform: none;
+          }
+        }
+        @media (forced-colors: active) {
+          .settings-btn {
+            border-color: ButtonText;
+            color: ButtonText;
+          }
+          .settings-btn:focus-visible {
+            outline-color: Highlight;
+          }
         }
       `,
     ];
@@ -202,23 +225,13 @@ export class TichuHand extends LitElement {
     );
     subscribe(
       this,
-      () => window.gameModel.animationsEnabled$,
-      (animationsEnabled) => (this.animationsEnabled = animationsEnabled),
-    );
-    subscribe(
-      this,
       () => window.gameModel.clockwise$,
       (clockwise) => (this.clockwise = clockwise),
     );
     subscribe(
       this,
-      () => window.gameModel.squareTable$,
-      (squareTable) => (this.squareTable = squareTable),
-    );
-    subscribe(
-      this,
-      () => window.gameModel.theme$,
-      (theme) => (this.theme = theme),
+      () => window.gameModel.settingsModalOpen$,
+      (open) => (this.settingsModalOpen = open),
     );
     subscribe(
       this,
@@ -260,7 +273,6 @@ export class TichuHand extends LitElement {
 
   override render() {
     const selectionMode = this.getSelectionMode();
-    const isArchiveMode = Boolean((window as any).g_archive_mode);
     const canFulfillWish =
       this.mahjongWish >= 2 &&
       this.mahjongWish <= 14 &&
@@ -300,121 +312,48 @@ export class TichuHand extends LitElement {
             @selection-change=${this.onSelectionChange}
           ></tichu-stock>
         </div>
-        <div id="prefs">
-          <span>${_("User Preferences:")}</span>
-          <a
-            href="#"
-            class="reordercards"
-            id="order_by_rank"
-            style="display: ${this.handSortOrder === "color" ? "inline" : "none"}"
-            @click=${this.onOrderByRank}
-            >[${_("Reorder cards by rank")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="order_by_color"
-            style="display: ${this.handSortOrder === "rank" ? "inline" : "none"}"
-            @click=${this.onOrderByColor}
-            >[${_("Reorder cards by color")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="list_table"
-            style="display: ${this.squareTable ? "inline" : "none"}"
-            @click=${(e: Event) => this.onTableLayout(e, false)}
-            >[${_("List table")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="square_table"
-            style="display: ${this.squareTable ? "none" : "inline"}"
-            @click=${(e: Event) => this.onTableLayout(e, true)}
-            >[${_("Square table")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="clockwise"
-            style="display: ${this.clockwise ? "none" : "inline"}"
-            title=${_(
-              "This will affect the arrangement of the square table and the order of players when passing the cards.",
-            )}
-            @click=${(e: Event) => this.onClockwiseChange(e, true)}
-            >[${_("Play clockwise")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="counterClockwise"
-            style="display: ${this.clockwise ? "inline" : "none"}"
-            title=${_(
-              "This will affect the arrangement of the square table and the order of players when passing the cards.",
-            )}
-            @click=${(e: Event) => this.onClockwiseChange(e, false)}
-            >[${_("Play counterclockwise")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="tiki_art"
-            style="display: ${this.isTiki ? "none" : "inline"}"
-            @click=${(e: Event) => this.onTikiClick(e, true)}
-            >[${_("Tiki cards")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="standard_art"
-            style="display: ${this.isTiki ? "inline" : "none"}"
-            @click=${(e: Event) => this.onTikiClick(e, false)}
-            >[${_("Standard cards")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="enable_animations"
-            style="display: ${this.animationsEnabled ? "none" : "inline"}"
-            @click=${(e: Event) => this.onAnimationsClick(e, true)}
-            >[${_("Enable animations")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="disable_animations"
-            style="display: ${this.animationsEnabled ? "inline" : "none"}"
-            @click=${(e: Event) => this.onAnimationsClick(e, false)}
-            >[${_("Disable animations")}]</a
-          >
-          <a
-            href="#"
-            class="reordercards"
-            id="expReplay"
-            style="display: ${isArchiveMode ? "inline" : "none"}"
-            @click=${this.onExpReplay}
-            >[${_("Experimental Replay")}]</a
-          >
-        </div>
-        <div id="themes">
-          <span>${_("Color Themes:")}</span>
-          ${THEME_NUMBERS.map(
-            (themeNo) => html`
-              <a
-                href="#"
-                class="themelink theme${themeNo}"
-                id="theme${themeNo}"
-                @click=${(e: Event) => this.onThemeClick(e, themeNo)}
-              >
-                <div class="bg bg1"></div>
-                <div class="bg bg2"></div>
-                <div class="bg bg3"></div>
-              </a>
-            `,
-          )}
-        </div>
+        ${!this.isSpectator ? this.renderSettingsButton() : nothing}
       </div>
+      ${
+        this.isSpectator
+          ? html`<div class="spectator-settings-bar">${this.renderSettingsButton()}</div>`
+          : nothing
+      }
+    `;
+  }
+
+  private renderSettingsButton() {
+    const settingsLabel = _("Settings");
+    return html`
+      <button
+        type="button"
+        id="settings_button"
+        class="settings-btn"
+        title=${settingsLabel}
+        aria-label=${settingsLabel}
+        aria-haspopup="dialog"
+        aria-expanded=${this.settingsModalOpen ? "true" : "false"}
+        @click=${this.onOpenSettings}
+      >
+        <svg
+          class="settings-icon"
+          viewBox="0 0 24 24"
+          width="20"
+          height="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <circle cx="12" cy="12" r="3"></circle>
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
+          ></path>
+        </svg>
+      </button>
     `;
   }
 
@@ -422,67 +361,8 @@ export class TichuHand extends LitElement {
     window.gameModel.setSelectedCardIds(e.detail.selectedIds);
   }
 
-  private onOrderByRank(e: Event) {
-    e.preventDefault();
-    window.gameModel.setHandSortOrder("rank");
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.onReorderByRank === "function") {
-      ui.onReorderByRank(e);
-    }
-  }
-
-  private onOrderByColor(e: Event) {
-    e.preventDefault();
-    window.gameModel.setHandSortOrder("color");
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.onReorderByColor === "function") {
-      ui.onReorderByColor(e);
-    }
-  }
-
-  private onTableLayout(e: Event, squareTable: boolean) {
-    e.preventDefault();
-    window.gameModel.setSquareTable(squareTable);
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.onReorderTable === "function") {
-      ui.onReorderTable(squareTable);
-    }
-  }
-
-  private onClockwiseChange(e: Event, clockwise: boolean) {
-    e.preventDefault();
-    window.gameModel.setClockwise(clockwise);
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.changeOrder === "function") {
-      ui.changeOrder(clockwise);
-    }
-  }
-
-  private onExpReplay(e: Event) {
-    e.preventDefault();
-    window.gameModel.setExperimentalReplayOpen(true);
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.toggleExperimentalReplay === "function") {
-      ui.toggleExperimentalReplay(true);
-    }
-  }
-
-  private onTikiClick(e: Event, isTiki: boolean) {
-    e.preventDefault();
-    window.gameModel.setTiki(isTiki);
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.changeTiki === "function") {
-      ui.changeTiki(isTiki);
-    }
-  }
-
-  private onAnimationsClick(e: Event, enabled: boolean) {
-    e.preventDefault();
-    window.gameModel.setAnimationsEnabled(enabled);
-    const ui = (window as any).gameui;
-    if (ui && typeof ui.changeAnimations === "function") {
-      ui.changeAnimations(enabled);
-    }
+  onOpenSettings() {
+    window.gameModel.setSettingsModalOpen(true);
   }
 
   getStock(): TichuStock | null {
@@ -522,19 +402,6 @@ export class TichuHand extends LitElement {
       w,
       h,
     );
-  }
-
-  private onThemeClick(e: Event, themeNo: number) {
-    e.preventDefault();
-    window.gameModel.setTheme(themeNo);
-    const ui = (window as any).gameui;
-    if (ui) {
-      if (typeof ui.setTheme === "function") {
-        ui.setTheme(themeNo);
-      } else if (typeof ui.onThemeChange === "function") {
-        ui.onThemeChange(themeNo);
-      }
-    }
   }
 }
 

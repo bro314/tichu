@@ -650,7 +650,7 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   }
   ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"<?php echo isset($_GET['dark']) && $_GET['dark'] === '1' ? ' data-theme="dark"' : ''; ?>>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
