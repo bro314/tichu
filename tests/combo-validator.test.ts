@@ -1820,7 +1820,8 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
 
     const handCardRect = new MockDOMRect(200, 620, 100, 150);
     const handAnchorRect = new MockDOMRect(350, 620, 100, 150);
-    const oppHandIconRect = new MockDOMRect(120, 180, 36, 54);
+    const selfPointsIconRect = new MockDOMRect(80, 500, 36, 54);
+    const oppHandIconRect = new MockDOMRect(120, 180, 58, 87);
     const oppPointsIconRect = new MockDOMRect(160, 180, 36, 54);
     const tableAceRect = new MockDOMRect(400, 200, 75, 112.5);
     const tablePassRect = new MockDOMRect(400, 340, 75, 112.5);
@@ -1842,7 +1843,11 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
       setWinningComboHighlight() {},
       getPlayerHandIconRect: (pid: number) => (Number(pid) === 2385075 ? oppHandIconRect : null),
       getPlayerPointsIconRect: (pid: number) =>
-        Number(pid) === 2385075 ? oppPointsIconRect : null,
+        Number(pid) === 2385075
+          ? oppPointsIconRect
+          : Number(pid) === 2385074
+            ? selfPointsIconRect
+            : null,
       getSeatAnchorRect: () => new MockDOMRect(999, 999, 75, 112.5),
       getAllTableComboCards: () => [
         { playerId: "2385074", card: AA, rect: tableAceRect as any },
@@ -1885,11 +1890,13 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
 
     // 1. Self playCombo uses hand card rect
     const selfPrep = layer.preparePlayCombo(2385074, [A5], "5", false);
+    assert.equal(selfPrep.isSelf, true);
     assert.equal(selfPrep.fromRects.get(Number(A5.id)), handCardRect);
     assert.equal(selfPrep.fallbackFromRect, handAnchorRect);
 
     // 2. Opponent playCombo uses #icon_hand_<id> inside <tichu-last-played>, never #player_board_
     const oppPrep = layer.preparePlayCombo(2385075, [B6], "6", false);
+    assert.equal(oppPrep.isSelf, false);
     assert.equal(oppPrep.fromRects.size, 0);
     assert.equal(oppPrep.fallbackFromRect, oppHandIconRect);
     assert.equal(panelAccessed, false);
@@ -1897,6 +1904,7 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
     // 3. Spectator mode treats every seat as opponent (uses #icon_hand_2385074, not hand)
     model.update({ isSpectator: true });
     const specPrep = layer.preparePlayCombo(2385074, [A5], "5", false);
+    assert.equal(specPrep.isSelf, false);
     assert.equal(specPrep.fromRects.size, 0);
     assert.notEqual(specPrep.fallbackFromRect, handAnchorRect);
     model.update({ isSpectator: false });
@@ -1909,7 +1917,7 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
       return Promise.resolve();
     };
 
-    // 4. Capture sweep for self -> sweeps both played card and pass card into handAnchorRect
+    // 4. Capture sweep for self -> sweeps both played card and pass card into #icon_star_<id>
     model.update({ lastComboPlayerId: "2385074" });
     layer.runCaptureCardsSweep(2385074);
     assert.equal(recordedFlights.length, 1);
@@ -1917,9 +1925,9 @@ test("Animations::playCombo and captureCardsSweep use <tichu-hand> for self and 
     const selfPassFlight = recordedFlights[0]!.find((f) => f.pass === true);
     const selfWinFlight = recordedFlights[0]!.find((f) => !f.pass);
     assert.ok(selfPassFlight, "Expected pass card to be swept during captureCards");
-    assert.equal(selfPassFlight.toRect, handAnchorRect);
+    assert.equal(selfPassFlight.toRect, selfPointsIconRect);
     assert.equal(selfPassFlight.fadeOut, true);
-    assert.equal(selfWinFlight.toRect, handAnchorRect);
+    assert.equal(selfWinFlight.toRect, selfPointsIconRect);
     assert.ok(
       selfWinFlight.delayMs > selfPassFlight.delayMs,
       "Winning combo should linger after pass cards",
@@ -2118,9 +2126,9 @@ test("Animations::pass-card selection, reset, submit slide-out, and acceptCards 
 
       // 5. acceptCards timing & flight when passArea is visible -> uses slot rects by passed_from with 0ms delay (viewDelay happens before prepareAcceptCards)
       const timing = layer.getAcceptCardsTiming(3);
-      assert.equal(timing.viewDelayMs, 1200);
-      assert.equal(timing.flightDurationMs, 370);
-      assert.equal(timing.totalDurationMs, 1570);
+      assert.equal(timing.viewDelayMs, 850);
+      assert.equal(timing.flightDurationMs, 269);
+      assert.equal(timing.totalDurationMs, 1119);
 
       const slots = model.getState().passSlots;
       const recv0 = { ...D6, passed_from: slots[0]!.playerId };
@@ -2135,8 +2143,8 @@ test("Animations::pass-card selection, reset, submit slide-out, and acceptCards 
       const acceptFlights = flownBatches[flownBatches.length - 1]!;
       assert.equal(acceptFlights.length, 3);
       assert.equal(acceptFlights[0].delayMs, 0);
-      assert.equal(acceptFlights[1].delayMs, 35);
-      assert.equal(acceptFlights[2].delayMs, 70);
+      assert.equal(acceptFlights[1].delayMs, 22);
+      assert.equal(acceptFlights[2].delayMs, 44);
 
       // 6. acceptCards when passArea is NOT visible -> skips animation completely
       passVisible = false;
@@ -2185,7 +2193,7 @@ test("Animations::pass-card selection, reset, submit slide-out, and acceptCards 
       assert.equal(allEntries[0].playerId, "2385075");
       const handAnchor = fakeLastPlayed.getPlayerHandIconRect(2385075);
       const ptsAnchor = fakeLastPlayed.getPlayerPointsIconRect(2385075);
-      assert.equal(handAnchor.left, 10 + 8 - 18);
+      assert.equal(handAnchor.left, 10 + 8 - 29);
       assert.equal(ptsAnchor.left, 50 + 8 - 18);
 
       // 8. TichuPassArea.getSlotCardTargetRect computes exact (left+20*zoom, top+84*zoom, 100*zoom, 150*zoom)
@@ -2325,7 +2333,7 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
       ui.notif_tichuBet({ args: { player_id: 2385075, bet: Bet.TICHU } });
       assert.equal(model.getState().betAnimations.length, 1);
       assert.equal(laserPlayed, 1);
-      assert.equal(syncDurations.at(-1), 1000);
+      assert.equal(syncDurations.at(-1), 600);
     } finally {
       g.window.gameModel = savedGameModel;
       g.window.gameui = savedGameUi;
@@ -2588,11 +2596,11 @@ test("notif_acceptCards keeps received-cards view visible even when animations p
         ui.getAnimationLayer = () => ({
           cancelAll() {},
           getAcceptCardsTiming() {
-            return { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 };
+            return { viewDelayMs: 850, flightDurationMs: 269, totalDurationMs: 1119 };
           },
           prepareAcceptCards() {
             prepareCalls++;
-            return { fromRects: fakeFromRects, durationMs: 370 };
+            return { fromRects: fakeFromRects, durationMs: 269 };
           },
           runAcceptCardsFlight() {
             runCalls++;
@@ -2635,10 +2643,10 @@ test("notif_acceptCards keeps received-cards view visible even when animations p
           s.model.getState().passSlots.map((slot) => slot.receivedCard?.id),
           [D6.id, A7.id, B8.id],
         );
-        assert.equal(s.syncDurations.at(-1), 1570);
+        assert.equal(s.syncDurations.at(-1), 1119);
         assert.equal(scheduled.length, beforeLen + 1);
         const timer = scheduled[beforeLen]!;
-        assert.equal(timer.delay, 1200);
+        assert.equal(timer.delay, 850);
 
         // Leaving giveCards must NOT cancel the pending received-cards display timer
         s.ui.onLeavingState("giveCards");
@@ -2663,7 +2671,7 @@ test("notif_acceptCards keeps received-cards view visible even when animations p
         );
       }
 
-      // 2. Animations disabled (pref 105 = 2) -> view still shown for 1200ms, no flight
+      // 2. Animations disabled (pref 105 = 2) -> view still shown for 850ms, no flight
       {
         const s = setupScenario(2);
         assert.equal(s.ui.shouldAnimate(), false);
@@ -2675,10 +2683,10 @@ test("notif_acceptCards keeps received-cards view visible even when animations p
           s.model.getState().passSlots.map((slot) => slot.receivedCard?.id),
           [D6.id, A7.id, B8.id],
         );
-        assert.equal(s.syncDurations.at(-1), 1200);
+        assert.equal(s.syncDurations.at(-1), 850);
         assert.equal(scheduled.length, beforeLen + 1);
         const timer = scheduled[beforeLen]!;
-        assert.equal(timer.delay, 1200);
+        assert.equal(timer.delay, 850);
 
         timer.fn();
         assert.equal(s.getPrepareCalls(), 0);
@@ -4264,6 +4272,330 @@ test("Settings modal: GameModel state, pref 102 two-way sync, TichuHand gear but
       g.window.gameui = savedGameUi;
       g.g_archive_mode = savedArchiveMode;
       g.window.g_archive_mode = savedArchiveMode;
+    }
+  });
+});
+
+test("setupNotifications() double-timer invariant and dynamic durations for pass, passCards early return, wishMade, and newScores", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const { Tichu, declaredClass } = loadTichuAdapterForNodeTests();
+    const {
+      resetAnimTimings,
+      installWindowAnimTimings,
+    } = require("../src/elements/anim-timings");
+    installWindowAnimTimings();
+    resetAnimTimings();
+
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+    const savedDojo = g.dojo;
+    try {
+      const subscriptions: Array<[string, string]> = [];
+      g.dojo = {
+        subscribe(type: string, _ctx: any, methodName: string) {
+          subscriptions.push([type, methodName]);
+        },
+      };
+
+      const ui = new (declaredClass || Tichu)();
+      ui.player_id = 2385074;
+      ui.isSpectator = false;
+      ui.instantaneousMode = false;
+      ui.bgaAnimationsActive = () => true;
+      ui.isReadOnly = () => false;
+      ui.disablePlayerPanel = () => {};
+      ui.scoreCtrl = {};
+      ui.prefs = { 105: { value: 1 } };
+      ui.getGameUserPreference = (id: number) => (id === 105 ? ui.prefs[105].value : 1);
+
+      const registeredSync = new Map<string, number | undefined>();
+      const syncDurations: number[] = [];
+      ui.notifqueue = {
+        setSynchronous(type: string, dur: number | undefined) {
+          registeredSync.set(type, dur);
+        },
+        setSynchronousDuration(ms: number) {
+          syncDurations.push(ms);
+        },
+      };
+
+      ui.setupNotifications();
+
+      const dynamicNotifs = [
+        "dealCards",
+        "grandTichuBet",
+        "tichuBet",
+        "playCombo",
+        "wishMade",
+        "pass",
+        "captureCards",
+        "newScores",
+        "acceptCards",
+        "passCards",
+      ];
+      for (const name of dynamicNotifs) {
+        assert.equal(
+          registeredSync.get(name),
+          undefined,
+          `Expected '${name}' to register undefined duration to avoid double-timer collisions`,
+        );
+      }
+      const staticNotifs = [
+        "confirmTichu",
+        "mahjongWishGranted",
+        "playerGoOut",
+        "autopass",
+        "devConsole",
+        "botSuggestion",
+      ];
+      for (const name of staticNotifs) {
+        assert.equal(registeredSync.get(name), 1);
+      }
+
+      const model = new GameModel();
+      ui.gamedatas = {
+        players: {
+          "2385074": { id: "2385074", name: "p0", color: "000000", no: 1, score: "0" },
+          "2385075": { id: "2385075", name: "p1", color: "ff0000", no: 2, score: "0" },
+        },
+        gamestate: { id: "60", name: "playCombo", type: "activeplayer", args: {} },
+        hand: [],
+      };
+      model.hydrateFromGamedatas(ui.gamedatas, "2385074", false, true, ui.readPrefs());
+      g.window.gameModel = model;
+      g.window.gameui = ui;
+
+      // Early malformed passCards return must still call setSynchronousDuration(1)
+      ui.notif_passCards({ args: { cardIds: null } as any });
+      assert.equal(syncDurations.at(-1), 1);
+
+      // Dynamic durations when animations are active
+      ui.getAnimationLayer = () => ({
+        getPassNotifDuration: () => 130,
+        runPassTokenPop: () => Promise.resolve(),
+      });
+      ui.notif_pass({ args: { player_id: 2385075 } });
+      assert.equal(syncDurations.at(-1), 130);
+
+      ui.notif_wishMade({ args: { wish: 7 } });
+      assert.equal(syncDurations.at(-1), 150);
+
+      ui.notif_newScores({ args: { newScores: { "2385074": 120, "2385075": -20 } } });
+      assert.equal(syncDurations.at(-1), 700);
+
+      // Pref 105 disabled -> all three fall back to 1ms
+      ui.onPreferenceChange(105, 2);
+      ui.notif_pass({ args: { player_id: 2385075 } });
+      assert.equal(syncDurations.at(-1), 1);
+
+      ui.notif_wishMade({ args: { wish: 8 } });
+      assert.equal(syncDurations.at(-1), 1);
+
+      ui.notif_newScores({ args: { newScores: { "2385074": 150, "2385075": -50 } } });
+      assert.equal(syncDurations.at(-1), 1);
+    } finally {
+      resetAnimTimings();
+      g.dojo = savedDojo;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+    }
+  });
+});
+
+test("ANIM_TIMINGS and window.__tichuAnim proxy live mutation, presets, reset, and CSS variable sync", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const {
+      ANIM_TIMINGS,
+      installWindowAnimTimings,
+      resetAnimTimings,
+    } = require("../src/elements/anim-timings");
+
+    const cssVars = new Map<string, string>();
+    g.document.documentElement = {
+      style: {
+        setProperty(k: string, v: string) {
+          cssVars.set(k, v);
+        },
+      },
+    };
+    const model = new GameModel();
+    g.window.gameModel = model;
+
+    try {
+      installWindowAnimTimings();
+      resetAnimTimings();
+
+      const ctrl = g.window.__tichuAnim;
+      assert.ok(ctrl);
+      assert.equal(ctrl.playComboMs, 180);
+      assert.equal(ctrl.cardSelectMs, 100);
+      assert.equal(ctrl.betSplashNotifMs, 600);
+      assert.deepEqual(ctrl.presets, ["snappy", "legacy", "fast", "relaxed"]);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "100ms");
+      assert.equal(cssVars.get("--tichu-bet-enter-ms"), "140ms");
+
+      // Live property mutation syncs ANIM_TIMINGS and CSS vars
+      ctrl.cardSelectMs = 145;
+      assert.equal(ANIM_TIMINGS.cardSelectMs, 145);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "145ms");
+
+      // Preset switching
+      ctrl.preset("legacy");
+      assert.equal(ANIM_TIMINGS.playComboMs, 250);
+      assert.equal(ANIM_TIMINGS.acceptViewDelayMs, 1200);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "0ms");
+
+      ctrl.preset("fast");
+      assert.equal(ANIM_TIMINGS.playComboMs, 120);
+      assert.equal(ANIM_TIMINGS.acceptViewDelayMs, 550);
+
+      // Disabling animations via GameModel forces CSS transition vars to 0ms and restoring recovers them
+      model.setAnimationsEnabled(false);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "0ms");
+      assert.equal(cssVars.get("--tichu-bet-fade-ms"), "0ms");
+
+      model.setAnimationsEnabled(true);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "70ms");
+
+      // Reset restores snappy defaults
+      ctrl.reset();
+      assert.equal(ANIM_TIMINGS.playComboMs, 180);
+      assert.equal(ANIM_TIMINGS.cardSelectMs, 100);
+      assert.equal(cssVars.get("--tichu-card-select-ms"), "100ms");
+    } finally {
+      resetAnimTimings();
+      g.window.gameModel = undefined;
+    }
+  });
+});
+
+test("TichuAnimationLayer::flyCards creates synchronous ghost-card divs, kink-free fadeIn/pulse keyframes, and cleans up after onCleanup", async () => {
+  await withMockLitEnv(async ({ TichuAnimationLayer }) => {
+    const g = globalThis as any;
+    const { resetAnimTimings } = require("../src/elements/anim-timings");
+    resetAnimTimings();
+
+    const createdTags: string[] = [];
+    const animateCalls: Array<{ keyframes: any[]; options: any }> = [];
+    const shadowChildren: any[] = [];
+    const events: string[] = [];
+
+    class RecordingElement {
+      tagName: string;
+      className = "";
+      children: RecordingElement[] = [];
+      style: Record<string, any> = {};
+      private attrs = new Map<string, string>();
+      constructor(tag: string) {
+        this.tagName = tag.toLowerCase();
+      }
+      appendChild(child: RecordingElement) {
+        this.children.push(child);
+        return child;
+      }
+      setAttribute(k: string, v: string) {
+        this.attrs.set(k, String(v));
+      }
+      getAttribute(k: string) {
+        return this.attrs.has(k) ? this.attrs.get(k)! : null;
+      }
+      remove() {
+        const idx = shadowChildren.indexOf(this);
+        if (idx >= 0) shadowChildren.splice(idx, 1);
+        events.push(`remove:${this.className}`);
+      }
+      animate(keyframes: any[], options: any) {
+        animateCalls.push({ keyframes, options });
+        return {
+          finished: Promise.resolve(),
+          cancel() {},
+        };
+      }
+    }
+
+    g.document.createElement = (tag: string) => {
+      createdTags.push(tag.toLowerCase());
+      return new RecordingElement(tag);
+    };
+    g.document.getElementById = () => null;
+    const model = new GameModel();
+    g.window.gameModel = model;
+
+    try {
+      const layer = Object.create(TichuAnimationLayer.prototype);
+      layer.activeBatches = new Set();
+      layer.totalFlights = 0;
+      layer.setAttribute = () => {};
+      Object.defineProperty(layer, "shadowRoot", {
+        value: {
+          appendChild(el: any) {
+            shadowChildren.push(el);
+            return el;
+          },
+          querySelectorAll(sel: string) {
+            if (sel === ".ghost-wrapper") {
+              return shadowChildren.filter((el) => el.className === "ghost-wrapper");
+            }
+            return [];
+          },
+        },
+        configurable: true,
+      });
+
+      const fromRect = new MockDOMRect(100, 200, 58, 87) as any;
+      const toRect = new MockDOMRect(300, 260, 75, 112.5) as any;
+
+      await layer.flyCards(
+        [
+          {
+            card: AA,
+            fromRect,
+            toRect,
+            durationMs: 200,
+            fadeIn: true,
+            pulse: true,
+          },
+          {
+            card: { id: "pass_2385075", type: "0", type_arg: "0" },
+            fromRect,
+            toRect,
+            durationMs: 200,
+            pass: true,
+          },
+        ],
+        () => {
+          events.push(`cleanup:ghosts=${shadowChildren.length}`);
+        },
+      );
+
+      // Only plain div ghosts are created (never tichu-card LitElements)
+      assert.equal(createdTags.includes("tichu-card"), false);
+      assert.deepEqual(createdTags, ["div", "div", "div", "div"]);
+      assert.equal(animateCalls.length, 2);
+
+      // Verify synchronous styles and keyframes on first card (fadeIn + pulse)
+      const kf0 = animateCalls[0]!.keyframes;
+      assert.equal(kf0.length, 4);
+      assert.equal(kf0[0].offset, 0);
+      assert.equal(kf0[0].opacity, 0);
+      assert.equal(kf0[1].offset, 0.25);
+      assert.equal(kf0[1].opacity, 1);
+      assert.equal("transform" in kf0[1], false);
+      assert.equal(kf0[2].offset, 0.5);
+      assert.equal("opacity" in kf0[2], false);
+      assert.ok(String(kf0[2].transform).includes("scale("));
+      assert.equal(kf0[3].offset, 1);
+      assert.equal(kf0[3].opacity, 1);
+
+      // Verify cleanup callback runs BEFORE ghost wrappers are removed from shadow DOM
+      assert.equal(events[0], "cleanup:ghosts=2");
+      assert.equal(events[1], "remove:ghost-wrapper");
+      assert.equal(events[2], "remove:ghost-wrapper");
+      assert.equal(shadowChildren.length, 0);
+    } finally {
+      resetAnimTimings();
     }
   });
 });

@@ -173,7 +173,6 @@ export class TichuGame extends LitElement {
                 tichucolor: anim.bet !== 200,
                 "fading-out": anim.fadingOut,
               })}
-              style="opacity: ${anim.fadingOut ? "0" : "1"}"
             ></div>
           `,
         )}

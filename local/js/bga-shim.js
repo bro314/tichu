@@ -1619,6 +1619,19 @@
 
       if (isSyncRegistered) {
         const registeredDur = this.synchronous_notifs[notif.type];
+        if (
+          typeof registeredDur === "number" &&
+          registeredDur > 0 &&
+          this.dynamicDuration !== null
+        ) {
+          console.error(
+            `[bga-shim] Double-timer bug on '${notif.type}': setSynchronous registered ${registeredDur}ms AND handler called setSynchronousDuration(${this.dynamicDuration}). Use undefined in setupNotifications().`,
+          );
+        } else if (registeredDur === undefined && this.dynamicDuration === null) {
+          console.error(
+            `[bga-shim] Missing setSynchronousDuration() call in '${notif.type}' handler (registered with undefined).`,
+          );
+        }
         if (this.dynamicDuration !== null) {
           waitMs = this.dynamicDuration;
         } else if (typeof registeredDur === "number") {

@@ -383,10 +383,39 @@ export const styles = css`
     top: calc(50% - 128px);
     z-index: 100;
     pointer-events: none;
-    transition: opacity 1s ease;
+    opacity: 1;
+    scale: 1;
+    transition:
+      opacity var(--tichu-bet-enter-ms, 140ms)
+        var(--tichu-anim-easing, cubic-bezier(0.22, 1, 0.36, 1)),
+      scale var(--tichu-bet-enter-ms, 140ms)
+        var(--tichu-anim-easing, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  @starting-style {
+    .icon.temp {
+      opacity: 0;
+      scale: 0.78;
+    }
   }
   .icon.temp.fading-out {
     opacity: 0;
+    scale: 1.05;
+    transition:
+      opacity var(--tichu-bet-fade-ms, 350ms) ease,
+      scale var(--tichu-bet-fade-ms, 350ms) ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .icon.temp,
+    .icon.temp.fading-out {
+      transition: none;
+      scale: 1;
+    }
+    @starting-style {
+      .icon.temp {
+        opacity: 1;
+        scale: 1;
+      }
+    }
   }
   .icon.temp.grandtichublack,
   .icon.temp.grand-tichu-black {

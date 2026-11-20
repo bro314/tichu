@@ -33,6 +33,15 @@ export { TichuPlayedCards } from "./tichu-played-cards";
 export { TichuTrickModal } from "./tichu-trick-modal";
 export { TichuSettingsModal } from "./tichu-settings-modal";
 export {
+  ANIM_PRESETS,
+  ANIM_TIMINGS,
+  DEFAULT_ANIM_TIMINGS,
+  applyAnimPreset,
+  resetAnimTimings,
+  syncAnimCssVars,
+} from "./anim-timings";
+export type { AnimPresetName, AnimTimings } from "./anim-timings";
+export {
   TichuAnimationLayer,
   shouldAnimate,
   getAnimationLayer,

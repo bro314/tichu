@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { repeat } from "lit/directives/repeat.js";
 import { Card } from "./model";
+import { ANIM_TIMINGS } from "./anim-timings";
 import { scaleAnimMs, shouldAnimate } from "./tichu-animation-layer";
 import "./tichu-card";
 import type { PassedOriginInfo, TichuCard } from "./tichu-card";
@@ -135,7 +136,7 @@ export class TichuStock extends LitElement {
     ) {
       const hiddenSet = new Set(this.externalHiddenIds.map(String));
       this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
-      const durationMs = Math.max(12, scaleAnimMs(220));
+      const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.handFlipMs));
       const baseWidth = Math.max(1, 100 * this.scale);
       const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>("tichu-card"));
       for (const cardEl of cardEls) {
@@ -159,7 +160,7 @@ export class TichuStock extends LitElement {
             [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0px, 0px)" }],
             {
               duration: durationMs,
-              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+              easing: ANIM_TIMINGS.easing,
             },
           );
           const prevFlipCount = Number(this.getAttribute("data-flip-count") || "0");
@@ -385,6 +386,20 @@ export class TichuStock extends LitElement {
   }
 
   revealCards(cardIds?: Array<string | number>): void {
+    const filter = cardIds ? new Set(cardIds.map(String)) : null;
+    if (!this.hideAllCards && this.shadowRoot?.querySelectorAll) {
+      const externalSet = new Set(this.externalHiddenIds.map(String));
+      const nodes = Array.from(
+        this.shadowRoot.querySelectorAll<HTMLElement>("tichu-card[data-pending-reveal]"),
+      );
+      for (const el of nodes) {
+        const cid = el.getAttribute("data-card-id") ?? "";
+        if (externalSet.has(cid)) continue;
+        if (!filter || filter.has(cid)) {
+          el.removeAttribute("data-pending-reveal");
+        }
+      }
+    }
     if (!cardIds) {
       if (this.pendingRevealIds.size > 0) {
         this.pendingRevealIds = new Set();

@@ -7,6 +7,7 @@
  * See http://en.boardgamearena.com/#!doc/Studio for more information.
  * -----
  */
+import type { AnimTimings } from "./elements/anim-timings";
 import type { GameModel, LiveGamePrefs } from "./elements/game-model";
 import type { TichuAnimationLayer } from "./elements/tichu-animation-layer";
 import { initStudioTestHelper } from "./studio-test";
@@ -343,6 +344,22 @@ export class Tichu {
       return false;
     }
     return typeof Element !== "undefined" && typeof Element.prototype.animate === "function";
+  }
+
+  getAnimTiming(key: keyof AnimTimings, fallback: number): number {
+    const live = typeof window !== "undefined" ? (window as any).__tichuAnim?.[key] : undefined;
+    const n = Number(live);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  getScaledAnimTiming(key: keyof AnimTimings, fallback: number): number {
+    const raw = this.getAnimTiming(key, fallback);
+    if (!this.shouldAnimate()) return 0;
+    const speed =
+      (typeof window !== "undefined" ? (window as any).__tichuSpeed : undefined) ??
+      (this.notifqueue as any)?.speedMode;
+    const scale = speed === "fast" ? this.getAnimTiming("fastScale", 0.15) : 1;
+    return Math.max(0, Math.round(raw * scale));
   }
 
   shouldSkipReceivedCardsView(): boolean {
@@ -1573,20 +1590,20 @@ export class Tichu {
       Record<keyof TichuNotificationMap, number | undefined>,
       "log" | "tableWindow"
     > = {
-      dealCards: 500,
+      dealCards: undefined,
       grandTichuBet: undefined,
       tichuBet: undefined,
       confirmTichu: 1,
-      playCombo: 300,
-      wishMade: 200,
+      playCombo: undefined,
+      wishMade: undefined,
       mahjongWishGranted: 1,
       playerGoOut: 1,
-      pass: 300,
-      captureCards: 500,
-      newScores: 1000,
+      pass: undefined,
+      captureCards: undefined,
+      newScores: undefined,
       autopass: 1,
-      acceptCards: 3000,
-      passCards: 200,
+      acceptCards: undefined,
+      passCards: undefined,
       devConsole: 1,
       botSuggestion: 1,
     };
@@ -1634,7 +1651,7 @@ export class Tichu {
       }
     }
     window.gameModel?.dealCards(cards);
-    this.notifqueue.setSynchronousDuration(durMs);
+    this.notifqueue?.setSynchronousDuration?.(durMs);
     if (layer && typeof layer.runDealCardsFlight === "function") {
       void layer.runDealCardsFlight(cards);
     }
@@ -1643,7 +1660,10 @@ export class Tichu {
   notif_passCards(notif: TypedNotif<"passCards">) {
     this.traceNotif("passCards", notif);
     const ids: string[] = notif.args.cardIds ?? (notif.args as unknown as string[]);
-    if (!Array.isArray(ids)) return;
+    if (!Array.isArray(ids)) {
+      this.notifqueue?.setSynchronousDuration?.(1);
+      return;
+    }
     const animate = this.shouldAnimate();
     const layer = animate ? this.getAnimationLayer() : null;
     const out =
@@ -1655,7 +1675,7 @@ export class Tichu {
       this.gamedatas.hand = this.gamedatas.hand.filter((c) => !idSet.has(String(c.id)));
     }
     window.gameModel?.applyPassCardsNotif(ids);
-    this.notifqueue.setSynchronousDuration(out ? out.durationMs : animate ? 50 : 1);
+    this.notifqueue?.setSynchronousDuration?.(out ? out.durationMs : animate ? 50 : 1);
   }
 
   notif_acceptCards(notif: TypedNotif<"acceptCards">) {
@@ -1684,18 +1704,33 @@ export class Tichu {
 
     if (cards.length === 0 || this.shouldSkipReceivedCardsView()) {
       applyAcceptedCardsToHand();
-      this.notifqueue.setSynchronousDuration(1);
+      this.notifqueue?.setSynchronousDuration?.(1);
       return;
     }
 
     window.gameModel?.enterShowPassedCards(cards);
+    const fallbackViewDelayMs = this.getAnimTiming("acceptViewDelayMs", 850);
+    const fallbackFlightMs = Math.max(
+      12,
+      this.getAnimTiming("acceptFlightMs", 200) +
+        Math.max(0, cards.length - 1) * this.getAnimTiming("acceptStaggerMs", 22) +
+        this.getAnimTiming("acceptBufferMs", 25),
+    );
     const timing =
       animate && layer && typeof layer.getAcceptCardsTiming === "function"
         ? layer.getAcceptCardsTiming(cards.length)
         : animate && layer
-          ? { viewDelayMs: 1200, flightDurationMs: 370, totalDurationMs: 1570 }
-          : { viewDelayMs: 1200, flightDurationMs: 0, totalDurationMs: 1200 };
-    this.notifqueue.setSynchronousDuration(timing.totalDurationMs);
+          ? {
+              viewDelayMs: fallbackViewDelayMs,
+              flightDurationMs: fallbackFlightMs,
+              totalDurationMs: fallbackViewDelayMs + fallbackFlightMs,
+            }
+          : {
+              viewDelayMs: fallbackViewDelayMs,
+              flightDurationMs: 0,
+              totalDurationMs: fallbackViewDelayMs,
+            };
+    this.notifqueue?.setSynchronousDuration?.(timing.totalDurationMs);
 
     this.pendingAcceptFlush = applyAcceptedCardsToHand;
     this.acceptFlightTimeout = window.setTimeout(() => {
@@ -1804,7 +1839,7 @@ export class Tichu {
       };
     }
 
-    this.notifqueue.setSynchronousDuration(prep ? prep.durationMs : animate ? 100 : 1);
+    this.notifqueue?.setSynchronousDuration?.(prep ? prep.durationMs : animate ? 100 : 1);
     if (layer && prep && typeof layer.runPlayComboFlight === "function") {
       void layer.runPlayComboFlight(playerId, cards, prep);
     }
@@ -1817,6 +1852,18 @@ export class Tichu {
       delete this.allLastCombos[playerId];
     }
     window.gameModel?.applyPass(playerId);
+    const animate = this.shouldAnimate();
+    const layer = animate ? this.getAnimationLayer() : null;
+    const durMs =
+      layer && typeof layer.getPassNotifDuration === "function"
+        ? layer.getPassNotifDuration()
+        : animate
+          ? Math.max(12, this.getScaledAnimTiming("passNotifMs", 130))
+          : 1;
+    this.notifqueue?.setSynchronousDuration?.(durMs);
+    if (animate && layer && typeof layer.runPassTokenPop === "function") {
+      void layer.runPassTokenPop(playerId);
+    }
   }
 
   notif_captureCards(notif: TypedNotif<"captureCards">) {
@@ -1839,7 +1886,7 @@ export class Tichu {
     this.allLastCombos = {};
 
     window.gameModel?.applyCaptureCards(playerId, trickValue);
-    this.notifqueue.setSynchronousDuration(sweep ? sweep.durationMs : animate ? 100 : 1);
+    this.notifqueue?.setSynchronousDuration?.(sweep ? sweep.durationMs : animate ? 100 : 1);
   }
 
   notif_grandTichuBet(notif: TypedNotif<"grandTichuBet">) {
@@ -1857,12 +1904,18 @@ export class Tichu {
       if (this.areAnimationsActive()) {
         window.gameModel?.triggerBetAnimation(playerId, 200);
         this.playLaserSound();
-        this.notifqueue.setSynchronousDuration(1000);
+        const rawBetMs = this.getAnimTiming("betSplashNotifMs", 600);
+        const speed =
+          (typeof window !== "undefined" ? (window as any).__tichuSpeed : undefined) ??
+          (this.notifqueue as any)?.speedMode;
+        const scale =
+          speed === "instant" ? 0 : speed === "fast" ? this.getAnimTiming("fastScale", 0.15) : 1;
+        this.notifqueue?.setSynchronousDuration?.(Math.max(1, Math.round(rawBetMs * scale)));
       } else {
-        this.notifqueue.setSynchronousDuration(1);
+        this.notifqueue?.setSynchronousDuration?.(1);
       }
     } else {
-      this.notifqueue.setSynchronousDuration(1);
+      this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
       const titleSave = this.pendingConfirmTichu?.titleSave;
@@ -1888,12 +1941,18 @@ export class Tichu {
       if (this.areAnimationsActive()) {
         window.gameModel?.triggerBetAnimation(playerId, 100);
         this.playLaserSound();
-        this.notifqueue.setSynchronousDuration(1000);
+        const rawBetMs = this.getAnimTiming("betSplashNotifMs", 600);
+        const speed =
+          (typeof window !== "undefined" ? (window as any).__tichuSpeed : undefined) ??
+          (this.notifqueue as any)?.speedMode;
+        const scale =
+          speed === "instant" ? 0 : speed === "fast" ? this.getAnimTiming("fastScale", 0.15) : 1;
+        this.notifqueue?.setSynchronousDuration?.(Math.max(1, Math.round(rawBetMs * scale)));
       } else {
-        this.notifqueue.setSynchronousDuration(1);
+        this.notifqueue?.setSynchronousDuration?.(1);
       }
     } else {
-      this.notifqueue.setSynchronousDuration(1);
+      this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
       const titleSave = this.pendingConfirmTichu?.titleSave;
@@ -1964,6 +2023,9 @@ export class Tichu {
       this.gamedatas.mahjongWish = wish > 0 && wish < 15 ? wish : 0;
     }
     window.gameModel?.setMahjongWish(wish);
+    this.notifqueue?.setSynchronousDuration?.(
+      this.shouldAnimate() ? Math.max(1, this.getScaledAnimTiming("wishMadeNotifMs", 150)) : 1,
+    );
   }
 
   notif_playerGoOut(notif: TypedNotif<"playerGoOut">) {
@@ -1988,6 +2050,9 @@ export class Tichu {
       }
     }
     window.gameModel?.applyNewScores(newScores);
+    this.notifqueue?.setSynchronousDuration?.(
+      this.shouldAnimate() ? Math.max(1, this.getScaledAnimTiming("newScoresNotifMs", 700)) : 1,
+    );
   }
 
   notif_autopass(notif: TypedNotif<"autopass">) {

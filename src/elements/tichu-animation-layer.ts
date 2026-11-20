@@ -1,11 +1,31 @@
 import { css, LitElement } from "lit";
+import {
+  ANIM_PRESETS,
+  ANIM_TIMINGS,
+  AnimPresetName,
+  AnimTimings,
+  DEFAULT_ANIM_TIMINGS,
+  applyAnimPreset,
+  installWindowAnimTimings,
+  resetAnimTimings,
+  syncAnimCssVars,
+} from "./anim-timings";
 import { CardData } from "./game-model";
 import type { TichuHand } from "./tichu-hand";
 import type { TichuLastPlayed } from "./tichu-last-played";
 import type { TichuPassArea } from "./tichu-pass-area";
-import "./tichu-card";
-import type { TichuCard } from "./tichu-card";
 import { hasBomb } from "./utils";
+
+export {
+  ANIM_PRESETS,
+  ANIM_TIMINGS,
+  DEFAULT_ANIM_TIMINGS,
+  applyAnimPreset,
+  installWindowAnimTimings,
+  resetAnimTimings,
+  syncAnimCssVars,
+};
+export type { AnimPresetName, AnimTimings };
 
 export interface CardFlight {
   card: CardData;
@@ -13,6 +33,7 @@ export interface CardFlight {
   toRect: DOMRect;
   delayMs?: number;
   durationMs?: number;
+  fadeIn?: boolean;
   fadeOut?: boolean;
   pulse?: boolean;
   tiki?: boolean;
@@ -23,6 +44,7 @@ export interface PlayComboPrep {
   fromRects: Map<number, DOMRect>;
   fallbackFromRect: DOMRect;
   isBomb: boolean;
+  isSelf: boolean;
   durationMs: number;
 }
 
@@ -86,7 +108,7 @@ export function getAnimationSpeedScale(): number {
   }
   const speed = (window as any).__tichuSpeed ?? getGameUi()?.notifqueue?.speedMode;
   if (speed === "fast") {
-    return 0.15;
+    return ANIM_TIMINGS.fastScale;
   }
   return 1;
 }
@@ -109,6 +131,7 @@ export function getPlayAreaZoomFactor(): number {
 }
 
 export function getAnimationLayer(): TichuAnimationLayer | null {
+  installWindowAnimTimings();
   if (typeof document === "undefined") return null;
   let layer = document.querySelector("tichu-animation-layer") as TichuAnimationLayer | null;
   if (!layer && document.body) {
@@ -147,6 +170,21 @@ export class TichuAnimationLayer extends LitElement {
         pointer-events: none;
         transform-origin: top left;
         will-change: transform, opacity;
+      }
+      .ghost-card {
+        width: 100px;
+        height: 150px;
+        border-radius: 6px;
+        box-shadow: 2px 2px 5px 3px #666;
+        box-sizing: border-box;
+        background-repeat: no-repeat;
+        background-size: 1400px 600px;
+      }
+      .ghost-card.pass {
+        background-size: cover;
+        background-position: center;
+        opacity: 0.9;
+        box-shadow: 5px 5px 5px 0px #666;
       }
     `;
   }
@@ -192,6 +230,7 @@ export class TichuAnimationLayer extends LitElement {
       window.gameModel?.getState().isTiki ??
       document.getElementById("game_play_area")?.classList.contains("tiki") ??
       false;
+    const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
 
     const elements: HTMLElement[] = [];
     const animations: Animation[] = [];
@@ -201,17 +240,21 @@ export class TichuAnimationLayer extends LitElement {
       const wrapper = document.createElement("div");
       wrapper.className = "ghost-wrapper";
 
-      const cardEl = document.createElement("tichu-card") as TichuCard;
+      const tiki = flight.tiki ?? isTiki;
+      const cardDiv = document.createElement("div");
       if (flight.pass) {
-        cardEl.pass = true;
+        cardDiv.className = "ghost-card pass";
+        const passSprite = tiki ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
+        cardDiv.style.backgroundImage = `url(${themeUrl}${passSprite})`;
       } else {
-        cardEl.card = flight.card;
+        cardDiv.className = "ghost-card";
+        const color = Number(flight.card.type);
+        const rank = Number(flight.card.type_arg);
+        const cardSprite = tiki ? "img/tiki-cards.png" : "img/tichu-cards.png";
+        cardDiv.style.backgroundImage = `url(${themeUrl}${cardSprite})`;
+        cardDiv.style.backgroundPosition = `${-100 * (rank - 1)}px ${-150 * (color - 1)}px`;
       }
-      cardEl.scale = 1.0;
-      cardEl.tiki = flight.tiki ?? isTiki;
-      wrapper.appendChild(cardEl);
-      shadow.appendChild(wrapper);
-      elements.push(wrapper);
+      wrapper.appendChild(cardDiv);
 
       const fromW = flight.fromRect.width > 0 ? flight.fromRect.width : 75;
       const toW = flight.toRect.width > 0 ? flight.toRect.width : 75;
@@ -221,26 +264,36 @@ export class TichuAnimationLayer extends LitElement {
       const startTransform = `translate3d(${flight.fromRect.left}px, ${flight.fromRect.top}px, 0) scale(${fromScale})`;
       const endTransform = `translate3d(${flight.toRect.left}px, ${flight.toRect.top}px, 0) scale(${toScale})`;
 
-      const keyframes: Keyframe[] = [{ transform: startTransform, opacity: 1 }];
+      wrapper.style.transform = startTransform;
+      wrapper.style.opacity = flight.fadeIn ? "0" : "1";
+      shadow.appendChild(wrapper);
+      elements.push(wrapper);
+
+      const keyframes: Keyframe[] = [
+        { offset: 0, transform: startTransform, opacity: flight.fadeIn ? 0 : 1 },
+      ];
+      if (flight.fadeIn) {
+        keyframes.push({ offset: 0.25, opacity: 1 });
+      }
       if (flight.pulse) {
         const midLeft = (flight.fromRect.left + flight.toRect.left) / 2;
         const midTop = (flight.fromRect.top + flight.toRect.top) / 2;
-        const pulseScale = Math.max(fromScale, toScale) * 1.12;
+        const pulseScale = Math.max(fromScale, toScale) * ANIM_TIMINGS.playBombPulseScale;
         keyframes.push({
           offset: 0.5,
           transform: `translate3d(${midLeft}px, ${midTop}px, 0) scale(${pulseScale})`,
-          opacity: 1,
         });
       }
       keyframes.push({
+        offset: 1,
         transform: endTransform,
         opacity: flight.fadeOut ? 0 : 1,
       });
 
       const anim = wrapper.animate(keyframes, {
-        duration: Math.max(12, Math.round(flight.durationMs ?? 250)),
+        duration: Math.max(12, Math.round(flight.durationMs ?? ANIM_TIMINGS.playComboMs)),
         delay: Math.max(0, Math.round(flight.delayMs ?? 0)),
-        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        easing: ANIM_TIMINGS.easing,
         fill: "both",
       });
       animations.push(anim);
@@ -258,12 +311,15 @@ export class TichuAnimationLayer extends LitElement {
           if (cleaned) return;
           cleaned = true;
           this.activeBatches.delete(batch);
-          for (const el of elements) {
-            el.remove();
+          try {
+            onCleanup?.();
+          } finally {
+            for (const el of elements) {
+              el.remove();
+            }
+            this.updateObservabilityAttrs();
+            resolve();
           }
-          this.updateObservabilityAttrs();
-          onCleanup?.();
-          resolve();
         },
       };
 
@@ -297,14 +353,15 @@ export class TichuAnimationLayer extends LitElement {
 
   prepareDealCards(cards: CardData[]): number {
     if (!shouldAnimate() || cards.length === 0) {
-      return 100;
+      return 1;
     }
     const cardIds = cards.map((c) => c.id);
     this.getHandElement()?.markPendingReveal(cardIds);
-    const durEach = scaleAnimMs(220);
-    const stagger = scaleAnimMs(25);
-    const totalMs = durEach + Math.max(0, cards.length - 1) * stagger + scaleAnimMs(40);
-    return Math.max(40, totalMs);
+    const durEach = scaleAnimMs(ANIM_TIMINGS.dealCardMs);
+    const stagger = scaleAnimMs(ANIM_TIMINGS.dealStaggerMs);
+    const totalMs =
+      durEach + Math.max(0, cards.length - 1) * stagger + scaleAnimMs(ANIM_TIMINGS.dealBufferMs);
+    return Math.max(12, totalMs);
   }
 
   async runDealCardsFlight(cards: CardData[]): Promise<void> {
@@ -325,8 +382,8 @@ export class TichuAnimationLayer extends LitElement {
     const fallbackToRect = handEl.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5);
     const fromRect =
       this.getLastPlayedElement()?.getDeckOriginRect() ?? this.getCenterFallbackRect(65, 97.5);
-    const durationMs = Math.max(12, scaleAnimMs(220));
-    const staggerMs = scaleAnimMs(25);
+    const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.dealCardMs));
+    const staggerMs = scaleAnimMs(ANIM_TIMINGS.dealStaggerMs);
 
     const flights: CardFlight[] = cards.map((card, idx) => ({
       card,
@@ -344,10 +401,12 @@ export class TichuAnimationLayer extends LitElement {
     flightDurationMs: number;
     totalDurationMs: number;
   } {
-    const viewDelayMs = scaleAnimMs(1200);
+    const viewDelayMs = scaleAnimMs(ANIM_TIMINGS.acceptViewDelayMs);
     const flightDurationMs = Math.max(
-      40,
-      scaleAnimMs(260) + Math.max(0, cardCount - 1) * scaleAnimMs(35) + scaleAnimMs(40),
+      12,
+      scaleAnimMs(ANIM_TIMINGS.acceptFlightMs) +
+        Math.max(0, cardCount - 1) * scaleAnimMs(ANIM_TIMINGS.acceptStaggerMs) +
+        scaleAnimMs(ANIM_TIMINGS.acceptBufferMs),
     );
     return {
       viewDelayMs,
@@ -359,7 +418,7 @@ export class TichuAnimationLayer extends LitElement {
   prepareAcceptCards(cards: CardData[]): AcceptCardsPrep {
     const passAreaEl = this.getPassAreaElement();
     if (!shouldAnimate() || cards.length === 0 || !passAreaEl?.isPassAreaVisible()) {
-      return { fromRects: new Map(), durationMs: 50 };
+      return { fromRects: new Map(), durationMs: 1 };
     }
     const existingRects = passAreaEl.getReceivedCardRects();
     const fromRects = new Map<number, DOMRect>();
@@ -380,12 +439,14 @@ export class TichuAnimationLayer extends LitElement {
       }
     });
     if (fromRects.size === 0) {
-      return { fromRects, durationMs: 50 };
+      return { fromRects, durationMs: 1 };
     }
     this.getHandElement()?.markPendingReveal(cards.map((c) => c.id));
     const durationMs = Math.max(
-      40,
-      scaleAnimMs(260) + Math.max(0, cards.length - 1) * scaleAnimMs(35) + scaleAnimMs(40),
+      12,
+      scaleAnimMs(ANIM_TIMINGS.acceptFlightMs) +
+        Math.max(0, cards.length - 1) * scaleAnimMs(ANIM_TIMINGS.acceptStaggerMs) +
+        scaleAnimMs(ANIM_TIMINGS.acceptBufferMs),
     );
     return { fromRects, durationMs };
   }
@@ -406,8 +467,8 @@ export class TichuAnimationLayer extends LitElement {
 
     const toRects = handEl.getCardRects(cardIds);
     const fallbackToRect = handEl.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5);
-    const durationMs = Math.max(12, scaleAnimMs(260));
-    const staggerMs = scaleAnimMs(35);
+    const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.acceptFlightMs));
+    const staggerMs = scaleAnimMs(ANIM_TIMINGS.acceptStaggerMs);
 
     const flights: CardFlight[] = [];
     cards.forEach((card, idx) => {
@@ -466,7 +527,7 @@ export class TichuAnimationLayer extends LitElement {
       return;
     }
 
-    const durationMs = Math.max(12, scaleAnimMs(220));
+    const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.passSlotMoveMs));
     await this.flyCards(
       [
         {
@@ -515,8 +576,8 @@ export class TichuAnimationLayer extends LitElement {
 
     const toRects = handEl.getCardRects(cardIds);
     const fallbackToRect = handEl.getHandAnchorRect() ?? this.getCenterFallbackRect(75, 112.5);
-    const durationMs = Math.max(12, scaleAnimMs(220));
-    const staggerMs = scaleAnimMs(25);
+    const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.passSlotMoveMs));
+    const staggerMs = scaleAnimMs(ANIM_TIMINGS.passReturnStaggerMs);
 
     const flights: CardFlight[] = [];
     cards.forEach((card, idx) => {
@@ -545,7 +606,7 @@ export class TichuAnimationLayer extends LitElement {
   } {
     const passAreaEl = this.getPassAreaElement();
     if (!shouldAnimate() || !passAreaEl?.isPassAreaVisible()) {
-      return { durationMs: 50, promise: Promise.resolve() };
+      return { durationMs: 1, promise: Promise.resolve() };
     }
 
     const passSlots = window.gameModel?.getState().passSlots ?? [];
@@ -564,13 +625,13 @@ export class TichuAnimationLayer extends LitElement {
     });
 
     if (entries.length === 0) {
-      return { durationMs: 50, promise: Promise.resolve() };
+      return { durationMs: 1, promise: Promise.resolve() };
     }
 
     this.cancelAll();
 
-    const outDurationMs = Math.max(12, scaleAnimMs(240));
-    const staggerMs = scaleAnimMs(25);
+    const outDurationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.passOutMs));
+    const staggerMs = scaleAnimMs(ANIM_TIMINGS.passOutStaggerMs);
     const flights: CardFlight[] = entries.map(({ card, fromRect }, idx) => {
       const scale = fromRect.width > 0 ? fromRect.width / 100 : 1;
       return {
@@ -590,8 +651,10 @@ export class TichuAnimationLayer extends LitElement {
 
     const promise = this.flyCards(flights);
     const durationMs = Math.max(
-      40,
-      outDurationMs + Math.max(0, flights.length - 1) * staggerMs + scaleAnimMs(40),
+      12,
+      outDurationMs +
+        Math.max(0, flights.length - 1) * staggerMs +
+        scaleAnimMs(ANIM_TIMINGS.passOutBufferMs),
     );
     return { durationMs, promise };
   }
@@ -603,19 +666,19 @@ export class TichuAnimationLayer extends LitElement {
     isBombState: boolean,
   ): PlayComboPrep {
     const isBomb = isBombState || hasBomb(cards) || comboName.toLowerCase().includes("bomb");
+    const st = window.gameModel?.getState();
+    const isSelf = !st?.isSpectator && playerId === Number(st?.currentPlayerId ?? 0);
     if (!shouldAnimate() || cards.length === 0) {
       return {
         fromRects: new Map(),
         fallbackFromRect: this.getCenterFallbackRect(75, 112.5),
         isBomb,
-        durationMs: 100,
+        isSelf,
+        durationMs: 1,
       };
     }
 
     const cardIds = cards.map((c) => c.id);
-    const st = window.gameModel?.getState();
-    const isSelf = !st?.isSpectator && playerId === Number(st?.currentPlayerId ?? 0);
-
     const handEl = this.getHandElement();
     const lastPlayedEl = this.getLastPlayedElement();
     const fromRects = isSelf && handEl ? handEl.getCardRects(cardIds) : new Map<number, DOMRect>();
@@ -627,14 +690,18 @@ export class TichuAnimationLayer extends LitElement {
 
     lastPlayedEl?.markPendingReveal(playerId, cardIds);
 
-    const baseDur = scaleAnimMs(isBomb ? 320 : 250);
-    const stagger = scaleAnimMs(20);
+    const baseDur = scaleAnimMs(isBomb ? ANIM_TIMINGS.playBombMs : ANIM_TIMINGS.playComboMs);
+    const stagger = scaleAnimMs(
+      isBomb ? ANIM_TIMINGS.playBombStaggerMs : ANIM_TIMINGS.playComboStaggerMs,
+    );
     const durationMs = Math.max(
-      40,
-      baseDur + Math.max(0, cards.length - 1) * stagger + scaleAnimMs(40),
+      12,
+      baseDur +
+        Math.max(0, cards.length - 1) * stagger +
+        scaleAnimMs(ANIM_TIMINGS.playComboBufferMs),
     );
 
-    return { fromRects, fallbackFromRect, isBomb, durationMs };
+    return { fromRects, fallbackFromRect, isBomb, isSelf, durationMs };
   }
 
   async runPlayComboFlight(
@@ -658,8 +725,13 @@ export class TichuAnimationLayer extends LitElement {
     const toRects = lastPlayedEl.getComboCardRects(playerId, cardIds);
     const fallbackToRect =
       lastPlayedEl.getSeatAnchorRect(playerId) ?? this.getCenterFallbackRect(65, 97.5);
-    const durationMs = Math.max(12, scaleAnimMs(prep.isBomb ? 320 : 250));
-    const staggerMs = scaleAnimMs(20);
+    const durationMs = Math.max(
+      12,
+      scaleAnimMs(prep.isBomb ? ANIM_TIMINGS.playBombMs : ANIM_TIMINGS.playComboMs),
+    );
+    const staggerMs = scaleAnimMs(
+      prep.isBomb ? ANIM_TIMINGS.playBombStaggerMs : ANIM_TIMINGS.playComboStaggerMs,
+    );
 
     const flights: CardFlight[] = cards.map((card, idx) => ({
       card,
@@ -668,6 +740,7 @@ export class TichuAnimationLayer extends LitElement {
       delayMs: idx * staggerMs,
       durationMs,
       pulse: prep.isBomb,
+      fadeIn: !prep.isSelf,
     }));
 
     await this.flyCards(flights, () => lastPlayedEl.revealCards(playerId, cardIds));
@@ -675,37 +748,33 @@ export class TichuAnimationLayer extends LitElement {
 
   runCaptureCardsSweep(recipientPlayerId: number): { durationMs: number; promise: Promise<void> } {
     if (!shouldAnimate()) {
-      return { durationMs: 100, promise: Promise.resolve() };
+      return { durationMs: 1, promise: Promise.resolve() };
     }
     const lastPlayedEl = this.getLastPlayedElement();
     if (!lastPlayedEl) {
-      return { durationMs: 100, promise: Promise.resolve() };
+      return { durationMs: 1, promise: Promise.resolve() };
     }
 
     const entries = lastPlayedEl.getAllTableComboCards();
     if (entries.length === 0) {
-      return { durationMs: 100, promise: Promise.resolve() };
+      return { durationMs: 1, promise: Promise.resolve() };
     }
 
     const st = window.gameModel?.getState();
-    const isSelf =
-      !st?.isSpectator && Number(recipientPlayerId) === Number(st?.currentPlayerId ?? 0);
     const winnerId = String(st?.lastComboPlayerId || recipientPlayerId);
-    const toRect = isSelf
-      ? (this.getHandElement()?.getHandAnchorRect() ??
-        lastPlayedEl.getPlayerPointsIconRect(recipientPlayerId) ??
-        lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
-        this.getCenterFallbackRect(75, 112.5))
-      : (lastPlayedEl.getPlayerPointsIconRect(recipientPlayerId) ??
-        lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
-        this.getCenterFallbackRect(36, 54));
+    const toRect =
+      lastPlayedEl.getPlayerPointsIconRect(recipientPlayerId) ??
+      lastPlayedEl.getSeatAnchorRect(recipientPlayerId) ??
+      this.getCenterFallbackRect(36, 54);
 
     const nonWinnerEntries = entries.filter((e) => e.playerId !== winnerId);
     const winnerEntries = entries.filter((e) => e.playerId === winnerId);
     const hasNonWinner = nonWinnerEntries.length > 0;
-    const winnerLingerMs = hasNonWinner ? scaleAnimMs(150) : scaleAnimMs(60);
-    const staggerMs = scaleAnimMs(15);
-    const sweepDurationMs = Math.max(12, scaleAnimMs(260));
+    const winnerLingerMs = hasNonWinner
+      ? scaleAnimMs(ANIM_TIMINGS.captureWinnerLingerMs)
+      : scaleAnimMs(ANIM_TIMINGS.captureSoloLingerMs);
+    const staggerMs = scaleAnimMs(ANIM_TIMINGS.captureStaggerMs);
+    const sweepDurationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.captureSweepMs));
 
     const flights: CardFlight[] = [];
     let maxDelayMs = 0;
@@ -740,8 +809,39 @@ export class TichuAnimationLayer extends LitElement {
       lastPlayedEl.revealCards();
     });
 
-    const durationMs = Math.max(60, maxDelayMs + sweepDurationMs + scaleAnimMs(50));
+    const durationMs = Math.max(
+      12,
+      maxDelayMs + sweepDurationMs + scaleAnimMs(ANIM_TIMINGS.captureBufferMs),
+    );
     return { durationMs, promise };
+  }
+
+  getPassNotifDuration(): number {
+    return shouldAnimate() ? Math.max(12, scaleAnimMs(ANIM_TIMINGS.passNotifMs)) : 1;
+  }
+
+  async runPassTokenPop(playerId: number): Promise<void> {
+    if (!shouldAnimate() || ANIM_TIMINGS.passPopMs <= 0) {
+      return;
+    }
+    const lastPlayedEl = this.getLastPlayedElement();
+    if (!lastPlayedEl) return;
+    await lastPlayedEl.updateComplete;
+    const stock = lastPlayedEl.getPlayerStock(playerId);
+    if (!stock || !stock.pass) return;
+    await stock.updateComplete;
+    const cardEl = stock.shadowRoot?.querySelector<HTMLElement>("tichu-card");
+    if (!cardEl || typeof cardEl.animate !== "function") return;
+    cardEl.animate(
+      [
+        { transform: "scale(0.82)", opacity: 0 },
+        { transform: "scale(1)", opacity: 1 },
+      ],
+      {
+        duration: Math.max(12, scaleAnimMs(ANIM_TIMINGS.passPopMs)),
+        easing: ANIM_TIMINGS.easing,
+      },
+    );
   }
 }
 

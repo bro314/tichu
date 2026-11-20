@@ -5,6 +5,7 @@ import { formatLocalizedComboDescription, translateDynamic } from "./combo-valid
 import { Card, LastComboState, LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
+import { ANIM_TIMINGS } from "./anim-timings";
 import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-status";
 import "./tichu-stock";
@@ -137,8 +138,13 @@ export class TichuLastPlayed extends LitElement {
           box-shadow: 0 0 16px rgba(251, 191, 36, 0.8);
           border-color: rgba(251, 191, 36, 0.95);
           transition:
-            box-shadow 120ms ease,
-            border-color 120ms ease;
+            box-shadow var(--tichu-winning-linger-ms, 100ms) ease,
+            border-color var(--tichu-winning-linger-ms, 100ms) ease;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .last-played-container.winning-linger {
+            transition: none;
+          }
         }
         .last-played-container.disabled:not(.lastComboPlayer) .disabler {
           display: block;
@@ -495,13 +501,36 @@ export class TichuLastPlayed extends LitElement {
     };
   }
 
+  private syncClearPendingRevealDom(targetPlayerId?: string, cardIds?: Array<string | number>): void {
+    if (!this.shadowRoot?.querySelectorAll) return;
+    const stocks =
+      targetPlayerId !== undefined
+        ? ([this.getPlayerStock(targetPlayerId)].filter(Boolean) as TichuStock[])
+        : Array.from(this.shadowRoot.querySelectorAll<TichuStock>("tichu-stock[data-player-id]"));
+    const filter = cardIds ? new Set(cardIds.map(String)) : null;
+    for (const stock of stocks) {
+      if (!stock.shadowRoot?.querySelectorAll) continue;
+      const nodes = Array.from(
+        stock.shadowRoot.querySelectorAll<HTMLElement>("tichu-card[data-pending-reveal]"),
+      );
+      for (const el of nodes) {
+        const cid = el.getAttribute("data-card-id") ?? "";
+        if (!filter || filter.has(cid)) {
+          el.removeAttribute("data-pending-reveal");
+        }
+      }
+    }
+  }
+
   revealCards(playerId?: string | number, cardIds?: Array<string | number>): void {
     if (playerId === undefined) {
       this.hideAllForSweep = false;
       this.pendingRevealByPlayer = {};
+      this.syncClearPendingRevealDom();
       return;
     }
     const id = String(playerId);
+    this.syncClearPendingRevealDom(id, cardIds);
     if (!cardIds) {
       const copy = { ...this.pendingRevealByPlayer };
       delete copy[id];
@@ -562,21 +591,22 @@ export class TichuLastPlayed extends LitElement {
   }
 
   getPlayerHandIconRect(playerId: string | number): DOMRect | null {
-    return this.getIconAnchorRect(`icon_hand_${playerId}`);
+    return this.getIconAnchorRect(`icon_hand_${playerId}`, ANIM_TIMINGS.opponentStartScale);
   }
 
   getPlayerPointsIconRect(playerId: string | number): DOMRect | null {
-    return this.getIconAnchorRect(`icon_star_${playerId}`);
+    return this.getIconAnchorRect(`icon_star_${playerId}`, 0.36);
   }
 
-  private getIconAnchorRect(elementId: string): DOMRect | null {
+  private getIconAnchorRect(elementId: string, scale = 0.36): DOMRect | null {
     const el = this.shadowRoot?.getElementById(elementId);
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
     const zoom = getPlayAreaZoomFactor();
-    const w = 36 * zoom;
-    const h = 54 * zoom;
+    const baseW = Math.round(100 * scale * 100) / 100;
+    const w = baseW * zoom;
+    const h = baseW * 1.5 * zoom;
     return new DOMRect(
       rect.left + rect.width / 2 - w / 2,
       rect.top + rect.height / 2 - h / 2,

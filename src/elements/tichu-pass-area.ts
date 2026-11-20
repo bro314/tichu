@@ -155,18 +155,6 @@ export class TichuPassArea extends LitElement {
           top: 84px;
           left: 20px;
           z-index: 5;
-          transition:
-            transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
-            opacity 0.5s ease-in;
-          will-change: transform, opacity;
-        }
-        tichu-card.slide-out {
-          transform: translateY(-60px);
-          opacity: 0;
-        }
-        tichu-card.slide-to-hand {
-          transform: translateY(180px);
-          opacity: 0;
         }
         tichu-card[data-pending-reveal] {
           visibility: hidden;
@@ -338,6 +326,7 @@ export class TichuPassArea extends LitElement {
           ${
             slot.givenCard
               ? html`<tichu-card
+                  data-card-id=${slot.givenCard.id ?? ""}
                   ?data-pending-reveal=${givenHidden}
                   .card=${slot.givenCard}
                   .scale=${1.0}
@@ -345,7 +334,6 @@ export class TichuPassArea extends LitElement {
                   class=${classMap({
                     "given-card": true,
                     cardontable: true,
-                    "slide-out": slot.animatingAccept,
                   })}
                 ></tichu-card>`
               : ""
@@ -359,7 +347,6 @@ export class TichuPassArea extends LitElement {
                   class=${classMap({
                     "received-card": true,
                     cardontable: true,
-                    "slide-to-hand": slot.animatingAccept,
                   })}
                 ></tichu-card>`
               : ""
@@ -386,6 +373,18 @@ export class TichuPassArea extends LitElement {
   }
 
   revealCards(cardIds?: Array<string | number>): void {
+    const filter = cardIds ? new Set(cardIds.map(String)) : null;
+    if (this.shadowRoot?.querySelectorAll) {
+      const nodes = Array.from(
+        this.shadowRoot.querySelectorAll<HTMLElement>("tichu-card[data-pending-reveal]"),
+      );
+      for (const el of nodes) {
+        const cid = el.getAttribute("data-card-id") ?? "";
+        if (!filter || filter.has(cid)) {
+          el.removeAttribute("data-pending-reveal");
+        }
+      }
+    }
     if (!cardIds) {
       if (this.pendingRevealCardIds.size > 0) {
         this.pendingRevealCardIds = new Set();

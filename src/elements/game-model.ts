@@ -1,5 +1,6 @@
 import { BehaviorSubject, Observable } from "rxjs";
 import type { Card, CardData, I18nLogPayload, TichuGamedatas } from "../types/tichu-contracts";
+import { ANIM_TIMINGS, syncAnimCssVars } from "./anim-timings";
 import { Combo, normalizeComboDescriptionInput, normalizePhoenixValue } from "./combo-validator";
 import type { TichuAnimationLayer } from "./tichu-animation-layer";
 import { select } from "./utils";
@@ -590,6 +591,7 @@ export class GameModel {
       settingsModalOpen: false,
       betAnimations: [],
     });
+    syncAnimCssVars();
   }
 
   // State machine transition helpers
@@ -1193,8 +1195,8 @@ export class GameModel {
   triggerBetAnimation(
     playerId: string | number,
     bet: number,
-    fadeDelayMs = 1000,
-    fadeDurationMs = 1000,
+    fadeDelayMs = ANIM_TIMINGS.betSplashHoldMs,
+    fadeDurationMs = ANIM_TIMINGS.betSplashFadeMs,
   ): void {
     if (!this.getState().animationsEnabled) {
       return;
@@ -1316,6 +1318,7 @@ export class GameModel {
 
   setAnimationsEnabled(animationsEnabled: boolean): void {
     this.update({ animationsEnabled: Boolean(animationsEnabled) });
+    syncAnimCssVars();
   }
 
   setExperimentalReplayOpen(experimentalReplayOpen: boolean): void {

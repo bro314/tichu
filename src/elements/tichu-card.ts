@@ -75,6 +75,7 @@ export class TichuCard extends LitElement {
         div#card {
           position: relative;
           top: 0;
+          translate: 0 0;
           width: var(--width);
           height: var(--height);
           background-image: var(--card-url);
@@ -84,7 +85,10 @@ export class TichuCard extends LitElement {
           border-radius: var(--border-radius, 6px);
           box-shadow: 2px 2px 5px 3px #666;
           box-sizing: border-box;
-          transition: box-shadow 280ms ease;
+          transition:
+            translate var(--tichu-card-select-ms, 100ms)
+              var(--tichu-anim-easing, cubic-bezier(0.22, 1, 0.36, 1)),
+            box-shadow var(--tichu-card-glow-ms, 120ms) ease;
         }
         div#card.selectable {
           cursor: pointer;

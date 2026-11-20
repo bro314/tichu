@@ -1559,11 +1559,22 @@ foreach (array_keys($tsNotifs) as $type) {
 $tichuTs = (string) file_get_contents("$root/src/tichu.ts");
 $bgaBuiltinNotifs = ["log", "tableWindow"];
 $subscribedNotifs = [];
+$notifSyncDurations = [];
 $snBody = extractBalancedBraceBody($tichuTs, '/setupNotifications\s*\(\)\s*(?::\s*[^{]+)?\{/');
 if ($snBody !== null) {
   if (preg_match('/const\s+notifs[^=]*=\s*\{(.*?)\};/s', $snBody, $mapMatch)) {
-    if (preg_match_all('/^\s*([A-Za-z0-9_]+)\s*:/m', $mapMatch[1], $nm)) {
-      $subscribedNotifs = $nm[1];
+    if (
+      preg_match_all(
+        '/^\s*([A-Za-z0-9_]+)\s*:\s*([^,\r\n}]+)/m',
+        $mapMatch[1],
+        $nm,
+        PREG_SET_ORDER
+      )
+    ) {
+      foreach ($nm as $entry) {
+        $subscribedNotifs[] = $entry[1];
+        $notifSyncDurations[$entry[1]] = trim($entry[2]);
+      }
     }
   }
 }
@@ -1590,6 +1601,42 @@ foreach ($subscribedNotifs as $sub) {
 foreach ($handlerNotifs as $h) {
   if (!array_key_exists($h, $tsNotifs)) {
     addError($errors, "NotifContract", "src/tichu.ts defines handler notif_$h() not in TichuNotificationMap");
+  }
+}
+
+foreach ($notifSyncDurations as $type => $rawDur) {
+  $headerPattern = '/^\s*notif_' . preg_quote($type, '/') . '\s*\([^)]*\)\s*(?::\s*[^{]+)?\{/m';
+  if (!preg_match($headerPattern, $tichuTs, $hm, PREG_OFFSET_CAPTURE)) {
+    continue;
+  }
+  $start = $hm[0][1] + strlen($hm[0][0]);
+  $tokens = tokenizeJsCode(substr($tichuTs, $start));
+  $depth = 1;
+  $hasDynamicDur = false;
+  foreach ($tokens as $tok) {
+    if ($tok[0] === "PUNCT" && $tok[1] === "{") {
+      $depth++;
+    } elseif ($tok[0] === "PUNCT" && $tok[1] === "}") {
+      $depth--;
+      if ($depth === 0) {
+        break;
+      }
+    } elseif ($tok[0] === "IDENT" && $tok[1] === "setSynchronousDuration") {
+      $hasDynamicDur = true;
+    }
+  }
+  if ($rawDur === "undefined" && !$hasDynamicDur) {
+    addError(
+      $errors,
+      "NotifContract",
+      "src/tichu.ts setupNotifications() registers '$type: undefined' but notif_$type() never calls setSynchronousDuration()"
+    );
+  } elseif ($rawDur !== "undefined" && $hasDynamicDur) {
+    addError(
+      $errors,
+      "NotifContract",
+      "src/tichu.ts setupNotifications() registers '$type: $rawDur' AND notif_$type() calls setSynchronousDuration() (BGA double-timer collision)"
+    );
   }
 }
 
