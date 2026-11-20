@@ -1,4 +1,4 @@
-import { html, css, LitElement } from "lit";
+import { html, css, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { LivePlayer, PassSlotState } from "./game-model";
@@ -7,6 +7,9 @@ import { subscribe } from "./subscription-controller";
 import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-card";
 import type { TichuCard } from "./tichu-card";
+
+export const PASS_SLOT_CARD_OFFSET_X = 20;
+export const PASS_SLOT_CARD_OFFSET_Y = 84;
 
 export class TichuPassArea extends LitElement {
   @state() private stateName = "";
@@ -17,6 +20,7 @@ export class TichuPassArea extends LitElement {
   @state() private isTiki = false;
   @state() private clockwise = true;
   @state() private pendingRevealCardIds: Set<string> = new Set();
+  @state() private failedAvatarKeys: Set<string> = new Set();
 
   static override get styles() {
     return [
@@ -42,7 +46,7 @@ export class TichuPassArea extends LitElement {
           position: relative;
           text-align: center;
           width: 140px;
-          height: 210px;
+          height: 248px;
           border-radius: var(--border-radius);
           background: var(--bg-color-lighter);
           padding: 10px;
@@ -53,46 +57,102 @@ export class TichuPassArea extends LitElement {
         }
         #playertables .playertable_1,
         #playertables .playertable_3 {
-          margin: 50px 0px 25px 0px;
+          margin: 40px 0px 15px 0px;
+        }
+        .playertable-header {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          margin-bottom: 8px;
+        }
+        .playertable-avatar-wrap {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          box-sizing: border-box;
+          background: #334155;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+          overflow: hidden;
+          flex-shrink: 0;
+        }
+        .playertable-avatar-wrap.partner {
+          border: 2px solid #0f9d58;
+        }
+        .playertable-avatar-wrap.opponent {
+          border: 2px solid #475569;
+        }
+        .playertable-avatar-img {
+          width: 100%;
+          height: 100%;
+          aspect-ratio: 1;
+          border-radius: 50%;
+          object-fit: cover;
+          display: block;
+        }
+        .playertable-avatar-fallback {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          font-weight: 700;
+          color: #fff;
+          text-transform: uppercase;
+          user-select: none;
+        }
+        .playertable-avatar-wrap.partner .playertable-avatar-fallback {
+          background: #0f9d58;
+        }
+        .playertable-avatar-wrap.opponent .playertable-avatar-fallback {
+          background: #334155;
         }
         #playertables .playertablename {
+          width: 100%;
           font-weight: bold;
-          height: 24px;
-          line-height: 24px;
+          height: 22px;
+          line-height: 22px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          margin-bottom: 10px;
         }
         .playertablecard {
-          width: 120px;
-          height: 155px;
+          width: 100px;
+          height: 150px;
           margin: 0 auto;
         }
         .playertablebackground {
           position: relative;
-          width: 120px;
+          width: 100%;
+          height: 100%;
           display: flex;
           flex-direction: column;
           align-items: center;
+          justify-content: center;
+          border-radius: var(--border-radius);
           pointer-events: none;
+          transition:
+            border-color 150ms ease,
+            background-color 150ms ease;
+        }
+        #playertables.giveCards.active .playertable:not(.has-card) .playertablebackground {
+          border: 2px dashed rgba(31, 35, 40, 0.22);
+        }
+        #playertables.giveCards.active .playertable:not(.has-card):hover .playertablebackground {
+          border-color: rgba(31, 35, 40, 0.48);
+          background-color: rgba(255, 255, 255, 0.22);
         }
         .playertablebackground .tichubets {
-          min-height: 20px;
-          margin-bottom: 10px;
-        }
-        .playertabletext {
-          display: none;
-          font-size: 13px;
-          color: #1f2328;
-        }
-        #playertables.giveCards.active .playertabletext {
-          display: block;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         tichu-card.given-card,
         tichu-card.received-card {
           position: absolute;
-          top: 40px;
+          top: 84px;
           left: 20px;
           z-index: 5;
           transition:
@@ -110,6 +170,17 @@ export class TichuPassArea extends LitElement {
         }
         tichu-card[data-pending-reveal] {
           visibility: hidden;
+        }
+        @media (forced-colors: active) {
+          .playertable-avatar-wrap,
+          #playertables.giveCards.active .playertable:not(.has-card) .playertablebackground {
+            border-color: CanvasText;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .playertablebackground {
+            transition: none;
+          }
         }
       `,
     ];
@@ -184,25 +255,69 @@ export class TichuPassArea extends LitElement {
     `;
   }
 
+  private onAvatarError(avatarKey: string) {
+    if (this.failedAvatarKeys.has(avatarKey)) return;
+    const next = new Set(this.failedAvatarKeys);
+    next.add(avatarKey);
+    this.failedAvatarKeys = next;
+  }
+
   private renderSlot(slot: PassSlotState) {
     const targetPlayer = this.players[slot.playerId];
     const color = targetPlayer?.color ?? "000000";
     const name = targetPlayer?.name ?? "";
+    const avatarUrl = targetPlayer?.avatarUrl ?? "";
+    const avatarKey = `${slot.playerId}|${avatarUrl}`;
+    const showImg = Boolean(avatarUrl) && !this.failedAvatarKeys.has(avatarKey);
+    const initial = (name.trim()[0] ?? "?").toUpperCase();
+    const isPartner = slot.dir === 2;
     const isGrandTichu = targetPlayer?.callGrandTichu === 200;
     const isTichu = targetPlayer?.callTichu === 100;
     const hasCard = slot.givenCard !== null || slot.receivedCard !== null;
+    const showSelectHint = this.stateName === "giveCards" && this.isCurrentPlayerActive && !hasCard;
+    const slotTooltip = showSelectHint ? _("Select a card and click here") : nothing;
     const givenHidden = slot.givenCard
       ? this.pendingRevealCardIds.has(String(slot.givenCard.id))
       : false;
 
     return html`
       <div
-        class="whiteblock playertable playertable_${slot.dir}"
+        class=${classMap({
+          whiteblock: true,
+          playertable: true,
+          [`playertable_${slot.dir}`]: true,
+          "has-card": hasCard,
+        })}
         id="playertable_${slot.dir}"
         data-player-id="${slot.playerId}"
+        title=${slotTooltip}
         @click=${() => this.onSlotClick(slot.dir - 1)}
       >
-        <div class="playertablename" style="color: #${color}">${name}</div>
+        <div class="playertable-header">
+          <div
+            class=${classMap({
+              "playertable-avatar-wrap": true,
+              partner: isPartner,
+              opponent: !isPartner,
+            })}
+          >
+            ${
+              showImg
+                ? html`<img
+                    class="playertable-avatar-img"
+                    src=${avatarUrl}
+                    alt=""
+                    width="36"
+                    height="36"
+                    @error=${() => this.onAvatarError(avatarKey)}
+                  />`
+                : html`<span class="playertable-avatar-fallback" aria-hidden="true"
+                    >${initial}</span
+                  >`
+            }
+          </div>
+          <div class="playertablename" style="color: #${color}">${name}</div>
+        </div>
         <div class="playertablecard" id="give_${slot.dir}">
           <div class="givePassCard" id="giveplayertable_${slot.dir}"></div>
           <div class="receivePassCard" id="receiveplayertable_${slot.playerId}"></div>
@@ -218,12 +333,6 @@ export class TichuPassArea extends LitElement {
                 style="display: ${isTichu ? "inline-block" : "none"}"
                 title=${_("Tichu bet")}
               ></div>
-            </div>
-            <div
-              class="CardBack selectable playertabletext"
-              style=${hasCard ? "display: none" : ""}
-            >
-              <span>${_("Select a card and click here")}</span>
             </div>
           </div>
           ${
@@ -346,7 +455,12 @@ export class TichuPassArea extends LitElement {
     const rect = slotEl.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
     const zoom = getPlayAreaZoomFactor();
-    return new DOMRect(rect.left + 20 * zoom, rect.top + 40 * zoom, 100 * zoom, 150 * zoom);
+    return new DOMRect(
+      rect.left + PASS_SLOT_CARD_OFFSET_X * zoom,
+      rect.top + PASS_SLOT_CARD_OFFSET_Y * zoom,
+      100 * zoom,
+      150 * zoom,
+    );
   }
 
   getSlotCardRectByPlayerId(playerId: string | number): DOMRect | null {

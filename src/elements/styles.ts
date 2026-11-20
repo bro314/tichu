@@ -354,27 +354,27 @@ export const styles = css`
   }
   .icon.big.grandtichublack {
     background-size: 256px 128px;
-    background-position: 0px 0px;
-    width: 64px;
-    height: 64px;
+    background-position: -1px -8px;
+    width: 48px;
+    height: 56px;
   }
   .icon.big.grandtichucolor {
     background-size: 256px 128px;
-    background-position: 0px -64px;
-    width: 64px;
-    height: 64px;
+    background-position: 0px -72px;
+    width: 48px;
+    height: 56px;
   }
   .icon.big.tichublack {
     background-size: 256px 128px;
-    background-position: -64px 0px;
-    width: 64px;
-    height: 64px;
+    background-position: -65px -8px;
+    width: 54px;
+    height: 56px;
   }
   .icon.big.tichucolor {
     background-size: 256px 128px;
-    background-position: -64px -64px;
-    width: 62.4px;
-    height: 62.4px;
+    background-position: -63px -71px;
+    width: 54px;
+    height: 56px;
   }
   .icon.temp {
     position: absolute;

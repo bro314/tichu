@@ -1678,6 +1678,8 @@ function withMockLitEnv(
     TichuAnimationLayer: any;
     TichuLastPlayed: any;
     TichuPassArea: any;
+    PASS_SLOT_CARD_OFFSET_X: number;
+    PASS_SLOT_CARD_OFFSET_Y: number;
     TichuStock: any;
     TichuActionBar: any;
     TichuValueChoice: any;
@@ -1759,11 +1761,14 @@ function withMockLitEnv(
   const stockMod = require("../src/elements/tichu-stock");
   const handMod = require("../src/elements/tichu-hand");
   const cardMod = require("../src/elements/tichu-card");
+  const passAreaMod = require("../src/elements/tichu-pass-area");
   const settingsModalMod = require("../src/elements/tichu-settings-modal");
   const mods = {
     TichuAnimationLayer: require("../src/elements/tichu-animation-layer").TichuAnimationLayer,
     TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
-    TichuPassArea: require("../src/elements/tichu-pass-area").TichuPassArea,
+    TichuPassArea: passAreaMod.TichuPassArea,
+    PASS_SLOT_CARD_OFFSET_X: passAreaMod.PASS_SLOT_CARD_OFFSET_X,
+    PASS_SLOT_CARD_OFFSET_Y: passAreaMod.PASS_SLOT_CARD_OFFSET_Y,
     TichuStock: stockMod.TichuStock,
     TichuActionBar: require("../src/elements/tichu-action-bar").TichuActionBar,
     TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
@@ -2183,7 +2188,7 @@ test("Animations::pass-card selection, reset, submit slide-out, and acceptCards 
       assert.equal(handAnchor.left, 10 + 8 - 18);
       assert.equal(ptsAnchor.left, 50 + 8 - 18);
 
-      // 8. TichuPassArea.getSlotCardTargetRect computes exact (left+20*zoom, top+40*zoom, 100*zoom, 150*zoom)
+      // 8. TichuPassArea.getSlotCardTargetRect computes exact (left+20*zoom, top+84*zoom, 100*zoom, 150*zoom)
       g.document.getElementById = (id: string) =>
         id === "game_play_area_wrap" ? { style: { transform: "scale(0.8)" } } : null;
       const fakePassArea = Object.create(TichuPassArea.prototype);
@@ -2197,7 +2202,7 @@ test("Animations::pass-card selection, reset, submit slide-out, and acceptCards 
       });
       const targetRect = fakePassArea.getSlotCardTargetRect(0);
       assert.equal(targetRect.left, 100 + 20 * 0.8);
-      assert.equal(targetRect.top, 200 + 40 * 0.8);
+      assert.equal(targetRect.top, 200 + 84 * 0.8);
       assert.equal(targetRect.width, 100 * 0.8);
       assert.equal(targetRect.height, 150 * 0.8);
     },
@@ -3892,7 +3897,181 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
     },
   );
 });
+test("TichuPassArea: tooltip-only select hint, avatar above name, fallback initial, and card offset alignment", async () => {
+  await withMockLitEnv(({ TichuPassArea, PASS_SLOT_CARD_OFFSET_X, PASS_SLOT_CARD_OFFSET_Y }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    try {
+      g._ = (s: string) => "«" + s + "»";
 
+      const passCss = (TichuPassArea.styles || [])
+        .map((s: any) => s.cssText || String(s))
+        .join("\n");
+      assert.equal(PASS_SLOT_CARD_OFFSET_X, 20);
+      assert.equal(PASS_SLOT_CARD_OFFSET_Y, 84);
+      assert.ok(
+        passCss.includes("top: 84px"),
+        "Card absolute top must match PASS_SLOT_CARD_OFFSET_Y",
+      );
+      assert.equal(
+        passCss.includes(".playertabletext"),
+        false,
+        "Legacy .playertabletext CSS should be removed",
+      );
+      assert.match(
+        passCss,
+        /\.icon\.big\.grandtichucolor\s*\{[^}]*background-position:\s*0px -72px;[^}]*width:\s*48px;[^}]*height:\s*56px;/,
+        "Grand Tichu big icon should use tightly centered 48x56 sprite window",
+      );
+      assert.match(
+        passCss,
+        /\.icon\.big\.tichucolor\s*\{[^}]*background-position:\s*-63px -71px;[^}]*width:\s*54px;[^}]*height:\s*56px;/,
+        "Tichu big icon should use tightly centered 54x56 sprite window",
+      );
+
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "2385074": { id: "2385074", name: "dashwood0", color: "000000", no: 1, score: "0" },
+            "2385075": { id: "2385075", name: "dashwood1", color: "ff0000", no: 2, score: "0" },
+            "2385076": { id: "2385076", name: "dashwood2", color: "000000", no: 3, score: "0" },
+            "2385077": { id: "2385077", name: "dashwood3", color: "ff0000", no: 4, score: "0" },
+          } as any,
+          gamestate: {
+            id: "40",
+            name: "giveCards",
+            type: "multipleactiveplayer",
+            multiactive: ["2385074"],
+            args: {},
+          } as any,
+          hand: [A2, B3, C4, D5],
+        },
+        "2385074",
+        false,
+        true,
+        undefined,
+        {
+          "2385074": "/avatars/d0.png",
+          "2385075": "/avatars/d1.png",
+          "2385076": "/avatars/d2.png",
+          "2385077": "",
+        },
+      );
+      g.window.gameModel = model;
+
+      const passArea = new TichuPassArea();
+      passArea.performUpdate = () => {};
+      passArea.connectedCallback();
+      try {
+        // 1. Active giveCards with 3 empty slots
+        const htmlEmpty = serializeLitTemplate(passArea.render());
+        assert.equal(htmlEmpty.includes("playertabletext"), false);
+        assert.equal(htmlEmpty.includes("<span>«Select a card and click here»</span>"), false);
+
+        const tooltipMatches =
+          htmlEmpty.match(
+            /title="«Select a card and click here»"|title=«Select a card and click here»/g,
+          ) ?? [];
+        assert.equal(
+          tooltipMatches.length,
+          3,
+          "All 3 empty active slots should carry the select tooltip",
+        );
+
+        // Avatar appears above name inside .playertable-header, with partner ring on dir=2 (dashwood2) and opponent on dir=1/3
+        const getSlotHtml = (htmlStr: string, dir: number) => {
+          const idIdx = htmlStr.indexOf(`id="playertable_${dir}"`);
+          if (idIdx < 0) return "";
+          const start = htmlStr.lastIndexOf("<div", idIdx);
+          const nextIdIdx = htmlStr.indexOf(`id="playertable_${dir + 1}"`);
+          const end = nextIdIdx >= 0 ? htmlStr.lastIndexOf("<div", nextIdIdx) : htmlStr.length;
+          return htmlStr.slice(start, end);
+        };
+
+        const slot1Html = getSlotHtml(htmlEmpty, 1);
+        const slot2Html = getSlotHtml(htmlEmpty, 2);
+        const slot3Html = getSlotHtml(htmlEmpty, 3);
+        assert.ok(slot1Html && slot2Html && slot3Html);
+
+        // dir=1 is dashwood3 (empty avatarUrl -> fallback "D", opponent class)
+        assert.ok(slot1Html.includes("playertable-header"));
+        assert.ok(slot1Html.includes("playertable-avatar-wrap opponent"));
+        assert.ok(slot1Html.includes("playertable-avatar-fallback"));
+        assert.match(slot1Html, />D<\/span\s*>/);
+        assert.ok(
+          slot1Html.indexOf("playertable-avatar-wrap") < slot1Html.indexOf("playertablename"),
+        );
+
+        // dir=2 is dashwood2 (partner class, img /avatars/d2.png)
+        assert.ok(slot2Html.includes("playertable-avatar-wrap partner"));
+        assert.match(
+          slot2Html,
+          /<img[\s\S]*class="playertable-avatar-img"[\s\S]*src=["']?\/avatars\/d2\.png["']?/,
+        );
+        assert.ok(
+          slot2Html.indexOf("playertable-avatar-wrap") < slot2Html.indexOf("playertablename"),
+        );
+
+        // dir=3 is dashwood1 (opponent class, img /avatars/d1.png)
+        assert.ok(slot3Html.includes("playertable-avatar-wrap opponent"));
+        assert.match(
+          slot3Html,
+          /<img[\s\S]*class="playertable-avatar-img"[\s\S]*src=["']?\/avatars\/d1\.png["']?/,
+        );
+
+        // 2. Avatar load error switches that slot to fallback initial
+        (passArea as any).onAvatarError("2385076|/avatars/d2.png");
+        const htmlAfterErr = serializeLitTemplate(passArea.render());
+        const errSlot2 = getSlotHtml(htmlAfterErr, 2);
+        assert.equal(errSlot2.includes("playertable-avatar-img"), false);
+        assert.ok(errSlot2.includes("playertable-avatar-fallback"));
+        assert.match(errSlot2, />D<\/span\s*>/);
+
+        // 3. Slot with givenCard sets has-card, drops select tooltip, keeps header avatar + name
+        model.update({
+          passSlots: model
+            .getState()
+            .passSlots.map((s, idx) => (idx === 0 ? { ...s, givenCard: A2 } : s)),
+        });
+        const htmlOneGiven = serializeLitTemplate(passArea.render());
+        const givenSlot1 = getSlotHtml(htmlOneGiven, 1);
+        assert.ok(givenSlot1.includes("has-card"));
+        assert.equal(givenSlot1.includes("Select a card and click here"), false);
+        assert.ok(givenSlot1.includes("playertable-avatar-wrap"));
+        assert.ok(givenSlot1.includes("dashwood3"));
+        const remainingTooltips = htmlOneGiven.match(/Select a card and click here/g) ?? [];
+        assert.equal(remainingTooltips.length, 2);
+
+        // 4. Inactive player or acceptPassedCards omits select tooltip while keeping avatar + name
+        model.setGameState("giveCards", { isCurrentPlayerActive: false });
+        const htmlInactive = serializeLitTemplate(passArea.render());
+        assert.equal(htmlInactive.includes("Select a card and click here"), false);
+        assert.ok(htmlInactive.includes("playertable-avatar-wrap"));
+        assert.ok(htmlInactive.includes("dashwood1"));
+
+        model.setGameState("acceptPassedCards", { isCurrentPlayerActive: true });
+        model.update({
+          passSlots: model.getState().passSlots.map((s) => ({
+            ...s,
+            givenCard: null,
+            receivedCard: B3,
+          })),
+        });
+        const htmlAccept = serializeLitTemplate(passArea.render());
+        assert.equal(htmlAccept.includes("Select a card and click here"), false);
+        assert.ok(htmlAccept.includes("playertable-avatar-wrap"));
+        assert.ok(htmlAccept.includes("dashwood2"));
+      } finally {
+        passArea.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+    }
+  });
+});
 test("Settings modal: GameModel state, pref 102 two-way sync, TichuHand gear button, and TichuSettingsModal controls", async () => {
   await withMockLitEnv(({ TichuHand, TichuSettingsModal, getThemeLabel }) => {
     const g = globalThis as any;
