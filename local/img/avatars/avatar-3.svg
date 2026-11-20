@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#0c4a6e" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" fill="url(#bg3)" />
+  <circle cx="32" cy="33" r="22" fill="#bae6fd" opacity="0.16" />
+  <!-- Soft crest feathers (inset >= 8px) -->
+  <path d="M28 16 Q31 9 35 14 Q38 11 39 17 Z" fill="#2dd4bf" stroke="#0f766e" stroke-width="1.2" />
+  <!-- Round sparrow body/shoulders -->
+  <path d="M16 49 C17 39, 23 36, 32 36 C41 36, 47 39, 48 49 C42 54, 22 54, 16 49 Z" fill="#14b8a6" stroke="#0f766e" stroke-width="1.4" />
+  <!-- Cream belly -->
+  <ellipse cx="32" cy="46.5" rx="10" ry="6.5" fill="#fefce8" />
+  <!-- Sparrow head -->
+  <circle cx="32" cy="30" r="13" fill="#2dd4bf" stroke="#0f766e" stroke-width="1.5" />
+  <!-- Cream face patch -->
+  <path d="M21 32 C21 26, 26 24, 32 24 C38 24, 43 26, 43 32 C43 38, 38 41, 32 41 C26 41, 21 38, 21 32 Z" fill="#fefce8" />
+  <!-- Rosy cheeks -->
+  <circle cx="22.5" cy="34.5" r="2.4" fill="#fda4af" opacity="0.8" />
+  <circle cx="41.5" cy="34.5" r="2.4" fill="#fda4af" opacity="0.8" />
+  <!-- Eyes -->
+  <circle cx="26" cy="30.5" r="2.4" fill="#0f172a" />
+  <circle cx="38" cy="30.5" r="2.4" fill="#0f172a" />
+  <circle cx="25.3" cy="29.8" r="0.85" fill="#ffffff" />
+  <circle cx="37.3" cy="29.8" r="0.85" fill="#ffffff" />
+  <!-- Beak -->
+  <path d="M28.5 33 L35.5 33 L32 38.5 Z" fill="#f59e0b" stroke="#b45309" stroke-width="1.1" stroke-linejoin="round" />
+  <!-- Little jade chest emblem (Mahjong '1' nod) -->
+  <circle cx="32" cy="46.5" r="2.2" fill="#0d9488" />
+</svg>

@@ -191,6 +191,43 @@ if (!function_exists('buildDevBarPlayers')) {
 }
 
 /**
+ * Helper: Compute BGA player-name contrast text-shadow style from hex color.
+ */
+if (!function_exists('getLocalPlayerNameTextShadowStyle')) {
+  function getLocalPlayerNameTextShadowStyle(string $color): string
+  {
+    $hex = ltrim(trim($color), '#');
+    if (strlen($hex) === 3) {
+      $hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+    }
+    if (!preg_match('/^[0-9a-fA-F]{6}$/', $hex)) {
+      $hex = '000000';
+    }
+    $r = hexdec(substr($hex, 0, 2));
+    $g = hexdec(substr($hex, 2, 2));
+    $b = hexdec(substr($hex, 4, 2));
+    $lum = (0.299 * $r + 0.587 * $g + 0.114 * $b) / 255.0;
+    $shadowColor =
+      $lum > 0.6
+        ? 'var(--game-bga-text-shadow-color-black)'
+        : 'var(--game-bga-text-shadow-color-white)';
+    return "text-shadow: 0 0 1px {$shadowColor}, 0 0 2px {$shadowColor}, 0 0 3px {$shadowColor};";
+  }
+}
+
+/**
+ * Helper: Return deterministic local fake avatar URL based on seat number (`no`).
+ */
+if (!function_exists('getLocalPlayerAvatarUrl')) {
+  function getLocalPlayerAvatarUrl(array $player, int $fallbackIndex): string
+  {
+    $pNo = (int) ($player['no'] ?? 0);
+    $idx = $pNo > 0 ? ($pNo - 1) % 4 : abs($fallbackIndex) % 4;
+    return '/local/img/avatars/avatar-' . $idx . '.svg';
+  }
+}
+
+/**
  * Helper: Get current max gamelog_packet_id from gamelog table.
  */
 if (!function_exists('getCurrentMaxPacketId')) {
@@ -590,22 +627,23 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   }
   $overallClassAttr = implode(' ', $overallClasses);
 
-  $isViewerActive = false;
-  if (!$isSpectator) {
-    $initialState = $gamedatas['gamestate'] ?? [];
-    $initialStateType = (string) ($initialState['type'] ?? '');
+  $initialState = $gamedatas['gamestate'] ?? [];
+  $initialStateType = (string) ($initialState['type'] ?? '');
+  $activePlayerIds = [];
+  if ($initialStateName !== 'gameEnd' && (int) ($initialState['id'] ?? 0) !== 99) {
     if ($initialStateType === 'activeplayer') {
-      $isViewerActive = (int) ($initialState['active_player'] ?? 0) === $viewerPlayerId;
+      $activeId = (int) ($initialState['active_player'] ?? 0);
+      if ($activeId > 0) {
+        $activePlayerIds[] = $activeId;
+      }
     } elseif ($initialStateType === 'multipleactiveplayer') {
       $multi = is_array($initialState['multiactive'] ?? null) ? $initialState['multiactive'] : [];
-      foreach ($multi as $mId) {
-        if ((int) $mId === $viewerPlayerId) {
-          $isViewerActive = true;
-          break;
-        }
-      }
+      $activePlayerIds = array_values(
+        array_filter(array_map('intval', $multi), static fn($id) => $id > 0)
+      );
     }
   }
+  $isViewerActive = !$isSpectator && in_array($viewerPlayerId, $activePlayerIds, true);
 
   if (!headers_sent()) {
     header('Content-Type: text/html; charset=utf-8');
@@ -657,28 +695,52 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
         <div id="right-side">
           <div id="right-side-first-part">
             <div id="player_boards">
-              <?php foreach ($gamedatas['playerorder'] as $orderedId):
+              <?php
+              $playerBoardIdx = 0;
+              foreach ($gamedatas['playerorder'] as $orderedId):
                 $p = $gamedatas['players'][$orderedId] ?? null;
                 if (!$p) {
                   continue;
                 }
                 $pId = (int) $p['id'];
                 $pName = (string) $p['name'];
-                $pColor = (string) $p['color'];
+                $pColor = ltrim((string) ($p['color'] ?? '000000'), '#') ?: '000000';
                 $pScore = (string) $p['score'];
+                $isCurrentViewer = !$isSpectator && $pId === $viewerPlayerId;
+                $isPlayerActive = in_array($pId, $activePlayerIds, true);
+                $avatarUrl = getLocalPlayerAvatarUrl($p, $playerBoardIdx++);
+                $nameShadowStyle = getLocalPlayerNameTextShadowStyle($pColor);
+                $escapedColor = htmlspecialchars($pColor, ENT_QUOTES, 'UTF-8');
+                $escapedName = htmlspecialchars($pName, ENT_QUOTES, 'UTF-8');
+                $escapedScore = htmlspecialchars($pScore, ENT_QUOTES, 'UTF-8');
+                $escapedAvatarUrl = htmlspecialchars($avatarUrl, ENT_QUOTES, 'UTF-8');
                 ?>
-                <div class="player-board" id="overall_player_board_<?php echo $pId; ?>">
+                <div class="player-board<?php echo $isCurrentViewer ? ' current-player-board' : ''; ?>" id="overall_player_board_<?php echo $pId; ?>" style="border-color: #<?php echo $escapedColor; ?>;">
                   <div class="player_board_inner" id="player_board_inner_<?php echo $pId; ?>">
+                    <div class="emblemwrap" id="avatarwrap_<?php echo $pId; ?>" style="display: <?php echo $isPlayerActive ? 'none' : 'block'; ?>;">
+                      <img src="<?php echo $escapedAvatarUrl; ?>" alt="" class="avatar emblem" id="avatar_<?php echo $pId; ?>" />
+                      <div class="emblempremium"></div>
+                    </div>
+                    <div id="rtc_placeholder_<?php echo $pId; ?>" class="rtc_placeholder"></div>
+                    <div class="emblemwrap" id="avatar_active_wrap_<?php echo $pId; ?>" style="display: <?php echo $isPlayerActive ? 'block' : 'none'; ?>;">
+                      <img src="/local/img/layout/active_player.gif" alt="" class="avatar avatar_active" id="avatar_active_<?php echo $pId; ?>" />
+                      <div class="icon20 icon20_night this_is_night"></div>
+                    </div>
                     <div class="player-name" id="player_name_<?php echo $pId; ?>">
-                      <a href="?as=<?php echo $pId; ?>" target="_blank" rel="noopener" style="color: #<?php echo htmlspecialchars($pColor, ENT_QUOTES, 'UTF-8'); ?>">
-                        <?php echo htmlspecialchars($pName, ENT_QUOTES, 'UTF-8'); ?>
-                      </a>
+                      <a href="?as=<?php echo $pId; ?>" target="_blank" rel="noopener" style="color: #<?php echo $escapedColor; ?>; <?php echo $nameShadowStyle; ?>"><?php echo $escapedName; ?></a>
                     </div>
-                    <div class="player_score">
-                      <span id="player_score_<?php echo $pId; ?>" class="player_score_value"><?php echo htmlspecialchars($pScore, ENT_QUOTES, 'UTF-8'); ?></span>
-                      <span class="icon16 icon16_point">★</span>
+                    <div id="player_board_<?php echo $pId; ?>" class="player_board_content">
+                      <div class="player_score">
+                        <span id="player_score_<?php echo $pId; ?>" class="player_score_value"><?php echo $escapedScore; ?></span>
+                        <span class="icon16 icon16_point" id="icon_point_<?php echo $pId; ?>">★</span>
+                      </div>
+                      <div class="player-board-game-specific-content"></div>
+                      <div class="player_table_status" id="player_table_status_<?php echo $pId; ?>" style="display: none;"></div>
                     </div>
-                    <div class="player_config_row" id="player_board_<?php echo $pId; ?>"></div>
+                    <?php if ($isCurrentViewer): ?>
+                      <div id="current_player_board"></div>
+                    <?php endif; ?>
+                    <div id="player_panel_content_<?php echo $pId; ?>" class="player_panel_content"></div>
                   </div>
                 </div>
               <?php endforeach; ?>

@@ -1780,6 +1780,7 @@
         },
         players: {
           getActivePlayerIds: () => this.getActivePlayers(),
+          getPlayerAvatarUrl: (playerId, _size) => this.getPlayerAvatarUrl(playerId),
         },
       };
 
@@ -2040,12 +2041,56 @@
       }
     }
 
+    getPlayerAvatarUrl(playerId) {
+      const p = this.gamedatas && this.gamedatas.players && this.gamedatas.players[playerId];
+      const pNo = Number(p && p.no);
+      const idx = pNo > 0 ? (pNo - 1) % 4 : Math.abs(Number(playerId) || 0) % 4;
+      return `/local/img/avatars/avatar-${idx}.svg`;
+    }
+
+    _syncPlayerBoardAvatars(state) {
+      const st = state || (this.gamedatas && this.gamedatas.gamestate) || {};
+      const activeSet = new Set();
+      const isEnded =
+        Boolean(window.g_archive_mode) || Number(st.id) === 99 || st.name === "gameEnd";
+      if (!isEnded) {
+        if (st.type === "activeplayer" && st.active_player) {
+          activeSet.add(Number(st.active_player));
+        } else if (st.type === "multipleactiveplayer" && Array.isArray(st.multiactive)) {
+          for (const id of st.multiactive) {
+            if (Number(id) > 0) activeSet.add(Number(id));
+          }
+        }
+      }
+      const players = (this.gamedatas && this.gamedatas.players) || {};
+      for (const pId of Object.keys(players)) {
+        const numId = Number(pId);
+        const isActive = activeSet.has(numId);
+        const avatarWrap = document.getElementById(`avatarwrap_${pId}`);
+        const activeWrap = document.getElementById(`avatar_active_wrap_${pId}`);
+        if (avatarWrap) {
+          avatarWrap.style.display = isActive ? "none" : "block";
+        }
+        if (activeWrap) {
+          activeWrap.style.display = isActive ? "block" : "none";
+        }
+        const board = document.getElementById(`overall_player_board_${pId}`);
+        if (board) {
+          board.classList.toggle(
+            "current-player-board",
+            !this.isSpectator && numId === Number(this.player_id),
+          );
+        }
+      }
+    }
+
     updatePageTitle(state) {
       const st = state || (this.gamedatas && this.gamedatas.gamestate);
       if (!st) return;
 
       const isMyTurn = this.isCurrentPlayerActive();
       this._syncActivePlayerStatusBar(isMyTurn);
+      this._syncPlayerBoardAvatars(st);
       const rawDesc =
         isMyTurn && st.descriptionmyturn ? st.descriptionmyturn : st.description || "";
       const translatedDesc = typeof window._ === "function" ? window._(rawDesc) : rawDesc;

@@ -731,6 +731,12 @@ a.bgabutton_secondary {
 }
 
 .player-board {
+  position: relative;
+  background-color: var(--game-bga-player-panel-background);
+  border-radius: 8px 0 0 8px;
+  box-shadow: 0 3px 8px #0000004d;
+  color: var(--game-bga-player-panel-color);
+  padding: 5px 3px;
   transition: opacity 0.2s ease;
 }
 
@@ -740,13 +746,64 @@ a.bgabutton_secondary {
 }
 
 .player_board_inner {
-  padding: 8px 10px !important;
+  position: relative;
+}
+
+.player_panel_content {
+  clear: both;
+  position: relative;
+}
+
+.emblemwrap {
+  display: inline-block;
+  height: 32px;
+  margin: 2px;
+  position: relative;
+  width: 32px;
+}
+
+.emblem {
+  background-color: var(--bga-color-white);
+  border: 1px solid #6a6a6a;
+  border-radius: 25px;
+  box-shadow:
+    0 1px 3px #000,
+    inset 0 2px 3px #0006;
+  height: 32px;
+  width: 32px;
+}
+
+.avatar {
+  float: left;
+  height: 32px;
+  margin: 4px;
+  width: 32px;
+}
+
+.player-board .emblemwrap {
+  float: left;
+  height: 32px;
+  left: -3px;
+  margin: 4px 10px 4px 4px;
+  position: relative;
+  width: 32px;
+}
+
+.player-board .emblemwrap .avatar {
+  display: block;
+  margin: 0;
+}
+
+.player-board .emblemwrap .emblem {
+  object-fit: cover;
+}
+
+.this_is_night {
+  display: none;
 }
 
 .player-name {
   font-weight: 700;
-  font-size: 15px;
-  margin-bottom: 4px;
 }
 
 .player-name a {
@@ -754,17 +811,11 @@ a.bgabutton_secondary {
 }
 
 .player_score {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  position: relative;
 }
 
 .icon16_point {
-  color: #d97706;
-  font-size: 15px;
+  color: #f9a11a;
 }
 
 #logs_wrap {

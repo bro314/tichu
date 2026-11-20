@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg0" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f766e" />
+      <stop offset="100%" stop-color="#115e59" />
+    </linearGradient>
+    <linearGradient id="gold0" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fde68a" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" fill="url(#bg0)" />
+  <circle cx="32" cy="32" r="24" fill="#134e4a" opacity="0.45" />
+  <!-- Horns & ears (inset >= 8px) -->
+  <path d="M18 22 L12 10 L24 17 Z" fill="url(#gold0)" />
+  <path d="M46 22 L52 10 L40 17 Z" fill="url(#gold0)" />
+  <path d="M14 28 L9 24 L17 24 Z" fill="#dc2626" />
+  <path d="M50 28 L55 24 L47 24 Z" fill="#dc2626" />
+  <!-- Crest -->
+  <path d="M27 17 L32 9 L37 17 Z" fill="#ef4444" />
+  <!-- Dragon head -->
+  <path d="M17 27 C17 18, 47 18, 47 27 L49 38 C49 48, 39 54, 32 54 C25 54, 15 48, 15 38 Z" fill="#b91c1c" stroke="#fde68a" stroke-width="1.5" />
+  <!-- Brow ridges -->
+  <path d="M19 27 Q25 22 30 27" fill="none" stroke="url(#gold0)" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M45 27 Q39 22 34 27" fill="none" stroke="url(#gold0)" stroke-width="2.5" stroke-linecap="round" />
+  <!-- Eyes -->
+  <ellipse cx="24" cy="31" rx="3.2" ry="2.4" fill="#fef08a" />
+  <ellipse cx="40" cy="31" rx="3.2" ry="2.4" fill="#fef08a" />
+  <circle cx="24.5" cy="31" r="1.2" fill="#1c1917" />
+  <circle cx="39.5" cy="31" r="1.2" fill="#1c1917" />
+  <!-- Snout & nostrils -->
+  <rect x="23" y="36" width="18" height="10" rx="5" fill="#dc2626" stroke="#fde68a" stroke-width="1.2" />
+  <circle cx="28" cy="40.5" r="1.4" fill="#450a0a" />
+  <circle cx="36" cy="40.5" r="1.4" fill="#450a0a" />
+  <!-- Whiskers -->
+  <path d="M23 41 Q15 42 12 46" fill="none" stroke="url(#gold0)" stroke-width="1.8" stroke-linecap="round" />
+  <path d="M41 41 Q49 42 52 46" fill="none" stroke="url(#gold0)" stroke-width="1.8" stroke-linecap="round" />
+  <!-- Fangs -->
+  <path d="M26 46 L27.5 50 L29 46 Z" fill="#fefce8" />
+  <path d="M35 46 L36.5 50 L38 46 Z" fill="#fefce8" />
+</svg>
