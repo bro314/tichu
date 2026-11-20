@@ -33,6 +33,7 @@ export interface LivePlayer {
   handcount: number;
   capturedPoints: number;
   passedCardReady: boolean;
+  avatarUrl: string;
 }
 
 export interface PassSlotState {
@@ -82,6 +83,7 @@ export interface LiveGameState {
   isSpectator: boolean;
   isRealtime: boolean;
   isAllInfoExposed: boolean;
+  hasPlayedOrPassedInRound: boolean;
   players: Record<string, LivePlayer>;
   playerOrderBottomToLeft: string[];
   passSlots: PassSlotState[];
@@ -136,6 +138,7 @@ export const initialLiveGameState: LiveGameState = {
   isSpectator: false,
   isRealtime: false,
   isAllInfoExposed: false,
+  hasPlayedOrPassedInRound: false,
   players: {},
   playerOrderBottomToLeft: [],
   passSlots: [],
@@ -188,7 +191,14 @@ function normalizeCard(raw: any): Card {
   if (raw?.location !== undefined) card.location = String(raw.location);
   if (raw?.location_arg !== undefined) card.location_arg = String(raw.location_arg);
   const passedFrom = raw?.passed_from ?? raw?.card_passed_from;
-  if (passedFrom !== undefined) card.passed_from = String(passedFrom);
+  if (
+    passedFrom !== undefined &&
+    passedFrom !== null &&
+    String(passedFrom) !== "" &&
+    Number(passedFrom) > 0
+  ) {
+    card.passed_from = String(passedFrom);
+  }
   return card;
 }
 
@@ -240,6 +250,10 @@ export class GameModel {
   public readonly isSpectator$ = select(this.state$, (s) => s.isSpectator);
   public readonly isRealtime$ = select(this.state$, (s) => s.isRealtime);
   public readonly isAllInfoExposed$ = select(this.state$, (s) => s.isAllInfoExposed);
+  public readonly hasPlayedOrPassedInRound$ = select(
+    this.state$,
+    (s) => s.hasPlayedOrPassedInRound,
+  );
   public readonly players$ = select(this.state$, (s) => s.players);
   public readonly currentPlayer$ = select(this.state$, (s) => s.players[s.currentPlayerId] ?? null);
   public readonly player$ = (playerId: string | number) =>
@@ -341,6 +355,7 @@ export class GameModel {
     isSpectator: boolean,
     isRealtime: boolean,
     prefs?: LiveGamePrefs,
+    avatarUrls?: Record<string, string>,
   ): void {
     const currentId = String(currentPlayerId ?? "");
     const rawPlayers = gamedatas?.players ?? {};
@@ -392,6 +407,7 @@ export class GameModel {
         handcount: Number(handCounts[pid] ?? handCounts[Number(pid)] ?? 0),
         capturedPoints: Number(capturedPointsMap[pid] ?? capturedPointsMap[Number(pid)] ?? 0),
         passedCardReady: hasPassed,
+        avatarUrl: avatarUrls?.[pid] ?? (typeof p?.avatarUrl === "string" ? p.avatarUrl : ""),
       };
 
       if (hasComboCards) {
@@ -531,6 +547,7 @@ export class GameModel {
       isSpectator: Boolean(isSpectator),
       isRealtime: Boolean(isRealtime),
       isAllInfoExposed,
+      hasPlayedOrPassedInRound: Boolean(gamedatas?.hasPlayedOrPassedInRound),
       players,
       playerOrderBottomToLeft,
       passSlots,
@@ -683,6 +700,7 @@ export class GameModel {
       selectedMahjongWish: null,
       phoenixAllowedValues: [],
       selectedPhoenixValue: null,
+      hasPlayedOrPassedInRound: false,
     });
   }
 
@@ -786,6 +804,7 @@ export class GameModel {
       hand: [],
       selectedCardIds: [],
       players,
+      hasPlayedOrPassedInRound: false,
       firstOutPlayerId: "",
       lastComboPlayerId: "",
       trickLastCombo: {
@@ -984,6 +1003,7 @@ export class GameModel {
     const newCards = normalized.filter((c) => !existingIds.has(c.id));
     this.update({
       acceptingCardsCountdown: false,
+      hasPlayedOrPassedInRound: false,
       hand: [...prev.hand, ...newCards],
       passSlots: prev.passSlots.map((s) => ({
         ...s,
@@ -1063,6 +1083,7 @@ export class GameModel {
       hand: nextHand,
       selectedCardIds: nextSelectedIds,
       players,
+      hasPlayedOrPassedInRound: isCurrent ? true : prev.hasPlayedOrPassedInRound,
       lastCombos,
       lastComboPlayerId: pid,
       trickLastCombo: {
@@ -1103,6 +1124,8 @@ export class GameModel {
     this.update({
       players,
       lastCombos,
+      hasPlayedOrPassedInRound:
+        pid === prev.currentPlayerId ? true : prev.hasPlayedOrPassedInRound,
     });
   }
 

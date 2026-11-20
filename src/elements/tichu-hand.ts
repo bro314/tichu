@@ -1,14 +1,88 @@
 import { html, css, LitElement } from "lit";
 import { state } from "lit/decorators.js";
-import { Combo, Hand } from "./combo-validator";
-import { Card, TrickLastComboState } from "./game-model";
+import { Combo, Hand, substituteTemplate } from "./combo-validator";
+import { Card, LivePlayer, TrickLastComboState, getNextPlayersDesc } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-action-bar";
+import type { PassedOriginInfo } from "./tichu-card";
 import "./tichu-stock";
 import type { TichuStock } from "./tichu-stock";
 
 const THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+export interface BuildPassedOriginsParams {
+  hand: Card[];
+  players: Record<string, LivePlayer>;
+  currentPlayerId: string;
+  clockwise: boolean;
+  isAllInfoExposed: boolean;
+  hasPlayedOrPassedInRound: boolean;
+}
+
+export function buildPassedOriginsMap(
+  params: BuildPassedOriginsParams,
+): Record<string, PassedOriginInfo> {
+  const result: Record<string, PassedOriginInfo> = {};
+  const {
+    hand,
+    players,
+    currentPlayerId,
+    clockwise,
+    isAllInfoExposed,
+    hasPlayedOrPassedInRound,
+  } = params;
+
+  const playersDesc = getNextPlayersDesc(players, currentPlayerId);
+  const leftPlayer =
+    playersDesc.length >= 4 ? (clockwise ? playersDesc[2] : playersDesc[0]) : undefined;
+  const partnerPlayer = playersDesc.length >= 4 ? playersDesc[1] : undefined;
+  const rightPlayer =
+    playersDesc.length >= 4 ? (clockwise ? playersDesc[0] : playersDesc[2]) : undefined;
+
+  const showGlow = !hasPlayedOrPassedInRound;
+  const showAvatar = !hasPlayedOrPassedInRound || isAllInfoExposed;
+
+  for (const card of hand) {
+    const senderId = card.passed_from ? String(card.passed_from) : "";
+    if (!senderId || Number(senderId) <= 0) continue;
+
+    const sender = players[senderId];
+    const playerName = sender?.name ?? "";
+    const avatarUrl = sender?.avatarUrl ?? "";
+
+    let seat: "left" | "partner" | "right";
+    let tooltip: string;
+
+    if (partnerPlayer && senderId === partnerPlayer.id) {
+      seat = "partner";
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Partner)"), { player_name: playerName });
+    } else if (leftPlayer && senderId === leftPlayer.id) {
+      seat = "left";
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Left)"), { player_name: playerName });
+    } else if (rightPlayer && senderId === rightPlayer.id) {
+      seat = "right";
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Right)"), { player_name: playerName });
+    } else if (sender) {
+      seat = "left";
+      tooltip = substituteTemplate(_("Passed by ${player_name}"), { player_name: playerName });
+    } else {
+      continue;
+    }
+
+    result[String(card.id)] = {
+      playerId: senderId,
+      playerName,
+      avatarUrl,
+      seat,
+      tooltip,
+      showGlow,
+      showAvatar,
+    };
+  }
+
+  return result;
+}
 
 export class TichuHand extends LitElement {
   @state() private isSpectator = false;
@@ -22,6 +96,10 @@ export class TichuHand extends LitElement {
   @state() private squareTable = false;
   @state() private theme = 0;
   @state() private mahjongWish = 0;
+  @state() private players: Record<string, LivePlayer> = {};
+  @state() private currentPlayerId = "";
+  @state() private isAllInfoExposed = false;
+  @state() private hasPlayedOrPassedInRound = false;
   @state() private trickLastCombo: TrickLastComboState = {
     playerId: "",
     type: 99,
@@ -42,8 +120,8 @@ export class TichuHand extends LitElement {
           font-size: 14px;
         }
         #myhand {
-          margin: 15px 250px 25px 15px;
-          min-height: 150px;
+          margin: 15px 250px 6px 15px;
+          min-height: 184px;
         }
         #prefs {
           padding: 10px;
@@ -152,6 +230,26 @@ export class TichuHand extends LitElement {
       () => window.gameModel.trickLastCombo$,
       (trickLastCombo) => (this.trickLastCombo = trickLastCombo),
     );
+    subscribe(
+      this,
+      () => window.gameModel.players$,
+      (players) => (this.players = players),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.currentPlayerId$,
+      (currentPlayerId) => (this.currentPlayerId = currentPlayerId),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.isAllInfoExposed$,
+      (isAllInfoExposed) => (this.isAllInfoExposed = isAllInfoExposed),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.hasPlayedOrPassedInRound$,
+      (hasPlayedOrPassedInRound) => (this.hasPlayedOrPassedInRound = hasPlayedOrPassedInRound),
+    );
   }
 
   private getSelectionMode(): 0 | 1 | 2 {
@@ -171,6 +269,14 @@ export class TichuHand extends LitElement {
         Combo.fromLastComboState(this.trickLastCombo),
       );
     const highlightedRank = canFulfillWish ? this.mahjongWish : 0;
+    const passedOrigins = buildPassedOriginsMap({
+      hand: this.hand,
+      players: this.players,
+      currentPlayerId: this.currentPlayerId,
+      clockwise: this.clockwise,
+      isAllInfoExposed: this.isAllInfoExposed,
+      hasPlayedOrPassedInRound: this.hasPlayedOrPassedInRound,
+    });
 
     return html`
       <tichu-action-bar></tichu-action-bar>
@@ -189,6 +295,8 @@ export class TichuHand extends LitElement {
             .selectedIds=${this.selectedCardIds}
             .dynamicOverlap=${true}
             .highlightedRank=${highlightedRank}
+            .reserveFooter=${true}
+            .passedOrigins=${passedOrigins}
             @selection-change=${this.onSelectionChange}
           ></tichu-stock>
         </div>

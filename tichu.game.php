@@ -422,7 +422,10 @@ class Tichu extends Table
 
     $result["players"] = Utils::parseInt($players, ["id", "no"]);
 
-    $result["hand"] = array_values($deck->getCardsInLocation("hand", $currentPlayerId));
+    $result["hand"] = array_values(CardManager::getCardsInLocation("hand", $currentPlayerId));
+    $result["hasPlayedOrPassedInRound"] = LogManager::hasPlayerPlayedOrPassedInCurrentRound(
+      $currentPlayerId
+    );
     $result["handcount"] = $deck->countCardsByLocationArgs("hand");
     $result["capturedpoints"] = CardManager::calculateCapturedPoints();
     $result["firstoutplayer"] = intval($this->getGameStateValue("firstOutPlayer"));

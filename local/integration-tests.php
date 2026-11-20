@@ -3024,6 +3024,105 @@ PHP;
   assertTrueVal($cascadeGame->gamestate->isPlayerActive(P0), 'Live player P0 must be active after 3-zombie cascade');
 }
 
+// ============================================================================
+// Test 20: test_passed_card_origin_and_first_move_persistence
+// ============================================================================
+function test_passed_card_origin_and_first_move_persistence(): void
+{
+  $game = new \Tichu();
+  $callGetAllDatas = static function (\Tichu $g, int $pid): array {
+    $fn = \Closure::bind(fn() => $this->getAllDatas($pid), $g, \Tichu::class);
+    return $fn();
+  };
+
+  \LocalTichuScenarios::setupScenario($game, 'give_cards', P0);
+  $beforePassDatas = $callGetAllDatas($game, P0);
+  assertSameVal(false, $beforePassDatas['hasPlayedOrPassedInRound'] ?? null, 'Before passing, hasPlayedOrPassedInRound must be false');
+
+  $p0PassIds = \LocalTichuScenarios::getCardIds([[1, 2], [2, 2], [3, 2]]);
+  callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0PassIds) . ';']);
+  assertSameVal('playComboOpen', $game->gamestate->state()['name'], 'Should transition to playComboOpen after passing');
+
+  // 1. P0 receives (1,3) from P1, (4,7) from P2, and (4,11) from P3; other 11 cards have null passed_from
+  $datasP0 = $callGetAllDatas($game, P0);
+  assertSameVal(14, count($datasP0['hand']), 'P0 hand must contain 14 cards after acceptCards');
+  assertSameVal(false, $datasP0['hasPlayedOrPassedInRound'] ?? null, 'hasPlayedOrPassedInRound must be false immediately after acceptCards');
+
+  $expectedOriginsP0 = [
+    (string) \LocalTichuScenarios::getCardId(1, 3) => (string) P1,
+    (string) \LocalTichuScenarios::getCardId(4, 7) => (string) P2,
+    (string) \LocalTichuScenarios::getCardId(4, 11) => (string) P3,
+  ];
+  $foundPassedCountP0 = 0;
+  foreach ($datasP0['hand'] as $c) {
+    $cid = (string) $c['id'];
+    if (isset($expectedOriginsP0[$cid])) {
+      assertSameVal($expectedOriginsP0[$cid], (string) $c['passed_from'], "Card $cid passed_from mismatch");
+      $foundPassedCountP0++;
+    } else {
+      assertSameVal(null, $c['passed_from'], "Non-passed card $cid must have null passed_from");
+    }
+  }
+  assertSameVal(3, $foundPassedCountP0, 'P0 must see exactly 3 cards with passed_from');
+
+  // 2. P1 only sees P1's own hand and own passed_from; spectator sees empty hand and false
+  $datasP1 = $callGetAllDatas($game, P1);
+  assertSameVal(14, count($datasP1['hand']), 'P1 hand must contain 14 cards');
+  assertSameVal(false, $datasP1['hasPlayedOrPassedInRound'] ?? null, 'P1 hasPlayedOrPassedInRound must initially be false');
+  $p1HandIds = array_map(static fn($c) => (string) $c['id'], $datasP1['hand']);
+  foreach (array_keys($expectedOriginsP0) as $p0ReceivedId) {
+    assertTrueVal(!in_array($p0ReceivedId, $p1HandIds, true), 'P1 hand must not contain P0 received cards');
+  }
+  $datasSpec = $callGetAllDatas($game, 0);
+  assertSameVal([], $datasSpec['hand'], 'Spectator getAllDatas hand must be empty');
+  assertSameVal(false, $datasSpec['hasPlayedOrPassedInRound'] ?? null, 'Spectator hasPlayedOrPassedInRound must be false');
+
+  // 3. Calling Tichu does NOT flip hasPlayedOrPassedInRound
+  callAction($game, P0, 'tichuBet', ['bet' => '100']);
+  assertSameVal(
+    false,
+    $callGetAllDatas($game, P0)['hasPlayedOrPassedInRound'] ?? null,
+    'Calling Tichu must keep hasPlayedOrPassedInRound === false'
+  );
+
+  // 4. P0 plays a single card -> P0 flips to true, while P1 stays false until P1 passes
+  $single9 = (string) \LocalTichuScenarios::getCardId(1, 9);
+  callAction($game, P0, 'playCombo', ['cards' => $single9]);
+  assertSameVal(
+    true,
+    $callGetAllDatas($game, P0)['hasPlayedOrPassedInRound'] ?? null,
+    'Playing a combo must set hasPlayedOrPassedInRound === true for P0'
+  );
+  assertSameVal(
+    false,
+    $callGetAllDatas($game, P1)['hasPlayedOrPassedInRound'] ?? null,
+    'P0 playing must not affect P1 hasPlayedOrPassedInRound'
+  );
+
+  callAction($game, P1, 'pass', ['onlyOnce' => true]);
+  assertSameVal(
+    true,
+    $callGetAllDatas($game, P1)['hasPlayedOrPassedInRound'] ?? null,
+    'Passing must set hasPlayedOrPassedInRound === true for P1'
+  );
+
+  // 5. New round resets both passed_from and hasPlayedOrPassedInRound
+  \LocalTichuScenarios::setupScenario($game, 'double_victory', P2);
+  \APP_DbObject::DbQuery('UPDATE card SET card_passed_from = ' . P1 . ' WHERE card_location = "hand" AND card_location_arg = ' . P2 . ' LIMIT 1');
+  $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
+  callAction($game, P2, 'playCombo', ['cards' => $lastCardId]);
+  assertSameVal('grandTichuBets', $game->gamestate->state()['name'], 'Double victory should advance to next round grandTichuBets');
+
+  $nonNullPassedAfterReset = (int) \APP_DbObject::getUniqueValueFromDB('SELECT COUNT(*) FROM card WHERE card_passed_from IS NOT NULL');
+  assertSameVal(0, $nonNullPassedAfterReset, 'stNewRound must clear card_passed_from on all cards');
+
+  $r2DatasP0 = $callGetAllDatas($game, P0);
+  assertSameVal(false, $r2DatasP0['hasPlayedOrPassedInRound'] ?? null, 'New round must reset hasPlayedOrPassedInRound to false');
+  foreach ($r2DatasP0['hand'] as $c) {
+    assertSameVal(null, $c['passed_from'], 'New round hand cards must have null passed_from');
+  }
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -3044,6 +3143,7 @@ $tests = [
   'test_studio_debug_bot_step_and_bot_others',
   'test_smart_bot_strategy_and_decisions',
   'test_day1_security_version_i18n_and_zombie_128k_guard',
+  'test_passed_card_origin_and_first_move_persistence',
 ];
 
 echo "====================================================================\n";

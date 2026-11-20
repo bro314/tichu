@@ -1681,6 +1681,10 @@ function withMockLitEnv(
     TichuStock: any;
     TichuActionBar: any;
     TichuValueChoice: any;
+    TichuCardEl: any;
+    TichuHand: any;
+    buildPassedOriginsMap: any;
+    computeCardVisibleWidthPx: any;
   }) => Promise<void> | void,
 ): Promise<void> {
   const g = globalThis as any;
@@ -1750,13 +1754,20 @@ function withMockLitEnv(
     innerHeight: 900,
   };
 
+  const stockMod = require("../src/elements/tichu-stock");
+  const handMod = require("../src/elements/tichu-hand");
+  const cardMod = require("../src/elements/tichu-card");
   const mods = {
     TichuAnimationLayer: require("../src/elements/tichu-animation-layer").TichuAnimationLayer,
     TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
     TichuPassArea: require("../src/elements/tichu-pass-area").TichuPassArea,
-    TichuStock: require("../src/elements/tichu-stock").TichuStock,
+    TichuStock: stockMod.TichuStock,
     TichuActionBar: require("../src/elements/tichu-action-bar").TichuActionBar,
     TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
+    TichuCardEl: cardMod.TichuCard,
+    TichuHand: handMod.TichuHand,
+    buildPassedOriginsMap: handMod.buildPassedOriginsMap,
+    computeCardVisibleWidthPx: stockMod.computeCardVisibleWidthPx,
   };
 
   return Promise.resolve(fn(mods)).finally(() => {
@@ -3376,6 +3387,26 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
 function serializeLitTemplate(val: any): string {
   if (val === null || val === undefined || val === false) return "";
   if (Array.isArray(val)) return val.map(serializeLitTemplate).join("");
+  if (typeof val === "object" && "_$litDirective$" in val && Array.isArray(val.values)) {
+    if (Array.isArray(val.values[0]) && typeof val.values[val.values.length - 1] === "function") {
+      const tplFn = val.values[val.values.length - 1];
+      return val.values[0]
+        .map((item: any, idx: number) => serializeLitTemplate(tplFn(item, idx)))
+        .join("");
+    }
+    if (
+      val.values.length === 1 &&
+      val.values[0] &&
+      typeof val.values[0] === "object" &&
+      !Array.isArray(val.values[0]) &&
+      !("strings" in val.values[0])
+    ) {
+      return Object.entries(val.values[0])
+        .filter(([, v]) => Boolean(v))
+        .map(([k]) => k)
+        .join(" ");
+    }
+  }
   if (typeof val === "object" && Array.isArray(val.strings) && Array.isArray(val.values)) {
     let out = "";
     for (let i = 0; i < val.strings.length; i++) {
@@ -3643,4 +3674,216 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
       g.window.gameui = savedGameUi;
     }
   });
+});
+
+test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, and isAllInfoExposed persistence", async () => {
+  await withMockLitEnv(
+    ({ TichuCardEl, TichuStock, buildPassedOriginsMap, computeCardVisibleWidthPx }) => {
+      const g = globalThis as any;
+      const savedUnderscore = g._;
+      try {
+        g._ = (s: string) => s;
+
+        const basePlayers = {
+          "2385074": { id: "2385074", name: "Alice", color: "000000", no: 1, score: "0" },
+          "2385075": { id: "2385075", name: "Bob", color: "ff0000", no: 2, score: "0" },
+          "2385076": { id: "2385076", name: "Carol", color: "000000", no: 3, score: "0" },
+          "2385077": { id: "2385077", name: "Dave", color: "ff0000", no: 4, score: "0" },
+        };
+        const avatarUrls = {
+          "2385074": "/avatars/alice.png",
+          "2385075": "/avatars/bob.png",
+          "2385076": "/avatars/carol.png",
+          "2385077": "",
+        };
+
+        // 1. normalizeCard ignores null/""/0 passed_from and preserves positive sender IDs;
+        //    hydrateFromGamedatas preserves hasPlayedOrPassedInRound + avatarUrl
+        const model = new GameModel();
+        model.hydrateFromGamedatas(
+          {
+            players: basePlayers as any,
+            isAllInfoExposed: 0,
+            hasPlayedOrPassedInRound: false,
+            hand: [
+              { ...A2, passed_from: null } as any,
+              { ...B3, passed_from: "" } as any,
+              { ...C4, passed_from: "0" } as any,
+              { ...D5, passed_from: "2385075" } as any,
+              { ...A6, passed_from: "2385076" } as any,
+              { ...B7, passed_from: "2385077" } as any,
+            ],
+          },
+          "2385074",
+          false,
+          true,
+          undefined,
+          avatarUrls,
+        );
+
+        const st0 = model.getState();
+        assert.equal(st0.hasPlayedOrPassedInRound, false);
+        assert.equal(st0.players["2385075"]?.avatarUrl, "/avatars/bob.png");
+        assert.equal(st0.players["2385077"]?.avatarUrl, "");
+        assert.equal(st0.hand[0]?.passed_from, undefined);
+        assert.equal(st0.hand[1]?.passed_from, undefined);
+        assert.equal(st0.hand[2]?.passed_from, undefined);
+        assert.equal(st0.hand[3]?.passed_from, "2385075");
+        assert.equal(st0.hand[4]?.passed_from, "2385076");
+        assert.equal(st0.hand[5]?.passed_from, "2385077");
+
+        // 2. Calling Tichu or opponent play/pass must NOT dismiss current player's highlight
+        model.applyTichuBet("2385074", 100);
+        model.applyPlayCombo("2385075", [C8], "8", 0, SINGLE_COMBO);
+        model.applyPass("2385076");
+        assert.equal(model.getState().hasPlayedOrPassedInRound, false);
+
+        // 3. Current player playCombo flips hasPlayedOrPassedInRound to true
+        model.applyPlayCombo("2385074", [A2], "2", 0, SINGLE_COMBO);
+        assert.equal(model.getState().hasPlayedOrPassedInRound, true);
+
+        // 4. enterNewRound resets; finishAcceptCards keeps false; current player applyPass flips to true; enterEndRound resets
+        model.enterNewRound();
+        assert.equal(model.getState().hasPlayedOrPassedInRound, false);
+        model.finishAcceptCards([{ ...D5, passed_from: "2385075" }]);
+        assert.equal(model.getState().hasPlayedOrPassedInRound, false);
+        model.applyPass("2385074");
+        assert.equal(model.getState().hasPlayedOrPassedInRound, true);
+        model.enterEndRound();
+        assert.equal(model.getState().hasPlayedOrPassedInRound, false);
+
+        // 5. buildPassedOriginsMap: clockwise vs counterclockwise + 2x2 lifecycle matrix
+        // For P0 (no=1): playersDesc = [P3(Dave,prev), P2(Carol,partner), P1(Bob,next), P0]
+        //   clockwise=false -> Left=Dave, Partner=Carol, Right=Bob
+        //   clockwise=true  -> Left=Bob,  Partner=Carol, Right=Dave
+        const handSample = [
+          { ...A2 },
+          { ...D5, passed_from: "2385075" }, // Bob (next)
+          { ...A6, passed_from: "2385076" }, // Carol (partner)
+          { ...B7, passed_from: "2385077" }, // Dave (prev)
+        ];
+        const mapCcwBefore = buildPassedOriginsMap({
+          hand: handSample,
+          players: st0.players,
+          currentPlayerId: "2385074",
+          clockwise: false,
+          isAllInfoExposed: false,
+          hasPlayedOrPassedInRound: false,
+        });
+        assert.equal(mapCcwBefore[A2.id], undefined);
+        assert.equal(mapCcwBefore[D5.id]?.seat, "right");
+        assert.equal(mapCcwBefore[D5.id]?.tooltip, "Passed by Bob (Right)");
+        assert.equal(mapCcwBefore[D5.id]?.showGlow, true);
+        assert.equal(mapCcwBefore[D5.id]?.showAvatar, true);
+
+        assert.equal(mapCcwBefore[A6.id]?.seat, "partner");
+        assert.equal(mapCcwBefore[A6.id]?.tooltip, "Passed by Carol (Partner)");
+
+        assert.equal(mapCcwBefore[B7.id]?.seat, "left");
+        assert.equal(mapCcwBefore[B7.id]?.tooltip, "Passed by Dave (Left)");
+
+        const mapCwAfterRt = buildPassedOriginsMap({
+          hand: handSample,
+          players: st0.players,
+          currentPlayerId: "2385074",
+          clockwise: true,
+          isAllInfoExposed: false,
+          hasPlayedOrPassedInRound: true,
+        });
+        assert.equal(mapCwAfterRt[D5.id]?.seat, "left");
+        assert.equal(mapCwAfterRt[D5.id]?.tooltip, "Passed by Bob (Left)");
+        assert.equal(mapCwAfterRt[D5.id]?.showGlow, false);
+        assert.equal(mapCwAfterRt[D5.id]?.showAvatar, false);
+        assert.equal(mapCwAfterRt[B7.id]?.seat, "right");
+        assert.equal(mapCwAfterRt[B7.id]?.tooltip, "Passed by Dave (Right)");
+
+        const mapCwAfterTb = buildPassedOriginsMap({
+          hand: handSample,
+          players: st0.players,
+          currentPlayerId: "2385074",
+          clockwise: true,
+          isAllInfoExposed: true,
+          hasPlayedOrPassedInRound: true,
+        });
+        assert.equal(mapCwAfterTb[D5.id]?.showGlow, false);
+        assert.equal(mapCwAfterTb[D5.id]?.showAvatar, true);
+        assert.equal(mapCwAfterTb[A6.id]?.showGlow, false);
+        assert.equal(mapCwAfterTb[A6.id]?.showAvatar, true);
+
+        // 6. TichuCard rendering: footer reservation, glow, wish precedence, img vs fallback, visible vs faded
+        const cardCss = (TichuCardEl.styles || []).map((s: any) => s.cssText || String(s)).join("\n");
+        const idxPassedHighlight = cardCss.indexOf("div#card.passed-highlight");
+        const idxWishMatch = cardCss.indexOf("div#card.wish-match");
+        assert.ok(idxPassedHighlight >= 0 && idxWishMatch > idxPassedHighlight, ".wish-match must override .passed-highlight");
+
+        const plainCard = new TichuCardEl();
+        plainCard.card = A2;
+        plainCard.reserveFooter = false;
+        const plainHtml = serializeLitTemplate(plainCard.render());
+        assert.equal(plainHtml.includes("card-footer"), false);
+
+        const reservedNonPassed = new TichuCardEl();
+        reservedNonPassed.card = A2;
+        reservedNonPassed.reserveFooter = true;
+        reservedNonPassed.passedOrigin = null;
+        const reservedNonPassedHtml = serializeLitTemplate(reservedNonPassed.render());
+        assert.ok(reservedNonPassedHtml.includes('class="card-footer"'));
+        assert.equal(reservedNonPassedHtml.includes("passed-avatar-wrap"), false);
+
+        const activeImgCard = new TichuCardEl();
+        activeImgCard.card = D5;
+        activeImgCard.reserveFooter = true;
+        activeImgCard.passedOrigin = mapCcwBefore[D5.id];
+        const activeImgHtml = serializeLitTemplate(activeImgCard.render());
+        assert.ok(activeImgHtml.includes("passed-highlight"));
+        assert.ok(activeImgHtml.includes("passed-avatar-wrap visible opponent"));
+        assert.match(activeImgHtml, /src=["']?\/avatars\/bob\.png["']?/);
+        assert.equal(activeImgHtml.includes("passed-dir-hint"), false);
+        assert.ok(activeImgHtml.includes("Scores 5 points — Passed by Bob (Right)"));
+
+        const fallbackCard = new TichuCardEl();
+        fallbackCard.card = B7;
+        fallbackCard.reserveFooter = true;
+        fallbackCard.passedOrigin = mapCcwBefore[B7.id];
+        const fallbackHtml = serializeLitTemplate(fallbackCard.render());
+        assert.ok(fallbackHtml.includes("passed-avatar-fallback"));
+        assert.ok(fallbackHtml.includes(">D</span>"));
+        assert.equal(fallbackHtml.includes("passed-dir-hint"), false);
+
+        const fadedRtCard = new TichuCardEl();
+        fadedRtCard.card = D5;
+        fadedRtCard.reserveFooter = true;
+        fadedRtCard.passedOrigin = mapCwAfterRt[D5.id];
+        const fadedRtHtml = serializeLitTemplate(fadedRtCard.render());
+        assert.equal(fadedRtHtml.includes("passed-highlight"), false);
+        assert.equal(fadedRtHtml.includes("passed-avatar-wrap visible"), false);
+        assert.ok(fadedRtHtml.includes("passed-avatar-wrap"));
+        assert.equal(fadedRtCard.getComputedTooltip(), "Scores 5 points");
+
+        // 7. TichuStock sets --stock-height: 184px when reserveFooter=true vs 150px when false
+        const stockPlain = new TichuStock();
+        stockPlain.cards = handSample;
+        stockPlain.reserveFooter = false;
+        stockPlain.render();
+        assert.equal(stockPlain.style["--stock-height"], "150px");
+        assert.equal(stockPlain.style["--card-footer-height"], "0px");
+
+        const stockReserved = new TichuStock();
+        stockReserved.cards = handSample;
+        stockReserved.reserveFooter = true;
+        stockReserved.passedOrigins = mapCcwBefore;
+        const stockHtml = serializeLitTemplate(stockReserved.render());
+        assert.equal(stockReserved.style["--stock-height"], "184px");
+        assert.equal(stockReserved.style["--card-footer-height"], "34px");
+        assert.equal(stockReserved.style["--stock-card-width"], "100px");
+        assert.ok(stockReserved.style["--card-visible-width"]);
+        assert.ok(stockHtml.includes("<tichu-card"));
+        assert.equal(computeCardVisibleWidthPx(100, -75), 25);
+        assert.equal(computeCardVisibleWidthPx(100, -90), 16);
+        assert.equal(computeCardVisibleWidthPx(100, 0), 100);
+      } finally {
+        g._ = savedUnderscore;
+      }
+    },
+  );
 });

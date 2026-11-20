@@ -5,8 +5,12 @@ import { repeat } from "lit/directives/repeat.js";
 import { Card } from "./model";
 import { scaleAnimMs, shouldAnimate } from "./tichu-animation-layer";
 import "./tichu-card";
-import type { TichuCard } from "./tichu-card";
+import type { PassedOriginInfo, TichuCard } from "./tichu-card";
 import { hasBomb } from "./utils";
+
+export function computeCardVisibleWidthPx(itemWidth: number, marginRight: number): number {
+  return Math.min(itemWidth, Math.max(16, itemWidth + marginRight));
+}
 
 export function getWeightByRank(card: Card): number {
   const color = Number(card.type);
@@ -46,6 +50,10 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) hideAllCards = false;
 
+  @property({ type: Boolean }) reserveFooter = false;
+
+  @property({ attribute: false }) passedOrigins: Record<string, PassedOriginInfo> = {};
+
   @state() private containerWidth = 0;
 
   @state() private pendingRevealIds: Set<string> = new Set();
@@ -69,6 +77,9 @@ export class TichuStock extends LitElement {
         }
         tichu-card:not(:last-child) {
           margin-right: var(--card-margin-right, -75px);
+        }
+        tichu-card:last-child {
+          --card-visible-width: var(--stock-card-width, 100px);
         }
         tichu-card {
           zoom: 1;
@@ -212,9 +223,15 @@ export class TichuStock extends LitElement {
   }
 
   override render() {
+    const itemWidth = 100 * this.scale;
     const itemHeight = 150 * this.scale;
+    const footerHeight = this.reserveFooter && !this.pass ? Math.round(34 * this.scale) : 0;
     const marginRight = this.computeMarginRightPx();
-    this.style.setProperty("--stock-height", `${itemHeight}px`);
+    const visibleWidth = computeCardVisibleWidthPx(itemWidth, marginRight);
+    this.style.setProperty("--stock-height", `${itemHeight + footerHeight}px`);
+    this.style.setProperty("--card-footer-height", `${footerHeight}px`);
+    this.style.setProperty("--stock-card-width", `${itemWidth}px`);
+    this.style.setProperty("--card-visible-width", `${visibleWidth}px`);
     this.style.setProperty("--card-margin-right", `${marginRight}px`);
 
     if (this.pass) return this.renderPass();
@@ -252,6 +269,8 @@ export class TichuStock extends LitElement {
                   this.highlightedRank <= 14 &&
                   Number(card.type_arg) === this.highlightedRank
                 }
+                .reserveFooter=${this.reserveFooter}
+                .passedOrigin=${this.passedOrigins[cardIdStr] ?? null}
                 @card-click=${(e: CustomEvent<{ card: Card }>) => this.onCardClick(e, card)}
               ></tichu-card>
             `;

@@ -1,7 +1,17 @@
-import { html, css, LitElement } from "lit";
-import { property } from "lit/decorators.js";
+import { html, css, LitElement, PropertyValues } from "lit";
+import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { Card } from "./model";
+
+export interface PassedOriginInfo {
+  playerId: string;
+  playerName: string;
+  avatarUrl: string;
+  seat: "left" | "partner" | "right";
+  tooltip: string;
+  showGlow: boolean;
+  showAvatar: boolean;
+}
 
 export function getDefaultCardTooltip(card: Card | undefined): string {
   if (!card) return "";
@@ -47,6 +57,14 @@ export class TichuCard extends LitElement {
 
   @property({ type: String }) tooltip = "";
 
+  @property({ type: Boolean }) reserveFooter = false;
+
+  @property({ attribute: false }) passedOrigin: PassedOriginInfo | null = null;
+
+  @state() private avatarLoadFailed = false;
+
+  private lastAvatarUrl = "";
+
   static override get styles() {
     return [
       css`
@@ -66,9 +84,16 @@ export class TichuCard extends LitElement {
           border-radius: var(--border-radius, 6px);
           box-shadow: 2px 2px 5px 3px #666;
           box-sizing: border-box;
+          transition: box-shadow 280ms ease;
         }
         div#card.selectable {
           cursor: pointer;
+        }
+        div#card.passed-highlight {
+          box-shadow:
+            0 0 0 2px #0ea5e9,
+            0 0 10px rgba(14, 165, 233, 0.72),
+            2px 2px 5px 3px #666;
         }
         div#card.wish-match {
           box-shadow:
@@ -83,6 +108,12 @@ export class TichuCard extends LitElement {
             0px 0px 4px 1px #ff8,
             2px 2px 5px 3px #666;
         }
+        div#card.passed-highlight.stockitem_selected {
+          box-shadow:
+            0 0 0 2px #0ea5e9,
+            0 0 12px 2px #ff8,
+            2px 2px 5px 3px #666;
+        }
         div#card.wish-match.stockitem_selected {
           box-shadow:
             0 0 0 2px #f5b041,
@@ -95,14 +126,114 @@ export class TichuCard extends LitElement {
           opacity: 0.9;
           box-shadow: 5px 5px 5px 0px #666;
         }
+        .card-footer {
+          position: relative;
+          width: var(--width);
+          height: var(--card-footer-height, 34px);
+          pointer-events: none;
+        }
+        .passed-avatar-wrap {
+          position: absolute;
+          top: 6px;
+          left: clamp(
+            0px,
+            calc(var(--card-visible-width, var(--width)) / 2 - 13px),
+            calc(var(--width) / 2 - 13px)
+          );
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          box-sizing: border-box;
+          background: #334155;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+          opacity: 0;
+          visibility: hidden;
+          pointer-events: none;
+          transition:
+            opacity 280ms ease,
+            visibility 0s linear 280ms;
+        }
+        .passed-avatar-wrap.visible {
+          opacity: 1;
+          visibility: visible;
+          pointer-events: auto;
+          transition:
+            opacity 220ms ease,
+            visibility 0s linear 0s;
+        }
+        .passed-avatar-wrap.partner {
+          border: 2px solid #0f9d58;
+        }
+        .passed-avatar-wrap.opponent {
+          border: 2px solid #475569;
+        }
+        .passed-avatar-img {
+          width: 100%;
+          height: 100%;
+          aspect-ratio: 1;
+          border-radius: 50%;
+          object-fit: cover;
+          display: block;
+        }
+        .passed-avatar-fallback {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+          color: #fff;
+          text-transform: uppercase;
+          user-select: none;
+        }
+        .passed-avatar-wrap.partner .passed-avatar-fallback {
+          background: #0f9d58;
+        }
+        .passed-avatar-wrap.opponent .passed-avatar-fallback {
+          background: #334155;
+        }
+        @media (forced-colors: active) {
+          div#card.passed-highlight,
+          div#card.wish-match {
+            outline: 2px solid Highlight;
+            outline-offset: 1px;
+          }
+          .passed-avatar-wrap {
+            border-color: CanvasText;
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          div#card,
+          .passed-avatar-wrap,
+          .passed-avatar-wrap.visible {
+            transition: none;
+          }
+        }
       `,
     ];
+  }
+
+  protected override willUpdate(changedProperties: PropertyValues) {
+    super.willUpdate(changedProperties);
+    if (changedProperties.has("passedOrigin")) {
+      const nextUrl = this.passedOrigin?.avatarUrl ?? "";
+      if (nextUrl !== this.lastAvatarUrl) {
+        this.lastAvatarUrl = nextUrl;
+        this.avatarLoadFailed = false;
+      }
+    }
   }
 
   getComputedTooltip(): string {
     if (this.tooltip) return this.tooltip;
     if (this.pass) return _("Pass");
-    return getDefaultCardTooltip(this.card);
+    const base = getDefaultCardTooltip(this.card);
+    if (this.passedOrigin && (this.passedOrigin.showAvatar || this.passedOrigin.showGlow)) {
+      return base ? `${base} — ${this.passedOrigin.tooltip}` : this.passedOrigin.tooltip;
+    }
+    return base;
   }
 
   override render() {
@@ -132,20 +263,57 @@ export class TichuCard extends LitElement {
     this.style.setProperty("--y-pos", `${-1 * height * (color - 1)}px`);
 
     const tooltipText = this.getComputedTooltip();
+    const origin = this.passedOrigin;
+    const showGlow = Boolean(origin?.showGlow);
+    const isPartner = origin?.seat === "partner";
+    const showImg = Boolean(origin?.avatarUrl) && !this.avatarLoadFailed;
+    const initial = (origin?.playerName?.trim()?.[0] ?? "?").toUpperCase();
 
     return html`<div
-      id="card"
-      class=${classMap({
-        card: true,
-        stockitem: true,
-        stockitem_selected: this.selected,
-        selectable: this.selectable,
-        "wish-match": this.wishMatch,
-      })}
-      data-card-id=${this.card.id ?? ""}
-      title=${tooltipText}
-      @click=${this.onClick}
-    ></div>`;
+        id="card"
+        class=${classMap({
+          card: true,
+          stockitem: true,
+          stockitem_selected: this.selected,
+          selectable: this.selectable,
+          "passed-highlight": showGlow,
+          "wish-match": this.wishMatch,
+        })}
+        data-card-id=${this.card.id ?? ""}
+        title=${tooltipText}
+        @click=${this.onClick}
+      ></div
+      >${this.reserveFooter
+        ? html`<div class="card-footer">
+            ${origin
+              ? html`<div
+                  class=${classMap({
+                    "passed-avatar-wrap": true,
+                    visible: origin.showAvatar,
+                    partner: isPartner,
+                    opponent: !isPartner,
+                  })}
+                  title=${origin.tooltip}
+                  aria-label=${origin.showAvatar ? origin.tooltip : ""}
+                >
+                  ${showImg
+                    ? html`<img
+                        class="passed-avatar-img"
+                        src=${origin.avatarUrl}
+                        alt=""
+                        width="22"
+                        height="22"
+                        @error=${this.onAvatarError}
+                      />`
+                    : html`<span class="passed-avatar-fallback" aria-hidden="true">${initial}</span>`}
+                </div>`
+              : ""}
+          </div>`
+        : ""}`;
+  }
+
+  private onAvatarError() {
+    this.avatarLoadFailed = true;
   }
 
   renderPass(themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "") {

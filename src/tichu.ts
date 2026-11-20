@@ -471,6 +471,31 @@ export class Tichu {
     }
   }
 
+  resolvePlayerAvatarUrl(playerId: number): string {
+    try {
+      const bgaUrl = (this as any).bga?.players?.getPlayerAvatarUrl?.(playerId, 50);
+      if (typeof bgaUrl === "string" && bgaUrl !== "") {
+        return bgaUrl;
+      }
+    } catch (_e) {
+      // Ignore missing framework avatar helper
+    }
+    try {
+      const shimUrl = (this as any).getPlayerAvatarUrl?.(playerId, 50);
+      if (typeof shimUrl === "string" && shimUrl !== "") {
+        return shimUrl;
+      }
+    } catch (_e) {
+      // Ignore missing shim avatar helper
+    }
+    if (typeof document !== "undefined") {
+      const img = document.getElementById(`avatar_${playerId}`);
+      const src = img?.getAttribute("src");
+      if (src) return src;
+    }
+    return "";
+  }
+
   rehydrateModel() {
     const gamedatas = this.gamedatas;
     if (!gamedatas) return;
@@ -499,12 +524,20 @@ export class Tichu {
     this.pendingAcceptFlush = null;
     this.getAnimationLayer()?.cancelAll?.();
 
+    const avatarUrls: Record<string, string> = {};
+    for (const key of Object.keys(gamedatas.players || {})) {
+      const playerObj = (gamedatas.players as Record<string, any>)[key];
+      const pid = String(playerObj?.id ?? key);
+      avatarUrls[pid] = this.resolvePlayerAvatarUrl(Number(pid));
+    }
+
     window.gameModel?.hydrateFromGamedatas(
       gamedatas,
       this.player_id,
       this.isSpectator,
       this.bRealtime,
       this.readPrefs(),
+      avatarUrls,
     );
 
     this.enableAllPlayerPanels();

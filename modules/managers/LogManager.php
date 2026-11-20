@@ -216,5 +216,22 @@ class LogManager
       "phoenixValue" => $combo->phoenixValue,
     ]);
   }
+
+  public static function hasPlayerPlayedOrPassedInCurrentRound(int|string $playerId): bool
+  {
+    $pId = (int) $playerId;
+    if ($pId <= 0) {
+      return false;
+    }
+    $curr = self::getCurrentDbRoundAndTrick();
+    $round = (int) ($curr["round"] ?? 0);
+    if ($round <= 0) {
+      return false;
+    }
+    $count = (int) Table::getUniqueValueFromDB(
+      "SELECT COUNT(*) FROM actionlog WHERE log_round = $round AND log_player = $pId AND log_action IN ('combo', 'pass')"
+    );
+    return $count > 0;
+  }
 }
 ?>

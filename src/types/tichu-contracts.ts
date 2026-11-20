@@ -168,6 +168,7 @@ export interface TichuGamedatas {
   mahjongOwner: number;
   mahjongWish: number;
   isAllInfoExposed: number;
+  hasPlayedOrPassedInRound?: boolean;
   passes: number[];
   round: number;
   trick: number;
