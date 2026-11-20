@@ -1130,8 +1130,7 @@ export class GameModel {
     this.update({
       players,
       lastCombos,
-      hasPlayedOrPassedInRound:
-        pid === prev.currentPlayerId ? true : prev.hasPlayedOrPassedInRound,
+      hasPlayedOrPassedInRound: pid === prev.currentPlayerId ? true : prev.hasPlayedOrPassedInRound,
     });
   }
 
@@ -1360,6 +1359,10 @@ if (typeof document !== "undefined" && document.documentElement) {
   document.documentElement.style.setProperty(
     "--table-icons-url",
     `url(${themeUrl}img/tichu-icons-table.png)`,
+  );
+  document.documentElement.style.setProperty(
+    "--ui-icons-url",
+    `url(${themeUrl}img/tichu-ui-icons.png)`,
   );
   document.documentElement.style.setProperty(
     "--mahjong-bg-url",

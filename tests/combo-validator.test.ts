@@ -1678,13 +1678,12 @@ function withMockLitEnv(
     TichuAnimationLayer: any;
     TichuLastPlayed: any;
     TichuPassArea: any;
-    PASS_SLOT_CARD_OFFSET_X: number;
-    PASS_SLOT_CARD_OFFSET_Y: number;
     TichuStock: any;
     TichuActionBar: any;
     TichuValueChoice: any;
     TichuCardEl: any;
     TichuHand: any;
+    TichuStatus: any;
     TichuSettingsModal: any;
     getThemeLabel: (themeNo: number) => string;
     buildPassedOriginsMap: any;
@@ -1774,6 +1773,7 @@ function withMockLitEnv(
     TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
     TichuCardEl: cardMod.TichuCard,
     TichuHand: handMod.TichuHand,
+    TichuStatus: require("../src/elements/tichu-status").TichuStatus,
     TichuSettingsModal: settingsModalMod.TichuSettingsModal,
     getThemeLabel: settingsModalMod.getThemeLabel,
     buildPassedOriginsMap: handMod.buildPassedOriginsMap,
@@ -3829,10 +3829,15 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         assert.equal(mapCwAfterTb[A6.id]?.showAvatar, true);
 
         // 6. TichuCard rendering: footer reservation, glow, wish precedence, img vs fallback, visible vs faded
-        const cardCss = (TichuCardEl.styles || []).map((s: any) => s.cssText || String(s)).join("\n");
+        const cardCss = (TichuCardEl.styles || [])
+          .map((s: any) => s.cssText || String(s))
+          .join("\n");
         const idxPassedHighlight = cardCss.indexOf("div#card.passed-highlight");
         const idxWishMatch = cardCss.indexOf("div#card.wish-match");
-        assert.ok(idxPassedHighlight >= 0 && idxWishMatch > idxPassedHighlight, ".wish-match must override .passed-highlight");
+        assert.ok(
+          idxPassedHighlight >= 0 && idxWishMatch > idxPassedHighlight,
+          ".wish-match must override .passed-highlight",
+        );
 
         const plainCard = new TichuCardEl();
         plainCard.card = A2;
@@ -3905,6 +3910,7 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
     },
   );
 });
+
 test("TichuPassArea: tooltip-only select hint, avatar above name, fallback initial, and card offset alignment", async () => {
   await withMockLitEnv(({ TichuPassArea, PASS_SLOT_CARD_OFFSET_X, PASS_SLOT_CARD_OFFSET_Y }) => {
     const g = globalThis as any;
@@ -3929,13 +3935,13 @@ test("TichuPassArea: tooltip-only select hint, avatar above name, fallback initi
       );
       assert.match(
         passCss,
-        /\.icon\.big\.grandtichucolor\s*\{[^}]*background-position:\s*0px -72px;[^}]*width:\s*48px;[^}]*height:\s*56px;/,
-        "Grand Tichu big icon should use tightly centered 48x56 sprite window",
+        /\.icon\.big\.grandtichucolor\s*\{[^}]*--icon-size:\s*56px;[^}]*background-position:\s*0 0;/,
+        "Grand Tichu big icon should use uniform 56x56 sprite cell (0, 0)",
       );
       assert.match(
         passCss,
-        /\.icon\.big\.tichucolor\s*\{[^}]*background-position:\s*-63px -71px;[^}]*width:\s*54px;[^}]*height:\s*56px;/,
-        "Tichu big icon should use tightly centered 54x56 sprite window",
+        /\.icon\.big\.tichucolor\s*\{[^}]*--icon-size:\s*56px;[^}]*background-position:\s*calc\(var\(--icon-size\) \* -2\) 0;/,
+        "Tichu big icon should use uniform 56x56 sprite cell (2, 0)",
       );
 
       const model = new GameModel();
@@ -4080,6 +4086,113 @@ test("TichuPassArea: tooltip-only select hint, avatar above name, fallback initi
     }
   });
 });
+
+test("TichuStatus renders compact PNG icon HUD with accessible labels and tooltips", async () => {
+  await withMockLitEnv(({ TichuStatus, TichuLastPlayed }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedThemeUrl = g.g_gamethemeurl;
+    const translatedKeys: string[] = [];
+
+    try {
+      g._ = (s: string) => {
+        translatedKeys.push(s);
+        return s;
+      };
+      g.g_gamethemeurl = "/tichu/";
+
+      const sharedCssRaw = (TichuLastPlayed.styles || [])
+        .map((s: any) => s?.cssText ?? String(s ?? ""))
+        .join("\n");
+      assert.ok(
+        sharedCssRaw.includes("var(--ui-icons-url)"),
+        "Shared styles should reference var(--ui-icons-url)",
+      );
+      assert.ok(
+        sharedCssRaw.includes("calc(var(--icon-size) * 4) calc(var(--icon-size) * 3)"),
+        "Shared .icon styles should use the 4x3 sprite grid",
+      );
+      assert.equal(
+        /url\(["']?img\//.test(sharedCssRaw),
+        false,
+        'Shared Shadow DOM CSS must not hardcode url("img/...")',
+      );
+
+      const status = new TichuStatus();
+      const cssRaw = TichuStatus.styles?.cssText ?? String(TichuStatus.styles ?? "");
+      assert.ok(
+        cssRaw.includes("var(--ui-icons-url)"),
+        "CSS should reference var(--ui-icons-url)",
+      );
+      assert.ok(
+        cssRaw.includes("calc(var(--icon-size) * 4) calc(var(--icon-size) * 3)"),
+        "TichuStatus CSS should use the 4x3 sprite grid",
+      );
+      assert.ok(cssRaw.includes("var(--bg-color-lighter"), "Panel should match player boards");
+      assert.ok(/var\(\s*--elevation\b/.test(cssRaw), "Panel should apply --elevation shadow");
+      assert.ok(cssRaw.includes("border: none"), "Eye button should be borderless by default");
+      assert.ok(
+        cssRaw.includes("prefers-contrast: more"),
+        "CSS should support prefers-contrast: more for subtle accents",
+      );
+      assert.ok(cssRaw.includes(".visually-hidden"), "CSS should include .visually-hidden helper");
+      assert.ok(cssRaw.includes(":focus-visible"), "CSS should style :focus-visible");
+      assert.equal(
+        /url\(["']?img\//.test(cssRaw),
+        false,
+        'Shadow DOM CSS must not hardcode url("img/...")',
+      );
+
+      // 1. trickSize = 0 hides the Show current trick button and shows icons + counters + tooltips
+      status.roundCount = 2;
+      status.trickCount = 5;
+      status.trickPoints = -25;
+      status.trickSize = 0;
+
+      const htmlZero = serializeLitTemplate(status.render());
+      assert.equal(status.style["--ui-icons-url"], "url(/tichu/img/tichu-ui-icons.png)");
+      assert.match(htmlZero, /id=["']?roundCounter["']?[^>]*>2<\/span>/);
+      assert.match(htmlZero, /id=["']?trickCounter["']?[^>]*>5<\/span>/);
+      assert.match(htmlZero, /id=["']?currentTrickCounter["']?[^>]*>-25<\/span>/);
+
+      assert.match(htmlZero, /title=(?:"Round: 2"|Round: 2(?:\s|>))/);
+      assert.match(htmlZero, /title=(?:"Trick: 5"|Trick: 5(?:\s|>))/);
+      assert.match(htmlZero, /title=(?:"Trick Points: -25"|Trick Points: -25(?:\s|>))/);
+
+      assert.match(htmlZero, /class="status-icon round"[^>]*aria-hidden="true"/);
+      assert.match(htmlZero, /class="status-icon trick"[^>]*aria-hidden="true"/);
+      assert.match(htmlZero, /class="status-icon points"[^>]*aria-hidden="true"/);
+      assert.ok(htmlZero.includes('<span class="visually-hidden">Round: </span>'));
+      assert.ok(htmlZero.includes('<span class="visually-hidden">Trick: </span>'));
+      assert.ok(htmlZero.includes('<span class="visually-hidden">Trick Points: </span>'));
+      assert.equal(htmlZero.includes("<button"), false);
+      assert.equal(htmlZero.includes("trick-action"), false);
+
+      // 2. trickSize = 4 renders icon-only button inside .trick-action with tooltip + aria-label
+      translatedKeys.length = 0;
+      status.trickSize = 4;
+      const htmlWithTrick = serializeLitTemplate(status.render());
+      assert.ok(
+        htmlWithTrick.includes('class="trick-action"'),
+        "trick-action wrapper should render when trickSize > 0",
+      );
+      const btnMatch = htmlWithTrick.match(/<button[\s\S]*?<\/button>/);
+      assert.ok(btnMatch, "Show current trick button should render when trickSize > 0");
+      const btnHtml = btnMatch![0];
+      assert.ok(btnHtml.includes('type="button"'));
+      assert.match(btnHtml, /title=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(btnHtml, /aria-label=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(btnHtml, /class="status-icon eye"[^>]*aria-hidden="true"/);
+      const innerBtnText = btnHtml.replace(/<[^>]+>/g, "").trim();
+      assert.equal(innerBtnText, "", "Button should contain no visible text label");
+      assert.deepEqual(translatedKeys, ["Round:", "Trick:", "Trick Points:", "Show current trick"]);
+    } finally {
+      g._ = savedUnderscore;
+      g.g_gamethemeurl = savedThemeUrl;
+    }
+  });
+});
+
 test("Settings modal: GameModel state, pref 102 two-way sync, TichuHand gear button, and TichuSettingsModal controls", async () => {
   await withMockLitEnv(({ TichuHand, TichuSettingsModal, getThemeLabel }) => {
     const g = globalThis as any;

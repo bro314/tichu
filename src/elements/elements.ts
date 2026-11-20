@@ -24,6 +24,7 @@ export { GameModel } from "./game-model";
 export { TichuCard } from "./tichu-card";
 export { TichuStock } from "./tichu-stock";
 export { TichuPlayerPanel } from "./tichu-player-panel";
+export { TichuStatus } from "./tichu-status";
 export { TichuValueChoice } from "./tichu-value-choice";
 export { TichuLastPlayed } from "./tichu-last-played";
 export { TichuPassArea } from "./tichu-pass-area";
@@ -62,6 +63,10 @@ if (typeof document !== "undefined" && document.documentElement) {
   document.documentElement.style.setProperty(
     "--table-icons-url",
     `url(${themeUrl}img/tichu-icons-table.png)`,
+  );
+  document.documentElement.style.setProperty(
+    "--ui-icons-url",
+    `url(${themeUrl}img/tichu-ui-icons.png)`,
   );
   document.documentElement.style.setProperty(
     "--mahjong-bg-url",

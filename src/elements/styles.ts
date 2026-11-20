@@ -304,79 +304,65 @@ export const styles = css`
   }
 
   .icon {
+    --icon-size: 28px;
     display: none;
-    background-image: var(--icon-url);
+    width: var(--icon-size);
+    height: var(--icon-size);
+    background-image: var(--ui-icons-url);
     background-repeat: no-repeat;
+    background-size: calc(var(--icon-size) * 4) calc(var(--icon-size) * 3);
+    vertical-align: middle;
   }
   .icon.star {
-    background-size: 128px 64px;
-    background-position: -112px -16px;
-    width: 16px;
-    height: 16px;
+    --icon-size: 18px;
+    background-position: calc(var(--icon-size) * -2) calc(var(--icon-size) * -1);
     display: inline-block;
+    vertical-align: -3px;
   }
   .icon.hand {
-    background-size: 128px 64px;
-    background-position: -112px 0px;
-    width: 16px;
-    height: 16px;
+    --icon-size: 18px;
+    background-position: calc(var(--icon-size) * -1) calc(var(--icon-size) * -1);
     display: inline-block;
+    vertical-align: -3px;
   }
   .icon.firstoutcolor {
-    background-size: 128px 64px;
-    background-position: -64px -32px;
-    width: 16px;
-    height: 32px;
-  }
-  .icon.grandtichublack {
-    background-size: 128px 64px;
-    background-position: 0px 0px;
-    width: 32px;
-    height: 32px;
+    --icon-size: 28px;
+    background-position: 0 calc(var(--icon-size) * -1);
   }
   .icon.grandtichucolor {
-    background-size: 128px 64px;
-    background-position: 0px -32px;
-    width: 32px;
-    height: 32px;
+    --icon-size: 28px;
+    background-position: 0 0;
   }
-  .icon.tichublack {
-    background-size: 128px 64px;
-    background-position: -32px 0px;
-    width: 32px;
-    height: 32px;
+  .icon.grandtichublack {
+    --icon-size: 28px;
+    background-position: calc(var(--icon-size) * -1) 0;
   }
   .icon.tichucolor {
-    background-size: 128px 64px;
-    background-position: -32px -32px;
-    width: 26px;
-    height: 26px;
+    --icon-size: 28px;
+    background-position: calc(var(--icon-size) * -2) 0;
   }
-  .icon.big.grandtichublack {
-    background-size: 256px 128px;
-    background-position: -1px -8px;
-    width: 48px;
-    height: 56px;
+  .icon.tichublack {
+    --icon-size: 28px;
+    background-position: calc(var(--icon-size) * -3) 0;
   }
   .icon.big.grandtichucolor {
-    background-size: 256px 128px;
-    background-position: 0px -72px;
-    width: 48px;
-    height: 56px;
+    --icon-size: 56px;
+    background-position: 0 0;
   }
-  .icon.big.tichublack {
-    background-size: 256px 128px;
-    background-position: -65px -8px;
-    width: 54px;
-    height: 56px;
+  .icon.big.grandtichublack {
+    --icon-size: 56px;
+    background-position: calc(var(--icon-size) * -1) 0;
   }
   .icon.big.tichucolor {
-    background-size: 256px 128px;
-    background-position: -63px -71px;
-    width: 54px;
-    height: 56px;
+    --icon-size: 56px;
+    background-position: calc(var(--icon-size) * -2) 0;
+  }
+  .icon.big.tichublack {
+    --icon-size: 56px;
+    background-position: calc(var(--icon-size) * -3) 0;
   }
   .icon.temp {
+    --icon-size: 256px;
     position: absolute;
     display: block;
     left: calc(50% - 128px);
@@ -417,38 +403,28 @@ export const styles = css`
       }
     }
   }
-  .icon.temp.grandtichublack,
-  .icon.temp.grand-tichu-black {
-    background-size: 1024px 512px;
-    background-position: 0px 0px;
-    width: 256px;
-    height: 256px;
-  }
   .icon.temp.grandtichucolor,
   .icon.temp.grand-tichu-color {
-    background-size: 1024px 512px;
-    background-position: 0px -256px;
-    width: 256px;
-    height: 256px;
+    --icon-size: 256px;
+    background-position: 0 0;
   }
-  .icon.temp.tichublack,
-  .icon.temp.tichu-black {
-    background-size: 1024px 512px;
-    background-position: -256px 0px;
-    width: 256px;
-    height: 256px;
+  .icon.temp.grandtichublack,
+  .icon.temp.grand-tichu-black {
+    --icon-size: 256px;
+    background-position: calc(var(--icon-size) * -1) 0;
   }
   .icon.temp.tichucolor,
   .icon.temp.tichu-color {
-    background-size: 1024px 512px;
-    background-position: -256px -256px;
-    width: 208px;
-    height: 208px;
+    --icon-size: 256px;
+    background-position: calc(var(--icon-size) * -2) 0;
+  }
+  .icon.temp.tichublack,
+  .icon.temp.tichu-black {
+    --icon-size: 256px;
+    background-position: calc(var(--icon-size) * -3) 0;
   }
   .icon.cardback {
-    background-size: 128px 64px;
-    background-position: -90px 0px;
-    width: 22px;
-    height: 32px;
+    --icon-size: 28px;
+    background-position: calc(var(--icon-size) * -3) calc(var(--icon-size) * -1);
   }
 `;

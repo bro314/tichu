@@ -305,6 +305,7 @@ export class TichuReplay extends LitElement {
   override render() {
     this.style.setProperty("--card-url", `url(${g_gamethemeurl}img/tichu-cards.png)`);
     this.style.setProperty("--icon-url", `url(${g_gamethemeurl}img/tichu-icons.png)`);
+    this.style.setProperty("--ui-icons-url", `url(${g_gamethemeurl}img/tichu-ui-icons.png)`);
     this.style.setProperty("--wish-url", `url(${g_gamethemeurl}img/tichu-icons-table.png)`);
 
     const ids = this.playerIds;

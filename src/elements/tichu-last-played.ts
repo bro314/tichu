@@ -291,7 +291,7 @@ export class TichuLastPlayed extends LitElement {
 
   override render() {
     const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
-    this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+    this.style.setProperty("--ui-icons-url", `url(${themeUrl}img/tichu-ui-icons.png)`);
     this.style.setProperty("--table-icons-url", `url(${themeUrl}img/tichu-icons-table.png)`);
     this.style.setProperty("--mahjong-bg-url", `url(${themeUrl}img/tichu-mahjong.png)`);
     this.style.setProperty("--tiki-mahjong-bg-url", `url(${themeUrl}img/tiki-tichu-mahjong.png)`);

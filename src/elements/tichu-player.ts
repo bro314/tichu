@@ -208,14 +208,17 @@ export class TichuPlayer extends LitElement {
           color: white;
         }
         .icon {
-          background-size: 128px 64px;
+          --icon-size: 18px;
+          background-size: calc(var(--icon-size) * 4) calc(var(--icon-size) * 3);
           display: inline-block;
-          height: 16px;
-          width: 16px;
-          background-image: var(--icon-url);
+          height: var(--icon-size);
+          width: var(--icon-size);
+          background-image: var(--ui-icons-url);
+          background-repeat: no-repeat;
+          vertical-align: -3px;
         }
         .icon.star {
-          background-position: -112px -16px;
+          background-position: calc(var(--icon-size) * -2) calc(var(--icon-size) * -1);
         }
       `,
     ];

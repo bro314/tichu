@@ -80,7 +80,7 @@ export class TichuPlayerPanel extends LitElement {
 
   override render() {
     const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
-    this.style.setProperty("--icon-url", `url(${themeUrl}img/tichu-icons.png)`);
+    this.style.setProperty("--ui-icons-url", `url(${themeUrl}img/tichu-ui-icons.png)`);
 
     const id = String(this.playerId);
     const p = this.player ?? this.players[id];
