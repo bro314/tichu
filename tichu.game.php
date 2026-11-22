@@ -169,6 +169,20 @@ class Tichu extends Table
     $this->bumpGameVersion();
   }
 
+  /**
+   * Re-acquires the full `global` row lock in ascending PK order after a framework
+   * CommitAllAndRestart() (such as GamestateMachine::jumpToState(ST_GAME_END)), so
+   * end-of-request sendNotifications() (global_id=3) -> setGlobal(0, time()) cannot
+   * AB-BA deadlock with concurrent requests' TableInfos::db_load(FOR UPDATE) (0 -> 3).
+   */
+  private function relockGlobalsAfterFrameworkCommit(): void
+  {
+    $this->getCollectionFromDB(
+      "SELECT global_id, global_value FROM global WHERE 1 FOR UPDATE",
+      true
+    );
+  }
+
   /** Increments the table-wide version row (at most once per request). */
   public function bumpGameVersion(): void
   {
@@ -1803,6 +1817,7 @@ class Tichu extends Table
       $scores = array_unique($newScores);
       if (count($scores) > 1) {
         $this->gamestate->nextState("endGame");
+        $this->relockGlobalsAfterFrameworkCommit();
         return;
       } // else both teams are above $end_points with the same score : game goes on
     }
@@ -1864,6 +1879,7 @@ class Tichu extends Table
     if ($livePlayers === 0) {
       $this->logProdWarn("all_players_zombie_end", ["state" => $state["name"] ?? ""]);
       $this->gamestate->jumpToState(ST_GAME_END);
+      $this->relockGlobalsAfterFrameworkCommit();
       return;
     }
 

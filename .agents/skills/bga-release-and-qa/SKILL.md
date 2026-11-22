@@ -1,16 +1,50 @@
 ---
 name: bga-release-and-qa
 description: >-
-  BGA pre-release QA checklist, production release & rollback workflow on studiogame?game=tichu,
-  backwards/forwards compatibility & live-tab client/server skew rules, live-game DB migration
-  rules (upgradeTableDb & DBPREFIX_), @thoun autopass state-reset invariants, i18n/dummyTranslations
-  validation, Shadow DOM vs BGA Tutorial Creator caveats, and BGA 2025-2026 modernization workflow
-  order. Use before building/deploying/rolling back a BGA release, editing dbmodel.sql,
-  upgradeTableDb, actions, notifications, states, or actionlog, auditing translations/dark
-  mode/autopass, or modernizing BGA APIs.
+  BGA prepare a release / prepare release playbook, pre-release QA checklist, production release &
+  rollback workflow on studiogame?game=tichu, backwards/forwards compatibility & live-tab
+  client/server skew rules, live-game DB migration rules (upgradeTableDb & DBPREFIX_), @thoun
+  autopass state-reset invariants, i18n/dummyTranslations validation, Shadow DOM vs BGA Tutorial
+  Creator caveats, and BGA 2025-2026 modernization workflow order. Use whenever the user says
+  "prepare a release" / "prepare release", before building/deploying/rolling back a BGA release,
+  editing dbmodel.sql, upgradeTableDb, actions, notifications, states, or actionlog, auditing
+  translations/dark mode/autopass, or modernizing BGA APIs.
 ---
 
 # BGA Release, Live-Game Safety, Autopass & QA Checklist
+
+## 0. `"Prepare a Release"` End-to-End Playbook (Trigger: `"prepare a release"` / `"prepare release"`)
+
+When the user asks to **prepare a release**, run this full sequence and **stop at Step 9** for explicit user approval before building a Studio release package, deploying to production, or posting BGA bug replies:
+
+1. **Inventory & Baseline**:
+   - Identify the active production version (`local/bugs/prod-errors-state.json` `lastProdVersion` and/or `getStudioGameVersions.html`) and corresponding git commit.
+   - Inspect all commits (`git log --stat <last-release-commit>..HEAD`) and uncommitted working-tree changes (`git status`).
+   - Audit 4-way compatibility (Section 3) and ensure raw/intermediate assets (such as `img/highres/` and `img/svg/`) stay in `.gitignore` and excluded from `local/sftp-sync.sh`.
+2. **Version Bump**:
+   - Bump `TICHU_CODE_VERSION` (`YYYY-MM-DD.N`) in [`modules/Constants.php`](file:///Users/brohlfs/git/tichu/modules/Constants.php), `"version"` in [`package.json`](file:///Users/brohlfs/git/tichu/package.json), and both root `"version"` and `packages[""].version` in [`package-lock.json`](file:///Users/brohlfs/git/tichu/package-lock.json). **Never** edit `version.php`.
+3. **Full Local Verification**:
+   - With `/opt/homebrew/bin` on `PATH`, run `npm run build` (`npm test` + `tsc` + `esbuild` bundle), `npm run test:contracts`, `npm run phpstan`, and `npm run test:race`.
+   - Run a local browser sanity check on `http://127.0.0.1:8080` via the `browser` subagent (`Model: "flash"`, `captureScreenshot: false`, `waitFor <= 24000ms`): `clearConsoleIssues`, `#tt_btn_smoke`, `#tt_btn_round`, verify new/changed UI components, verify zero console errors, and close the browser tab (`page.close()`).
+4. **SFTP Sync to BGA Studio**:
+   - Run `PATH="/opt/homebrew/bin:$PATH" bash local/sftp-sync.sh --since <last-release-commit>` (or `npm run deploy:sftp:all` for a full resync — both upload deployable PHP/JS/CSS/TPL/SQL files plus top-level runtime `img/` assets while rejecting `img/*/*` subdirectories, after passing `check-contracts.php`, avoiding redundant re-uploads of unchanged multi-MB static images on `--since`). Confirm exit code `0` and zero SFTP errors.
+5. **BGA Studio Verification (`https://studio.boardgamearena.com`)**:
+   - Open `https://studio.boardgamearena.com/studiogame?game=tichu`: verify zero `workspace.blocked-files` / security banners; reload game config (`Reload game informations`, `Reload statistics configuration`, `Reload game options configuration`) if `states.inc.php`, `gameinfos.inc.php`, `gameoptions.inc.php`, or `stats.inc.php` changed.
+   - Click **`⇨ Dry run build (to check code warnings)`** and verify zero blocking errors or warnings in `#studioCommandResults`.
+   - Turn ON **`Use minified JS`** AND **`Use minified CSS`** under **Studio tools**.
+   - On a Studio test table (cleaning up dangling `CANCEL`/`Express stop` first): run `#tt_btn_smoke`, verify new/changed UI features, sprites, tooltips/modals, version parity, `&dummyTranslations` (`«»` check), and play a full game (`#tt_btn_game` to `state 99` with real animations ON — or 4-tab `startAutoPlayMe` whenever PHP actions, locks, or state transitions changed) with zero console errors or UI assertion failures.
+   - Click **`Express stop`** on the table, **click `Revert` on BOTH `Use minified JS` and `Use minified CSS`**, and close the browser tab (`page.close()`).
+6. **Fix Any Issues Found**:
+   - Fix any failure, add a targeted regression test, and re-run Steps 3–5 until completely green.
+7. **Format, Commit & Push**:
+   - Run `npx prettier --write` on modified TS/JS/CSS/MD/JSON files (never `tichu.game.php`), re-run `npm run build && npm run test:contracts && npm run phpstan` if formatting touched code (and re-sync via `npm run deploy:sftp` so Studio matches `HEAD`), verify `git status` is clean of scratch/unwanted files, commit on `main`, and push via:
+     `git push https://www.github.com/bro314/tichu.git main && git update-ref refs/remotes/origin/main HEAD`
+8. **Read-Only Bug & Production Error Audit**:
+   - Review `local/bugs/open-issues.json` and `local/bugs/prod-errors-state.json` (plus read-only BGA bug tracker / Sentry checks if logged in) to identify tickets resolved or progressed by the release.
+9. **HARD STOP — Present Release Readiness Report & Ask Approval**:
+   - Summarize: (a) test & Studio dry-run results, (b) what changed since the last release + a ready-to-paste Studio release note (`<= 250` chars), (c) BGA tickets needing updates + plain-text draft replies (no backticks), (d) highest-risk production areas to watch post-deploy. Wait for explicit user confirmation before clicking `Commit & build a new version now`, `Deploy to production`, or posting BGA bug comments.
+
+---
 
 ## 1. Pushing a Release to Production (`boardgamearena.com`) & Rolling Back
 

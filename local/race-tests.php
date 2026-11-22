@@ -807,7 +807,13 @@ function decidePlayComboMove(\Tichu $game, int $pid, array $hand): array
   $last = \LogManager::getLastCombo();
   $wish = (int) $game->getGameStateValue('mahjongWish');
   if ($wish > 0 && (new \Hand($hand))->canFulFillWish($wish, $last)) {
-    $idsList = \LocalTichuBot::findPlayableComboIds($hand, $last, $wish);
+    $idsList = \LocalTichuBot::findPlayableComboIds($hand, $last, $wish, true, true);
+    if (empty($idsList)) {
+      $fallback = (new \Hand($hand))->findPlayableCombo($last, $wish);
+      if ($fallback !== null && !empty($fallback->cards)) {
+        $idsList = array_map(static fn($c) => (string) $c['id'], $fallback->cards);
+      }
+    }
     if (!empty($idsList)) {
       return ['playCombo', ['cards' => implode(';', $idsList)]];
     }

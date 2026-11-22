@@ -6,12 +6,12 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 ## 1. Progressive-Disclosure Skills & Reference Docs
 
-| Topic / Trigger                                                                                                                    | Read Before Acting                                                                                         |
-| :--------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
-| **Studio SFTP sync, `browser` subagent, `#studio-test-bar`, `window.tt`, `npm run local`**                                         | [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md)           |
-| **Actions, multiactive/out-of-turn locks, MySQL 8.0 `SERIALIZABLE`, `npm run test:race`**                                          | [tichu-concurrency-locks](file:///Users/brohlfs/git/tichu/.agents/skills/tichu-concurrency-locks/SKILL.md) |
-| **Production releases/rollbacks, backwards/forwards compatibility, `upgradeTableDb`, `@thoun` autopass, i18n**                     | [bga-release-and-qa](file:///Users/brohlfs/git/tichu/.agents/skills/bga-release-and-qa/SKILL.md)           |
-| **BGA bug reports (`game=1237`), Studio Sentry issues (`check-prod-errors.js`), SQL dump import, 7-surface `player_id` remapping** | [bga-bug-triage](file:///Users/brohlfs/git/tichu/.agents/skills/bga-bug-triage/SKILL.md)                   |
+| Topic / Trigger                                                                                                                     | Read Before Acting                                                                                         |
+| :---------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Studio SFTP sync, `browser` subagent, `#studio-test-bar`, `window.tt`, `npm run local`**                                          | [bga-studio-testing](file:///Users/brohlfs/git/tichu/.agents/skills/bga-studio-testing/SKILL.md)           |
+| **Actions, multiactive/out-of-turn locks, MySQL 8.0 `SERIALIZABLE`, `npm run test:race`**                                           | [tichu-concurrency-locks](file:///Users/brohlfs/git/tichu/.agents/skills/tichu-concurrency-locks/SKILL.md) |
+| **"Prepare a release", production releases/rollbacks, backwards/forwards compatibility, `upgradeTableDb`, `@thoun` autopass, i18n** | [bga-release-and-qa](file:///Users/brohlfs/git/tichu/.agents/skills/bga-release-and-qa/SKILL.md)           |
+| **BGA bug reports (`game=1237`), Studio Sentry issues (`check-prod-errors.js`), SQL dump import, 7-surface `player_id` remapping**  | [bga-bug-triage](file:///Users/brohlfs/git/tichu/.agents/skills/bga-bug-triage/SKILL.md)                   |
 
 - **Authoritative Stubs (Beat the Wiki)**: [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) (PHP) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) (JS/TS). Re-download `/tichu/_ide_helper.php` via SFTP if checking newer Studio APIs.
 - **Official BGA Docs**: https://doc.studio.boardgamearena.com/ (2025–2026 PHP 8.4/ES2022) and https://en.doc.boardgamearena.com/Studio (classic `Deck`/`ebg/stock`).
@@ -117,13 +117,13 @@ Compact architecture, invariants, and command guide for **Tichu** on [Board Game
 
 - **PATH & Build**: Ensure `/opt/homebrew/bin` is on `PATH`. Always run `npm run build` (`npm test && npm run compile && npm run bundle`) after editing `.ts` or `.php` files.
 - **Test & Dev Commands**:
-  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand`, Studio runtime, and headless `ReplayEngine` tests (`npm run test:validator`: `combo-validator.test.ts` + `replay.test.ts`) + 19-suite MySQL 8.0 integration tests (~4s)
+  - `npm test` — PHPUnit unit tests (~15ms) + TS `Combo`/`Hand`, Studio runtime, and headless `ReplayEngine` tests (`npm run test:validator`: `combo-validator.test.ts` + `replay.test.ts`) + 20-suite MySQL 8.0 integration tests (~4–7s)
   - `npm run test:contracts` — static cross-stack & bundled `tichu.js` i18n/version/notify contract checks (`php local/check-contracts.php`)
   - `npm run phpstan` — PHP static analysis (`phpstan.neon`, Level 6)
   - `npm run test:race` — multi-worker MySQL 8.0 concurrency stress test (~70s, opt-in)
   - `npm run bug:import -- <file.sql> [--state=<id>] [--inspect]` / `npm run bug:inspect` — import a BGA production bug SQL dump into local MySQL 8.0 (two-phase remapping across all 7 `player_id` surfaces) and print a diagnostic state/card/log summary
   - `npm run local` — local MySQL 8.0 + PHP BGA runner (`local/dev-server.mjs`) at `http://127.0.0.1:8080` with automatic `src/` TypeScript compile + atomic `tichu.js` rebuild on save and `?v=filemtime` asset cache-busting (mounts unified `#studio-test-bar` inside `#local-dev-bar` and exposes `window.tt` + Studio-only `debug_botStep` / `debug_botOthers` / `debug_botSuggest` backed by `TichuBot` in `modules/Bot.php`; use `npm run watch` for watch-only compilation)
-  - `npm run deploy:sftp` / `npm run deploy:sftp:all` — upload to `sftp.studio.boardgamearena.com:22` (~3–5s; with no args `deploy:sftp` inspects `git status --porcelain`, uploading only `tichu.js` when clean — pass explicit paths like `npm run deploy:sftp -- tichu.js tichu.game.php`, or `npm run deploy:sftp:all` before building a release)
+  - `npm run deploy:sftp` / `npm run deploy:sftp:all` — upload to `sftp.studio.boardgamearena.com:22` (~3–5s; with no args `deploy:sftp` inspects `git status --porcelain`, uploading only `tichu.js` when clean — pass explicit paths like `npm run deploy:sftp -- tichu.js tichu.game.php`, `--since <ref>`, or `npm run deploy:sftp:all` before building a release; includes top-level `img/` assets and excludes `img/highres/` and `img/svg/`)
   - `npm run format` — format TS, JS, CSS, and Markdown with Prettier (do **not** run `@prettier/plugin-php` on `tichu.game.php`, which is omitted from `.prettierrc` and reformats unrelated lines)
 - **Production Safety**: **NEVER** build a release or deploy to `boardgamearena.com` without **explicit user confirmation first**.
 - **GitHub HTTPS Push Quirk** (global `~/.gitconfig` rewrites `https://github.com/` to SSH `git@github.com:` which fails):
