@@ -288,6 +288,12 @@ function runMain(array $opts): int
       continue;
     }
 
+    // Refresh parent-process global cache (workers mutate global rows in separate processes)
+    $game->gamestate->table_globals = \APP_DbObject::getCollectionFromDb(
+      'SELECT global_id, global_value FROM global',
+      true
+    );
+
     $burst = planBurst($game, $snap);
     $results = dispatchBurst($workers, $burst);
     $stats['bursts']++;
