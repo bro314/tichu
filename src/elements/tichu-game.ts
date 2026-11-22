@@ -120,6 +120,7 @@ export class TichuGame extends LitElement {
   private syncExternalClasses() {
     if (typeof document === "undefined") return;
     const targets = [
+      document.documentElement,
       document.getElementById("overall-content"),
       document.getElementById("game_play_area"),
       document.body,

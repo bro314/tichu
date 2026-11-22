@@ -309,7 +309,7 @@ export class TichuPassArea extends LitElement {
                   >`
             }
           </div>
-          <div class="playertablename" style="color: #${color}">${name}</div>
+          <div class="playertablename" style=${this.getPlayerNameColorStyle(color)}>${name}</div>
         </div>
         <div class="playertablecard" id="give_${slot.dir}">
           <div class="givePassCard" id="giveplayertable_${slot.dir}"></div>
@@ -492,6 +492,19 @@ export class TichuPassArea extends LitElement {
       w,
       h,
     );
+  }
+
+  private getPlayerNameColorStyle(hexColor: string): string {
+    const clean = String(hexColor || "000000")
+      .replace(/^#/, "")
+      .toLowerCase();
+    if (clean === "000000" || clean === "000") {
+      return `color: var(--tichu-team-dark-fg, #${clean})`;
+    }
+    if (clean === "ff0000" || clean === "cc0000" || clean === "e00000" || clean === "f00") {
+      return `color: var(--tichu-team-red-fg, #${clean})`;
+    }
+    return `color: #${clean}`;
   }
 
   private onSlotClick(index: number) {

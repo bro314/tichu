@@ -11,13 +11,13 @@ export function getThemeLabel(themeNo: number): string {
     case 0:
       return _("wood dark");
     case 1:
-      return _("blue");
+      return _("midnight slate");
     case 2:
       return _("blue gray");
     case 3:
       return _("pink");
     case 4:
-      return _("wood light");
+      return _("warm linen");
     case 5:
       return _("red beige");
     case 6:
@@ -29,7 +29,7 @@ export function getThemeLabel(themeNo: number): string {
     case 9:
       return _("brown");
     case 10:
-      return _("green");
+      return _("jade felt");
     default:
       return "";
   }
@@ -411,8 +411,7 @@ export class TichuSettingsModal extends LitElement {
           overflow: hidden;
           border: 1px solid rgba(0, 0, 0, 0.12);
         }
-        .theme0 .theme-swatch,
-        .theme4 .theme-swatch {
+        .theme0 .theme-swatch {
           background: linear-gradient(135deg, #cbb28e 0%, #bda077 100%);
         }
         .theme-swatch .bg {

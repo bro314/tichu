@@ -73,9 +73,38 @@ export const styles = css`
     --bg-color-lighter: rgba(252, 246, 238, 0.86);
   }
   .theme1 {
-    --bg-color-html: hsl(225 35% 15% / 1);
-    --bg-color-play-area: hsl(225 20% 65% / 1);
-    --bg-color-lighter: hsl(225 30% 90% / 1);
+    --bg-color-html: #0f141c;
+    --bg-color-play-area: #1e293b;
+    --bg-color-lighter: #334155;
+    --bg-color-active: #38bdf8;
+    --tichu-surface-bg: rgba(30, 38, 52, 0.88);
+    --tichu-surface-active-bg: rgba(38, 49, 68, 0.96);
+    --tichu-surface-border: rgba(148, 163, 184, 0.18);
+    --tichu-surface-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.35), 0 10px 24px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --tichu-active-border: #38bdf8;
+    --tichu-active-glow: rgba(56, 189, 248, 0.26);
+    --tichu-active-shadow:
+      0 0 0 3px rgba(56, 189, 248, 0.26), 0 10px 28px rgba(14, 165, 233, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --tichu-bar-bg: rgba(22, 28, 39, 0.9);
+    --tichu-bar-top: rgba(148, 163, 184, 0.14);
+    --tichu-bar-bottom: rgba(0, 0, 0, 0.4);
+    --tichu-bar-shadow: 0 4px 16px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    --tichu-text: #f1f5f9;
+    --tichu-text-muted: #cbd5e1;
+    --tichu-team-dark-fg: #f1f5f9;
+    --tichu-team-red-fg: #fb7185;
+    --tichu-divider: rgba(148, 163, 184, 0.18);
+    --tichu-select-ring: #38bdf8;
+    --tichu-select-glow: rgba(56, 189, 248, 0.42);
+    --tichu-btn-sec-bg: rgba(51, 65, 85, 0.92);
+    --tichu-btn-sec-bg-hover: rgba(71, 85, 105, 0.96);
+    --tichu-btn-sec-bg-active: rgba(30, 41, 59, 0.96);
+    --tichu-btn-sec-border: rgba(148, 163, 184, 0.28);
+    --tichu-btn-sec-fg: #f1f5f9;
+    --tichu-btn-sec-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
   .theme2 {
     --bg-color-html: hsl(203 37% 20% / 1);
@@ -88,9 +117,35 @@ export const styles = css`
     --bg-color-lighter: hsl(32 66% 90% / 1);
   }
   .theme4 {
-    --bg-color-html: transparent;
-    --bg-color-play-area: rgba(255, 255, 255, 0.3);
-    --bg-color-lighter: rgba(255, 255, 255, 0.7);
+    --bg-color-html: #e3ded5;
+    --bg-color-play-area: #f6f3ed;
+    --bg-color-lighter: rgba(255, 255, 255, 0.92);
+    --bg-color-active: #e11d48;
+    --tichu-surface-bg: rgba(255, 255, 255, 0.92);
+    --tichu-surface-active-bg: #ffffff;
+    --tichu-surface-border: rgba(15, 23, 42, 0.08);
+    --tichu-surface-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.06), 0 6px 16px rgba(15, 23, 42, 0.07),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    --tichu-active-border: #e11d48;
+    --tichu-active-glow: rgba(225, 29, 72, 0.16);
+    --tichu-active-shadow:
+      0 0 0 3px rgba(225, 29, 72, 0.16), 0 8px 22px rgba(225, 29, 72, 0.12), inset 0 1px 0 #ffffff;
+    --tichu-bar-bg: rgba(255, 255, 255, 0.86);
+    --tichu-bar-top: rgba(15, 23, 42, 0.07);
+    --tichu-bar-bottom: rgba(15, 23, 42, 0.09);
+    --tichu-bar-shadow: 0 2px 10px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --tichu-text: #18181b;
+    --tichu-text-muted: #52525b;
+    --tichu-divider: rgba(24, 24, 27, 0.1);
+    --tichu-select-ring: #2563eb;
+    --tichu-select-glow: rgba(37, 99, 235, 0.28);
+    --tichu-btn-sec-bg: #ffffff;
+    --tichu-btn-sec-bg-hover: #fafafa;
+    --tichu-btn-sec-bg-active: #f4f4f5;
+    --tichu-btn-sec-border: rgba(24, 24, 27, 0.15);
+    --tichu-btn-sec-fg: #18181b;
+    --tichu-btn-sec-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   }
   .theme5 {
     --bg-color-html: hsl(0 0% 25% / 1);
@@ -119,9 +174,36 @@ export const styles = css`
     --bg-color-lighter: hsl(33 68% 85% / 1);
   }
   .theme10 {
-    --bg-color-html: hsl(91, 23%, 26%);
-    --bg-color-play-area: hsl(87, 24%, 61%);
-    --bg-color-lighter: hsl(35, 69%, 94%);
+    --bg-color-html: #0d2b24;
+    --bg-color-play-area: #195645;
+    --bg-color-lighter: rgba(252, 250, 245, 0.93);
+    --bg-color-active: #d97706;
+    --tichu-surface-bg: rgba(252, 250, 245, 0.93);
+    --tichu-surface-active-bg: #fffdf8;
+    --tichu-surface-border: rgba(255, 255, 255, 0.72);
+    --tichu-surface-shadow:
+      0 2px 4px rgba(4, 24, 18, 0.22), 0 8px 20px rgba(4, 24, 18, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    --tichu-active-border: #d97706;
+    --tichu-active-glow: rgba(245, 158, 11, 0.34);
+    --tichu-active-shadow:
+      0 0 0 3px rgba(245, 158, 11, 0.34), 0 10px 26px rgba(4, 24, 18, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --tichu-bar-bg: rgba(10, 38, 31, 0.72);
+    --tichu-bar-top: rgba(167, 243, 208, 0.14);
+    --tichu-bar-bottom: rgba(0, 0, 0, 0.25);
+    --tichu-bar-shadow: 0 4px 16px rgba(4, 20, 15, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    --tichu-text: #142620;
+    --tichu-text-muted: #3f554c;
+    --tichu-divider: rgba(20, 38, 32, 0.12);
+    --tichu-select-ring: #f59e0b;
+    --tichu-select-glow: rgba(251, 191, 36, 0.42);
+    --tichu-btn-sec-bg: rgba(252, 250, 245, 0.94);
+    --tichu-btn-sec-bg-hover: #ffffff;
+    --tichu-btn-sec-bg-active: #f1efe9;
+    --tichu-btn-sec-border: rgba(255, 255, 255, 0.35);
+    --tichu-btn-sec-fg: #142620;
+    --tichu-btn-sec-shadow: 0 1px 3px rgba(4, 20, 15, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   }
 
   .bgabutton {

@@ -440,7 +440,9 @@ export class TichuLastPlayed extends LitElement {
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
         <div class="last-played-player">
-          <div class="playertablename" style="color: #${player.color}">${player.name}</div>
+          <div class="playertablename" style=${this.getPlayerNameColorStyle(player.color)}>
+            ${player.name}
+          </div>
           <div class="last-played-icons">
             <span class="stat-group" data-tooltip=${_("Cards in hand")} data-tooltip-touch="tap">
               <div class="icon hand" id="icon_hand_${id}"></div>
@@ -698,6 +700,19 @@ export class TichuLastPlayed extends LitElement {
       w,
       h,
     );
+  }
+
+  private getPlayerNameColorStyle(hexColor: string): string {
+    const clean = String(hexColor || "000000")
+      .replace(/^#/, "")
+      .toLowerCase();
+    if (clean === "000000" || clean === "000") {
+      return `color: var(--tichu-team-dark-fg, #${clean})`;
+    }
+    if (clean === "ff0000" || clean === "cc0000" || clean === "e00000" || clean === "f00") {
+      return `color: var(--tichu-team-red-fg, #${clean})`;
+    }
+    return `color: #${clean}`;
   }
 
   private onShowCurrentTrick() {
