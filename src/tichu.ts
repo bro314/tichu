@@ -373,8 +373,26 @@ export class Tichu {
     return false;
   }
 
+  canPlaySound(): boolean {
+    if (
+      typeof document !== "undefined" &&
+      (document.hidden || document.visibilityState === "hidden")
+    ) {
+      return false;
+    }
+    if ((this as any).instantaneousMode) return false;
+    if (typeof window !== "undefined" && (window as any).__tichuSpeed === "instant") {
+      return false;
+    }
+    if ((this.notifqueue as any)?.speedMode === "instant") return false;
+    if (typeof this.bgaAnimationsActive === "function") {
+      return Boolean(this.bgaAnimationsActive());
+    }
+    return true;
+  }
+
   playLaserSound() {
-    if (!this.areAnimationsActive()) return;
+    if (!this.canPlaySound()) return;
     if (typeof playSound === "function") {
       playSound("tichu_laser");
     }
@@ -1909,9 +1927,9 @@ export class Tichu {
     }
     window.gameModel?.applyGrandTichuBet(playerId, bet);
     if (bet === Bet.GRAND_TICHU) {
+      this.playLaserSound();
       if (this.areAnimationsActive()) {
         window.gameModel?.triggerBetAnimation(playerId, 200);
-        this.playLaserSound();
         const rawBetMs = this.getAnimTiming("betSplashNotifMs", 600);
         const speed =
           (typeof window !== "undefined" ? (window as any).__tichuSpeed : undefined) ??
@@ -1946,9 +1964,9 @@ export class Tichu {
     }
     window.gameModel?.applyTichuBet(playerId, bet);
     if (bet === Bet.TICHU) {
+      this.playLaserSound();
       if (this.areAnimationsActive()) {
         window.gameModel?.triggerBetAnimation(playerId, 100);
-        this.playLaserSound();
         const rawBetMs = this.getAnimTiming("betSplashNotifMs", 600);
         const speed =
           (typeof window !== "undefined" ? (window as any).__tichuSpeed : undefined) ??

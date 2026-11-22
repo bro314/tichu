@@ -2235,6 +2235,8 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
     const savedGameModel = g.window.gameModel;
     const savedGameUi = g.window.gameui;
     const savedPlaySound = g.playSound;
+    const savedHidden = g.document.hidden;
+    const savedVisibilityState = g.document.visibilityState;
     try {
       const ui = new (declaredClass || Tichu)();
       ui.player_id = 2385074;
@@ -2313,9 +2315,10 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
       g.playSound = () => {
         laserPlayed++;
       };
+      // Disabling Animations (pref 105 = 2) skips visual bet splash, but keeps Tichu sound active
       ui.notif_tichuBet({ args: { player_id: 2385074, bet: Bet.TICHU } });
       assert.equal(model.getState().betAnimations.length, 0);
-      assert.equal(laserPlayed, 0);
+      assert.equal(laserPlayed, 1);
       assert.equal(syncDurations.at(-1), 1);
 
       // Re-enable via BGA preference callback
@@ -2325,7 +2328,8 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
       assert.equal(ui.shouldAnimate(), true);
       assert.equal(shouldAnimate(), true);
 
-      // Toggle off via in-hand widget handler -> updates model, cancels layer, persists pref 105 = 2
+      // Toggle off via in-hand widget handler -> updates model, cancels layer, persists pref 105 = 2,
+      // skips visual splash while still playing Grand Tichu sound
       ui.changeAnimations(false);
       assert.equal(model.getState().animationsEnabled, false);
       assert.equal(cancelledLayerCalls, 1);
@@ -2333,17 +2337,38 @@ test("Animations preference (105): readPrefs, onPreferenceChange, changeAnimatio
       assert.equal(shouldAnimate(), false);
       ui.notif_grandTichuBet({ args: { player_id: 2385075, bet: Bet.GRAND_TICHU } });
       assert.equal(model.getState().betAnimations.length, 0);
+      assert.equal(laserPlayed, 2);
       assert.equal(syncDurations.at(-1), 1);
 
-      // Re-enable via changeAnimations(true) -> bet splash triggers when enabled
+      // Background tab, instantaneousMode, and bgaAnimationsActive() === false keep sound muted
+      g.document.hidden = true;
+      g.document.visibilityState = "hidden";
+      ui.notif_tichuBet({ args: { player_id: 2385074, bet: Bet.TICHU } });
+      assert.equal(laserPlayed, 2);
+      g.document.hidden = false;
+      g.document.visibilityState = "visible";
+
+      ui.instantaneousMode = true;
+      ui.notif_grandTichuBet({ args: { player_id: 2385075, bet: Bet.GRAND_TICHU } });
+      assert.equal(laserPlayed, 2);
+      ui.instantaneousMode = false;
+
+      ui.bgaAnimationsActive = () => false;
+      ui.notif_tichuBet({ args: { player_id: 2385075, bet: Bet.TICHU } });
+      assert.equal(laserPlayed, 2);
+      ui.bgaAnimationsActive = () => true;
+
+      // Re-enable via changeAnimations(true) -> bet splash and sound trigger when enabled
       ui.changeAnimations(true);
       assert.deepEqual(persistedPrefs.at(-1), [105, 1]);
       assert.equal(shouldAnimate(), true);
       ui.notif_tichuBet({ args: { player_id: 2385075, bet: Bet.TICHU } });
       assert.equal(model.getState().betAnimations.length, 1);
-      assert.equal(laserPlayed, 1);
+      assert.equal(laserPlayed, 3);
       assert.equal(syncDurations.at(-1), 600);
     } finally {
+      g.document.hidden = savedHidden;
+      g.document.visibilityState = savedVisibilityState;
       g.window.gameModel = savedGameModel;
       g.window.gameui = savedGameUi;
       g.playSound = savedPlaySound;
