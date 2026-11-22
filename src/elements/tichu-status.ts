@@ -18,15 +18,22 @@ export class TichuStatus extends LitElement {
         display: inline-flex;
         flex-direction: column;
         align-items: stretch;
-        gap: 4px;
-        padding: 8px 10px;
-        color: #1f2328;
-        background: var(--bg-color-lighter, rgba(246, 231, 212, 0.8));
-        border-radius: var(--border-radius, 6px);
+        gap: 5px;
+        padding: 10px 12px;
+        color: var(--tichu-text, #1e293b);
+        background: var(--tichu-surface-bg, var(--bg-color-lighter, rgba(252, 246, 238, 0.88)));
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
+        border-radius: var(--border-radius, 12px);
         box-shadow: var(
-          --elevation,
-          0px 1px 2px 0px rgba(60, 64, 67, 0.3),
-          0px 1px 3px 1px rgba(60, 64, 67, 0.15)
+          --tichu-surface-shadow,
+          var(
+            --elevation,
+            0 1px 2px rgba(15, 23, 42, 0.08),
+            0 4px 12px rgba(15, 23, 42, 0.1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.65)
+          )
         );
       }
       .status-row {
@@ -34,13 +41,15 @@ export class TichuStatus extends LitElement {
         grid-template-columns: 22px minmax(2.5ch, auto);
         align-items: center;
         column-gap: 6px;
-        line-height: 24px;
+        font-size: 16px;
+        line-height: 22px;
         cursor: default;
       }
       .status-value {
         text-align: right;
         font-variant-numeric: tabular-nums;
-        font-weight: 600;
+        font-weight: 700;
+        color: var(--tichu-text, #1e293b);
       }
       .status-icon {
         --icon-size: 22px;
@@ -68,7 +77,7 @@ export class TichuStatus extends LitElement {
       .trick-action {
         margin-top: 3px;
         padding-top: 5px;
-        border-top: 1px solid rgba(31, 35, 40, 0.13);
+        border-top: 1px solid var(--tichu-divider, rgba(31, 35, 40, 0.13));
         display: flex;
         justify-content: center;
       }

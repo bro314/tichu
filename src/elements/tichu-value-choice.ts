@@ -27,9 +27,12 @@ export class TichuValueChoice extends LitElement {
         #phoenixpanel {
           margin: 0px 15px 15px 15px;
           padding: 15px;
-          background: var(--bg-color-lighter);
-          border-radius: var(--border-radius);
-          box-shadow: var(--elevation);
+          background: var(--tichu-surface-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
+          border-radius: var(--border-radius, 12px);
+          box-shadow: var(--tichu-surface-shadow, var(--elevation));
         }
         #mahjongpanel h3,
         #phoenixpanel h3 {
@@ -56,8 +59,13 @@ export class TichuValueChoice extends LitElement {
           background-image: var(--table-icons-url);
           background-repeat: no-repeat;
           background-origin: border-box;
-          border-radius: var(--border-radius);
-          box-shadow: 2px 2px 5px 3px #666;
+          border-radius: var(--tichu-card-radius, 8px);
+          box-shadow: var(
+            --tichu-card-shadow,
+            0 0 0 1px rgba(15, 23, 42, 0.12),
+            0 2px 4px rgba(15, 23, 42, 0.16),
+            0 6px 14px rgba(15, 23, 42, 0.18)
+          );
           cursor: pointer;
           position: relative;
           user-select: none;

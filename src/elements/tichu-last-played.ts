@@ -121,18 +121,30 @@ export class TichuLastPlayed extends LitElement {
         .last-played-container {
           position: relative;
           display: flex;
-          line-height: 24px;
-          font-size: 20px;
+          line-height: 1.35;
+          font-size: 16px;
           font-weight: bold;
-          border: 4px solid transparent;
-          padding: 6px;
-          background: var(--bg-color-lighter);
-          border-radius: var(--border-radius);
-          box-shadow: var(--elevation);
+          border: 2px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
+          padding: 8px 10px;
+          background: var(--tichu-surface-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border-radius: var(--border-radius, 12px);
+          box-shadow: var(--tichu-surface-shadow, var(--elevation));
         }
         .last-played-container.active,
         .last-played-container.bomb {
-          border: 4px solid var(--bg-color-active);
+          border: 2px solid var(--tichu-active-border, var(--bg-color-active, #dc2626));
+          background: var(
+            --tichu-surface-active-bg,
+            var(--tichu-surface-bg, var(--bg-color-lighter))
+          );
+          box-shadow: var(
+            --tichu-active-shadow,
+            0 0 0 3px var(--tichu-active-glow, rgba(220, 38, 38, 0.22)),
+            0 8px 22px rgba(15, 23, 42, 0.16),
+            inset 0 1px 0 rgba(255, 255, 255, 0.85)
+          );
         }
         .last-played-container.winning-linger {
           box-shadow: 0 0 16px rgba(251, 191, 36, 0.8);
@@ -146,6 +158,16 @@ export class TichuLastPlayed extends LitElement {
             transition: none;
           }
         }
+        @media (forced-colors: active) {
+          .last-played-container {
+            border-color: CanvasText;
+          }
+          .last-played-container.active,
+          .last-played-container.bomb {
+            border-color: Highlight;
+            outline: 2px solid Highlight;
+          }
+        }
         .last-played-container.disabled:not(.lastComboPlayer) .disabler {
           display: block;
         }
@@ -157,16 +179,26 @@ export class TichuLastPlayed extends LitElement {
           flex-shrink: 0;
         }
         .playertablename {
-          font-weight: bold;
+          font-size: 17px;
+          font-weight: 700;
+          letter-spacing: -0.015em;
+          margin-bottom: 4px;
           overflow: hidden;
           text-overflow: ellipsis;
         }
         .last-played-player .last-played-icons {
-          top: 2px;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 6px;
         }
         .last-played-player .last-played-icons .count {
           display: inline-block;
-          width: 40px;
+          font-size: 14.5px;
+          font-weight: 600;
+          font-variant-numeric: tabular-nums;
+          color: var(--tichu-text-muted, #334155);
+          min-width: 24px;
         }
         .last-played-player .stat-group {
           display: inline;

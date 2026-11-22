@@ -138,11 +138,13 @@ export class TichuHand extends LitElement {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: 8px;
-          border: 1.5px solid rgba(31, 35, 40, 0.24);
-          background: var(--bg-color-lighter);
-          color: #1f2328;
-          box-shadow: var(--elevation);
+          border-radius: 10px;
+          border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.6));
+          background: var(--tichu-surface-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          color: var(--tichu-text, #1f2328);
+          box-shadow: var(--tichu-surface-shadow, var(--elevation));
           cursor: pointer;
           transition:
             background-color 140ms ease,

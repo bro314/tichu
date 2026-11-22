@@ -37,8 +37,8 @@ export class TichuGame extends LitElement {
           --bg-color-light: #eee;
           --bg-color-html: rgba(0, 0, 0, 0.3);
           --bg-color-play-area: rgba(255, 255, 255, 0.3);
-          --bg-color-lighter: rgba(246, 231, 212, 0.8);
-          --bg-color-active: rgba(200, 0, 0, 0.9);
+          --bg-color-lighter: rgba(252, 246, 238, 0.86);
+          --bg-color-active: #dc2626;
         }
         #tichu-game-root {
           position: relative;

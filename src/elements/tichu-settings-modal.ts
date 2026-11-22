@@ -75,7 +75,16 @@ export class TichuSettingsModal extends LitElement {
             0 20px 50px rgba(15, 23, 42, 0.36),
             0 4px 14px rgba(15, 23, 42, 0.16)
           );
-          font-family: Roboto, Arial, sans-serif;
+          font-family: var(
+            --tichu-font-sans,
+            Inter,
+            -apple-system,
+            BlinkMacSystemFont,
+            "Segoe UI",
+            Roboto,
+            Arial,
+            sans-serif
+          );
           font-size: 14px;
           line-height: 1.4;
           opacity: 0;

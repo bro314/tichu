@@ -48,8 +48,17 @@ export class TichuActionBar extends LitElement {
           grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr);
           column-gap: 10px;
           align-items: center;
-          background-color: var(--bg-color-lighter);
-          box-shadow: var(--elevation);
+          background: var(--tichu-bar-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          border-top: 1px solid
+            var(--tichu-bar-top, var(--tichu-surface-border, rgba(255, 255, 255, 0.55)));
+          border-bottom: 1px solid var(--tichu-bar-bottom, rgba(15, 23, 42, 0.1));
+          box-shadow: var(
+            --tichu-bar-shadow,
+            0 2px 10px rgba(15, 23, 42, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.65)
+          );
         }
         #buttons > div {
           min-width: 0;
@@ -100,7 +109,6 @@ export class TichuActionBar extends LitElement {
           margin: 0;
           width: 100%;
           box-sizing: border-box;
-          box-shadow: none;
           text-shadow: none;
         }
         @media (max-width: 760px) {

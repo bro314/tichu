@@ -111,8 +111,13 @@ export class TichuCard extends LitElement {
           background-size: var(--bg-width) var(--bg-height);
           background-position-x: var(--x-pos);
           background-position-y: var(--y-pos);
-          border-radius: var(--border-radius, 6px);
-          box-shadow: 2px 2px 5px 3px #666;
+          border-radius: var(--tichu-card-radius, 8px);
+          box-shadow: var(
+            --tichu-card-shadow,
+            0 0 0 1px rgba(15, 23, 42, 0.12),
+            0 2px 4px rgba(15, 23, 42, 0.16),
+            0 6px 14px rgba(15, 23, 42, 0.18)
+          );
           box-sizing: border-box;
           transition:
             translate var(--tichu-card-select-ms, 100ms)
@@ -125,39 +130,47 @@ export class TichuCard extends LitElement {
         div#card.passed-highlight {
           box-shadow:
             0 0 0 2px #0ea5e9,
-            0 0 10px rgba(14, 165, 233, 0.72),
-            2px 2px 5px 3px #666;
+            0 0 12px rgba(14, 165, 233, 0.55),
+            0 4px 12px rgba(15, 23, 42, 0.18);
         }
         div#card.wish-match {
           box-shadow:
-            0 0 0 2px #f5b041,
-            0 0 10px rgba(245, 176, 65, 0.75),
-            2px 2px 5px 3px #666;
+            0 0 0 2px #f59e0b,
+            0 0 12px rgba(245, 158, 11, 0.58),
+            0 4px 12px rgba(15, 23, 42, 0.18);
         }
         div#card.stockitem_selected {
           translate: 0 -20px;
-          border: 1px solid #dda !important;
-          box-shadow:
-            0px 0px 4px 1px #ff8,
-            2px 2px 5px 3px #666;
+          border: none !important;
+          box-shadow: var(
+            --tichu-card-selected-shadow,
+            0 0 0 2.5px var(--tichu-select-ring, #0284c7),
+            0 0 0 4.5px var(--tichu-select-glow, rgba(56, 189, 248, 0.32)),
+            0 10px 22px rgba(15, 23, 42, 0.28)
+          );
         }
         div#card.passed-highlight.stockitem_selected {
           box-shadow:
-            0 0 0 2px #0ea5e9,
-            0 0 12px 2px #ff8,
-            2px 2px 5px 3px #666;
+            0 0 0 2.5px #0ea5e9,
+            0 0 0 4.5px rgba(14, 165, 233, 0.35),
+            0 10px 22px rgba(15, 23, 42, 0.28);
         }
         div#card.wish-match.stockitem_selected {
           box-shadow:
-            0 0 0 2px #f5b041,
-            0 0 12px 2px #ff8,
-            2px 2px 5px 3px #666;
+            0 0 0 2.5px #f59e0b,
+            0 0 0 4.5px rgba(245, 158, 11, 0.38),
+            0 10px 22px rgba(15, 23, 42, 0.28);
         }
         div#card.pass {
           background-size: cover;
           background-position: center;
-          opacity: 0.9;
-          box-shadow: 5px 5px 5px 0px #666;
+          opacity: 0.92;
+          box-shadow: var(
+            --tichu-card-shadow,
+            0 0 0 1px rgba(15, 23, 42, 0.12),
+            0 2px 4px rgba(15, 23, 42, 0.16),
+            0 6px 14px rgba(15, 23, 42, 0.18)
+          );
         }
         .card-footer {
           position: relative;

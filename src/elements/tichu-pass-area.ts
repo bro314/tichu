@@ -47,8 +47,12 @@ export class TichuPassArea extends LitElement {
           text-align: center;
           width: 140px;
           height: 248px;
-          border-radius: var(--border-radius);
-          background: var(--bg-color-lighter);
+          border-radius: var(--border-radius, 12px);
+          border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
+          background: var(--tichu-surface-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          box-shadow: var(--tichu-surface-shadow, var(--elevation));
           padding: 10px;
           margin: 10px 0;
         }

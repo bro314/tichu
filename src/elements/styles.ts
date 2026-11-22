@@ -26,10 +26,23 @@ export const button = css`
 
 export const styles = css`
   :host {
-    --border-radius: 6px;
-    --elevation: 0px 1px 2px 0px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);
-    color: #1f2328;
-    font-family: Roboto, Arial, sans-serif;
+    --border-radius: 12px;
+    --tichu-card-radius: 8px;
+    --elevation:
+      0 1px 2px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    color: var(--tichu-text, #1f2328);
+    font-family: var(
+      --tichu-font-sans,
+      Inter,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      Roboto,
+      Arial,
+      sans-serif
+    );
+    -webkit-font-smoothing: antialiased;
   }
 
   *,
@@ -43,7 +56,7 @@ export const styles = css`
     padding: 0;
     font-size: 20px;
     font-weight: 700;
-    color: #1f2328;
+    color: var(--tichu-text, #1f2328);
   }
 
   a {
@@ -57,7 +70,7 @@ export const styles = css`
   .theme0 {
     --bg-color-html: rgba(0, 0, 0, 0.3);
     --bg-color-play-area: rgba(255, 255, 255, 0.3);
-    --bg-color-lighter: rgba(246, 231, 212, 0.8);
+    --bg-color-lighter: rgba(252, 246, 238, 0.86);
   }
   .theme1 {
     --bg-color-html: hsl(225 35% 15% / 1);
@@ -113,193 +126,164 @@ export const styles = css`
 
   .bgabutton {
     display: inline-block;
-    padding: 6px 12px;
-    font-size: 14px;
-    font-weight: 700;
-    border-radius: 6px;
+    padding: 7px 14px;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border-radius: 8px;
     cursor: pointer;
     text-decoration: none !important;
-    box-shadow: 0 1px #000;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.14),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
     color: #fff;
-    text-shadow: #0006 0 1px 0;
+    text-shadow: none;
     vertical-align: middle;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     margin-top: 10px;
     margin-bottom: 10px;
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      box-shadow 140ms ease,
+      transform 120ms ease,
+      filter 140ms ease;
   }
   .bgabutton:hover {
     text-decoration: none !important;
   }
+  .bgabutton:active:not(.disabled) {
+    transform: translateY(1px);
+  }
+  .bgabutton:focus-visible {
+    outline: 2px solid var(--tichu-select-ring, #0284c7);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bgabutton {
+      transition: none;
+    }
+    .bgabutton:active:not(.disabled) {
+      transform: none;
+    }
+  }
   .bgabutton.disabled,
   .bgabutton.disabled:hover,
   .bgabutton.disabled:active {
-    opacity: 0.55;
+    opacity: 0.52;
     cursor: not-allowed;
     filter: grayscale(0.35);
     box-shadow: none;
+    transform: none;
   }
   .bgabutton_blue,
   .bgabutton_primary {
-    background:
-      var(
-        --game-bga-button-primary,
-        linear-gradient(180deg, #0b72b5 0%, #244587 100%) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-primary-border,
-        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
-      );
-    color: var(--game-bga-color-white, #fff);
+    background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+    border: 1px solid #1e40af;
+    color: #ffffff;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
   .bgabutton_blue:hover,
   .bgabutton_primary:hover {
-    background:
-      var(
-        --game-bga-button-primary-hover,
-        linear-gradient(180deg, #0692ea, #244587) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-primary-border,
-        linear-gradient(180deg, #809ac0, #5b6095) no-repeat border-box
-      );
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    border-color: #1d4ed8;
   }
   .bgabutton_blue:active,
   .bgabutton_primary:active {
-    background:
-      var(
-        --game-bga-button-primary-active,
-        linear-gradient(180deg, #244587 0%, #0b72b5 100%) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-primary-border-active,
-        linear-gradient(180deg, #5b6095, #809ac0) no-repeat border-box
-      );
+    background: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%);
   }
   .bgabutton_red,
   .bgabutton_alert {
-    background:
-      var(--game-bga-button-alert, linear-gradient(180deg, #e42421, #86211f) no-repeat border-box),
-      var(
-        --game-bga-button-alert-border,
-        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
-      );
-    color: var(--game-bga-color-white, #fff);
+    background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
+    border: 1px solid #991b1b;
+    color: #ffffff;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
   }
   .bgabutton_red:hover,
   .bgabutton_alert:hover {
-    background:
-      var(
-        --game-bga-button-alert-hover,
-        linear-gradient(180deg, #ff6247, #86211f) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-alert-border,
-        linear-gradient(180deg, #e44e2a, #863534) no-repeat border-box
-      );
+    background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+    border-color: #b91c1c;
   }
   .bgabutton_red:active,
   .bgabutton_alert:active {
-    background:
-      var(
-        --game-bga-button-alert-active,
-        linear-gradient(180deg, #86211f, #e42421) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-alert-border-active,
-        linear-gradient(180deg, #863534, #e44e2a) no-repeat border-box
-      );
+    background: linear-gradient(180deg, #b91c1c 0%, #991b1b 100%);
   }
   .bgabutton_green {
-    background: linear-gradient(180deg, #799332, #89a538);
-    border: 1px solid #697f2b;
-    color: #fff;
+    background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+    border: 1px solid #166534;
+    color: #ffffff;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
   .bgabutton_green:hover {
-    background: #89a538;
-    color: #fff;
+    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    border-color: #15803d;
+    color: #ffffff;
   }
   .bgabutton_green:active {
-    background: #697f2b;
-    border-top-color: #697f2b;
+    background: linear-gradient(180deg, #15803d 0%, #166534 100%);
   }
   .bgabutton_gray,
   .bgabutton_secondary {
-    background:
-      var(
-        --game-bga-button-secondary,
-        linear-gradient(180deg, #f4f4f4 0%, #cacaca 100%) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-secondary-border,
-        linear-gradient(180deg, #fff, #dedede) no-repeat border-box
-      );
-    color: var(--game-bga-button-secondary-text, #014090);
-    padding: 5px 11px;
+    background: var(--tichu-btn-sec-bg, rgba(255, 255, 255, 0.92));
+    border: 1px solid var(--tichu-btn-sec-border, rgba(15, 23, 42, 0.16));
+    color: var(--tichu-btn-sec-fg, #1e293b);
+    box-shadow: var(
+      --tichu-btn-sec-shadow,
+      0 1px 2px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9)
+    );
     position: relative;
     text-shadow: none;
   }
-  .bgabutton_gray::after,
-  .bgabutton_secondary::after {
-    border: 1px solid var(--game-bga-button-secondary-outline, #ababab);
-    border-radius: 5px;
-    content: " ";
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    pointer-events: none;
-    position: absolute;
-  }
   .bgabutton_gray:hover,
   .bgabutton_secondary:hover {
-    background:
-      var(
-        --game-bga-button-secondary-hover,
-        linear-gradient(180deg, #fefefe, #cacaca) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-secondary-border-hover,
-        linear-gradient(180deg, #fff, #e8e8e8) no-repeat border-box
-      );
-    color: var(--game-bga-button-secondary-text, #014090);
+    background: var(--tichu-btn-sec-bg-hover, #ffffff);
+    border-color: var(--tichu-btn-sec-border, rgba(15, 23, 42, 0.24));
+    color: var(--tichu-btn-sec-fg, #1e293b);
   }
   .bgabutton_gray:active,
   .bgabutton_secondary:active {
-    background:
-      var(
-        --game-bga-button-secondary-active,
-        linear-gradient(180deg, #cacaca 0%, #f4f4f4 100%) no-repeat border-box
-      ),
-      var(
-        --game-bga-button-secondary-border-active,
-        linear-gradient(180deg, #e8e8e8, #fff) no-repeat border-box
-      );
-    color: var(--game-bga-button-secondary-text, #014090);
+    background: var(--tichu-btn-sec-bg-active, #f1f5f9);
+    color: var(--tichu-btn-sec-fg, #1e293b);
   }
 
   .stockitem {
-    border-radius: var(--border-radius, 6px);
-    box-shadow: 2px 2px 5px 3px #666;
+    border-radius: var(--tichu-card-radius, 8px);
+    box-shadow: var(
+      --tichu-card-shadow,
+      0 0 0 1px rgba(15, 23, 42, 0.12),
+      0 2px 4px rgba(15, 23, 42, 0.16),
+      0 6px 14px rgba(15, 23, 42, 0.18)
+    );
   }
   .stockitem.stockitem_selected {
-    border: 1px solid #dda !important;
-    box-shadow:
-      0px 0px 4px 1px #ff8,
-      2px 2px 5px 3px #666;
+    border: none !important;
+    box-shadow: var(
+      --tichu-card-selected-shadow,
+      0 0 0 2.5px var(--tichu-select-ring, #0284c7),
+      0 0 0 4.5px var(--tichu-select-glow, rgba(56, 189, 248, 0.32)),
+      0 10px 22px rgba(15, 23, 42, 0.28)
+    );
     translate: 0 -20px;
   }
 
   .disabler {
     display: none;
     position: absolute;
-    background: rgba(100, 100, 100, 0.6);
-    border-radius: var(--border-radius, 6px);
-    left: -4px;
-    right: -4px;
-    top: -4px;
-    bottom: -4px;
+    background: rgba(15, 23, 42, 0.42);
+    border-radius: var(--border-radius, 12px);
+    left: -2px;
+    right: -2px;
+    top: -2px;
+    bottom: -2px;
     z-index: 10;
   }
 

@@ -1,15 +1,42 @@
 html {
+  --tichu-font-sans:
+    Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   --bg-color-light: #eee;
 
   --bg-color-html: rgba(0, 0, 0, 0.3);
   --bg-color-play-area: rgba(255, 255, 255, 0.3);
-  --bg-color-lighter: rgba(246, 231, 212, 0.8);
+  --bg-color-lighter: rgba(252, 246, 238, 0.86);
 
-  --bg-color-active: rgba(200, 0, 0, 0.9);
+  --bg-color-active: #dc2626;
 
-  --border-radius: 6px;
+  --border-radius: 12px;
+  --tichu-card-radius: 8px;
 
-  --elevation: 0px 1px 2px 0px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);
+  --elevation:
+    0 1px 2px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+
+  --tichu-card-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.16),
+    0 6px 14px rgba(15, 23, 42, 0.18);
+  --tichu-select-ring: #0284c7;
+  --tichu-select-glow: rgba(56, 189, 248, 0.32);
+  --tichu-card-selected-shadow:
+    0 0 0 2.5px var(--tichu-select-ring), 0 0 0 4.5px var(--tichu-select-glow),
+    0 10px 22px rgba(15, 23, 42, 0.28);
+
+  --tichu-surface-border: rgba(255, 255, 255, 0.55);
+  --tichu-active-glow: rgba(220, 38, 38, 0.22);
+  --tichu-text: #1f2328;
+  --tichu-text-muted: #334155;
+  --tichu-divider: rgba(15, 23, 42, 0.12);
+  --tichu-bar-bottom: rgba(15, 23, 42, 0.1);
+  --tichu-btn-sec-bg: rgba(255, 255, 255, 0.92);
+  --tichu-btn-sec-bg-hover: #ffffff;
+  --tichu-btn-sec-bg-active: #f1f5f9;
+  --tichu-btn-sec-border: rgba(15, 23, 42, 0.16);
+  --tichu-btn-sec-fg: #1e293b;
+  --tichu-btn-sec-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 
   --tichu-dialog-scheme: light;
   --tichu-dialog-bg: #faf6ef;
@@ -59,13 +86,15 @@ html[data-theme="dark"] {
 
 body {
   background: var(--bg-color-html);
+  font-family: var(--tichu-font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 html.theme0,
 .theme0 {
   --bg-color-html: rgba(0, 0, 0, 0.3);
   --bg-color-play-area: rgba(255, 255, 255, 0.3);
-  --bg-color-lighter: rgba(246, 231, 212, 0.8);
+  --bg-color-lighter: rgba(252, 246, 238, 0.86);
 }
 html.theme1,
 .theme1 {
@@ -176,7 +205,9 @@ a.themelink .bg3 {
   width: 900px;
   margin: 10px auto 50px auto;
   background: var(--bg-color-play-area);
-  border-radius: var(--border-radius);
+  border-radius: 14px;
+  border: 1px solid var(--tichu-play-area-border, rgba(255, 255, 255, 0.25));
+  box-shadow: var(--tichu-play-area-shadow, 0 12px 32px rgba(15, 23, 42, 0.22));
   padding-top: 15px;
 }
 #game_play_area h3 {
@@ -290,15 +321,13 @@ span.pass img {
 }
 
 .stockitem {
-  border-radius: var(--border-radius);
-  box-shadow: 2px 2px 5px 3px #666;
+  border-radius: var(--tichu-card-radius, 8px);
+  box-shadow: var(--tichu-card-shadow);
 }
 
 .stockitem.stockitem_selected {
-  border: 1px solid #dda !important;
-  box-shadow:
-    0px 0px 4px 1px #ff8,
-    2px 2px 5px 3px #666;
+  border: none !important;
+  box-shadow: var(--tichu-card-selected-shadow);
   translate: 0 -20px;
 }
 
@@ -707,8 +736,8 @@ span.pass img {
   height: 150px;
   background-image: url("img/tichu-cards.png");
   background-size: 1400px 600px;
-  border-radius: var(--border-radius);
-  box-shadow: 2px 2px 5px 3px #666;
+  border-radius: var(--tichu-card-radius, 8px);
+  box-shadow: var(--tichu-card-shadow);
 }
 
 .tiki .cardontable {
