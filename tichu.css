@@ -198,6 +198,11 @@ a.themelink .bg3 {
   border-radius: 0;
 }
 
+#player_boards {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .player-board {
   background-color: transparent;
   border-radius: 0;
