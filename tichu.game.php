@@ -563,7 +563,13 @@ class Tichu extends Table
           '${player_name} plays ${combo_name} and grants Mahjong\'s owner wish'
         );
       } else {
-        $this->checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand);
+        $isNonLeadBomb =
+          $combo->type == BOMB_COMBO &&
+          $lastCombo->type != NO_COMBO &&
+          $lastCombo->type != DOG_COMBO;
+        if (!$isNonLeadBomb) {
+          $this->checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand);
+        }
       }
     }
 

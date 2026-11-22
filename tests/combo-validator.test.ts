@@ -776,6 +776,81 @@ test("SmartPlayUX::analyzeSelection states and validation", () => {
     mahjongWish: 5,
   });
   assert.equal(wishAllowed.isValid, true);
+
+  // Bug #257868 (Option A): non-lead bombs are allowed without fulfilling active Mahjong wish
+  const sfBombHand = [A5, B2, B3, B4, B5, B6, A7, B7, C7, D7];
+  const nonWishFourBomb = analyzeSelection({
+    selectedCards: [A7, B7, C7, D7],
+    handCards: sfBombHand,
+    lastCombo: new Combo([A3]),
+    stateName: "playCombo",
+    mahjongWish: 5,
+  });
+  assert.equal(nonWishFourBomb.isValid, true);
+  assert.equal(nonWishFourBomb.reason, null);
+  assert.equal(nonWishFourBomb.buttonLabel, "Play");
+
+  const nonWishSfBomb = analyzeSelection({
+    selectedCards: [B2, B3, B4, B5, B6],
+    handCards: [A8, B2, B3, B4, B5, B6],
+    lastCombo: new Combo([A3]),
+    stateName: "playCombo",
+    mahjongWish: 8,
+  });
+  assert.equal(nonWishSfBomb.isValid, true);
+  assert.equal(nonWishSfBomb.reason, null);
+
+  const nonWishBombOutOfTurn = analyzeSelection({
+    selectedCards: [A7, B7, C7, D7],
+    handCards: sfBombHand,
+    lastCombo: new Combo([A3]),
+    stateName: "playBomb",
+    mahjongWish: 5,
+  });
+  assert.equal(nonWishBombOutOfTurn.isValid, true);
+  assert.equal(nonWishBombOutOfTurn.reason, null);
+  assert.equal(nonWishBombOutOfTurn.buttonLabel, "Play Bomb");
+
+  // Beaten non-wish bomb must still fail with cannot_beat
+  const beatenNonWishBomb = analyzeSelection({
+    selectedCards: [A7, B7, C7, D7],
+    handCards: sfBombHand,
+    lastCombo: new Combo([AA, BA, CA, DA]),
+    stateName: "playCombo",
+    mahjongWish: 5,
+  });
+  assert.equal(beatenNonWishBomb.isValid, false);
+  assert.equal(beatenNonWishBomb.reason, "cannot_beat");
+
+  // Leading a trick (playComboOpen / after Dog) with a non-wish bomb still enforces wish (Option A)
+  const leadEmptyNonWishBomb = analyzeSelection({
+    selectedCards: [A7, B7, C7, D7],
+    handCards: sfBombHand,
+    lastCombo: Combo.noCombo,
+    stateName: "playComboOpen",
+    mahjongWish: 5,
+  });
+  assert.equal(leadEmptyNonWishBomb.isValid, false);
+  assert.equal(leadEmptyNonWishBomb.reason, "must_fulfill_wish");
+
+  const leadDogNonWishBomb = analyzeSelection({
+    selectedCards: [A7, B7, C7, D7],
+    handCards: sfBombHand,
+    lastCombo: new Combo([DOG]),
+    stateName: "playComboOpen",
+    mahjongWish: 5,
+  });
+  assert.equal(leadDogNonWishBomb.isValid, false);
+  assert.equal(leadDogNonWishBomb.reason, "must_fulfill_wish");
+
+  // Passing still blocked even when holding both a wish-fulfilling combo/bomb and a non-wish bomb
+  const passBlockedWithBombs = validatePassAction(
+    [A5, B5, C5, D5, A7, B7, C7, D7],
+    new Combo([AA, BA]),
+    5,
+  );
+  assert.equal(passBlockedWithBombs.canPass, false);
+  assert.equal(passBlockedWithBombs.reason, "must_fulfill_wish");
 });
 
 test("SmartPlayUX::validatePassAction wish guard and combo-specific tooltips", () => {
@@ -3690,6 +3765,31 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         const outWithBomb = serializeLitTemplate(bar.render());
         assert.ok(outWithBomb.includes('id="myPlayBomb"'));
         assert.ok(outWithBomb.includes('id="myMakeTichuBet"'));
+
+        // #wishBombCallout renders in playCombo when only a bomb fulfills wish,
+        // and stays suppressed in playBomb (bug #257868: bombs in playBomb need not fulfill wish)
+        model.setHand([A5, B5, C5, D5, A7, B7, C7, D7]);
+        model.setMahjongWish(5);
+        model.applyPlayCombo("2385075", [AA, BA], "Pair of Aces", 0, PAIR_COMBO, null);
+        model.setGameState("playCombo", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        const outWishCallout = serializeLitTemplate(bar.render());
+        assert.ok(outWishCallout.includes('id="wishBombCallout"'));
+
+        model.setGameState("playBomb", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        const outPlayBombNoCallout = serializeLitTemplate(bar.render());
+        assert.equal(outPlayBombNoCallout.includes('id="wishBombCallout"'), false);
+
+        model.setMahjongWish(0);
+        model.setHand([]);
+        model.enterNewTrick();
 
         model.setGameState("playComboOpen", {
           activePlayerId: "2385074",

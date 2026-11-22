@@ -1931,7 +1931,8 @@ export function analyzeSelection(params: {
     };
   }
 
-  if (mahjongWish >= 2 && mahjongWish <= 14) {
+  const isNonLeadBomb = combo.type === BOMB_COMBO && !isLeading;
+  if (mahjongWish >= 2 && mahjongWish <= 14 && !isNonLeadBomb) {
     const selectedContainsWish = selectedCards.some((c) => cardRank(c) === mahjongWish);
     if (!selectedContainsWish) {
       const hand = new Hand(handCards);

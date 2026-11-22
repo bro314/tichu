@@ -311,9 +311,7 @@ export class TichuActionBar extends LitElement {
     }
     const canPlayCombo =
       this.isCurrentPlayerActive &&
-      (this.stateName === "playComboOpen" ||
-        this.stateName === "playCombo" ||
-        this.stateName === "playBomb");
+      (this.stateName === "playComboOpen" || this.stateName === "playCombo");
     if (!canPlayCombo) {
       return null;
     }

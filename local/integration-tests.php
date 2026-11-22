@@ -417,15 +417,18 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
     'P1 must not be allowed to play a 10 when holding a playable 9'
   );
 
-  // 2b. P1 cannot bypass the Mahjong wish by playing a bomb (2-3-4-5-6 Stars) that does not contain 9!
+  // 2b. P1 CAN play a non-wished bomb (2-3-4-5-6 Stars) on their turn over Mahjong (Option A),
+  // leaving mahjongWish active at 9!
   $nonWishedBombIds = \LocalTichuScenarios::getCardIds([[2, 2], [2, 3], [2, 4], [2, 5], [2, 6]]);
-  assertThrowsUserException(
-    static fn() => callAction($game, P1, 'playCombo', ['cards' => implode(';', $nonWishedBombIds)]),
-    'grant the Mahjong Wish',
-    'P1 must not be allowed to bypass the Mahjong wish by playing a bomb not containing 9'
-  );
+  callAction($game, P1, 'playCombo', ['cards' => implode(';', $nonWishedBombIds)]);
+  assertSameVal(9, (int) $game->getGameStateValue('mahjongWish'), 'Non-wished bomb must leave mahjongWish active at 9');
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'Turn should advance to P2 after P1 plays non-wished bomb');
 
-  // 3. P1 plays the 9 -> fulfills wish and resets mahjongWish to 0!
+  // 3. Re-setup mahjong_wish: P1 plays the 9 -> fulfills wish and resets mahjongWish to 0!
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
   $nineId = (string) \LocalTichuScenarios::getCardId(1, 9);
   callAction($game, P1, 'playCombo', ['cards' => $nineId]);
 
@@ -450,20 +453,37 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
   callAction($game, P2, 'pass', ['onlyOnce' => true]);
   assertSameVal((string) P3, $game->getActivePlayerId(), 'P2 must be allowed to pass when 5-9 straight flush does not contain wished Jack (11)');
 
-  // 5. Verify a player holding both a bomb with the wished rank (four 11s) and a bomb without it (2-6 Stars)
-  // when lastCombo = Ace cannot play the non-wished bomb and must play the wished bomb
+  // 5. Verify a player holding both a bomb with the wished rank (four 11s) and a bomb without it (4-8 Stars)
+  // when lastCombo = Ace still cannot pass, CAN play the non-wished bomb (leaving wish active),
+  // and playing the wished bomb clears mahjongWish to 0.
   \LocalTichuScenarios::assignPlayerHands([
     P0 => [[2, 2]],
     P1 => [[2, 3]],
     P2 => [[3, 2]],
     P3 => [[1, 11], [2, 11], [3, 11], [4, 11], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]],
   ], 'captured_p0');
-  $nonWishedBomb2 = \LocalTichuScenarios::getCardIds([[2, 4], [2, 5], [2, 6], [2, 7], [2, 8]]);
   assertThrowsUserException(
-    static fn() => callAction($game, P3, 'playCombo', ['cards' => implode(';', $nonWishedBomb2)]),
+    static fn() => callAction($game, P3, 'pass', ['onlyOnce' => true]),
     'grant the Mahjong Wish',
-    'P3 must not play a non-wished bomb when holding a bomb that fulfills the wish'
+    'P3 still must not pass when holding a bomb that fulfills the wish'
   );
+  $nonWishedBomb2 = \LocalTichuScenarios::getCardIds([[2, 4], [2, 5], [2, 6], [2, 7], [2, 8]]);
+  callAction($game, P3, 'playCombo', ['cards' => implode(';', $nonWishedBomb2)]);
+  assertSameVal(11, (int) $game->getGameStateValue('mahjongWish'), 'Playing a non-wished bomb must keep mahjongWish active at 11');
+
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [2, 2]],
+    P1 => [[2, 14], [2, 3]],
+    P2 => [[3, 2], [3, 3]],
+    P3 => [[1, 11], [2, 11], [3, 11], [4, 11], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8]],
+  ], 'captured_p0');
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 11]);
+  $aceStarsId = (string) \LocalTichuScenarios::getCardId(2, 14);
+  callAction($game, P1, 'playCombo', ['cards' => $aceStarsId]);
+  callAction($game, P2, 'pass', ['onlyOnce' => true]);
   $wishedBomb = \LocalTichuScenarios::getCardIds([[1, 11], [2, 11], [3, 11], [4, 11]]);
   callAction($game, P3, 'playCombo', ['cards' => implode(';', $wishedBomb)]);
   assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Playing the wished bomb of Jacks should grant the wish');
@@ -483,6 +503,57 @@ function test_mahjong_lead_wish_creation_enforcement_and_fulfillment(): void
   assertSameVal((string) P1, $game->getActivePlayerId(), 'P1 should be active after wish=15');
   callAction($game, P1, 'pass', ['onlyOnce' => true]);
   assertSameVal((string) P2, $game->getActivePlayerId(), 'P1 must be allowed to pass when wish=15 (no wish)');
+
+  // 7. Out-of-turn playBomb -> ST_PLAY_BOMB -> playCombo with a non-wished bomb succeeds even while holding the wished card
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [1, 2]],
+    P1 => [[1, 14], [1, 3]],
+    P2 => [[1, 9], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6]],
+    P3 => [[3, 2], [3, 3], [3, 4], [3, 5]],
+  ], 'captured_p0');
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
+  assertSameVal((string) P1, $game->getActivePlayerId(), 'P1 should be active before P2 out-of-turn bomb');
+
+  callAction($game, P2, 'playBomb', ['cards' => '']);
+  assertSameVal('playBomb', $game->gamestate->state(P2)['name'], 'Out-of-turn playBomb should enter ST_PLAY_BOMB');
+  $outOfTurnNonWishBomb = \LocalTichuScenarios::getCardIds([[2, 2], [2, 3], [2, 4], [2, 5], [2, 6]]);
+  callAction($game, P2, 'playCombo', ['cards' => implode(';', $outOfTurnNonWishBomb)]);
+  assertSameVal(9, (int) $game->getGameStateValue('mahjongWish'), 'Out-of-turn non-wished bomb must leave mahjongWish active at 9');
+  assertSameVal((string) P3, $game->getActivePlayerId(), 'Turn should advance to P3 after P2 plays non-wished bomb');
+
+  // 8. Leading a new trick (playComboOpen) with a non-wished bomb while holding wished rank still requires fulfilling wish (Option A)
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[4, 1], [1, 2]],
+    P1 => [[1, 14], [1, 3]],
+    P2 => [[1, 9], [2, 2], [2, 3], [2, 4], [2, 5], [2, 6], [1, 7], [2, 7], [3, 7], [4, 7]],
+    P3 => [[3, 2], [3, 3]],
+  ], 'captured_p0');
+  $mahjongId = (string) \LocalTichuScenarios::getCardId(4, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $mahjongId]);
+  callAction($game, P0, 'makeAWish', ['wish' => 9]);
+  $aceSwordsId = (string) \LocalTichuScenarios::getCardId(1, 14);
+  callAction($game, P1, 'playCombo', ['cards' => $aceSwordsId]);
+  $p2SfBomb = \LocalTichuScenarios::getCardIds([[2, 2], [2, 3], [2, 4], [2, 5], [2, 6]]);
+  callAction($game, P2, 'playCombo', ['cards' => implode(';', $p2SfBomb)]);
+  assertSameVal('confirmTrick', $game->gamestate->state(P2)['name'], 'P2 should enter confirmTrick after P3/P0/P1 (<4 cards) auto-pass');
+  callAction($game, P2, 'collect', []);
+  assertSameVal('playComboOpen', $game->gamestate->state(P2)['name'], 'P2 should lead the next trick in playComboOpen');
+  assertSameVal((string) P2, $game->getActivePlayerId(), 'P2 should be active leader in playComboOpen');
+  assertSameVal(9, (int) $game->getGameStateValue('mahjongWish'), 'mahjongWish should still be 9 on new trick lead');
+
+  $p2LeadBomb = \LocalTichuScenarios::getCardIds([[1, 7], [2, 7], [3, 7], [4, 7]]);
+  assertThrowsUserException(
+    static fn() => callAction($game, P2, 'playCombo', ['cards' => implode(';', $p2LeadBomb)]),
+    'grant the Mahjong Wish',
+    'Leading a fresh trick with a non-wished bomb while holding wished 9 must still require fulfilling the wish (Option A)'
+  );
+  $p2NineId = (string) \LocalTichuScenarios::getCardId(1, 9);
+  callAction($game, P2, 'playCombo', ['cards' => $p2NineId]);
+  assertSameVal(0, (int) $game->getGameStateValue('mahjongWish'), 'Leading the wished 9 must fulfill and reset mahjongWish to 0');
 }
 
 // ============================================================================
