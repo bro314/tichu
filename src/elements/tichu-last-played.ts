@@ -1,4 +1,4 @@
-import { html, css, LitElement, PropertyValues } from "lit";
+import { html, css, LitElement, PropertyValues, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { formatLocalizedComboDescription, translateDynamic } from "./combo-validator";
@@ -167,6 +167,9 @@ export class TichuLastPlayed extends LitElement {
         .last-played-player .last-played-icons .count {
           display: inline-block;
           width: 40px;
+        }
+        .last-played-player .stat-group {
+          display: inline;
         }
         .last-played-combo {
           width: 300px;
@@ -402,33 +405,43 @@ export class TichuLastPlayed extends LitElement {
         })}
         id="playertable_${id}"
         data-player-id=${id}
-        title=${translatedDesc}
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
         <div class="last-played-player">
           <div class="playertablename" style="color: #${player.color}">${player.name}</div>
           <div class="last-played-icons">
-            <div class="icon hand" id="icon_hand_${id}" title=${_("Cards in hand")}></div>
-            <div class="count handcount ${id}">${player.handcount}</div>
-            <div class="icon star" id="icon_star_${id}" title=${_("Points captured")}></div>
-            <div class="count pointcount ${id}">${player.capturedPoints}</div>
+            <span class="stat-group" data-tooltip=${_("Cards in hand")} data-tooltip-touch="tap">
+              <div class="icon hand" id="icon_hand_${id}"></div>
+              <div class="count handcount ${id}">${player.handcount}</div>
+            </span>
+            <span class="stat-group" data-tooltip=${_("Points captured")} data-tooltip-touch="tap">
+              <div class="icon star" id="icon_star_${id}"></div>
+              <div class="count pointcount ${id}">${player.capturedPoints}</div>
+            </span>
           </div>
           <div>
             <div
               id="grandtichucolor_${id}"
               class="icon big grandtichucolor ${id}"
               style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-              title=${_("Grand Tichu bet")}
+              data-tooltip=${_("Grand Tichu bet")}
+              data-tooltip-touch="tap"
             ></div>
             <div
               id="tichucolor_${id}"
               class="icon big tichucolor ${id}"
               style="display: ${showTichuColor ? "inline-block" : "none"}"
-              title=${_("Tichu bet")}
+              data-tooltip=${_("Tichu bet")}
+              data-tooltip-touch="tap"
             ></div>
           </div>
         </div>
-        <div id="lastcombo_${id}" class="lastcombo last-played-combo">
+        <div
+          id="lastcombo_${id}"
+          class="lastcombo last-played-combo"
+          data-tooltip=${translatedDesc || nothing}
+          data-tooltip-touch="tap"
+        >
           ${
             combo.passed
               ? html`<span class="pass"
@@ -501,7 +514,10 @@ export class TichuLastPlayed extends LitElement {
     };
   }
 
-  private syncClearPendingRevealDom(targetPlayerId?: string, cardIds?: Array<string | number>): void {
+  private syncClearPendingRevealDom(
+    targetPlayerId?: string,
+    cardIds?: Array<string | number>,
+  ): void {
     if (!this.shadowRoot?.querySelectorAll) return;
     const stocks =
       targetPlayerId !== undefined

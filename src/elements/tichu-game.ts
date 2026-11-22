@@ -12,7 +12,9 @@ import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
 import "./tichu-settings-modal";
+import "./tichu-tooltip-layer";
 import { getAnimationLayer } from "./tichu-animation-layer";
+import { getTooltipLayer } from "./tichu-tooltip-layer";
 import "./tichu-replay";
 
 const THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -112,6 +114,7 @@ export class TichuGame extends LitElement {
       document.body.appendChild(document.createElement("tichu-settings-modal"));
     }
     getAnimationLayer();
+    getTooltipLayer();
   }
 
   private syncExternalClasses() {

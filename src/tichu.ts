@@ -1213,7 +1213,11 @@ export class Tichu {
           false,
           "gray",
         );
-        this.addTooltip("noBet", _("Don't call Grand Tichu"), "");
+        const noBetBtn = document.getElementById("noBet");
+        if (noBetBtn) {
+          noBetBtn.setAttribute("data-tooltip", _("Don't call Grand Tichu"));
+          noBetBtn.setAttribute("data-tooltip-touch", "longpress");
+        }
 
         this.addActionButton(
           "makeGTBet",
@@ -1223,7 +1227,11 @@ export class Tichu {
           false,
           "red",
         );
-        this.addTooltip("makeGTBet", _("Bet 200 Points, that you will finish first"), "");
+        const makeGtBtn = document.getElementById("makeGTBet");
+        if (makeGtBtn) {
+          makeGtBtn.setAttribute("data-tooltip", _("Bet 200 Points, that you will finish first"));
+          makeGtBtn.setAttribute("data-tooltip-touch", "longpress");
+        }
       }
     }
   }

@@ -1,4 +1,4 @@
-import { html, css, LitElement, PropertyValues } from "lit";
+import { html, css, LitElement, PropertyValues, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { Card } from "./model";
@@ -13,29 +13,58 @@ export interface PassedOriginInfo {
   showAvatar: boolean;
 }
 
-export function getDefaultCardTooltip(card: Card | undefined): string {
-  if (!card) return "";
+export interface CardTooltipParts {
+  title: string;
+  body: string;
+  meta: string;
+}
+
+export function getDefaultCardTooltipParts(card: Card | undefined): {
+  title: string;
+  body: string;
+} {
+  if (!card) return { title: "", body: "" };
   const color = Number(card.type);
   const rank = Number(card.type_arg);
-  if (rank === 10 || rank === 13) return _("Scores 10 points");
-  if (rank === 5) return _("Scores 5 points");
+  if (rank === 10 || rank === 13) return { title: "", body: _("Scores 10 points") };
+  if (rank === 5) return { title: "", body: _("Scores 5 points") };
   if (rank === 1) {
-    if (color === 1)
-      return _(
-        "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it.",
-      );
-    if (color === 2)
-      return _(
-        "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5.",
-      );
-    if (color === 3)
-      return _(
-        "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead.",
-      );
-    if (color === 4)
-      return _("Scores 0 points. Owner of this card plays first. Player can make a wish.");
+    if (color === 1) {
+      return {
+        title: _("Dragon"),
+        body: _(
+          "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it.",
+        ),
+      };
+    }
+    if (color === 2) {
+      return {
+        title: _("Phoenix"),
+        body: _(
+          "Scores -25 points. Takes the place of any normal card in a combo but not a bomb. As a Single, worth 1.5 when led, beats any other card but the Dragon by 0.5.",
+        ),
+      };
+    }
+    if (color === 3) {
+      return {
+        title: _("Dog"),
+        body: _(
+          "The Hound must be played as a leading single card. Player's partner (or the next one if he's gone out) can lead.",
+        ),
+      };
+    }
+    if (color === 4) {
+      return {
+        title: _("Mahjong"),
+        body: _("Scores 0 points. Owner of this card plays first. Player can make a wish."),
+      };
+    }
   }
-  return "";
+  return { title: "", body: "" };
+}
+
+export function getDefaultCardTooltip(card: Card | undefined): string {
+  return getDefaultCardTooltipParts(card).body;
 }
 
 export class TichuCard extends LitElement {
@@ -240,6 +269,23 @@ export class TichuCard extends LitElement {
     return base;
   }
 
+  getComputedTooltipParts(): CardTooltipParts {
+    if (this.tooltip) return { title: "", body: this.tooltip, meta: "" };
+    if (this.pass) return { title: "", body: _("Pass"), meta: "" };
+    const base = getDefaultCardTooltipParts(this.card);
+    if (this.passedOrigin && (this.passedOrigin.showAvatar || this.passedOrigin.showGlow)) {
+      if (base.title || base.body) {
+        return {
+          title: base.title,
+          body: base.body,
+          meta: this.passedOrigin.tooltip,
+        };
+      }
+      return { title: "", body: this.passedOrigin.tooltip, meta: "" };
+    }
+    return { title: base.title, body: base.body, meta: "" };
+  }
+
   override render() {
     const baseWidth = 100;
     const baseHeight = 150;
@@ -266,7 +312,7 @@ export class TichuCard extends LitElement {
     this.style.setProperty("--x-pos", `${-1 * width * (rank - 1)}px`);
     this.style.setProperty("--y-pos", `${-1 * height * (color - 1)}px`);
 
-    const tooltipText = this.getComputedTooltip();
+    const tooltipParts = this.getComputedTooltipParts();
     const origin = this.passedOrigin;
     const showGlow = Boolean(origin?.showGlow);
     const isPartner = origin?.seat === "partner";
@@ -284,36 +330,48 @@ export class TichuCard extends LitElement {
           "wish-match": this.wishMatch,
         })}
         data-card-id=${this.card.id ?? ""}
-        title=${tooltipText}
+        data-tooltip=${tooltipParts.body || nothing}
+        data-tooltip-title=${tooltipParts.title || nothing}
+        data-tooltip-meta=${tooltipParts.meta || nothing}
+        data-tooltip-touch=${this.selectable ? "longpress" : "tap"}
         @click=${this.onClick}
-      ></div
-      >${this.reserveFooter
-        ? html`<div class="card-footer">
-            ${origin
-              ? html`<div
-                  class=${classMap({
-                    "passed-avatar-wrap": true,
-                    visible: origin.showAvatar,
-                    partner: isPartner,
-                    opponent: !isPartner,
-                  })}
-                  title=${origin.tooltip}
-                  aria-label=${origin.showAvatar ? origin.tooltip : ""}
-                >
-                  ${showImg
-                    ? html`<img
-                        class="passed-avatar-img"
-                        src=${origin.avatarUrl}
-                        alt=""
-                        width="22"
-                        height="22"
-                        @error=${this.onAvatarError}
-                      />`
-                    : html`<span class="passed-avatar-fallback" aria-hidden="true">${initial}</span>`}
-                </div>`
-              : ""}
-          </div>`
-        : ""}`;
+      ></div>
+      ${
+        this.reserveFooter
+          ? html`<div class="card-footer">
+              ${
+                origin
+                  ? html`<div
+                      class=${classMap({
+                        "passed-avatar-wrap": true,
+                        visible: origin.showAvatar,
+                        partner: isPartner,
+                        opponent: !isPartner,
+                      })}
+                      data-tooltip=${origin.showAvatar ? origin.tooltip : nothing}
+                      data-tooltip-touch="tap"
+                      aria-label=${origin.showAvatar ? origin.tooltip : ""}
+                    >
+                      ${
+                        showImg
+                          ? html`<img
+                              class="passed-avatar-img"
+                              src=${origin.avatarUrl}
+                              alt=""
+                              width="22"
+                              height="22"
+                              @error=${this.onAvatarError}
+                            />`
+                          : html`<span class="passed-avatar-fallback" aria-hidden="true"
+                              >${initial}</span
+                            >`
+                      }
+                    </div>`
+                  : ""
+              }
+            </div>`
+          : ""
+      }`;
   }
 
   private onAvatarError() {
@@ -327,7 +385,8 @@ export class TichuCard extends LitElement {
       id="card"
       class="card stockitem pass"
       data-card-id=""
-      title=${this.getComputedTooltip()}
+      data-tooltip=${this.getComputedTooltip() || nothing}
+      data-tooltip-touch="tap"
     ></div>`;
   }
 

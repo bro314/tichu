@@ -22,14 +22,8 @@ export function buildPassedOriginsMap(
   params: BuildPassedOriginsParams,
 ): Record<string, PassedOriginInfo> {
   const result: Record<string, PassedOriginInfo> = {};
-  const {
-    hand,
-    players,
-    currentPlayerId,
-    clockwise,
-    isAllInfoExposed,
-    hasPlayedOrPassedInRound,
-  } = params;
+  const { hand, players, currentPlayerId, clockwise, isAllInfoExposed, hasPlayedOrPassedInRound } =
+    params;
 
   const playersDesc = getNextPlayersDesc(players, currentPlayerId);
   const leftPlayer =
@@ -54,13 +48,19 @@ export function buildPassedOriginsMap(
 
     if (partnerPlayer && senderId === partnerPlayer.id) {
       seat = "partner";
-      tooltip = substituteTemplate(_("Passed by ${player_name} (Partner)"), { player_name: playerName });
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Partner)"), {
+        player_name: playerName,
+      });
     } else if (leftPlayer && senderId === leftPlayer.id) {
       seat = "left";
-      tooltip = substituteTemplate(_("Passed by ${player_name} (Left)"), { player_name: playerName });
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Left)"), {
+        player_name: playerName,
+      });
     } else if (rightPlayer && senderId === rightPlayer.id) {
       seat = "right";
-      tooltip = substituteTemplate(_("Passed by ${player_name} (Right)"), { player_name: playerName });
+      tooltip = substituteTemplate(_("Passed by ${player_name} (Right)"), {
+        player_name: playerName,
+      });
     } else if (sender) {
       seat = "left";
       tooltip = substituteTemplate(_("Passed by ${player_name}"), { player_name: playerName });
@@ -329,7 +329,8 @@ export class TichuHand extends LitElement {
         type="button"
         id="settings_button"
         class="settings-btn"
-        title=${settingsLabel}
+        data-tooltip=${settingsLabel}
+        data-tooltip-touch="longpress"
         aria-label=${settingsLabel}
         aria-haspopup="dialog"
         aria-expanded=${this.settingsModalOpen ? "true" : "false"}

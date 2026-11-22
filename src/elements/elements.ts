@@ -18,7 +18,9 @@ import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
 import "./tichu-settings-modal";
+import "./tichu-tooltip-layer";
 import "./tichu-game";
+import { getTooltipLayer } from "./tichu-tooltip-layer";
 
 export { GameModel } from "./game-model";
 export { TichuCard } from "./tichu-card";
@@ -33,6 +35,13 @@ export { TichuHand } from "./tichu-hand";
 export { TichuPlayedCards } from "./tichu-played-cards";
 export { TichuTrickModal } from "./tichu-trick-modal";
 export { TichuSettingsModal } from "./tichu-settings-modal";
+export {
+  TichuTooltipLayer,
+  TOOLTIP_TIMINGS,
+  computeTooltipPosition,
+  resolveTouchMode,
+  getTooltipLayer,
+} from "./tichu-tooltip-layer";
 export {
   ANIM_PRESETS,
   ANIM_TIMINGS,
@@ -76,6 +85,7 @@ if (typeof document !== "undefined" && document.documentElement) {
     "--tiki-mahjong-bg-url",
     `url(${themeUrl}img/tiki-tichu-mahjong.png)`,
   );
+  getTooltipLayer();
 }
 
 if (typeof window !== "undefined") {

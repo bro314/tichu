@@ -155,7 +155,8 @@ export class TichuValueChoice extends LitElement {
                 tabindex="0"
                 aria-pressed=${isSelected ? "true" : "false"}
                 aria-label=${label}
-                title=${label}
+                data-tooltip=${label}
+                data-tooltip-touch="longpress"
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,
@@ -194,7 +195,8 @@ export class TichuValueChoice extends LitElement {
                 tabindex="0"
                 aria-pressed=${isSelected ? "true" : "false"}
                 aria-label=${label}
-                title=${label}
+                data-tooltip=${label}
+                data-tooltip-touch="longpress"
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,

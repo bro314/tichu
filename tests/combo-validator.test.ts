@@ -1685,6 +1685,10 @@ function withMockLitEnv(
     TichuHand: any;
     TichuStatus: any;
     TichuSettingsModal: any;
+    TichuTooltipLayer: any;
+    TOOLTIP_TIMINGS: any;
+    computeTooltipPosition: any;
+    resolveTouchMode: any;
     getThemeLabel: (themeNo: number) => string;
     buildPassedOriginsMap: any;
     computeCardVisibleWidthPx: any;
@@ -1762,6 +1766,7 @@ function withMockLitEnv(
   const cardMod = require("../src/elements/tichu-card");
   const passAreaMod = require("../src/elements/tichu-pass-area");
   const settingsModalMod = require("../src/elements/tichu-settings-modal");
+  const tooltipLayerMod = require("../src/elements/tichu-tooltip-layer");
   const mods = {
     TichuAnimationLayer: require("../src/elements/tichu-animation-layer").TichuAnimationLayer,
     TichuLastPlayed: require("../src/elements/tichu-last-played").TichuLastPlayed,
@@ -1775,6 +1780,10 @@ function withMockLitEnv(
     TichuHand: handMod.TichuHand,
     TichuStatus: require("../src/elements/tichu-status").TichuStatus,
     TichuSettingsModal: settingsModalMod.TichuSettingsModal,
+    TichuTooltipLayer: tooltipLayerMod.TichuTooltipLayer,
+    TOOLTIP_TIMINGS: tooltipLayerMod.TOOLTIP_TIMINGS,
+    computeTooltipPosition: tooltipLayerMod.computeTooltipPosition,
+    resolveTouchMode: tooltipLayerMod.resolveTouchMode,
     getThemeLabel: settingsModalMod.getThemeLabel,
     buildPassedOriginsMap: handMod.buildPassedOriginsMap,
     computeCardVisibleWidthPx: stockMod.computeCardVisibleWidthPx,
@@ -3571,7 +3580,9 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         assert.equal(renderedChoice.includes("mahjong-no-wish-label"), false);
         assert.match(renderedChoice, /role="button"/);
         assert.match(renderedChoice, /aria-label=["']?«No wish»["']?/);
-        assert.match(renderedChoice, /title=["']?«No wish»["']?/);
+        assert.match(renderedChoice, /data-tooltip=["']?«No wish»["']?/);
+        assert.match(renderedChoice, /data-tooltip-touch=["']?longpress["']?/);
+        assert.equal(renderedChoice.includes("title="), false);
         assert.match(renderedChoice, /aria-label=["']?«Queen»["']?/);
 
         let prevented = 0;
@@ -3862,7 +3873,9 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         assert.ok(activeImgHtml.includes("passed-avatar-wrap visible opponent"));
         assert.match(activeImgHtml, /src=["']?\/avatars\/bob\.png["']?/);
         assert.equal(activeImgHtml.includes("passed-dir-hint"), false);
-        assert.ok(activeImgHtml.includes("Scores 5 points — Passed by Bob (Right)"));
+        assert.equal(activeImgCard.getComputedTooltip(), "Scores 5 points — Passed by Bob (Right)");
+        assert.ok(activeImgHtml.includes("data-tooltip=Scores 5 points"));
+        assert.ok(activeImgHtml.includes("data-tooltip-meta=Passed by Bob (Right)"));
 
         const fallbackCard = new TichuCardEl();
         fallbackCard.card = B7;
@@ -3870,7 +3883,7 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         fallbackCard.passedOrigin = mapCcwBefore[B7.id];
         const fallbackHtml = serializeLitTemplate(fallbackCard.render());
         assert.ok(fallbackHtml.includes("passed-avatar-fallback"));
-        assert.ok(fallbackHtml.includes(">D</span>"));
+        assert.match(fallbackHtml, />D<\/span\s*>/);
         assert.equal(fallbackHtml.includes("passed-dir-hint"), false);
 
         const fadedRtCard = new TichuCardEl();
@@ -3986,13 +3999,14 @@ test("TichuPassArea: tooltip-only select hint, avatar above name, fallback initi
 
         const tooltipMatches =
           htmlEmpty.match(
-            /title="«Select a card and click here»"|title=«Select a card and click here»/g,
+            /data-tooltip="«Select a card and click here»"|data-tooltip=«Select a card and click here»/g,
           ) ?? [];
         assert.equal(
           tooltipMatches.length,
           3,
-          "All 3 empty active slots should carry the select tooltip",
+          "All 3 empty active slots should carry the select data-tooltip",
         );
+        assert.equal(htmlEmpty.includes("title="), false);
 
         // Avatar appears above name inside .playertable-header, with partner ring on dir=2 (dashwood2) and opponent on dir=1/3
         const getSlotHtml = (htmlStr: string, dir: number) => {
@@ -4120,10 +4134,7 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
 
       const status = new TichuStatus();
       const cssRaw = TichuStatus.styles?.cssText ?? String(TichuStatus.styles ?? "");
-      assert.ok(
-        cssRaw.includes("var(--ui-icons-url)"),
-        "CSS should reference var(--ui-icons-url)",
-      );
+      assert.ok(cssRaw.includes("var(--ui-icons-url)"), "CSS should reference var(--ui-icons-url)");
       assert.ok(
         cssRaw.includes("calc(var(--icon-size) * 4) calc(var(--icon-size) * 3)"),
         "TichuStatus CSS should use the 4x3 sprite grid",
@@ -4134,6 +4145,12 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.ok(
         cssRaw.includes("prefers-contrast: more"),
         "CSS should support prefers-contrast: more for subtle accents",
+      );
+      assert.ok(cssRaw.includes("cursor: default"), "Status rows should use default cursor");
+      assert.equal(
+        cssRaw.includes("cursor: help"),
+        false,
+        "Status rows should not show ? help cursor",
       );
       assert.ok(cssRaw.includes(".visually-hidden"), "CSS should include .visually-hidden helper");
       assert.ok(cssRaw.includes(":focus-visible"), "CSS should style :focus-visible");
@@ -4155,9 +4172,10 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.match(htmlZero, /id=["']?trickCounter["']?[^>]*>5<\/span>/);
       assert.match(htmlZero, /id=["']?currentTrickCounter["']?[^>]*>-25<\/span>/);
 
-      assert.match(htmlZero, /title=(?:"Round: 2"|Round: 2(?:\s|>))/);
-      assert.match(htmlZero, /title=(?:"Trick: 5"|Trick: 5(?:\s|>))/);
-      assert.match(htmlZero, /title=(?:"Trick Points: -25"|Trick Points: -25(?:\s|>))/);
+      assert.match(htmlZero, /data-tooltip=(?:"Round: 2"|Round: 2(?:\s|>))/);
+      assert.match(htmlZero, /data-tooltip=(?:"Trick: 5"|Trick: 5(?:\s|>))/);
+      assert.match(htmlZero, /data-tooltip=(?:"Trick Points: -25"|Trick Points: -25(?:\s|>))/);
+      assert.equal(htmlZero.includes("title="), false);
 
       assert.match(htmlZero, /class="status-icon round"[^>]*aria-hidden="true"/);
       assert.match(htmlZero, /class="status-icon trick"[^>]*aria-hidden="true"/);
@@ -4180,7 +4198,9 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.ok(btnMatch, "Show current trick button should render when trickSize > 0");
       const btnHtml = btnMatch![0];
       assert.ok(btnHtml.includes('type="button"'));
-      assert.match(btnHtml, /title=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(btnHtml, /data-tooltip=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(btnHtml, /data-tooltip-touch=(?:"longpress"|longpress(?:\s|>))/);
+      assert.equal(btnHtml.includes("title="), false);
       assert.match(btnHtml, /aria-label=(?:"Show current trick"|Show current trick(?:\s|>))/);
       assert.match(btnHtml, /class="status-icon eye"[^>]*aria-hidden="true"/);
       const innerBtnText = btnHtml.replace(/<[^>]+>/g, "").trim();
@@ -4393,10 +4413,7 @@ test("setupNotifications() double-timer invariant and dynamic durations for pass
   await withMockLitEnv(() => {
     const g = globalThis as any;
     const { Tichu, declaredClass } = loadTichuAdapterForNodeTests();
-    const {
-      resetAnimTimings,
-      installWindowAnimTimings,
-    } = require("../src/elements/anim-timings");
+    const { resetAnimTimings, installWindowAnimTimings } = require("../src/elements/anim-timings");
     installWindowAnimTimings();
     resetAnimTimings();
 
@@ -4711,4 +4728,581 @@ test("TichuAnimationLayer::flyCards creates synchronous ghost-card divs, kink-fr
       resetAnimTimings();
     }
   });
+});
+
+test("TichuCard::getComputedTooltipParts returns structured special tooltips and touch gestures", async () => {
+  await withMockLitEnv(({ TichuCardEl }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    try {
+      g._ = (s: string) => s;
+
+      // 1. Dragon with passedOrigin separates title, body, and passed meta
+      const card = new TichuCardEl();
+      card.card = { id: "53", type: "1", type_arg: "1" };
+      card.selectable = true;
+      card.reserveFooter = true;
+      card.passedOrigin = {
+        playerId: "2385076",
+        playerName: "dashwood2",
+        avatarUrl: "",
+        seat: "partner",
+        tooltip: "Passed by dashwood2 (Partner)",
+        showGlow: true,
+        showAvatar: true,
+      };
+      assert.deepEqual(card.getComputedTooltipParts(), {
+        title: "Dragon",
+        body: "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it.",
+        meta: "Passed by dashwood2 (Partner)",
+      });
+      const dragonHtml = serializeLitTemplate(card.render());
+      assert.match(dragonHtml, /data-tooltip-title=["']?Dragon["']?/);
+      assert.match(dragonHtml, /data-tooltip-meta=["']?Passed by dashwood2 \(Partner\)["']?/);
+      assert.match(dragonHtml, /data-tooltip-touch=["']?longpress["']?/);
+      assert.match(
+        dragonHtml,
+        /class=["']?passed-avatar-wrap[^"'\n]*["']?[^>]*data-tooltip-touch=["']?tap["']?/,
+      );
+      assert.equal(/\stitle=/.test(dragonHtml), false);
+
+      // 2. Non-point card (2 of Swords) with passedOrigin promotes passed info to body
+      card.card = { id: "1", type: "1", type_arg: "2" };
+      card.selectable = false;
+      assert.deepEqual(card.getComputedTooltipParts(), {
+        title: "",
+        body: "Passed by dashwood2 (Partner)",
+        meta: "",
+      });
+      const twoHtml = serializeLitTemplate(card.render());
+      assert.match(twoHtml, /data-tooltip=["']?Passed by dashwood2 \(Partner\)["']?/);
+      assert.match(twoHtml, /data-tooltip-touch=["']?tap["']?/);
+      assert.equal(/\stitle=/.test(twoHtml), false);
+
+      // 3. Phoenix, Dog, Mahjong, and 10 point cards
+      card.passedOrigin = null;
+      card.card = { id: "54", type: "2", type_arg: "1" };
+      assert.equal(card.getComputedTooltipParts().title, "Phoenix");
+      card.card = { id: "55", type: "3", type_arg: "1" };
+      assert.equal(card.getComputedTooltipParts().title, "Dog");
+      card.card = { id: "56", type: "4", type_arg: "1" };
+      assert.equal(card.getComputedTooltipParts().title, "Mahjong");
+      card.card = { id: "9", type: "1", type_arg: "10" };
+      assert.deepEqual(card.getComputedTooltipParts(), {
+        title: "",
+        body: "Scores 10 points",
+        meta: "",
+      });
+    } finally {
+      g._ = savedUnderscore;
+    }
+  });
+});
+
+test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, and touch gestures", async () => {
+  await withMockLitEnv(
+    ({ TichuTooltipLayer, TOOLTIP_TIMINGS, computeTooltipPosition, resolveTouchMode }) => {
+      // 1. computeTooltipPosition: top placement, flip to bottom, horizontal clamp & arrowX clamp
+      const topNormal = computeTooltipPosition(
+        { left: 400, top: 300, right: 440, bottom: 324, width: 40, height: 24 },
+        { width: 160, height: 40 },
+        { width: 1000, height: 800 },
+        10,
+        10,
+      );
+      assert.equal(topNormal.placement, "top");
+      assert.equal(topNormal.left, 340);
+      assert.equal(topNormal.top, 250);
+      assert.equal(topNormal.arrowX, 80);
+
+      const flippedBottom = computeTooltipPosition(
+        { left: 6, top: 12, right: 30, bottom: 36, width: 24, height: 24 },
+        { width: 180, height: 44 },
+        { width: 390, height: 844 },
+        10,
+        10,
+      );
+      assert.equal(flippedBottom.placement, "bottom");
+      assert.equal(flippedBottom.left, 10);
+      assert.equal(flippedBottom.top, 46);
+      assert.equal(flippedBottom.arrowX, 14);
+
+      // 2. resolveTouchMode: disabled -> tap, interactive -> longpress, static -> tap, explicit override
+      const makeEl = (tag: string, attrs: Record<string, string> = {}, classes: string[] = []) => {
+        const classSet = new Set(classes);
+        return {
+          tagName: tag,
+          classList: { contains: (c: string) => classSet.has(c) },
+          getAttribute: (k: string) => (k in attrs ? attrs[k] : null),
+          contains: (other: any) => other === this,
+          matches: () => false,
+          getBoundingClientRect: () => ({
+            left: 200,
+            top: 200,
+            right: 260,
+            bottom: 230,
+            width: 60,
+            height: 30,
+          }),
+        } as any;
+      };
+      assert.equal(resolveTouchMode(makeEl("DIV")), "tap");
+      assert.equal(resolveTouchMode(makeEl("BUTTON")), "longpress");
+      assert.equal(resolveTouchMode(makeEl("A", {}, ["action-button", "disabled"])), "tap");
+      assert.equal(resolveTouchMode(makeEl("A", { "aria-disabled": "true" })), "tap");
+      assert.equal(resolveTouchMode(makeEl("DIV", {}, ["card", "selectable"])), "longpress");
+      assert.equal(resolveTouchMode(makeEl("BUTTON", { "data-tooltip-touch": "tap" })), "tap");
+
+      // 3. Interactive delegation & timers
+      const g = globalThis as any;
+      const savedSetTimeout = g.setTimeout;
+      const savedClearTimeout = g.clearTimeout;
+      const savedDateNow = Date.now;
+      const savedDoc = g.document;
+      const savedWin = g.window;
+
+      let nowMs = 10000;
+      let nextTimerId = 1;
+      const timers = new Map<number, { fn: () => void; at: number }>();
+      const docListeners = new Map<string, Set<Function>>();
+      const winListeners = new Map<string, Set<Function>>();
+
+      const emit = (type: string, eventInit: Record<string, any> = {}, onWin = false) => {
+        const evt = {
+          type,
+          defaultPrevented: false,
+          propagationStopped: false,
+          preventDefault() {
+            this.defaultPrevented = true;
+          },
+          stopPropagation() {
+            this.propagationStopped = true;
+          },
+          composedPath: () => eventInit.path ?? [eventInit.target].filter(Boolean),
+          ...eventInit,
+        };
+        const map = onWin ? winListeners : docListeners;
+        for (const fn of [...(map.get(type) ?? [])]) {
+          fn(evt);
+        }
+        return evt;
+      };
+
+      const advance = (ms: number) => {
+        nowMs += ms;
+        let ran = true;
+        while (ran) {
+          ran = false;
+          for (const [id, entry] of [...timers.entries()]) {
+            if (entry.at <= nowMs) {
+              timers.delete(id);
+              entry.fn();
+              ran = true;
+            }
+          }
+        }
+      };
+
+      try {
+        Date.now = () => nowMs;
+        g.setTimeout = (fn: () => void, delay = 0) => {
+          const id = nextTimerId++;
+          timers.set(id, { fn, at: nowMs + delay });
+          return id;
+        };
+        g.clearTimeout = (id: number) => {
+          timers.delete(id);
+        };
+        g.document = {
+          ...savedDoc,
+          addEventListener(type: string, fn: Function) {
+            if (!docListeners.has(type)) docListeners.set(type, new Set());
+            docListeners.get(type)!.add(fn);
+          },
+          removeEventListener(type: string, fn: Function) {
+            docListeners.get(type)?.delete(fn);
+          },
+        };
+        g.window = {
+          ...savedWin,
+          addEventListener(type: string, fn: Function) {
+            if (!winListeners.has(type)) winListeners.set(type, new Set());
+            winListeners.get(type)!.add(fn);
+          },
+          removeEventListener(type: string, fn: Function) {
+            winListeners.get(type)?.delete(fn);
+          },
+        };
+
+        const layer = new TichuTooltipLayer();
+        layer.performUpdate = () => {};
+        const cssRaw = TichuTooltipLayer.styles?.cssText ?? String(TichuTooltipLayer.styles ?? "");
+        assert.ok(cssRaw.includes("var(--tichu-tooltip-bg"), "Should use theme tooltip bg var");
+        assert.ok(cssRaw.includes("prefers-reduced-motion: reduce"));
+
+        layer.connectedCallback();
+        try {
+          const statEl = makeEl("DIV", {
+            "data-tooltip": "Cards in hand",
+            "data-tooltip-touch": "tap",
+          });
+          const iconInner = makeEl("SPAN");
+          statEl.contains = (n: any) => n === statEl || n === iconInner;
+
+          const starEl = makeEl("DIV", {
+            "data-tooltip": "Points captured",
+            "data-tooltip-touch": "tap",
+          });
+          starEl.contains = (n: any) => n === starEl;
+
+          // Hover delay: 199ms still closed, 200ms opens via composedPath across shadow boundary
+          emit("pointerover", { pointerType: "mouse", target: statEl, path: [iconInner, statEl] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs - 1);
+          assert.equal(layer.isOpen, false);
+          advance(1);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Cards in hand");
+          assert.equal(layer.activeTarget, statEl);
+
+          // Moving onto tooltip box itself keeps it open (WCAG 1.4.13 hoverable)
+          emit("pointerout", { pointerType: "mouse", relatedTarget: layer });
+          emit("pointerover", { pointerType: "mouse", path: [layer] });
+          advance(TOOLTIP_TIMINGS.hideGraceMs + 20);
+          assert.equal(layer.isOpen, true);
+
+          // Warm switch to another trigger opens in 30ms
+          emit("pointerout", { pointerType: "mouse", relatedTarget: starEl });
+          emit("pointerover", { pointerType: "mouse", path: [starEl] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Points captured");
+
+          // Escape dismisses without reopening until pointerout
+          emit("keydown", { key: "Escape" });
+          assert.equal(layer.isOpen, false);
+          emit("pointerover", { pointerType: "mouse", path: [starEl] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs + 50);
+          assert.equal(layer.isOpen, false);
+          emit("pointerout", { pointerType: "mouse", relatedTarget: null });
+
+          // Touch tap on static element toggles open and closed; outside tap dismisses
+          emit("pointerdown", {
+            pointerType: "touch",
+            pointerId: 1,
+            clientX: 220,
+            clientY: 210,
+            path: [statEl],
+          });
+          emit("pointerup", {
+            pointerType: "touch",
+            pointerId: 1,
+            clientX: 220,
+            clientY: 210,
+            path: [statEl],
+          });
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.isTouchOpen, true);
+          emit("pointerdown", {
+            pointerType: "touch",
+            pointerId: 2,
+            clientX: 10,
+            clientY: 10,
+            path: [],
+          });
+          assert.equal(layer.isOpen, false);
+
+          // Touch long-press on enabled button fires at 400ms and suppresses ensuing synthetic click
+          const btnEl = makeEl("BUTTON", {
+            "data-tooltip": "Bet 200 Points",
+            "data-tooltip-touch": "longpress",
+          });
+          btnEl.contains = (n: any) => n === btnEl;
+          emit("pointerdown", {
+            pointerType: "touch",
+            pointerId: 3,
+            clientX: 220,
+            clientY: 210,
+            path: [btnEl],
+          });
+          advance(TOOLTIP_TIMINGS.longPressMs - 10);
+          assert.equal(layer.isOpen, false);
+          advance(10);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Bet 200 Points");
+          emit("pointerup", {
+            pointerType: "touch",
+            pointerId: 3,
+            clientX: 220,
+            clientY: 210,
+            path: [btnEl],
+          });
+          const blockedClick = emit("click", { path: [btnEl] });
+          assert.equal(blockedClick.defaultPrevented, true);
+          assert.equal(blockedClick.propagationStopped, true);
+
+          // Drag >8px cancels long-press
+          layer.hide();
+          emit("pointerdown", {
+            pointerType: "touch",
+            pointerId: 4,
+            clientX: 220,
+            clientY: 210,
+            path: [btnEl],
+          });
+          emit("pointermove", {
+            pointerType: "touch",
+            pointerId: 4,
+            clientX: 235,
+            clientY: 210,
+            path: [btnEl],
+          });
+          advance(TOOLTIP_TIMINGS.longPressMs + 50);
+          emit("pointerup", {
+            pointerType: "touch",
+            pointerId: 4,
+            clientX: 235,
+            clientY: 210,
+            path: [btnEl],
+          });
+          assert.equal(layer.isOpen, false);
+
+          // Disabled button tap shows tooltip immediately
+          const disabledBtn = makeEl(
+            "A",
+            { "data-tooltip": "Combo does not beat 10", "aria-disabled": "true" },
+            ["action-button", "disabled"],
+          );
+          emit("pointerdown", {
+            pointerType: "touch",
+            pointerId: 5,
+            clientX: 220,
+            clientY: 210,
+            path: [disabledBtn],
+          });
+          emit("pointerup", {
+            pointerType: "touch",
+            pointerId: 5,
+            clientX: 220,
+            clientY: 210,
+            path: [disabledBtn],
+          });
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Combo does not beat 10");
+          layer.hide();
+          advance(TOOLTIP_TIMINGS.warmWindowMs + 10);
+
+          // 4. pointermove-only Shadow DOM hover lifecycle (no pointerover/pointerout)
+          const makeMutableEl = (
+            tag: string,
+            initialAttrs: Record<string, string> = {},
+            extra: Record<string, any> = {},
+          ) => {
+            const attrs: Record<string, string> = { ...initialAttrs };
+            return {
+              tagName: tag,
+              id: extra.id ?? "",
+              parentNode: extra.parentNode ?? null,
+              shadowRoot: extra.shadowRoot ?? null,
+              isConnected: true,
+              classList: { contains: () => false },
+              getAttribute: (k: string) => (k in attrs ? attrs[k] : null),
+              setAttribute: (k: string, v: string) => {
+                attrs[k] = String(v);
+              },
+              contains: (other: any) => other === extra.self,
+              matches: (sel: string) => (extra.focusVisible && sel === ":focus-visible") || false,
+              getBoundingClientRect: () => ({
+                left: 940,
+                top: 290,
+                right: 990,
+                bottom: 310,
+                width: 50,
+                height: 20,
+              }),
+            } as any;
+          };
+
+          const tichuGameHost = makeMutableEl("TICHU-GAME");
+          const boardBg = makeMutableEl("DIV", {}, { parentNode: tichuGameHost });
+          const row0 = makeMutableEl(
+            "DIV",
+            { "data-tooltip": "Round: 1", "data-tooltip-touch": "tap" },
+            { parentNode: boardBg },
+          );
+          const row0Icon = makeMutableEl("SPAN", {}, { parentNode: row0 });
+          const row0Value = makeMutableEl("SPAN", {}, { parentNode: row0 });
+          const row1 = makeMutableEl(
+            "DIV",
+            { "data-tooltip": "Trick: 1", "data-tooltip-touch": "tap" },
+            { parentNode: boardBg },
+          );
+          const row2 = makeMutableEl(
+            "DIV",
+            { "data-tooltip": "Trick Points: 35", "data-tooltip-touch": "tap" },
+            { parentNode: boardBg },
+          );
+          const trickBtn = makeMutableEl(
+            "BUTTON",
+            { "data-tooltip": "Show current trick", "data-tooltip-touch": "longpress" },
+            { parentNode: boardBg, focusVisible: true },
+          );
+          const innerFocusHost = makeMutableEl(
+            "TICHU-STATUS",
+            {},
+            {
+              parentNode: boardBg,
+              shadowRoot: { activeElement: trickBtn },
+            },
+          );
+          tichuGameHost.shadowRoot = { host: tichuGameHost, activeElement: innerFocusHost };
+
+          // Moving over neutral board space inside <tichu-game> opens nothing
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs + 50);
+          assert.equal(layer.isOpen, false);
+
+          // Moving onto row0, then across child .status-icon and .status-value before 200ms does NOT reset the 200ms timer
+          emit("pointermove", {
+            pointerType: "mouse",
+            path: [row0Icon, row0, boardBg, tichuGameHost],
+          });
+          advance(120);
+          assert.equal(layer.isOpen, false);
+          emit("pointermove", {
+            pointerType: "mouse",
+            path: [row0Value, row0, boardBg, tichuGameHost],
+          });
+          advance(80);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Round: 1");
+          assert.equal(layer.activeTarget, row0);
+
+          // Direct pointermove transitions: row0 -> row1 -> gap -> row2 -> .trick-btn in warmOpenMs (30ms) without pointerover/pointerout
+          emit("pointermove", { pointerType: "mouse", path: [row1, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Trick: 1");
+          assert.equal(layer.activeTarget, row1);
+
+          // Brief gap (< hideGraceMs) then onto row2
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(40);
+          emit("pointermove", { pointerType: "mouse", path: [row2, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Trick Points: 35");
+          assert.equal(layer.activeTarget, row2);
+
+          // Live attribute change on hovered row2 updates bodyText on pointermove without hiding
+          row2.setAttribute("data-tooltip", "Trick Points: 55");
+          emit("pointermove", { pointerType: "mouse", path: [row2, boardBg, tichuGameHost] });
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Trick Points: 55");
+
+          // Move directly onto .trick-btn
+          emit("pointermove", { pointerType: "mouse", path: [trickBtn, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Show current trick");
+          assert.equal(layer.activeTarget, trickBtn);
+
+          // Repeated pointermove over empty board space every 25ms still closes after hideGraceMs (110ms)
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(25);
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(25);
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(25);
+          assert.equal(layer.isOpen, true);
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          advance(35);
+          assert.equal(
+            layer.isOpen,
+            false,
+            "Continuous pointermove on empty space must not reset hideGraceMs",
+          );
+
+          // Escape suppression on pointermove clears only after leaving trigger
+          advance(TOOLTIP_TIMINGS.warmWindowMs + 10);
+          emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs);
+          assert.equal(layer.isOpen, true);
+          emit("keydown", { key: "Escape" });
+          assert.equal(layer.isOpen, false);
+          emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs + 50);
+          assert.equal(
+            layer.isOpen,
+            false,
+            "Escape must keep row0 suppressed while pointer stays on row0",
+          );
+          emit("pointermove", { pointerType: "mouse", path: [boardBg, tichuGameHost] });
+          emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs);
+          assert.equal(layer.isOpen, true, "Leaving row0 and returning re-enables tooltip");
+
+          // Mouse pointerdown on enabled trigger hides and suppresses jitter reopen until moving off
+          emit("pointerdown", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          assert.equal(layer.isOpen, false);
+          emit("pointermove", {
+            pointerType: "mouse",
+            path: [row0Value, row0, boardBg, tichuGameHost],
+          });
+          advance(TOOLTIP_TIMINGS.warmOpenMs + 50);
+          assert.equal(
+            layer.isOpen,
+            false,
+            "Click jitter over same trigger must not reopen immediately",
+          );
+          emit("pointermove", { pointerType: "mouse", path: [row1, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Trick: 1");
+
+          // Triggers inside #studio-test-bar are ignored
+          const devBar = makeMutableEl("DIV", {}, { id: "studio-test-bar" });
+          const devBtn = makeMutableEl(
+            "BUTTON",
+            { "data-tooltip": "Run Smoke Test" },
+            { parentNode: devBar },
+          );
+          emit("pointermove", { pointerType: "mouse", path: [devBtn, devBar] });
+          advance(TOOLTIP_TIMINGS.hideGraceMs + 10);
+          assert.equal(layer.isOpen, false, "#studio-test-bar triggers must be ignored");
+
+          // Keyboard Tab inside nested Shadow DOM updates focus tooltip via deep activeElement walk, and window blur closes it
+          g.document.activeElement = tichuGameHost;
+          emit("keydown", { key: "Tab" });
+          advance(0);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Show current trick");
+          assert.equal(layer.activeTarget, trickBtn);
+
+          const noTipBtn = makeMutableEl("BUTTON", {}, { parentNode: boardBg, focusVisible: true });
+          innerFocusHost.shadowRoot.activeElement = noTipBtn;
+          emit("keyup", { key: "Tab" });
+          assert.equal(
+            layer.isOpen,
+            false,
+            "Tabbing onto element without data-tooltip hides focus tooltip",
+          );
+
+          innerFocusHost.shadowRoot.activeElement = trickBtn;
+          emit("keyup", { key: "Tab" });
+          assert.equal(layer.isOpen, true);
+          emit("blur", {}, true);
+          assert.equal(layer.isOpen, false, "Window blur closes open tooltip");
+        } finally {
+          layer.disconnectedCallback();
+          assert.equal(timers.size, 0, "All timers should be cleared on disconnect");
+        }
+      } finally {
+        Date.now = savedDateNow;
+        g.setTimeout = savedSetTimeout;
+        g.clearTimeout = savedClearTimeout;
+        g.document = savedDoc;
+        g.window = savedWin;
+      }
+    },
+  );
 });

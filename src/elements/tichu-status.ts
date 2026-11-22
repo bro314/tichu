@@ -35,7 +35,7 @@ export class TichuStatus extends LitElement {
         align-items: center;
         column-gap: 6px;
         line-height: 24px;
-        cursor: help;
+        cursor: default;
       }
       .status-value {
         text-align: right;
@@ -169,7 +169,7 @@ export class TichuStatus extends LitElement {
 
   private renderMetricRow(iconClass: string, label: string, counterId: string, value: number) {
     return html`
-      <div class="status-row" title=${`${label} ${value}`}>
+      <div class="status-row" data-tooltip=${`${label} ${value}`} data-tooltip-touch="tap">
         <span class="status-icon ${iconClass}" aria-hidden="true"></span>
         <span class="visually-hidden">${label} </span>
         <span id=${counterId} class="status-value">${value}</span>
@@ -184,7 +184,8 @@ export class TichuStatus extends LitElement {
       <button
         type="button"
         class="trick-btn"
-        title=${showTrickLabel}
+        data-tooltip=${showTrickLabel}
+        data-tooltip-touch="longpress"
         aria-label=${showTrickLabel}
         @click=${this.onShowClick}
       >

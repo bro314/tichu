@@ -674,7 +674,8 @@ export class TichuSettingsModal extends LitElement {
               id="tichu-settings-close"
               class="close-btn"
               aria-label=${_("Close")}
-              title=${_("Close")}
+              data-tooltip=${_("Close")}
+              data-tooltip-touch="longpress"
               @click=${this.onClose}
             >
               <svg
@@ -702,7 +703,9 @@ export class TichuSettingsModal extends LitElement {
                   <span id="pref-sort-label" class="setting-label">${_("Card order")}</span>
                 </div>
                 <div class="segmented" role="radiogroup" aria-labelledby="pref-sort-label">
-                  <label class=${classMap({ segment: true, active: this.handSortOrder === "rank" })}>
+                  <label
+                    class=${classMap({ segment: true, active: this.handSortOrder === "rank" })}
+                  >
                     <input
                       type="radio"
                       name="tichu-hand-sort"

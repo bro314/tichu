@@ -1,4 +1,4 @@
-import { html, css, LitElement } from "lit";
+import { html, css, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import {
   Combo,
@@ -291,7 +291,8 @@ export class TichuActionBar extends LitElement {
                   href="#"
                   id="myMakeTichuBet"
                   class="action-button bgabutton bgabutton_green"
-                  title=${_("Bet 100 Points, that you will finish first")}
+                  data-tooltip=${_("Bet 100 Points, that you will finish first")}
+                  data-tooltip-touch="longpress"
                   @click=${this.onTichuBet}
                   >${_("Tichu")}</a
                 >`
@@ -350,7 +351,9 @@ export class TichuActionBar extends LitElement {
         href="#"
         id="myPlayCombo"
         class="action-button bgabutton bgabutton_blue ${validation.isValid ? "" : "disabled"}"
-        title=${validation.tooltip}
+        aria-disabled=${validation.isValid ? nothing : "true"}
+        data-tooltip=${validation.tooltip || nothing}
+        data-tooltip-touch=${validation.isValid ? "longpress" : "tap"}
         @click=${this.onPlayCombo}
         >${validation.buttonLabel}</a
       >`;
@@ -387,7 +390,9 @@ export class TichuActionBar extends LitElement {
           href="#"
           id="myPass"
           class="action-button bgabutton bgabutton_red ${passCheck.canPass ? "" : "disabled"}"
-          title=${passCheck.tooltip || ""}
+          aria-disabled=${passCheck.canPass ? nothing : "true"}
+          data-tooltip=${passCheck.tooltip || nothing}
+          data-tooltip-touch=${passCheck.canPass ? "longpress" : "tap"}
           @click=${(e: Event) => this.onPass(e, true)}
           >${passCheck.buttonLabel}</a
         >`;
@@ -414,7 +419,8 @@ export class TichuActionBar extends LitElement {
           href="#"
           id="myPassOnce"
           class="action-button bgabutton bgabutton_red"
-          title=${_("Automatically pass next time (unless a new trick starts)")}
+          data-tooltip=${_("Automatically pass next time (unless a new trick starts)")}
+          data-tooltip-touch="longpress"
           @click=${(e: Event) => this.onPass(e, true)}
           >${_("Auto-Pass once")}</a
         >`;
@@ -423,7 +429,8 @@ export class TichuActionBar extends LitElement {
         href="#"
         id="myCancelAutopass"
         class="action-button bgabutton bgabutton_red"
-        title=${_("You have chosen to automatically pass during this trick. Click to cancel")}
+        data-tooltip=${_("You have chosen to automatically pass during this trick. Click to cancel")}
+        data-tooltip-touch="longpress"
         @click=${this.onCancelAutopass}
         >${_("Cancel Auto-Pass")}</a
       >`;
@@ -458,7 +465,9 @@ export class TichuActionBar extends LitElement {
         href="#"
         id="myPassTrick"
         class="action-button bgabutton bgabutton_gray ${isDisabled ? "disabled" : ""}"
-        title=${tooltip}
+        aria-disabled=${isDisabled ? "true" : nothing}
+        data-tooltip=${tooltip || nothing}
+        data-tooltip-touch=${isDisabled ? "tap" : "longpress"}
         @click=${(e: Event) => this.onPass(e, false)}
         >${_("Auto-Pass this Trick")}</a
       >`;

@@ -427,4 +427,7 @@ export const styles = css`
     --icon-size: 28px;
     background-position: calc(var(--icon-size) * -3) calc(var(--icon-size) * -1);
   }
+  [data-tooltip-touch="longpress"] {
+    -webkit-touch-callout: none;
+  }
 `;

@@ -278,7 +278,8 @@ export class TichuPassArea extends LitElement {
         })}
         id="playertable_${slot.dir}"
         data-player-id="${slot.playerId}"
-        title=${slotTooltip}
+        data-tooltip=${slotTooltip}
+        data-tooltip-touch="longpress"
         @click=${() => this.onSlotClick(slot.dir - 1)}
       >
         <div class="playertable-header">
@@ -314,12 +315,14 @@ export class TichuPassArea extends LitElement {
               <div
                 class="icon big grandtichucolor ${slot.playerId}"
                 style="display: ${isGrandTichu ? "inline-block" : "none"}"
-                title=${_("Grand Tichu bet")}
+                data-tooltip=${_("Grand Tichu bet")}
+                data-tooltip-touch="tap"
               ></div>
               <div
                 class="icon big tichucolor ${slot.playerId}"
                 style="display: ${isTichu ? "inline-block" : "none"}"
-                title=${_("Tichu bet")}
+                data-tooltip=${_("Tichu bet")}
+                data-tooltip-touch="tap"
               ></div>
             </div>
           </div>

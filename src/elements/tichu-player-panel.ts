@@ -23,6 +23,9 @@ export class TichuPlayerPanel extends LitElement {
         .ha_board {
           clear: both;
         }
+        .stat-group {
+          display: inline;
+        }
       `,
     ];
   }
@@ -96,14 +99,14 @@ export class TichuPlayerPanel extends LitElement {
     // prettier-ignore
     return html`
       <div class="ha_board">
-        <div class="icon hand" title=${_("Cards in hand")}></div>&#x00D7;<span id="handcount_${id}" class="count handcount ${id}" title=${_("Cards in hand")}>${handcount}</span>
-        <div class="icon star" title=${_("Points captured")}></div>&#x00D7;<span id="pointcount_${id}" class="count pointcount ${id}" title=${_("Points captured")}>${capturedPoints}</span>
-        <div id="grandtichublack_${id}" class="icon grandtichublack ${id}" style="display: ${showGrandTichuBlack ? "inline-block" : "none"}" title=${_("Grand Tichu bet yet to be made")}></div>
-        <div id="grandtichucolor_${id}" class="icon grandtichucolor ${id}" style="display: ${showGrandTichuColor ? "inline-block" : "none"}" title=${_("Grand Tichu bet")}></div>
-        <div id="tichublack_${id}" class="icon tichublack ${id}" style="display: ${showTichuBlack ? "inline-block" : "none"}" title=${_("Tichu bet yet to be made")}></div>
-        <div id="tichucolor_${id}" class="icon tichucolor ${id}" style="display: ${showTichuColor ? "inline-block" : "none"}" title=${_("Tichu bet")}></div>
-        <div id="firstoutcolor_${id}" class="icon firstoutcolor ${id}" style="display: ${isFirstOut ? "inline-block" : "none"}" title=${_("First player out")}></div>
-        <div id="cardback_${id}" class="icon cardback ${id}" style="display: ${isPassReady ? "inline-block" : "none"}" title=${_("has passed")}></div>
+        <span class="stat-group" data-tooltip=${_("Cards in hand")} data-tooltip-touch="tap"><div class="icon hand"></div>&#x00D7;<span id="handcount_${id}" class="count handcount ${id}">${handcount}</span></span>
+        <span class="stat-group" data-tooltip=${_("Points captured")} data-tooltip-touch="tap"><div class="icon star"></div>&#x00D7;<span id="pointcount_${id}" class="count pointcount ${id}">${capturedPoints}</span></span>
+        <div id="grandtichublack_${id}" class="icon grandtichublack ${id}" style="display: ${showGrandTichuBlack ? "inline-block" : "none"}" data-tooltip=${_("Grand Tichu bet yet to be made")} data-tooltip-touch="tap"></div>
+        <div id="grandtichucolor_${id}" class="icon grandtichucolor ${id}" style="display: ${showGrandTichuColor ? "inline-block" : "none"}" data-tooltip=${_("Grand Tichu bet")} data-tooltip-touch="tap"></div>
+        <div id="tichublack_${id}" class="icon tichublack ${id}" style="display: ${showTichuBlack ? "inline-block" : "none"}" data-tooltip=${_("Tichu bet yet to be made")} data-tooltip-touch="tap"></div>
+        <div id="tichucolor_${id}" class="icon tichucolor ${id}" style="display: ${showTichuColor ? "inline-block" : "none"}" data-tooltip=${_("Tichu bet")} data-tooltip-touch="tap"></div>
+        <div id="firstoutcolor_${id}" class="icon firstoutcolor ${id}" style="display: ${isFirstOut ? "inline-block" : "none"}" data-tooltip=${_("First player out")} data-tooltip-touch="tap"></div>
+        <div id="cardback_${id}" class="icon cardback ${id}" style="display: ${isPassReady ? "inline-block" : "none"}" data-tooltip=${_("has passed")} data-tooltip-touch="tap"></div>
       </div>
     `;
   }
