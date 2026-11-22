@@ -5063,6 +5063,14 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
         layer.performUpdate = () => {};
         const cssRaw = TichuTooltipLayer.styles?.cssText ?? String(TichuTooltipLayer.styles ?? "");
         assert.ok(cssRaw.includes("var(--tichu-tooltip-bg"), "Should use theme tooltip bg var");
+        assert.ok(
+          cssRaw.includes("overflow: visible"),
+          "Should override UA [popover] overflow: auto so the protruding arrow never triggers a scrollbar",
+        );
+        assert.ok(
+          cssRaw.includes(":is(.open, :popover-open)"),
+          "Should combine .open and :popover-open with :is() for forgiving selector parsing",
+        );
         assert.ok(cssRaw.includes("prefers-reduced-motion: reduce"));
 
         layer.connectedCallback();

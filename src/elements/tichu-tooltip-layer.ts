@@ -185,6 +185,7 @@ export class TichuTooltipLayer extends LitElement {
         font-size: 13.5px;
         line-height: 1.4;
         text-align: left;
+        overflow: visible;
         overflow-wrap: break-word;
         pointer-events: auto;
         opacity: 0;
@@ -199,12 +200,10 @@ export class TichuTooltipLayer extends LitElement {
       .tooltip-box.has-rich {
         padding: 9px 12px;
       }
-      .tooltip-box.open,
-      .tooltip-box:popover-open {
+      .tooltip-box:is(.open, :popover-open) {
         display: block;
       }
-      .tooltip-box.positioned.open,
-      .tooltip-box.positioned:popover-open {
+      .tooltip-box.positioned:is(.open, :popover-open) {
         opacity: 1;
         transform: translateY(0);
       }
