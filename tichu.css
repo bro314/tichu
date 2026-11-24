@@ -98,10 +98,12 @@ html.theme0,
 }
 html.theme1,
 .theme1 {
+  --bg-color-light: rgba(30, 38, 52, 0.9);
   --bg-color-html: #0f141c;
   --bg-color-play-area: rgba(20, 26, 36, 0.72);
   --bg-color-lighter: rgba(30, 38, 52, 0.9);
   --bg-color-active: #38bdf8;
+  --tichu-roundedbox-text: #e2e8f0;
   --tichu-play-area-border: rgba(148, 163, 184, 0.14);
   --tichu-play-area-shadow:
     0 20px 48px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -152,15 +154,30 @@ body.theme1 {
   --game-bga-player-panel-color: #cbd5e1;
   border: 1px solid rgba(148, 163, 184, 0.18);
 }
+.theme1 .player_board_inner .player-name,
+.theme1 .player_board_inner .player-name a,
+.theme1 .roundedbox .playername,
+.theme1 .log .playername {
+  text-shadow: none !important;
+}
 .theme1 .player_board_inner .player-name a[style*="000000"],
-.theme1 .player_board_inner .player-name a[style*="rgb(0, 0, 0)"] {
+.theme1 .player_board_inner .player-name a[style*="rgb(0, 0, 0)"],
+.theme1 .roundedbox .playername[style*="000000"],
+.theme1 .roundedbox .playername[style*="rgb(0, 0, 0)"] {
   color: #f1f5f9 !important;
 }
 .theme1 .player_board_inner .player-name a[style*="ff0000"],
 .theme1 .player_board_inner .player-name a[style*="cc0000"],
 .theme1 .player_board_inner .player-name a[style*="rgb(255, 0, 0)"],
-.theme1 .player_board_inner .player-name a[style*="rgb(204, 0, 0)"] {
+.theme1 .player_board_inner .player-name a[style*="rgb(204, 0, 0)"],
+.theme1 .roundedbox .playername[style*="ff0000"],
+.theme1 .roundedbox .playername[style*="cc0000"],
+.theme1 .roundedbox .playername[style*="rgb(255, 0, 0)"],
+.theme1 .roundedbox .playername[style*="rgb(204, 0, 0)"] {
   color: #fb7185 !important;
+}
+.theme1 .roundedbox {
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 html.theme2,
 .theme2 {
@@ -338,8 +355,23 @@ a.themelink .bg3 {
   background-color: var(--bg-color-lighter);
 }
 
-.roundedbox {
+.roundedbox,
+html.dark .roundedbox,
+html[data-theme="dark"] .roundedbox,
+html.dark #right-side .roundedbox,
+html[data-theme="dark"] #right-side .roundedbox,
+html.dark #logs .log .roundedbox,
+html[data-theme="dark"] #logs .log .roundedbox {
   background-color: var(--bg-color-light);
+  color: var(--tichu-roundedbox-text, #1f2328);
+}
+html.dark #right-side .roundedbox a:not(.bgabutton):not(.playername),
+html[data-theme="dark"] #right-side .roundedbox a:not(.bgabutton):not(.playername),
+html.dark #spectatorbox,
+html[data-theme="dark"] #spectatorbox,
+html.dark #spectatorbox a,
+html[data-theme="dark"] #spectatorbox a {
+  color: var(--tichu-roundedbox-text, #1f2328);
 }
 
 #page-content,
@@ -392,13 +424,27 @@ a.themelink .bg3 {
   box-shadow: none;
   padding: 0;
 }
-.player_board_inner {
+.player_board_inner,
+html.dark #right-side .player_board_inner,
+html[data-theme="dark"] #right-side .player_board_inner {
   position: relative;
   background-color: var(--bg-color-lighter);
+  color: var(--tichu-text, #1f2328);
+  --game-bga-player-panel-color: var(--tichu-text, #1f2328);
   border-radius: var(--border-radius);
   box-shadow: var(--elevation);
   margin-right: 4px;
   padding: 5px 3px;
+}
+html.dark .player_board_inner .player_score,
+html[data-theme="dark"] .player_board_inner .player_score,
+html.dark .player_board_inner .player_score_value,
+html[data-theme="dark"] .player_board_inner .player_score_value,
+html.dark .player_board_inner .timeToThink,
+html[data-theme="dark"] .player_board_inner .timeToThink,
+html.dark .player_board_inner .player_board_content,
+html[data-theme="dark"] .player_board_inner .player_board_content {
+  color: var(--tichu-text, #1f2328);
 }
 .player-name {
   position: relative;
@@ -489,8 +535,10 @@ span.pass img {
   min-height: 32px;
   box-sizing: content-box;
   display: grid;
-  grid-template-columns:
-    repeat(3, minmax(130px, 160px)) minmax(24px, 1fr) repeat(2, minmax(130px, 160px));
+  grid-template-columns: repeat(3, minmax(130px, 160px)) minmax(24px, 1fr) repeat(
+      2,
+      minmax(130px, 160px)
+    );
   column-gap: 10px;
   align-items: center;
   background-color: var(--bg-color-lighter);
