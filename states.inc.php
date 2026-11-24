@@ -60,8 +60,8 @@ $machinestates = [
 
   ST_GRAND_TICHU_BETS => [
     "name" => "grandTichuBets",
-    "description" => clienttranslate("All players must choose if they want to bet a Grand Tichu"),
-    "descriptionmyturn" => clienttranslate('${you} must choose if you want to bet a Grand Tichu'),
+    "description" => clienttranslate("All players may call Grand Tichu"),
+    "descriptionmyturn" => clienttranslate('${you} may call Grand Tichu'),
     "type" => "multipleactiveplayer",
     "possibleactions" => ["grandTichuBet", "tichuBet"],
     "transitions" => ["dealLastCards" => ST_DEAL_LAST_CARDS],
@@ -77,8 +77,8 @@ $machinestates = [
 
   ST_GIVE_CARDS => [
     "name" => "giveCards",
-    "description" => clienttranslate("All players must give a card to each other player"),
-    "descriptionmyturn" => clienttranslate('${you} must give a card to each other player'),
+    "description" => clienttranslate("All players must pass 3 cards"),
+    "descriptionmyturn" => clienttranslate('${you} must pass 3 cards'),
     "action" => "stGiveCards",
     "type" => "multipleactiveplayer",
     "possibleactions" => ["giveCards", "tichuBet"],
@@ -125,8 +125,8 @@ $machinestates = [
 
   ST_PLAY_COMBO_OPEN => [
     "name" => "playComboOpen",
-    "description" => clienttranslate('${actplayer} must play an opening card combination'),
-    "descriptionmyturn" => clienttranslate('${you} must play an opening card combination'),
+    "description" => clienttranslate('${actplayer} must lead'),
+    "descriptionmyturn" => clienttranslate('${you} must lead'),
     "type" => "activeplayer",
     "args" => "argPlayComboOpen",
     "possibleactions" => ["playCombo", "tichuBet"],
@@ -140,8 +140,8 @@ $machinestates = [
 
   ST_PLAY_COMBO => [
     "name" => "playCombo",
-    "description" => clienttranslate('${actplayer} must play a card combination, or pass'),
-    "descriptionmyturn" => clienttranslate('${you} must play a card combination, or pass'),
+    "description" => clienttranslate('${actplayer} must play or pass'),
+    "descriptionmyturn" => clienttranslate('${you} must play or pass'),
     "type" => "activeplayer",
     "possibleactions" => ["playCombo", "tichuBet", "pass"],
     "transitions" => [
@@ -169,8 +169,8 @@ $machinestates = [
 
   ST_PHOENIX_PLAY => [
     "name" => "phoenixPlay",
-    "description" => clienttranslate('${actplayer} must choose a value for the phoenix'),
-    "descriptionmyturn" => clienttranslate('${you} must choose a value for the phoenix'),
+    "description" => clienttranslate('${actplayer} must choose a Phoenix value'),
+    "descriptionmyturn" => clienttranslate('${you} must choose a Phoenix value'),
     "type" => "activeplayer",
     "args" => "argsPhoenixPlay",
     "possibleactions" => ["phoenixPlay", "cancelPhoenix"],
@@ -212,12 +212,8 @@ $machinestates = [
 
   ST_CONFIRM_TRICK => [
     "name" => "confirmTrick",
-    "description" => clienttranslate(
-      '${actplayer} must collect the trick. Bombs can still be played'
-    ),
-    "descriptionmyturn" => clienttranslate(
-      '${you} must collect the trick. Bombs can still be played'
-    ),
+    "description" => clienttranslate('${actplayer} must collect the trick'),
+    "descriptionmyturn" => clienttranslate('${you} must collect the trick'),
     "type" => "activeplayer",
     "possibleactions" => ["collect"],
     "transitions" => [
@@ -230,8 +226,8 @@ $machinestates = [
 
   ST_CHOOSE_DRAGON_GIFT => [
     "name" => "chooseDragonGift",
-    "description" => clienttranslate('${actplayer} must choose who to give the Dragon trick'),
-    "descriptionmyturn" => clienttranslate('${you} must choose who to give the Dragon trick'),
+    "description" => clienttranslate('${actplayer} must gift the Dragon trick'),
+    "descriptionmyturn" => clienttranslate('${you} must gift the Dragon trick'),
     "type" => "activeplayer",
     "args" => "argChooseDragonGift",
     "possibleactions" => ["chooseDragonGift"],
