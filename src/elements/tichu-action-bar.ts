@@ -46,8 +46,7 @@ export class TichuActionBar extends LitElement {
           box-sizing: content-box;
           display: grid;
           grid-template-columns:
-            minmax(140px, 180px) minmax(130px, 160px) minmax(150px, 175px) minmax(16px, 1fr)
-            minmax(115px, 130px) minmax(90px, 110px) minmax(8px, 1.6fr);
+            repeat(3, minmax(130px, 160px)) minmax(24px, 1fr) repeat(2, minmax(130px, 160px));
           column-gap: 10px;
           align-items: center;
           background: var(--tichu-bar-bg, var(--bg-color-lighter));
@@ -100,15 +99,13 @@ export class TichuActionBar extends LitElement {
           grid-column: 6;
           min-height: 32px;
         }
-        #buttons .space2 {
-          grid-column: 7;
-        }
         :host-context(.lockedInterface) #buttons .bgabutton {
           visibility: hidden;
         }
         #buttons .bgabutton {
           text-align: center;
           margin: 0;
+          padding: 7px 10px;
           width: 100%;
           box-sizing: border-box;
           text-shadow: none;
@@ -268,7 +265,7 @@ export class TichuActionBar extends LitElement {
                   id="myPlayBomb"
                   class="action-button bgabutton bgabutton_gray"
                   @click=${this.onPlayBomb}
-                  >${_("Play a Bomb")}</a
+                  >${_("Play Bomb")}</a
                 >`
               : ""
           }
@@ -289,7 +286,6 @@ export class TichuActionBar extends LitElement {
               : ""
           }
         </div>
-        <div class="space2"></div>
       </div>
       ${wishBombCallout ? this.renderWishBombCallout(wishBombCallout) : ""}
     `;
@@ -321,10 +317,10 @@ export class TichuActionBar extends LitElement {
       return "";
     }
     if (this.acceptingCardsCountdown) {
-      return html`<h3>${_("Auto accepting in 2 seconds ...")}</h3>`;
+      return html`<h3>${_("Auto accepting ...")}</h3>`;
     }
     if (this.collectingTrickCountdown) {
-      return html`<h3>${_("Auto collecting in 2 seconds ...")}</h3>`;
+      return html`<h3>${_("Auto collecting ...")}</h3>`;
     }
 
     const canPlayCombo =
@@ -463,7 +459,7 @@ export class TichuActionBar extends LitElement {
         data-tooltip-tier=${isDisabled ? nothing : "slow"}
         data-tooltip-touch=${isDisabled ? "tap" : "longpress"}
         @click=${(e: Event) => this.onPass(e, false)}
-        >${_("Auto-Pass this Trick")}</a
+        >${_("Auto-Pass Trick")}</a
       >`;
     }
     return "";
