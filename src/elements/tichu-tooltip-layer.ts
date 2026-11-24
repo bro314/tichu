@@ -3,8 +3,9 @@ import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 
 export const TOOLTIP_TIMINGS = {
-  hoverOpenMs: 200,
-  warmOpenMs: 30,
+  hoverOpenMs: 250,
+  slowHoverOpenMs: 1200,
+  warmOpenMs: 60,
   warmWindowMs: 350,
   hideGraceMs: 110,
   longPressMs: 400,
@@ -16,6 +17,7 @@ export const TOOLTIP_TIMINGS = {
 
 export type TooltipPlacement = "top" | "bottom";
 export type TooltipTouchMode = "tap" | "longpress" | "none";
+export type TooltipTier = "fast" | "slow";
 
 export interface TooltipRect {
   left: number;
@@ -117,6 +119,14 @@ export function resolveTouchMode(el: HTMLElement): TooltipTouchMode {
   return "tap";
 }
 
+export function resolveTooltipTier(el: HTMLElement): TooltipTier {
+  return el.getAttribute("data-tooltip-tier") === "slow" ? "slow" : "fast";
+}
+
+export function areSlowTooltipsHidden(): boolean {
+  return Boolean((globalThis as any)?.gameui?.bHideTooltips);
+}
+
 export function getTooltipLayer(): TichuTooltipLayer | null {
   if (typeof document === "undefined") return null;
   let layer = document.querySelector("tichu-tooltip-layer") as TichuTooltipLayer | null;
@@ -148,8 +158,9 @@ export class TichuTooltipLayer extends LitElement {
   private hoveredTrigger: HTMLElement | null = null;
   private hoveringTooltipBox = false;
   private openSource: "hover" | "touch" | "focus" | "disabled-click" | null = null;
+  private activeTier: TooltipTier = "fast";
   private suppressedTarget: HTMLElement | null = null;
-  private lastClosedAt = 0;
+  private lastClosedFastAt = 0;
   private touchSession: TouchSession | null = null;
   private suppressNextClickUntil = 0;
   private skipOutsidePointerDownForTarget: HTMLElement | null = null;
@@ -341,6 +352,11 @@ export class TichuTooltipLayer extends LitElement {
       this.hide();
       return false;
     }
+    const tier = resolveTooltipTier(el);
+    if (tier === "slow" && areSlowTooltipsHidden()) {
+      this.hide();
+      return false;
+    }
     const title = el.getAttribute("data-tooltip-title")?.trim() ?? "";
     const body = el.getAttribute("data-tooltip")?.trim() ?? "";
     const meta = el.getAttribute("data-tooltip-meta")?.trim() ?? "";
@@ -353,6 +369,7 @@ export class TichuTooltipLayer extends LitElement {
     this.pendingTarget = null;
     this.activeTarget = el;
     this.openSource = source;
+    this.activeTier = tier;
     this.titleText = title;
     this.bodyText = body;
     this.metaText = meta;
@@ -370,9 +387,10 @@ export class TichuTooltipLayer extends LitElement {
     this.pendingTarget = null;
     this.hoveringTooltipBox = false;
     this.openSource = null;
-    if (this.isOpen) {
-      this.lastClosedAt = Date.now();
+    if (this.isOpen && this.activeTier === "fast") {
+      this.lastClosedFastAt = Date.now();
     }
+    this.activeTier = "fast";
     this.isOpen = false;
     this.isTouchOpen = false;
     this.positioned = false;
@@ -505,7 +523,10 @@ export class TichuTooltipLayer extends LitElement {
       if (el === this || el.tagName === "TICHU-TOOLTIP-LAYER") return null;
       const body = el.getAttribute("data-tooltip")?.trim() ?? "";
       const title = el.getAttribute("data-tooltip-title")?.trim() ?? "";
-      if (body || title) return el;
+      if (body || title) {
+        if (resolveTooltipTier(el) === "slow" && areSlowTooltipsHidden()) continue;
+        return el;
+      }
     }
     return null;
   }
@@ -521,7 +542,7 @@ export class TichuTooltipLayer extends LitElement {
       if (!found && typeof el.getAttribute === "function") {
         const body = el.getAttribute("data-tooltip")?.trim() ?? "";
         const title = el.getAttribute("data-tooltip-title")?.trim() ?? "";
-        if (body || title) {
+        if ((body || title) && !(resolveTooltipTier(el) === "slow" && areSlowTooltipsHidden())) {
           found = el;
         }
       }
@@ -617,10 +638,22 @@ export class TichuTooltipLayer extends LitElement {
       return;
     }
 
+    const tier = resolveTooltipTier(trigger);
+    if (this.isOpen && this.activeTarget !== trigger && tier === "slow") {
+      this.hide();
+    }
+
     this.clearOpenTimer();
     this.pendingTarget = trigger;
-    const isWarm = this.isOpen || Date.now() - this.lastClosedAt < TOOLTIP_TIMINGS.warmWindowMs;
-    const delay = isWarm ? TOOLTIP_TIMINGS.warmOpenMs : TOOLTIP_TIMINGS.hoverOpenMs;
+    let delay: number;
+    if (tier === "slow") {
+      delay = TOOLTIP_TIMINGS.slowHoverOpenMs;
+    } else {
+      const isWarmFast =
+        (this.isOpen && this.activeTier === "fast") ||
+        Date.now() - this.lastClosedFastAt < TOOLTIP_TIMINGS.warmWindowMs;
+      delay = isWarmFast ? TOOLTIP_TIMINGS.warmOpenMs : TOOLTIP_TIMINGS.hoverOpenMs;
+    }
 
     this.openTimer = setTimeout(() => {
       this.openTimer = null;

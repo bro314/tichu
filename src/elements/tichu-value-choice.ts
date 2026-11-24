@@ -1,4 +1,4 @@
-import { html, css, LitElement } from "lit";
+import { html, css, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { rankToLocalizedName } from "./combo-validator";
@@ -163,8 +163,8 @@ export class TichuValueChoice extends LitElement {
                 tabindex="0"
                 aria-pressed=${isSelected ? "true" : "false"}
                 aria-label=${label}
-                data-tooltip=${label}
-                data-tooltip-touch="longpress"
+                data-tooltip=${val === 15 ? label : nothing}
+                data-tooltip-touch=${val === 15 ? "longpress" : nothing}
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,
@@ -203,8 +203,6 @@ export class TichuValueChoice extends LitElement {
                 tabindex="0"
                 aria-pressed=${isSelected ? "true" : "false"}
                 aria-label=${label}
-                data-tooltip=${label}
-                data-tooltip-touch="longpress"
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,

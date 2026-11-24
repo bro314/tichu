@@ -114,8 +114,6 @@ export class TichuTrickModal extends LitElement {
                 id="popin_showCurrentTrickDialog_close"
                 class="bga-popin-close"
                 aria-label=${_("Close")}
-                data-tooltip=${_("Close")}
-                data-tooltip-touch="longpress"
                 @click=${this.onClose}
                 ><span id="popin_showLastTrickDialog_close">&times;</span></a
               >

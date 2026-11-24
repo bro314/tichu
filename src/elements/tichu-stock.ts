@@ -53,6 +53,8 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) reserveFooter = false;
 
+  @property({ type: Boolean }) disableCardTooltips = false;
+
   @property({ attribute: false }) passedOrigins: Record<string, PassedOriginInfo> = {};
 
   @state() private containerWidth = 0;
@@ -271,6 +273,7 @@ export class TichuStock extends LitElement {
                   Number(card.type_arg) === this.highlightedRank
                 }
                 .reserveFooter=${this.reserveFooter}
+                .disableTooltip=${this.disableCardTooltips}
                 .passedOrigin=${this.passedOrigins[cardIdStr] ?? null}
                 @card-click=${(e: CustomEvent<{ card: Card }>) => this.onCardClick(e, card)}
               ></tichu-card>

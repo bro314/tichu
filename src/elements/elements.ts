@@ -40,6 +40,8 @@ export {
   TOOLTIP_TIMINGS,
   computeTooltipPosition,
   resolveTouchMode,
+  resolveTooltipTier,
+  areSlowTooltipsHidden,
   getTooltipLayer,
 } from "./tichu-tooltip-layer";
 export {

@@ -300,6 +300,7 @@ export class TichuActionBar extends LitElement {
                   id="myMakeTichuBet"
                   class="action-button bgabutton bgabutton_green"
                   data-tooltip=${_("Bet 100 Points, that you will finish first")}
+                  data-tooltip-tier="slow"
                   data-tooltip-touch="longpress"
                   @click=${this.onTichuBet}
                   >${_("Tichu")}</a
@@ -353,12 +354,15 @@ export class TichuActionBar extends LitElement {
 
     if (canPlayCombo) {
       const validation = this.getSelectionValidation();
+      const playTooltipTier =
+        validation.isValid && !validation.requiresPhoenixChoice ? "slow" : nothing;
       return html`<a
         href="#"
         id="myPlayCombo"
         class="action-button bgabutton bgabutton_blue ${validation.isValid ? "" : "disabled"}"
         aria-disabled=${validation.isValid ? nothing : "true"}
         data-tooltip=${validation.tooltip || nothing}
+        data-tooltip-tier=${playTooltipTier}
         data-tooltip-touch=${validation.isValid ? "longpress" : "tap"}
         @click=${this.onPlayCombo}
         >${validation.buttonLabel}</a
@@ -426,6 +430,7 @@ export class TichuActionBar extends LitElement {
           id="myPassOnce"
           class="action-button bgabutton bgabutton_red"
           data-tooltip=${_("Automatically pass next time (unless a new trick starts)")}
+          data-tooltip-tier="slow"
           data-tooltip-touch="longpress"
           @click=${(e: Event) => this.onPass(e, true)}
           >${_("Auto-Pass once")}</a
@@ -436,6 +441,7 @@ export class TichuActionBar extends LitElement {
         id="myCancelAutopass"
         class="action-button bgabutton bgabutton_red"
         data-tooltip=${_("You have chosen to automatically pass during this trick. Click to cancel")}
+        data-tooltip-tier="slow"
         data-tooltip-touch="longpress"
         @click=${this.onCancelAutopass}
         >${_("Cancel Auto-Pass")}</a
@@ -473,6 +479,7 @@ export class TichuActionBar extends LitElement {
         class="action-button bgabutton bgabutton_gray ${isDisabled ? "disabled" : ""}"
         aria-disabled=${isDisabled ? "true" : nothing}
         data-tooltip=${tooltip || nothing}
+        data-tooltip-tier=${isDisabled ? nothing : "slow"}
         data-tooltip-touch=${isDisabled ? "tap" : "longpress"}
         @click=${(e: Event) => this.onPass(e, false)}
         >${_("Auto-Pass this Trick")}</a

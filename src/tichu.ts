@@ -1231,11 +1231,6 @@ export class Tichu {
           false,
           "gray",
         );
-        const noBetBtn = document.getElementById("noBet");
-        if (noBetBtn) {
-          noBetBtn.setAttribute("data-tooltip", _("Don't call Grand Tichu"));
-          noBetBtn.setAttribute("data-tooltip-touch", "longpress");
-        }
 
         this.addActionButton(
           "makeGTBet",
@@ -1248,6 +1243,7 @@ export class Tichu {
         const makeGtBtn = document.getElementById("makeGTBet");
         if (makeGtBtn) {
           makeGtBtn.setAttribute("data-tooltip", _("Bet 200 Points, that you will finish first"));
+          makeGtBtn.setAttribute("data-tooltip-tier", "slow");
           makeGtBtn.setAttribute("data-tooltip-touch", "longpress");
         }
       }

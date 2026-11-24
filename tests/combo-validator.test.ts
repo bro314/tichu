@@ -1764,6 +1764,8 @@ function withMockLitEnv(
     TOOLTIP_TIMINGS: any;
     computeTooltipPosition: any;
     resolveTouchMode: any;
+    resolveTooltipTier: any;
+    areSlowTooltipsHidden: any;
     getThemeLabel: (themeNo: number) => string;
     buildPassedOriginsMap: any;
     computeCardVisibleWidthPx: any;
@@ -1859,6 +1861,8 @@ function withMockLitEnv(
     TOOLTIP_TIMINGS: tooltipLayerMod.TOOLTIP_TIMINGS,
     computeTooltipPosition: tooltipLayerMod.computeTooltipPosition,
     resolveTouchMode: tooltipLayerMod.resolveTouchMode,
+    resolveTooltipTier: tooltipLayerMod.resolveTooltipTier,
+    areSlowTooltipsHidden: tooltipLayerMod.areSlowTooltipsHidden,
     getThemeLabel: settingsModalMod.getThemeLabel,
     buildPassedOriginsMap: handMod.buildPassedOriginsMap,
     computeCardVisibleWidthPx: stockMod.computeCardVisibleWidthPx,
@@ -3998,9 +4002,12 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         assert.ok(activeImgHtml.includes("passed-avatar-wrap visible opponent"));
         assert.match(activeImgHtml, /src=["']?\/avatars\/bob\.png["']?/);
         assert.equal(activeImgHtml.includes("passed-dir-hint"), false);
-        assert.equal(activeImgCard.getComputedTooltip(), "Scores 5 points — Passed by Bob (Right)");
-        assert.ok(activeImgHtml.includes("data-tooltip=Scores 5 points"));
-        assert.ok(activeImgHtml.includes("data-tooltip-meta=Passed by Bob (Right)"));
+        assert.equal(activeImgCard.getComputedTooltip(), "");
+        assert.equal(activeImgHtml.includes("Scores 5 points"), false);
+        assert.match(
+          activeImgHtml,
+          /class=["']?passed-avatar-wrap visible opponent["']?[^>]*data-tooltip=["']?Passed by Bob \(Right\)["']?/,
+        );
 
         const fallbackCard = new TichuCardEl();
         fallbackCard.card = B7;
@@ -4019,7 +4026,7 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         assert.equal(fadedRtHtml.includes("passed-highlight"), false);
         assert.equal(fadedRtHtml.includes("passed-avatar-wrap visible"), false);
         assert.ok(fadedRtHtml.includes("passed-avatar-wrap"));
-        assert.equal(fadedRtCard.getComputedTooltip(), "Scores 5 points");
+        assert.equal(fadedRtCard.getComputedTooltip(), "");
 
         // 7. TichuStock sets --stock-height: 184px when reserveFooter=true vs 150px when false
         const stockPlain = new TichuStock();
@@ -4862,7 +4869,7 @@ test("TichuCard::getComputedTooltipParts returns structured special tooltips and
     try {
       g._ = (s: string) => s;
 
-      // 1. Dragon with passedOrigin separates title, body, and passed meta
+      // 1. Dragon has structured slow-tier rules tooltip; passedOrigin lives on the avatar badge (fast)
       const card = new TichuCardEl();
       card.card = { id: "53", type: "1", type_arg: "1" };
       card.selectable = true;
@@ -4879,32 +4886,34 @@ test("TichuCard::getComputedTooltipParts returns structured special tooltips and
       assert.deepEqual(card.getComputedTooltipParts(), {
         title: "Dragon",
         body: "Highest single card. Scores 25 points. Trick given to an opponent if Dragon wins it.",
-        meta: "Passed by dashwood2 (Partner)",
+        meta: "",
       });
       const dragonHtml = serializeLitTemplate(card.render());
       assert.match(dragonHtml, /data-tooltip-title=["']?Dragon["']?/);
-      assert.match(dragonHtml, /data-tooltip-meta=["']?Passed by dashwood2 \(Partner\)["']?/);
+      assert.match(dragonHtml, /data-tooltip-tier=["']?slow["']?/);
       assert.match(dragonHtml, /data-tooltip-touch=["']?longpress["']?/);
       assert.match(
         dragonHtml,
-        /class=["']?passed-avatar-wrap[^"'\n]*["']?[^>]*data-tooltip-touch=["']?tap["']?/,
+        /class=["']?passed-avatar-wrap[^"'\n]*["']?[^>]*data-tooltip=["']?Passed by dashwood2 \(Partner\)["']?[^>]*data-tooltip-touch=["']?tap["']?/,
       );
       assert.equal(/\stitle=/.test(dragonHtml), false);
 
-      // 2. Non-point card (2 of Swords) with passedOrigin promotes passed info to body
-      card.card = { id: "1", type: "1", type_arg: "2" };
-      card.selectable = false;
-      assert.deepEqual(card.getComputedTooltipParts(), {
-        title: "",
-        body: "Passed by dashwood2 (Partner)",
-        meta: "",
-      });
+      // 2. Normal cards (2, 5, 10, K) have no card-face tooltip (even with passedOrigin; avatar badge carries origin)
+      for (const rank of ["2", "5", "10", "13"]) {
+        card.card = { id: rank, type: "1", type_arg: rank };
+        card.selectable = false;
+        assert.deepEqual(card.getComputedTooltipParts(), {
+          title: "",
+          body: "",
+          meta: "",
+        });
+      }
       const twoHtml = serializeLitTemplate(card.render());
-      assert.match(twoHtml, /data-tooltip=["']?Passed by dashwood2 \(Partner\)["']?/);
-      assert.match(twoHtml, /data-tooltip-touch=["']?tap["']?/);
+      assert.equal(/id=["']?card["']?[^>]*data-tooltip=[^\s>]/.test(twoHtml), false);
+      assert.equal(/id=["']?card["']?[^>]*data-tooltip-tier=[^\s>]/.test(twoHtml), false);
       assert.equal(/\stitle=/.test(twoHtml), false);
 
-      // 3. Phoenix, Dog, Mahjong, and 10 point cards
+      // 3. Phoenix, Dog, Mahjong have titles; disableTooltip suppresses all card tooltips (e.g. inside #lastcombo)
       card.passedOrigin = null;
       card.card = { id: "54", type: "2", type_arg: "1" };
       assert.equal(card.getComputedTooltipParts().title, "Phoenix");
@@ -4912,12 +4921,15 @@ test("TichuCard::getComputedTooltipParts returns structured special tooltips and
       assert.equal(card.getComputedTooltipParts().title, "Dog");
       card.card = { id: "56", type: "4", type_arg: "1" };
       assert.equal(card.getComputedTooltipParts().title, "Mahjong");
-      card.card = { id: "9", type: "1", type_arg: "10" };
-      assert.deepEqual(card.getComputedTooltipParts(), {
-        title: "",
-        body: "Scores 10 points",
-        meta: "",
-      });
+      card.disableTooltip = true;
+      assert.deepEqual(card.getComputedTooltipParts(), { title: "", body: "", meta: "" });
+      card.disableTooltip = false;
+
+      // 4. Pass placeholder card has no tooltip
+      card.pass = true;
+      assert.equal(card.getComputedTooltip(), "");
+      const passHtml = serializeLitTemplate(card.render());
+      assert.equal(passHtml.includes("data-tooltip="), false);
     } finally {
       g._ = savedUnderscore;
     }
@@ -4926,7 +4938,14 @@ test("TichuCard::getComputedTooltipParts returns structured special tooltips and
 
 test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, and touch gestures", async () => {
   await withMockLitEnv(
-    ({ TichuTooltipLayer, TOOLTIP_TIMINGS, computeTooltipPosition, resolveTouchMode }) => {
+    ({
+      TichuTooltipLayer,
+      TOOLTIP_TIMINGS,
+      computeTooltipPosition,
+      resolveTouchMode,
+      resolveTooltipTier,
+      areSlowTooltipsHidden,
+    }) => {
       // 1. computeTooltipPosition: top placement, flip to bottom, horizontal clamp & arrowX clamp
       const topNormal = computeTooltipPosition(
         { left: 400, top: 300, right: 440, bottom: 324, width: 40, height: 24 },
@@ -5294,7 +5313,7 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
           advance(TOOLTIP_TIMINGS.hoverOpenMs + 50);
           assert.equal(layer.isOpen, false);
 
-          // Moving onto row0, then across child .status-icon and .status-value before 200ms does NOT reset the 200ms timer
+          // Moving onto row0, then across child .status-icon and .status-value before hoverOpenMs does NOT reset the timer
           emit("pointermove", {
             pointerType: "mouse",
             path: [row0Icon, row0, boardBg, tichuGameHost],
@@ -5305,7 +5324,7 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
             pointerType: "mouse",
             path: [row0Value, row0, boardBg, tichuGameHost],
           });
-          advance(80);
+          advance(TOOLTIP_TIMINGS.hoverOpenMs - 120);
           assert.equal(layer.isOpen, true);
           assert.equal(layer.bodyText, "Round: 1");
           assert.equal(layer.activeTarget, row0);
@@ -5425,6 +5444,112 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
           assert.equal(layer.isOpen, true);
           emit("blur", {}, true);
           assert.equal(layer.isOpen, false, "Window blur closes open tooltip");
+
+          // 5. Two-tier timing (fast vs slow), no warm-open for slow, and BGA gameui.bHideTooltips suppression
+          assert.equal(resolveTooltipTier(row0), "fast");
+          const slowDragon = makeMutableEl(
+            "DIV",
+            {
+              "data-tooltip-title": "Dragon",
+              "data-tooltip": "Highest single card.",
+              "data-tooltip-tier": "slow",
+              "data-tooltip-touch": "longpress",
+            },
+            { parentNode: boardBg },
+          );
+          const slowPhoenix = makeMutableEl(
+            "DIV",
+            {
+              "data-tooltip-title": "Phoenix",
+              "data-tooltip": "Wildcard.",
+              "data-tooltip-tier": "slow",
+              "data-tooltip-touch": "longpress",
+            },
+            { parentNode: boardBg },
+          );
+          assert.equal(resolveTooltipTier(slowDragon), "slow");
+
+          // Open a fast tooltip, then move onto a slow trigger: old fast tooltip hides immediately, slow waits full 1200ms
+          advance(TOOLTIP_TIMINGS.warmWindowMs + 10);
+          emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.hoverOpenMs);
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.bodyText, "Round: 1");
+
+          emit("pointermove", { pointerType: "mouse", path: [slowDragon, boardBg, tichuGameHost] });
+          assert.equal(layer.isOpen, false, "Moving from fast to slow must hide old fast tooltip");
+          advance(TOOLTIP_TIMINGS.hoverOpenMs + 200);
+          assert.equal(layer.isOpen, false, "Slow tooltip must not open at fast or warm timing");
+          advance(TOOLTIP_TIMINGS.slowHoverOpenMs - (TOOLTIP_TIMINGS.hoverOpenMs + 200));
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.titleText, "Dragon");
+
+          // Moving from slowDragon to slowPhoenix must NOT warm-open in 60ms
+          emit("pointermove", { pointerType: "mouse", path: [slowPhoenix, boardBg, tichuGameHost] });
+          assert.equal(layer.isOpen, false, "Switching between slow triggers hides previous slow tooltip");
+          advance(TOOLTIP_TIMINGS.warmOpenMs + 200);
+          assert.equal(layer.isOpen, false, "Slow-to-slow must not warm-open");
+          advance(TOOLTIP_TIMINGS.slowHoverOpenMs - (TOOLTIP_TIMINGS.warmOpenMs + 200));
+          assert.equal(layer.isOpen, true);
+          assert.equal(layer.titleText, "Phoenix");
+
+          // Closing a slow tooltip must NOT warm-open a subsequent fast tooltip
+          layer.hide();
+          emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+          advance(TOOLTIP_TIMINGS.warmOpenMs + 20);
+          assert.equal(layer.isOpen, false, "Closing slow tooltip must not warm up fast tooltip");
+          advance(TOOLTIP_TIMINGS.hoverOpenMs - (TOOLTIP_TIMINGS.warmOpenMs + 20));
+          assert.equal(layer.isOpen, true);
+          layer.hide();
+
+          // BGA global bHideTooltips suppresses slow tooltips while keeping fast tooltips active
+          const savedGameui = g.gameui;
+          try {
+            g.gameui = { bHideTooltips: true };
+            assert.equal(areSlowTooltipsHidden(), true);
+
+            emit("pointermove", { pointerType: "mouse", path: [slowDragon, boardBg, tichuGameHost] });
+            advance(TOOLTIP_TIMINGS.slowHoverOpenMs + 100);
+            assert.equal(
+              layer.isOpen,
+              false,
+              "Slow tooltip must be suppressed when gameui.bHideTooltips is true",
+            );
+            assert.equal(
+              layer.showForElement(slowDragon, false, "focus"),
+              false,
+              "showForElement must refuse slow tooltip when bHideTooltips is true",
+            );
+
+            // Fast tooltip still opens even when bHideTooltips is true
+            advance(TOOLTIP_TIMINGS.warmWindowMs + 10);
+            emit("pointermove", { pointerType: "mouse", path: [row0, boardBg, tichuGameHost] });
+            advance(TOOLTIP_TIMINGS.hoverOpenMs);
+            assert.equal(
+              layer.isOpen,
+              true,
+              "Fast icon/error tooltip must still show when gameui.bHideTooltips is true",
+            );
+            assert.equal(layer.bodyText, "Round: 1");
+            layer.hide();
+
+            // When a slow child is nested inside a fast parent and bHideTooltips is true, hover falls through to the fast parent
+            const fastParent = makeMutableEl(
+              "DIV",
+              { "data-tooltip": "Full house of Kings over 5s" },
+              { parentNode: boardBg },
+            );
+            emit("pointermove", {
+              pointerType: "mouse",
+              path: [slowDragon, fastParent, boardBg, tichuGameHost],
+            });
+            advance(TOOLTIP_TIMINGS.hoverOpenMs);
+            assert.equal(layer.isOpen, true);
+            assert.equal(layer.bodyText, "Full house of Kings over 5s");
+            layer.hide();
+          } finally {
+            g.gameui = savedGameui;
+          }
         } finally {
           layer.disconnectedCallback();
           assert.equal(timers.size, 0, "All timers should be cleared on disconnect");

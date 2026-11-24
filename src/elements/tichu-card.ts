@@ -26,8 +26,6 @@ export function getDefaultCardTooltipParts(card: Card | undefined): {
   if (!card) return { title: "", body: "" };
   const color = Number(card.type);
   const rank = Number(card.type_arg);
-  if (rank === 10 || rank === 13) return { title: "", body: _("Scores 10 points") };
-  if (rank === 5) return { title: "", body: _("Scores 5 points") };
   if (rank === 1) {
     if (color === 1) {
       return {
@@ -85,6 +83,8 @@ export class TichuCard extends LitElement {
   @property({ type: Boolean }) wishMatch = false;
 
   @property({ type: String }) tooltip = "";
+
+  @property({ type: Boolean }) disableTooltip = false;
 
   @property({ type: Boolean }) reserveFooter = false;
 
@@ -273,29 +273,17 @@ export class TichuCard extends LitElement {
   }
 
   getComputedTooltip(): string {
+    if (this.disableTooltip) return "";
     if (this.tooltip) return this.tooltip;
-    if (this.pass) return _("Pass");
-    const base = getDefaultCardTooltip(this.card);
-    if (this.passedOrigin && (this.passedOrigin.showAvatar || this.passedOrigin.showGlow)) {
-      return base ? `${base} — ${this.passedOrigin.tooltip}` : this.passedOrigin.tooltip;
-    }
-    return base;
+    if (this.pass) return "";
+    return getDefaultCardTooltip(this.card);
   }
 
   getComputedTooltipParts(): CardTooltipParts {
+    if (this.disableTooltip) return { title: "", body: "", meta: "" };
     if (this.tooltip) return { title: "", body: this.tooltip, meta: "" };
-    if (this.pass) return { title: "", body: _("Pass"), meta: "" };
+    if (this.pass) return { title: "", body: "", meta: "" };
     const base = getDefaultCardTooltipParts(this.card);
-    if (this.passedOrigin && (this.passedOrigin.showAvatar || this.passedOrigin.showGlow)) {
-      if (base.title || base.body) {
-        return {
-          title: base.title,
-          body: base.body,
-          meta: this.passedOrigin.tooltip,
-        };
-      }
-      return { title: "", body: this.passedOrigin.tooltip, meta: "" };
-    }
     return { title: base.title, body: base.body, meta: "" };
   }
 
@@ -346,7 +334,14 @@ export class TichuCard extends LitElement {
         data-tooltip=${tooltipParts.body || nothing}
         data-tooltip-title=${tooltipParts.title || nothing}
         data-tooltip-meta=${tooltipParts.meta || nothing}
-        data-tooltip-touch=${this.selectable ? "longpress" : "tap"}
+        data-tooltip-tier=${tooltipParts.body || tooltipParts.title ? "slow" : nothing}
+        data-tooltip-touch=${
+          tooltipParts.body || tooltipParts.title
+            ? this.selectable
+              ? "longpress"
+              : "tap"
+            : nothing
+        }
         @click=${this.onClick}
       ></div>
       ${
@@ -394,13 +389,7 @@ export class TichuCard extends LitElement {
   renderPass(themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "") {
     const passSprite = this.tiki ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
     this.style.setProperty("--card-url", `url(${themeUrl}${passSprite})`);
-    return html`<div
-      id="card"
-      class="card stockitem pass"
-      data-card-id=""
-      data-tooltip=${this.getComputedTooltip() || nothing}
-      data-tooltip-touch="tap"
-    ></div>`;
+    return html`<div id="card" class="card stockitem pass" data-card-id=""></div>`;
   }
 
   private onClick(e: MouseEvent) {

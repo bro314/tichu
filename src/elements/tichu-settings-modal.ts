@@ -682,8 +682,6 @@ export class TichuSettingsModal extends LitElement {
               id="tichu-settings-close"
               class="close-btn"
               aria-label=${_("Close")}
-              data-tooltip=${_("Close")}
-              data-tooltip-touch="longpress"
               @click=${this.onClose}
             >
               <svg

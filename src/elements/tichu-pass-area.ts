@@ -283,7 +283,8 @@ export class TichuPassArea extends LitElement {
         id="playertable_${slot.dir}"
         data-player-id="${slot.playerId}"
         data-tooltip=${slotTooltip}
-        data-tooltip-touch="longpress"
+        data-tooltip-tier=${showSelectHint ? "slow" : nothing}
+        data-tooltip-touch=${showSelectHint ? "longpress" : nothing}
         @click=${() => this.onSlotClick(slot.dir - 1)}
       >
         <div class="playertable-header">

@@ -492,6 +492,7 @@ export class TichuLastPlayed extends LitElement {
                   data-player-id=${id}
                   .cards=${combo.cards}
                   .scale=${0.75}
+                  .disableCardTooltips=${true}
                   sortMode="preserve"
                   .tiki=${this.isTiki}
                   .dynamicOverlap=${true}
