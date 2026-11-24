@@ -3720,6 +3720,12 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         .join("\n");
       assert.match(actionBarCss, /display:\s*grid/);
       assert.match(actionBarCss, /grid-template-columns:/);
+      assert.match(actionBarCss, /min-height:\s*32px/);
+      assert.doesNotMatch(
+        actionBarCss,
+        /max-width:\s*760px|grid-row:\s*2/,
+        "Action bar must stay single-row across all widths so Tichu never stacks under Pass or flips 1↔2 lines",
+      );
 
       const bar = new TichuActionBar();
       bar.performUpdate = () => {};

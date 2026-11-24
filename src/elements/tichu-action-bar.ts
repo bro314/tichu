@@ -42,10 +42,12 @@ export class TichuActionBar extends LitElement {
         }
         #buttons {
           padding: 10px 15px;
-          min-height: 30px;
+          min-height: 32px;
           box-sizing: content-box;
           display: grid;
-          grid-template-columns: 180px 160px 170px minmax(8px, 1fr) 130px 105px minmax(8px, 1.6fr);
+          grid-template-columns:
+            minmax(140px, 180px) minmax(130px, 160px) minmax(150px, 175px) minmax(16px, 1fr)
+            minmax(115px, 130px) minmax(90px, 110px) minmax(8px, 1.6fr);
           column-gap: 10px;
           align-items: center;
           background: var(--tichu-bar-bg, var(--bg-color-lighter));
@@ -66,7 +68,7 @@ export class TichuActionBar extends LitElement {
         #buttons h3 {
           margin: 0;
           font-size: 16px;
-          line-height: 30px;
+          line-height: 32px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -92,11 +94,11 @@ export class TichuActionBar extends LitElement {
         }
         #buttons #bomb_button {
           grid-column: 5;
-          min-height: 30px;
+          min-height: 32px;
         }
         #buttons #tichu_button {
           grid-column: 6;
-          min-height: 30px;
+          min-height: 32px;
         }
         #buttons .space2 {
           grid-column: 7;
@@ -110,27 +112,6 @@ export class TichuActionBar extends LitElement {
           width: 100%;
           box-sizing: border-box;
           text-shadow: none;
-        }
-        @media (max-width: 760px) {
-          #buttons {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            row-gap: 8px;
-          }
-          #buttons #play_button.countdown {
-            grid-column: 1 / 4;
-          }
-          #buttons .space1,
-          #buttons .space2 {
-            display: none;
-          }
-          #buttons #bomb_button {
-            grid-column: 1;
-            grid-row: 2;
-          }
-          #buttons #tichu_button {
-            grid-column: 2;
-            grid-row: 2;
-          }
         }
         #wishBombCallout {
           display: flex;
