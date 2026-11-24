@@ -1,7 +1,6 @@
-import { html, css, LitElement, PropertyValues, nothing } from "lit";
+import { html, css, LitElement, PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
-import { formatLocalizedComboDescription, translateDynamic } from "./combo-validator";
 import { Card, LastComboState, LivePlayer, PassSlotState } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
@@ -203,10 +202,19 @@ export class TichuLastPlayed extends LitElement {
         .last-played-player .stat-group {
           display: inline;
         }
+        .last-played-player .last-played-bets {
+          line-height: 0;
+        }
         .last-played-combo {
+          display: flex;
+          align-items: center;
           width: 300px;
-          min-height: 117.5px;
+          min-height: 112.5px;
           flex-grow: 1;
+        }
+        .last-played-combo > tichu-stock {
+          flex: 1;
+          min-width: 0;
         }
 
         #mahjongIndicator {
@@ -418,10 +426,6 @@ export class TichuLastPlayed extends LitElement {
 
     const showGrandTichuColor = player.callGrandTichu === 200;
     const showTichuColor = player.callTichu === 100;
-    const translatedDesc = combo.passed
-      ? ""
-      : formatLocalizedComboDescription(combo) ||
-        (combo.description ? translateDynamic(combo.description) : "");
 
     return html`
       <div
@@ -453,7 +457,7 @@ export class TichuLastPlayed extends LitElement {
               <div class="count pointcount ${id}">${player.capturedPoints}</div>
             </span>
           </div>
-          <div>
+          <div class="last-played-bets">
             <div
               id="grandtichucolor_${id}"
               class="icon big grandtichucolor ${id}"
@@ -470,12 +474,7 @@ export class TichuLastPlayed extends LitElement {
             ></div>
           </div>
         </div>
-        <div
-          id="lastcombo_${id}"
-          class="lastcombo last-played-combo"
-          data-tooltip=${translatedDesc || nothing}
-          data-tooltip-touch="tap"
-        >
+        <div id="lastcombo_${id}" class="lastcombo last-played-combo">
           ${
             combo.passed
               ? html`<span class="pass"

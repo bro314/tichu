@@ -18,8 +18,8 @@ export class TichuStatus extends LitElement {
         display: inline-flex;
         flex-direction: column;
         align-items: stretch;
-        gap: 5px;
-        padding: 10px 12px;
+        gap: 4px;
+        padding: 8px 12px;
         color: var(--tichu-text, #1e293b);
         background: var(--tichu-surface-bg, var(--bg-color-lighter, rgba(252, 246, 238, 0.88)));
         backdrop-filter: blur(8px);
@@ -75,17 +75,14 @@ export class TichuStatus extends LitElement {
         background-position: calc(var(--icon-size) * -2) calc(var(--icon-size) * -2);
       }
       .trick-action {
-        margin-top: 3px;
-        padding-top: 5px;
-        border-top: 1px solid var(--tichu-divider, rgba(31, 35, 40, 0.13));
         display: flex;
         justify-content: center;
       }
       .trick-btn {
         width: 100%;
         min-width: 48px;
-        min-height: 30px;
-        padding: 3px 8px;
+        min-height: 26px;
+        padding: 2px 8px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -126,17 +123,11 @@ export class TichuStatus extends LitElement {
         }
       }
       @media (prefers-contrast: more) {
-        .trick-action {
-          border-top-color: currentColor;
-        }
         .trick-btn {
           border: 1px solid currentColor;
         }
       }
       @media (forced-colors: active) {
-        .trick-action {
-          border-top-color: CanvasText;
-        }
         .trick-btn {
           border: 1px solid ButtonText;
         }
