@@ -6,6 +6,7 @@ import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import { getPlayAreaZoomFactor } from "./tichu-animation-layer";
 import "./tichu-card";
+import "./tichu-status";
 import type { TichuCard } from "./tichu-card";
 
 export const PASS_SLOT_CARD_OFFSET_X = 20;
@@ -19,6 +20,7 @@ export class TichuPassArea extends LitElement {
   @state() private players: Record<string, LivePlayer> = {};
   @state() private isTiki = false;
   @state() private clockwise = true;
+  @state() private round = 0;
   @state() private pendingRevealCardIds: Set<string> = new Set();
   @state() private failedAvatarKeys: Set<string> = new Set();
 
@@ -28,6 +30,15 @@ export class TichuPassArea extends LitElement {
       css`
         :host {
           display: block;
+          position: relative;
+        }
+        tichu-status {
+          position: absolute;
+          top: 0;
+          right: 15px;
+          text-align: right;
+          font-size: 20px;
+          z-index: 6;
         }
         #playertables {
           width: 560px;
@@ -215,6 +226,11 @@ export class TichuPassArea extends LitElement {
       () => window.gameModel.clockwise$,
       (clockwise) => (this.clockwise = clockwise),
     );
+    subscribe(
+      this,
+      () => window.gameModel.round$,
+      (round) => (this.round = round),
+    );
   }
 
   override render() {
@@ -232,6 +248,15 @@ export class TichuPassArea extends LitElement {
         hasPendingPassCards);
 
     return html`
+      ${
+        isVisible
+          ? html`<tichu-status
+              roundOnly
+              roundCount=${this.round}
+              .roundCount=${this.round}
+            ></tichu-status>`
+          : nothing
+      }
       <div
         id="playertables"
         class=${classMap({

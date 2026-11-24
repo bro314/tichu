@@ -4347,6 +4347,16 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       const innerBtnText = btnHtml.replace(/<[^>]+>/g, "").trim();
       assert.equal(innerBtnText, "", "Button should contain no visible text label");
       assert.deepEqual(translatedKeys, ["Round:", "Trick:", "Trick Points:", "Show current trick"]);
+
+      // 3. roundOnly mode (used on <tichu-pass-area>) renders only roundCounter and hides trick/points/button
+      translatedKeys.length = 0;
+      status.roundOnly = true;
+      const htmlRoundOnly = serializeLitTemplate(status.render());
+      assert.match(htmlRoundOnly, /id=["']?roundCounter["']?[^>]*>2<\/span>/);
+      assert.equal(htmlRoundOnly.includes("trickCounter"), false);
+      assert.equal(htmlRoundOnly.includes("currentTrickCounter"), false);
+      assert.equal(htmlRoundOnly.includes("trick-action"), false);
+      assert.deepEqual(translatedKeys, ["Round:"]);
     } finally {
       g._ = savedUnderscore;
       g.g_gamethemeurl = savedThemeUrl;

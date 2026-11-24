@@ -8,6 +8,7 @@ export class TichuStatus extends LitElement {
   @property({ type: Number }) trickCount = 0;
   @property({ type: Number }) trickPoints = 0;
   @property({ type: Number }) trickSize = 0;
+  @property({ type: Boolean }) roundOnly = false;
 
   static override get styles() {
     return css`
@@ -154,6 +155,14 @@ export class TichuStatus extends LitElement {
     this.style.setProperty("--ui-icons-url", `url(${themeUrl}img/tichu-ui-icons.png)`);
 
     const roundLabel = _("Round:");
+    if (this.roundOnly) {
+      return html`
+        <div class="status-panel">
+          ${this.renderMetricRow("round", roundLabel, "roundCounter", this.roundCount)}
+        </div>
+      `;
+    }
+
     const trickLabel = _("Trick:");
     const trickPointsLabel = _("Trick Points:");
 
