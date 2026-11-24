@@ -3509,6 +3509,34 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     ui.pendingConfirmTichu = { grand: false, msg: "Confirm?", titleSave: "Turn" };
     ui.renderConfirmTichuButtons();
     assert.equal(addedButtons[0]?.label, "«no tichu»");
+
+    // Out-of-turn confirmTichu updates both descriptionmyturn and description, and restores both on cancel
+    ui.gamedatas.gamestate = {
+      name: "playCombo",
+      description: "${actplayer} must play",
+      descriptionmyturn: "${you} must play",
+      args: {},
+    };
+    ui.stateName = "playCombo";
+    ui.pendingConfirmTichu = null;
+    ui.updatePageTitle = () => {};
+    ui.onUpdateActionButtons = () => {};
+    let cancelHandler: (() => void) | null = null;
+    ui.addActionButton = (id: string, label: string, cb?: () => void) => {
+      addedButtons.push({ id, label });
+      if (id === "cancelTichu" && cb) cancelHandler = cb;
+    };
+    const partnerMsg =
+      "Your partner has already called Tichu. Only one player can finish first — are you sure?";
+    ui.notif_confirmTichu({
+      args: { grand: false, msg: partnerMsg },
+    });
+    assert.equal(ui.gamedatas.gamestate.descriptionmyturn, partnerMsg);
+    assert.equal(ui.gamedatas.gamestate.description, partnerMsg);
+    assert.ok(cancelHandler, "cancelTichu button should register a click handler");
+    (cancelHandler as () => void)();
+    assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "${you} must play");
+    assert.equal(ui.gamedatas.gamestate.description, "${actplayer} must play");
   } finally {
     g._ = savedUnderscore;
     g.dojo = savedDojo;

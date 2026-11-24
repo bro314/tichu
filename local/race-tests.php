@@ -620,6 +620,45 @@ function runTargetedScenarios(array $workers, int $reps, array &$report): array
       return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
     },
 
+    // Two partners call Grand Tichu (200) at the exact same moment (#80004):
+    // exactly one commits and the second must see the partner's row via FOR UPDATE and get confirmTichu.
+    'partner grandTichuBet(200) x2 race' => function () use ($workers, $P0, $P2) {
+      $game = new \Tichu();
+      \LocalTichuScenarios::setupScenario($game, 'grand_tichu');
+      $reqs = [
+        act($P0, 'grandTichuBet', ['bet' => '200']),
+        act($P2, 'grandTichuBet', ['bet' => '200']),
+      ];
+      $results = dispatchBurst($workers, $reqs);
+      $errs = [];
+      foreach ($results as $i => $r) {
+        if ($r['status'] !== 'ok') {
+          $errs[] = "player {$reqs[$i]['player']} failed: {$r['status']} " . ($r['message'] ?? '');
+        }
+      }
+      $committed = 0;
+      $prompted = 0;
+      foreach ([$P0, $P2] as $p) {
+        $gt = (int) \APP_DbObject::getUniqueValueFromDB("SELECT player_call_grand_tichu FROM player WHERE player_id = $p");
+        if ($gt === 200) {
+          $committed++;
+        } else {
+          $confirmCount = (int) \APP_DbObject::getUniqueValueFromDB(
+            "SELECT COUNT(*) FROM gamelog WHERE gamelog_player = $p AND gamelog_notification LIKE '%\"type\":\"confirmTichu\"%' AND gamelog_notification LIKE '%partner has already called Tichu%'"
+          );
+          if ($confirmCount === 1) {
+            $prompted++;
+          } else {
+            $errs[] = "player $p: neither committed (gt=$gt) nor received partner confirmTichu (count=$confirmCount)";
+          }
+        }
+      }
+      if ($committed !== 1 || $prompted !== 1) {
+        $errs[] = "expected 1 committed and 1 partner-prompted, got committed=$committed prompted=$prompted";
+      }
+      return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
+    },
+
     // All four players pass their 3 cards at the same moment.
     'giveTheCards x4 players' => function () use ($workers, $all) {
       $game = new \Tichu();

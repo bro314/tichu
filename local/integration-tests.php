@@ -3194,6 +3194,107 @@ function test_passed_card_origin_and_first_move_persistence(): void
   }
 }
 
+// ============================================================================
+// Test 21: test_partner_tichu_confirmation_beyond_threshold (#80004)
+// ============================================================================
+function test_partner_tichu_confirmation_beyond_threshold(): void
+{
+  $game = new \Tichu();
+  \LocalTichuScenarios::setupScenario($game, 'grand_tichu', P0);
+
+  $findConfirmNotif = static function (\Tichu $g, int $sincePacketId, int $playerId): ?array {
+    $pkts = $g->getNotificationsSince($sincePacketId, $playerId, false);
+    foreach ($pkts as $pkt) {
+      foreach ($pkt['data'] ?? [] as $ev) {
+        if (($ev['type'] ?? '') === 'confirmTichu') {
+          return $ev['args'] ?? null;
+        }
+      }
+    }
+    return null;
+  };
+
+  // 1) P0 calls Grand Tichu (200), then simulate turn-based delay (> 2 hours ago)
+  callAction($game, P0, 'grandTichuBet', ['bet' => '200']);
+  assertSameVal('200', (string) \PlayerManager::getPlayer(P0)['call_grand_tichu']);
+  $oldTs = (string) (time() - 7200);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+
+  // 2) P2 (P0's partner) calls Grand Tichu (200) hours later -> MUST trigger partner confirmTichu!
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'grandTichuBet', ['bet' => '200']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P2)['call_grand_tichu'], 'Partner GT bet >60s later must require confirmation');
+  assertTrueVal($game->gamestate->isPlayerActive(P2), 'P2 must remain multiactive while awaiting partner GT confirmation');
+  $confirmP2 = $findConfirmNotif($game, $beforePkt, P2);
+  assertTrueVal($confirmP2 !== null, 'P2 must receive confirmTichu notification');
+  assertSameVal(true, (bool) $confirmP2['grand'], 'P2 confirmTichu must have grand=true');
+  assertTrueVal(
+    str_contains((string) ($confirmP2['msg'] ?? ''), 'partner has already called Tichu'),
+    'P2 confirmTichu must show partner warning message'
+  );
+
+  // 3) P1 (opponent, whose partner P3 has NOT called) calls Grand Tichu (200) hours later -> commits immediately!
+  callAction($game, P1, 'grandTichuBet', ['bet' => '200']);
+  assertSameVal('200', (string) \PlayerManager::getPlayer(P1)['call_grand_tichu'], 'Opponent GT bet >60s later must commit without prompt');
+  assertTrueVal(!$game->gamestate->isPlayerActive(P1), 'P1 should be non-multiactive after committing GT');
+
+  // 4) P2 confirms through the partner warning -> commits Grand Tichu (200)
+  callAction($game, P2, 'confirmTichu', ['bet' => '200']);
+  assertSameVal('200', (string) \PlayerManager::getPlayer(P2)['call_grand_tichu'], 'P2 GT bet must commit after confirmTichu(200)');
+  assertTrueVal(!$game->gamestate->isPlayerActive(P2), 'P2 should be non-multiactive after confirming GT');
+
+  // 5) Advance to giveCards (P3 declines GT), age tichuCall > 2 hours, then P3 (P1's partner) calls regular Tichu (100)
+  callAction($game, P3, 'grandTichuBet', ['bet' => '0']);
+  assertSameVal('giveCards', $game->gamestate->state()['name']);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P3, 'tichuBet', ['bet' => '100']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'Partner Tichu after partner GT >60s later must require confirmation');
+  $confirmP3 = $findConfirmNotif($game, $beforePkt, P3);
+  assertTrueVal($confirmP3 !== null, 'P3 must receive confirmTichu notification');
+  assertSameVal(false, (bool) $confirmP3['grand'], 'P3 confirmTichu must have grand=false');
+  assertTrueVal(
+    str_contains((string) ($confirmP3['msg'] ?? ''), 'partner has already called Tichu'),
+    'P3 confirmTichu must show partner warning message'
+  );
+  callAction($game, P3, 'confirmTichu', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'P3 Tichu bet must commit after confirmTichu(100)');
+
+  // 6) Partner called regular Tichu (100) hours earlier in playComboOpen -> partner Tichu (100) requires confirmation
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  callAction($game, P0, 'tichuBet', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P0)['call_tichu']);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'tichuBet', ['bet' => '100']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'Partner Tichu after partner Tichu >60s later must require confirmation');
+  $confirmP2Tichu = $findConfirmNotif($game, $beforePkt, P2);
+  assertTrueVal($confirmP2Tichu !== null, 'P2 must receive confirmTichu for regular Tichu');
+  assertTrueVal(
+    str_contains((string) ($confirmP2Tichu['msg'] ?? ''), 'partner has already called Tichu'),
+    'P2 regular Tichu confirmTichu must show partner warning message'
+  );
+
+  // 7) Unwinnable (firstOutPlayer != 0) takes precedence over partner warning
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = ' . P1 . ' WHERE global_id = 21');
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'tichuBet', ['bet' => '100']);
+  $confirmUnwinnable = $findConfirmNotif($game, $beforePkt, P2);
+  assertTrueVal($confirmUnwinnable !== null, 'P2 must receive confirmTichu when firstOutPlayer != 0');
+  assertTrueVal(
+    str_contains((string) ($confirmUnwinnable['msg'] ?? ''), "can't win this tichu bet"),
+    'Unwinnable warning must take precedence over partner warning'
+  );
+
+  // 8) Resetting Tichus for a new round clears partner bet so P2 is not prompted
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = 0 WHERE global_id = 21');
+  \PlayerManager::resetTichus();
+  callAction($game, P2, 'tichuBet', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'After resetTichus in new round, P2 must commit without partner prompt');
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -3215,6 +3316,7 @@ $tests = [
   'test_smart_bot_strategy_and_decisions',
   'test_day1_security_version_i18n_and_zombie_128k_guard',
   'test_passed_card_origin_and_first_move_persistence',
+  'test_partner_tichu_confirmation_beyond_threshold',
 ];
 
 echo "====================================================================\n";

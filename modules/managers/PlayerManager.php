@@ -167,6 +167,24 @@ class PlayerManager
   }
 
   /**
+   * Lock and read the partner's current bet columns inside an active transaction
+   * (`FOR UPDATE`) so concurrent bets cannot be missed due to REPEATABLE-READ snapshots.
+   *
+   * @return array<string, mixed>|null
+   */
+  public static function getPartnerForUpdate(int|string $pId): ?array
+  {
+    $partner = self::getPartner($pId);
+    $partnerId = (int) ($partner["id"] ?? 0);
+    if ($partnerId <= 0) {
+      return null;
+    }
+    return Table::getObjectFromDB(
+      "SELECT player_id id, player_call_tichu call_tichu, player_call_grand_tichu call_grand_tichu FROM player WHERE player_id = $partnerId FOR UPDATE"
+    );
+  }
+
+  /**
    * @return array<int, array<string, mixed>>
    */
   public static function getNextPlayers(int|string $pId, bool $desc = false): array

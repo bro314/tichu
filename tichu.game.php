@@ -923,6 +923,16 @@ class Tichu extends Table
     $this->gamestate->nextState("changePlayer");
   }
 
+  private function hasPartnerBetInCurrentRound(int $playerId): bool
+  {
+    $partner = PlayerManager::getPartnerForUpdate($playerId);
+    if ($partner === null) {
+      return false;
+    }
+    return (int) ($partner["call_tichu"] ?? -1) === 100 ||
+      (int) ($partner["call_grand_tichu"] ?? -1) === 200;
+  }
+
   function grandTichuBet(
     int|string $bet,
     bool $confirmed = false,
@@ -953,6 +963,17 @@ class Tichu extends Table
     $currentRound = (int) (LogManager::getCurrentRoundAndTrick()["round"] ?? 0);
     $now = time();
     if ($bet == 200) {
+      if (!$confirmed && $this->hasPartnerBetInCurrentRound((int) $player_id)) {
+        NotificationManager::confirmTichu(
+          $player_id,
+          true,
+          clienttranslate(
+            "Your partner has already called Tichu. Only one player can finish first — are you sure?"
+          )
+        );
+        $this->syncStaleReturnState();
+        return;
+      }
       if (
         !$confirmed &&
         $lastTichuCall != null &&
@@ -1029,6 +1050,29 @@ class Tichu extends Table
     if (($player["call_tichu"] ?? -1) != -1) {
       throw new UserException(clienttranslate("You cannot call Tichu anymore"));
     }
+    $firstOutPlayer = (int) $this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = 21 FOR UPDATE"
+    );
+    if (!$confirmed && $firstOutPlayer != 0) {
+      NotificationManager::confirmTichu(
+        $player_id,
+        false,
+        clienttranslate("You can't win this tichu bet anymore. Are you sure?")
+      );
+      $this->syncStaleReturnState();
+      return;
+    }
+    if (!$confirmed && $this->hasPartnerBetInCurrentRound($player_id)) {
+      NotificationManager::confirmTichu(
+        $player_id,
+        false,
+        clienttranslate(
+          "Your partner has already called Tichu. Only one player can finish first — are you sure?"
+        )
+      );
+      $this->syncStaleReturnState();
+      return;
+    }
     $lastTichuCall = LogManager::getLastAction("tichuCall", false);
     $currentRound = (int) (LogManager::getCurrentRoundAndTrick()["round"] ?? 0);
     $now = time();
@@ -1039,18 +1083,6 @@ class Tichu extends Table
       $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
     ) {
       NotificationManager::confirmTichu($player_id, false);
-      $this->syncStaleReturnState();
-      return;
-    }
-    $firstOutPlayer = (int) $this->getUniqueValueFromDB(
-      "SELECT global_value FROM global WHERE global_id = 21 FOR UPDATE"
-    );
-    if (!$confirmed && $firstOutPlayer != 0) {
-      NotificationManager::confirmTichu(
-        $player_id,
-        false,
-        clienttranslate("You can't win this tichu bet anymore. Are you sure?")
-      );
       $this->syncStaleReturnState();
       return;
     }

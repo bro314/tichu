@@ -39,7 +39,12 @@ export class Tichu {
   stateName = "";
   active_player?: string;
   initialCodeVersion = "";
-  private pendingConfirmTichu: { grand: boolean; msg: string; titleSave: string } | null = null;
+  private pendingConfirmTichu: {
+    grand: boolean;
+    msg: string;
+    titleSave: string;
+    descSave?: string;
+  } | null = null;
   debugBreadcrumbs: Array<{
     ts: string;
     cat: "state" | "action" | "notif" | "warn";
@@ -742,7 +747,9 @@ export class Tichu {
         this.pendingConfirmTichu = null;
       } else {
         this.pendingConfirmTichu.titleSave = notif.args.descriptionmyturn ?? "";
+        this.pendingConfirmTichu.descSave = notif.args.description ?? "";
         notif.args.descriptionmyturn = this.pendingConfirmTichu.msg;
+        notif.args.description = this.pendingConfirmTichu.msg;
       }
     }
     this.ensureGamestateReflexion(notif?.args);
@@ -1940,10 +1947,13 @@ export class Tichu {
       this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
-      const titleSave = this.pendingConfirmTichu?.titleSave;
+      const pending = this.pendingConfirmTichu;
       this.pendingConfirmTichu = null;
-      if (titleSave !== undefined && this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+      if (pending && this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = pending.titleSave;
+        if (pending.descSave !== undefined) {
+          this.gamedatas.gamestate.description = pending.descSave;
+        }
         this.updatePageTitle();
       }
     }
@@ -1977,10 +1987,13 @@ export class Tichu {
       this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
-      const titleSave = this.pendingConfirmTichu?.titleSave;
+      const pending = this.pendingConfirmTichu;
       this.pendingConfirmTichu = null;
-      if (titleSave !== undefined && this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = titleSave;
+      if (pending && this.gamedatas?.gamestate) {
+        this.gamedatas.gamestate.descriptionmyturn = pending.titleSave;
+        if (pending.descSave !== undefined) {
+          this.gamedatas.gamestate.description = pending.descSave;
+        }
         this.updatePageTitle();
       }
     }
@@ -1989,12 +2002,15 @@ export class Tichu {
 
   renderConfirmTichuButtons() {
     if (!this.pendingConfirmTichu) return;
-    const { grand, titleSave } = this.pendingConfirmTichu;
+    const { grand, titleSave, descSave } = this.pendingConfirmTichu;
     this.removeActionButtons();
     this.addActionButton("cancelTichu", grand ? _("no grand tichu") : _("no tichu"), () => {
       this.pendingConfirmTichu = null;
       if (this.gamedatas?.gamestate) {
         this.gamedatas.gamestate.descriptionmyturn = titleSave;
+        if (descSave !== undefined) {
+          this.gamedatas.gamestate.description = descSave;
+        }
       }
       this.updatePageTitle();
       if (grand) {
@@ -2007,6 +2023,9 @@ export class Tichu {
       this.pendingConfirmTichu = null;
       if (this.gamedatas?.gamestate) {
         this.gamedatas.gamestate.descriptionmyturn = titleSave;
+        if (descSave !== undefined) {
+          this.gamedatas.gamestate.description = descSave;
+        }
       }
       this.updatePageTitle();
       this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
@@ -2017,14 +2036,17 @@ export class Tichu {
 
   notif_confirmTichu(notif: TypedNotif<"confirmTichu">) {
     this.traceNotif("confirmTichu", notif);
-    const currentDesc = this.gamedatas?.gamestate?.descriptionmyturn ?? "";
+    const currentMyTurn = this.gamedatas?.gamestate?.descriptionmyturn ?? "";
+    const currentDesc = this.gamedatas?.gamestate?.description ?? "";
     this.pendingConfirmTichu = {
       grand: Boolean(notif.args.grand),
       msg: notif.args.msg,
-      titleSave: this.pendingConfirmTichu?.titleSave ?? currentDesc,
+      titleSave: this.pendingConfirmTichu?.titleSave ?? currentMyTurn,
+      descSave: this.pendingConfirmTichu?.descSave ?? currentDesc,
     };
     if (this.gamedatas?.gamestate) {
       this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
+      this.gamedatas.gamestate.description = notif.args.msg;
     }
     this.updatePageTitle();
     this.renderConfirmTichuButtons();
