@@ -154,7 +154,7 @@ export class TichuPlayedCards extends LitElement {
         class="whiteblock"
         style="display: ${this.isAllInfoExposed ? "block" : "none"}"
       >
-        <h3>${_("Played Cards")}</h3>
+        <h3>${_("Remaining Cards")}</h3>
         <div id="playedCardsFlexRow">
           <div class="space"></div>
           <div id="playedCardsFlexCol">

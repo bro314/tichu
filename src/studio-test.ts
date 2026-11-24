@@ -3839,7 +3839,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       ),
       tiki: esc("Toggle between classic Tichu card artwork and Tiki Edition artwork (pref 103)."),
       exposed: esc(
-        "Toggle between Real-Time mode and Turn-Based mode (Turn-Based exposes Played Cards and auto-passes unbeatable hands). Starts a new game.",
+        "Toggle between Real-Time mode and Turn-Based mode (Turn-Based exposes Remaining Cards and auto-passes unbeatable hands). Starts a new game.",
       ),
       mute: esc("Toggle game sound effects (Tichu / Grand Tichu laser sound) on or off."),
       replay: esc("Open the Experimental Replay viewer for this finished game."),
