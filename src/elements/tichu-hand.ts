@@ -127,7 +127,7 @@ export class TichuHand extends LitElement {
         }
         #myhandwrap .settings-btn {
           position: absolute;
-          top: 14px;
+          bottom: 14px;
           right: 15px;
           z-index: 2;
         }
