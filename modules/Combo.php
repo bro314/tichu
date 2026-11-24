@@ -196,6 +196,19 @@ class Combo
     return $card["type"] == TYPE_DRAGON && $card["type_arg"] == 1;
   }
 
+  public function hasPhoenix(): bool
+  {
+    if (empty($this->cards)) {
+      return false;
+    }
+    foreach ($this->cards as $card) {
+      if ((int) $card["type"] === TYPE_PHOENIX && (int) $card["type_arg"] === 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /*
    * set the value of the phoenix, if a chice was needed.
    * there are only 2 cases, where the value would have to be chosen:

@@ -805,6 +805,90 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   assertSameVal('playCombo', $game->gamestate->state()['name']);
   assertSameVal((string) P2, $game->getActivePlayerId());
   assertSameVal('Run of 5 cards from 8 to Queen', \LogManager::getLastCombo()->description);
+
+  // Part H: Bug #161585 — Game log includes ", Phoenix as <rank>" for non-single Phoenix combos, not for single Phoenix
+  $findLastPlayComboNotif = static function (\Tichu $g, int $sincePacketId): ?array {
+    $pkts = $g->getNotificationsSince($sincePacketId, P0, false);
+    $found = null;
+    foreach ($pkts as $pkt) {
+      foreach ($pkt['data'] ?? [] as $item) {
+        if (($item['type'] ?? '') === 'playCombo') {
+          $found = $item;
+        }
+      }
+    }
+    return $found;
+  };
+
+  // H1: Straight 2..8 with Phoenix as 5 (numeric rank -> i18n only has combo_name)
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 2], [2, 3], [3, 4], [2, 1], [4, 6], [1, 7], [2, 8], [4, 14]],
+    P1 => [[3, 2], [4, 3]],
+    P2 => [[3, 5], [4, 5]],
+    P3 => [[1, 10], [2, 10]],
+  ], 'captured_p0');
+  $beforeH1 = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  $run2to8Phx = \LocalTichuScenarios::getCardIds([[1, 2], [2, 3], [3, 4], [2, 1], [4, 6], [1, 7], [2, 8]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $run2to8Phx)]);
+  $notifH1 = $findLastPlayComboNotif($game, $beforeH1);
+  assertTrueVal($notifH1 !== null, 'H1 playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}', $notifH1['log']);
+  assertSameVal('Run of 7 cards from 2 to 8', $notifH1['args']['combo_name']);
+  assertSameVal('5', $notifH1['args']['phoenix_rank']);
+  assertSameVal(['combo_name'], $notifH1['args']['i18n']);
+
+  // H2: Full House with Phoenix as King (face rank -> i18n includes phoenix_rank)
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 1], [1, 13], [2, 13], [3, 4], [4, 4], [4, 14]],
+    P1 => [[3, 2], [4, 3]],
+    P2 => [[3, 5], [4, 5]],
+    P3 => [[1, 10], [2, 10]],
+  ], 'captured_p0');
+  $beforeH2 = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  $fhPhx = \LocalTichuScenarios::getCardIds([[2, 1], [1, 13], [2, 13], [3, 4], [4, 4]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $fhPhx)]);
+  callAction($game, P0, 'choosePhoenix', ['phoenixValue' => 13]);
+  $notifH2 = $findLastPlayComboNotif($game, $beforeH2);
+  assertTrueVal($notifH2 !== null, 'H2 playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}', $notifH2['log']);
+  assertSameVal('Kings full of 4s', $notifH2['args']['combo_name']);
+  assertSameVal('King', $notifH2['args']['phoenix_rank']);
+  assertSameVal(['combo_name', 'phoenix_rank'], $notifH2['args']['i18n']);
+
+  // H3: Pair of Queens with Phoenix granting Mahjong wish (wish = 12)
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[2, 1], [1, 12], [4, 14]],
+    P1 => [[3, 2], [4, 3]],
+    P2 => [[3, 5], [4, 5]],
+    P3 => [[1, 10], [2, 10]],
+  ], 'captured_p0');
+  $game->setGameStateValue('mahjongWish', 12);
+  $beforeH3 = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  $pairQPhx = \LocalTichuScenarios::getCardIds([[2, 1], [1, 12]]);
+  callAction($game, P0, 'playCombo', ['cards' => implode(';', $pairQPhx)]);
+  $notifH3 = $findLastPlayComboNotif($game, $beforeH3);
+  assertTrueVal($notifH3 !== null, 'H3 playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}, and grants Mahjong\'s owner wish', $notifH3['log']);
+  assertSameVal('Pair of Queens', $notifH3['args']['combo_name']);
+  assertSameVal('Queen', $notifH3['args']['phoenix_rank']);
+  assertSameVal(['combo_name', 'phoenix_rank'], $notifH3['args']['i18n']);
+
+  // H4: Single Phoenix does NOT append ", Phoenix as ..."
+  \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
+  $tenIdH4 = (string) \LocalTichuScenarios::getCardId(1, 10);
+  $phxIdH4 = (string) \LocalTichuScenarios::getCardId(2, 1);
+  callAction($game, P0, 'playCombo', ['cards' => $tenIdH4]);
+  $beforeH4 = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  callAction($game, P1, 'playCombo', ['cards' => $phxIdH4]);
+  $notifH4 = $findLastPlayComboNotif($game, $beforeH4);
+  assertTrueVal($notifH4 !== null, 'H4 playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}', $notifH4['log']);
+  assertSameVal('Phoenix a half step above 10', $notifH4['args']['combo_name']);
+  assertSameVal('', $notifH4['args']['phoenix_rank']);
+  assertSameVal(['combo_name'], $notifH4['args']['i18n']);
 }
 
 // ============================================================================

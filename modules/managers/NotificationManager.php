@@ -87,11 +87,22 @@ class NotificationManager
     string $msg
   ): void {
     $cards = $combo->cards ?? [];
+    $hasComboPhoenix = (int) $combo->type !== SINGLE_COMBO && $combo->hasPhoenix();
+    $phoenixRankVal =
+      $hasComboPhoenix && $combo->phoenixValue !== null && !is_array($combo->phoenixValue)
+        ? (int) $combo->phoenixValue
+        : null;
+    $phoenixRank = $phoenixRankVal !== null ? CardManager::cardToStr($phoenixRankVal) : "";
+    $i18n = ["combo_name"];
+    if ($phoenixRankVal !== null && CardManager::isTranslatableCardStr($phoenixRankVal)) {
+      $i18n[] = "phoenix_rank";
+    }
     self::broadcast("playCombo", $msg, [
-      "i18n" => ["combo_name"],
+      "i18n" => $i18n,
       "player_id" => $playerId,
       "player_name" => $playerName,
       "combo_name" => $combo->description ?? "",
+      "phoenix_rank" => $phoenixRank,
       "cards" => $cards,
       "points" => CardManager::getTrickValue($cards),
       "type" => (int) $combo->type,

@@ -49,6 +49,7 @@ export interface TichuNotificationMap {
     player_id: number;
     player_name: string;
     combo_name: string | I18nLogPayload;
+    phoenix_rank?: string;
     cards: CardData[];
     points: number;
     type?: number;

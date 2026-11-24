@@ -665,5 +665,24 @@ final class ComboTest extends TestCase
       $sfFace->toLogSpec()
     );
   }
+
+  public function testHasPhoenixAcrossComboTypes(): void
+  {
+    LogManager::$lastComboForTesting = new Combo([], NO_COMBO);
+    $this->assertTrue((new Combo([PH]))->hasPhoenix());
+    $this->assertTrue((new Combo([PH, CQ]))->hasPhoenix());
+    $this->assertTrue((new Combo([PH, AK, BK]))->hasPhoenix());
+    $this->assertTrue((new Combo([AJ, BJ, CQ, PH]))->hasPhoenix());
+    $this->assertTrue((new Combo([A2, B3, C4, PH, D6, A7, B8]))->hasPhoenix());
+    $this->assertTrue((new Combo([PH, A4, B4, CJ, DJ]))->hasPhoenix());
+
+    $this->assertFalse((new Combo([A7]))->hasPhoenix());
+    $this->assertFalse((new Combo([DOG]))->hasPhoenix());
+    $this->assertFalse((new Combo([DR]))->hasPhoenix());
+    $this->assertFalse((new Combo([MJ]))->hasPhoenix());
+    $this->assertFalse((new Combo([A5, B5]))->hasPhoenix());
+    $this->assertFalse((new Combo([A2, A3, A4, A5, A6]))->hasPhoenix());
+    $this->assertFalse((new Combo([], NO_COMBO))->hasPhoenix());
+  }
 }
 ?>

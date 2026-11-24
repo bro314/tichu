@@ -555,13 +555,9 @@ class Tichu extends Table
     }
 
     $wishGranted = false;
-    $notification_description = clienttranslate('${player_name} plays ${combo_name}');
     if ($wish != 0) {
       if (in_array($wish, array_column($cards, "type_arg"))) {
         $wishGranted = true;
-        $notification_description = clienttranslate(
-          '${player_name} plays ${combo_name} and grants Mahjong\'s owner wish'
-        );
       } else {
         $isNonLeadBomb =
           $combo->type == BOMB_COMBO &&
@@ -571,6 +567,28 @@ class Tichu extends Table
           $this->checkMahjongWishFulfillment($playerId, $cards, $lastCombo, $currentHand);
         }
       }
+    }
+
+    $hasComboPhoenix =
+      (int) $combo->type !== SINGLE_COMBO &&
+      $combo->hasPhoenix() &&
+      $combo->phoenixValue !== null &&
+      !is_array($combo->phoenixValue);
+
+    if ($wishGranted && $hasComboPhoenix) {
+      $notification_description = clienttranslate(
+        '${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}, and grants Mahjong\'s owner wish'
+      );
+    } elseif ($wishGranted) {
+      $notification_description = clienttranslate(
+        '${player_name} plays ${combo_name} and grants Mahjong\'s owner wish'
+      );
+    } elseif ($hasComboPhoenix) {
+      $notification_description = clienttranslate(
+        '${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}'
+      );
+    } else {
+      $notification_description = clienttranslate('${player_name} plays ${combo_name}');
     }
 
     LogManager::playCombo($playerId, $combo);
