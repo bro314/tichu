@@ -3578,6 +3578,223 @@ function test_tichu_reopen_pass_and_manual_unpass(): void
   );
 }
 
+// ============================================================================
+// Test 23: test_partnership_mutual_concede
+// ============================================================================
+function test_partnership_mutual_concede(): void
+{
+  // 1. Round-1 and scaled deficit rejections + missing global 31 fallback
+  $game = new \Tichu();
+  $game->createNewGame([
+    'gameLength' => 2, // Classic (1000 pts) -> minDeficit = 400
+    'playerTeams' => TEAM_1_3,
+    'turnBased' => 0,
+  ]);
+  // Give Team 1 (P1/P3) a 500-point lead in Round 1 -> still blocked in Round 1!
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 500 WHERE player_team = 1');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 0 WHERE player_team = 0');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'proposeConcede'),
+    'Round 2',
+    'Round 1 concede proposal must be rejected even with 500-pt deficit'
+  );
+
+  // Move to Round 2 (actionlog log_round = 2), test 200-pt real deficit (must NOT double-count teammates!)
+  \LogManager::insert(0, 'newRound');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 200 WHERE player_team = 1');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 0 WHERE player_team = 0');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'proposeConcede'),
+    'trailing by enough points',
+    '200-pt real deficit (400 if wrongly summed) must be rejected in 1000-pt game'
+  );
+
+  // 395-pt deficit in 1000-pt game must be rejected; 400-pt deficit allowed
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 395 WHERE player_team = 1');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'proposeConcede'),
+    'trailing by enough points',
+    '395-pt deficit must be rejected in Classic (400-pt threshold)'
+  );
+
+  // Also check Half (500 -> 300) and Long (2000 -> 500) thresholds via gameLength global
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = 3 WHERE global_id = 100');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 450 WHERE player_team = 1');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'proposeConcede'),
+    'trailing by enough points',
+    '450-pt deficit must be rejected in Long game (500-pt threshold)'
+  );
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = 1 WHERE global_id = 100');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 295 WHERE player_team = 1');
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'proposeConcede'),
+    'trailing by enough points',
+    '295-pt deficit must be rejected in Half game (300-pt threshold)'
+  );
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 300 WHERE player_team = 1');
+
+  // Delete global 31 row to verify pre-deploy INSERT fallback on proposeConcede!
+  \APP_DbObject::DbQuery('DELETE FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY);
+
+  $beforePacketId = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  callAction($game, P0, 'proposeConcede');
+  assertSameVal(
+    P0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY),
+    'proposeConcede must insert global 31 = P0 when row was missing'
+  );
+
+  // 2. Strict notification privacy & getAllDatas scoping
+  $p0Payload = $game->getFullClientPayload(P0);
+  $p2Payload = $game->getFullClientPayload(P2);
+  $p1Payload = $game->getFullClientPayload(P1);
+  assertSameVal(P0, (int) $p0Payload['concede']['proposalBy']);
+  assertSameVal(P0, (int) $p2Payload['concede']['proposalBy']);
+  assertSameVal(0, (int) $p1Payload['concede']['proposalBy'], 'Opponents must not see proposalBy');
+  assertSameVal(false, (bool) $p1Payload['concede']['usedThisRound'], 'Opponents must not see usedThisRound');
+
+  $p1Notifs = $game->getNotificationsSince($beforePacketId, P1, false);
+  $p3Notifs = $game->getNotificationsSince($beforePacketId, P3, false);
+  foreach (array_merge($p1Notifs, $p3Notifs) as $pkt) {
+    foreach ($pkt['data'] ?? [] as $n) {
+      assertTrueVal(
+        ($n['type'] ?? '') !== 'concedeProposal',
+        'Opponents must never receive concedeProposal notification'
+      );
+    }
+  }
+  $p2Notifs = $game->getNotificationsSince($beforePacketId, P2, false);
+  $sawProposal = false;
+  foreach ($p2Notifs as $pkt) {
+    foreach ($pkt['data'] ?? [] as $n) {
+      if (($n['type'] ?? '') === 'concedeProposal') {
+        $sawProposal = true;
+      }
+    }
+  }
+  assertTrueVal($sawProposal, 'Partner P2 must receive private concedeProposal notification');
+
+  // Opponents cannot respond to Team 0's proposal; proposer cannot accept own proposal
+  assertThrowsUserException(
+    static fn() => callAction($game, P1, 'respondConcede', ['accept' => 1]),
+    'no concede proposal',
+    'Opponent cannot respond to another team concede proposal'
+  );
+  assertThrowsUserException(
+    static fn() => callAction($game, P0, 'respondConcede', ['accept' => 1]),
+    'no concede proposal',
+    'Proposer cannot accept their own concede proposal'
+  );
+
+  // 3. Partner decline clears global 31, preserves privacy, and enforces 1/team/round cap
+  $beforeDeclinePkt = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  callAction($game, P2, 'respondConcede', ['accept' => 0]);
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY),
+    'Declining must reset global 31 to 0'
+  );
+  foreach ($game->getNotificationsSince($beforeDeclinePkt, P1, false) as $pkt) {
+    foreach ($pkt['data'] ?? [] as $n) {
+      assertTrueVal(
+        ($n['type'] ?? '') !== 'concedeCancel',
+        'Opponents must never receive concedeCancel notification'
+      );
+    }
+  }
+  assertThrowsUserException(
+    static fn() => callAction($game, P2, 'proposeConcede'),
+    'already proposed',
+    '1-proposal-per-team-per-round cap must block partner from re-proposing in same round'
+  );
+
+  // 4. stEndRound() auto-cancels an open proposal cleanly
+  $gameEndRound = new \Tichu();
+  \LocalTichuScenarios::setupScenario($gameEndRound, 'double_victory', P2);
+  // Advance actionlog to Round 2 with Team 1 trailing by 400
+  \LogManager::insert(0, 'newRound');
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = 1 WHERE global_id = 100');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 400 WHERE player_team = 0');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 0 WHERE player_team = 1');
+  callAction($gameEndRound, P1, 'proposeConcede');
+  assertSameVal(
+    P1,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY)
+  );
+  $beforeRoundEndPkt = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog'
+  );
+  $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
+  callAction($gameEndRound, P2, 'playCombo', ['cards' => $lastCardId]);
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY),
+    'stEndRound must clear open concede proposal'
+  );
+  $sawRoundEndCancel = false;
+  foreach ($gameEndRound->getNotificationsSince($beforeRoundEndPkt, P3, false) as $pkt) {
+    foreach ($pkt['data'] ?? [] as $n) {
+      if (($n['type'] ?? '') === 'concedeCancel' && ($n['args']['reason'] ?? '') === 'round_end') {
+        $sawRoundEndCancel = true;
+      }
+    }
+  }
+  assertTrueVal($sawRoundEndCancel, 'Partner P3 must receive round_end concedeCancel notification');
+
+  // 5. Multiactive concede during ST_GIVE_CARDS clears multiactive & autopass and ends at ST_GAME_END
+  $gameGive = new \Tichu();
+  \LocalTichuScenarios::setupScenario($gameGive, 'give_cards', P0);
+  \LogManager::insert(0, 'newRound');
+  \APP_DbObject::DbQuery('UPDATE global SET global_value = 1 WHERE global_id = 100');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 350 WHERE player_team = 1');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 0, player_pass = 2 WHERE player_team = 0');
+  // Proposer self-cancel test first in Round 2? No, test accept directly; test withdraw in zombie game below
+  callAction($gameGive, P0, 'proposeConcede');
+  callAction($gameGive, P2, 'respondConcede', ['accept' => 1]);
+  assertSameVal((string) ST_GAME_END, (string) $gameGive->gamestate->state()['id'], 'Accepting concede in giveCards must reach ST_GAME_END');
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT COUNT(*) FROM player WHERE player_is_multiactive = 1'),
+    'Conceding in multiactive state must clear player_is_multiactive'
+  );
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT COUNT(*) FROM player WHERE player_pass <> 0'),
+    'Conceding must reset player_pass autopass flags'
+  );
+  $scores = \PlayerManager::getScores();
+  assertTrueVal((int) $scores[P1] > (int) $scores[P0], 'Leading team must rank ahead of conceding team');
+
+  // 6. Proposer withdraw + Zombie partner solo concede fast-path
+  $gameZombie = new \Tichu();
+  $gameZombie->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+  \LogManager::insert(0, 'newRound');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 350 WHERE player_team = 1');
+  \APP_DbObject::DbQuery('UPDATE player SET player_score = 0 WHERE player_team = 0');
+  callAction($gameZombie, P0, 'proposeConcede');
+  callAction($gameZombie, P0, 'respondConcede', ['accept' => 0]); // proposer withdraws
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY),
+    'Proposer self-cancel must clear global 31'
+  );
+  // Next round with zombie partner -> immediate solo concede!
+  \LogManager::insert(0, 'newRound');
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1 WHERE player_id = ' . P2);
+  $gameZombie->reloadPlayersBasicInfos();
+  callAction($gameZombie, P0, 'proposeConcede');
+  assertSameVal(
+    (string) ST_GAME_END,
+    (string) $gameZombie->gamestate->state()['id'],
+    'Proposing concede with zombie partner must immediately transition to ST_GAME_END'
+  );
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -3601,6 +3818,7 @@ $tests = [
   'test_passed_card_origin_and_first_move_persistence',
   'test_partner_tichu_confirmation_beyond_threshold',
   'test_tichu_reopen_pass_and_manual_unpass',
+  'test_partnership_mutual_concede',
 ];
 
 echo "====================================================================\n";

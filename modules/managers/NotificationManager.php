@@ -332,5 +332,51 @@ class NotificationManager
       "suggestion" => $suggestion,
     ]);
   }
+
+  public static function concedeProposal(
+    int $toPlayerId,
+    int $playerId,
+    string $playerName,
+    int $team
+  ): void {
+    self::notifyPlayerWithVersion($toPlayerId, "concedeProposal", "", [
+      "player_id" => $playerId,
+      "player_name" => $playerName,
+      "team" => $team,
+    ]);
+  }
+
+  public static function concedeCancel(
+    int $toPlayerId,
+    int $playerId,
+    string $playerName,
+    string $reason
+  ): void {
+    self::notifyPlayerWithVersion($toPlayerId, "concedeCancel", "", [
+      "player_id" => $playerId,
+      "player_name" => $playerName,
+      "reason" => $reason,
+    ]);
+  }
+
+  public static function concedeResult(
+    int $team,
+    int $playerId,
+    string $playerName,
+    int $playerId2,
+    string $playerName2
+  ): void {
+    self::broadcast(
+      "concedeResult",
+      clienttranslate('${player_name} and ${player_name2} concede the match!'),
+      [
+        "team" => $team,
+        "player_id" => $playerId,
+        "player_name" => $playerName,
+        "player_id2" => $playerId2,
+        "player_name2" => $playerName2,
+      ]
+    );
+  }
 }
 ?>

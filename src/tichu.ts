@@ -45,6 +45,7 @@ export class Tichu {
     titleSave: string;
     descSave?: string;
   } | null = null;
+  private pendingConfirmConcede = false;
   debugBreadcrumbs: Array<{
     ts: string;
     cat: "state" | "action" | "notif" | "warn";
@@ -758,6 +759,12 @@ export class Tichu {
   ntf_gameStateChange(notif: any) {
     if (notif?.args && Array.isArray(notif.args.args)) {
       notif.args.args = {};
+    }
+    if (notif?.args) {
+      const nextName = notif.args.name;
+      if (nextName === "newRound" || nextName === "endRound" || nextName === "gameEnd") {
+        this.pendingConfirmConcede = false;
+      }
     }
     if (this.pendingConfirmTichu !== null && notif?.args) {
       const nextName = notif.args.name;
@@ -1634,6 +1641,42 @@ export class Tichu {
     this.takeAction("collect");
   }
 
+  onProposeConcede(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    if (this.isReadOnly() || this.pendingConfirmConcede) return;
+    const concedeState = window.gameModel?.getState().concede;
+    const msg = concedeState?.partnerIsZombie
+      ? _(
+          "Are you sure you want to concede the match? Because your partner left the game, this will end the match immediately and award the win to your opponents.",
+        )
+      : _(
+          "Are you sure you want to propose conceding the match? Your partner must also agree; opponents will not be notified unless both partners accept.",
+        );
+    this.pendingConfirmConcede = true;
+    this.confirmationDialog(
+      msg,
+      () => {
+        this.pendingConfirmConcede = false;
+        this.takeAction("proposeConcede");
+      },
+      () => {
+        this.pendingConfirmConcede = false;
+      },
+    );
+  }
+
+  onRespondConcede(accept: boolean, evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    if (this.isReadOnly()) return;
+    this.takeAction("respondConcede", { accept: accept ? 1 : 0 });
+  }
+
   takeAction<K extends keyof TichuActionMap>(
     action: K,
     ...[args, onSuccess]: {} extends TichuActionMap[K]
@@ -1673,6 +1716,9 @@ export class Tichu {
       unpassCards: 1,
       devConsole: 1,
       botSuggestion: 1,
+      concedeProposal: 1,
+      concedeCancel: 1,
+      concedeResult: 1,
     };
     for (const [type, duration] of Object.entries(notifs)) {
       dojo.subscribe(type, this, "notif_" + type);
@@ -2188,6 +2234,41 @@ export class Tichu {
     }
     window.gameModel?.setAutopass(String(notif.args.autopass));
     this.onUpdateActionButtons(this.stateName, {});
+  }
+
+  notif_concedeProposal(notif: TypedNotif<"concedeProposal">) {
+    this.traceNotif("concedeProposal", notif);
+    const proposerId = Number(notif.args.player_id ?? 0);
+    if (this.gamedatas?.concede) {
+      this.gamedatas.concede.proposalBy = proposerId;
+      this.gamedatas.concede.usedThisRound = true;
+    }
+    window.gameModel?.applyConcedeProposal(proposerId);
+  }
+
+  notif_concedeCancel(notif: TypedNotif<"concedeCancel">) {
+    this.traceNotif("concedeCancel", notif);
+    const reason = String(notif.args.reason ?? "");
+    if (this.gamedatas?.concede) {
+      this.gamedatas.concede.proposalBy = 0;
+    }
+    window.gameModel?.applyConcedeCancel();
+    if (!this.isReadOnly()) {
+      if (reason === "declined" && Number(notif.args.player_id) !== Number(this.player_id)) {
+        this.showMessage(_("Your partner declined the concede proposal."), "info");
+      } else if (reason === "round_end") {
+        this.showMessage(_("The concede proposal expired at the end of the round."), "info");
+      }
+    }
+  }
+
+  notif_concedeResult(notif: TypedNotif<"concedeResult">) {
+    this.traceNotif("concedeResult", notif);
+    this.pendingConfirmConcede = false;
+    if (this.gamedatas?.concede) {
+      this.gamedatas.concede.proposalBy = 0;
+    }
+    window.gameModel?.applyConcedeResult();
   }
 }
 

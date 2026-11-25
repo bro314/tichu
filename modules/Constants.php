@@ -55,5 +55,12 @@ define("AUTOPASS_TRICK", 2);
 // time in s after a called (grand) tichu, where player have to confirm to call antoher tichu
 define("TICHU_CONFIRMATION_TRESHOLD", 60);
 
+// Partnership mutual concede (BGA #36963)
+define("GLOBAL_CONCEDE_PROPOSAL_BY", 31);
+define("CONCEDE_MIN_ROUND", 2);
+define("CONCEDE_MIN_DEFICIT_HALF", 300);
+define("CONCEDE_MIN_DEFICIT_CLASSIC", 400);
+define("CONCEDE_MIN_DEFICIT_LONG", 500);
+
 define("TICHU_CODE_VERSION", "2026-11-24.2");
 ?>

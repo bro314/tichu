@@ -108,6 +108,48 @@ export interface BetAnimation {
   fadingOut: boolean;
 }
 
+export interface ConcedeState {
+  enabled: boolean;
+  proposalBy: number;
+  usedThisRound: boolean;
+  partnerIsZombie: boolean;
+  minDeficit: number;
+  minRound: number;
+}
+
+export interface ConcedeUiState {
+  canPropose: boolean;
+  isProposer: boolean;
+  isPartnerPrompted: boolean;
+  proposerName: string;
+  partnerName: string;
+  partnerIsZombie: boolean;
+  minDeficit: number;
+  minRound: number;
+}
+
+export const initialConcedeState: ConcedeState = {
+  enabled: false,
+  proposalBy: 0,
+  usedThisRound: false,
+  partnerIsZombie: false,
+  minDeficit: 400,
+  minRound: 2,
+};
+
+const INTERACTIVE_CONCEDE_STATES = new Set([
+  "grandTichuBets",
+  "giveCards",
+  "showPassedCards",
+  "playComboOpen",
+  "playCombo",
+  "playBomb",
+  "phoenixPlay",
+  "mahjongPlay",
+  "confirmTrick",
+  "chooseDragonGift",
+]);
+
 export interface LiveGamePrefs {
   squareTable?: boolean;
   clockwise?: boolean;
@@ -168,6 +210,7 @@ export interface LiveGameState {
   scoreModalOpen: boolean;
   roundHistory: RoundScoreRecord[];
   targetScore: number;
+  concede: ConcedeState;
   betAnimations: BetAnimation[];
 }
 
@@ -408,6 +451,7 @@ export const initialLiveGameState: LiveGameState = {
   scoreModalOpen: false,
   roundHistory: [],
   targetScore: 1000,
+  concede: { ...initialConcedeState },
   betAnimations: [],
 };
 
@@ -507,6 +551,67 @@ function getTeamScoresFromPlayers(playersMap: Record<string, LivePlayer>): [numb
   return totals;
 }
 
+export function getConcedeUiState(params: {
+  concede: ConcedeState;
+  players: Record<string, LivePlayer>;
+  currentPlayerId: string;
+  isSpectator: boolean;
+  stateName: string;
+  round: number;
+}): ConcedeUiState {
+  const { concede, players, currentPlayerId, isSpectator, stateName, round } = params;
+  const currentId = String(currentPlayerId ?? "");
+  const currentPlayer = currentId ? players[currentId] : undefined;
+  const partner = currentPlayer
+    ? Object.values(players).find((p) => p.id !== currentPlayer.id && p.team === currentPlayer.team)
+    : undefined;
+  const partnerName = partner?.name ?? "";
+  const proposalBy = Number(concede?.proposalBy ?? 0);
+  const proposer = proposalBy > 0 ? players[String(proposalBy)] : undefined;
+  const proposerName = proposer?.name ?? "";
+
+  const isInteractive = INTERACTIVE_CONCEDE_STATES.has(stateName);
+  if (!concede?.enabled || isSpectator || !currentPlayer || !isInteractive) {
+    return {
+      canPropose: false,
+      isProposer: false,
+      isPartnerPrompted: false,
+      proposerName,
+      partnerName,
+      partnerIsZombie: Boolean(concede?.partnerIsZombie),
+      minDeficit: Number(concede?.minDeficit ?? 400),
+      minRound: Number(concede?.minRound ?? 2),
+    };
+  }
+
+  const teamScores = getTeamScoresFromPlayers(players);
+  const ownTeam = currentPlayer.team === 1 ? 1 : 0;
+  const oppTeam = 1 - ownTeam;
+  const deficit = teamScores[oppTeam]! - teamScores[ownTeam]!;
+  const minDeficit = Number(concede.minDeficit ?? 400);
+  const minRound = Number(concede.minRound ?? 2);
+  const partnerIsZombie = Boolean(concede.partnerIsZombie);
+  const eligibleScore = round >= minRound && deficit >= minDeficit;
+  const currentNumId = Number(currentId);
+
+  const canPropose =
+    eligibleScore &&
+    ((proposalBy === 0 && !concede.usedThisRound) ||
+      (partnerIsZombie && proposalBy === currentNumId));
+  const isProposer = proposalBy > 0 && proposalBy === currentNumId;
+  const isPartnerPrompted = proposalBy > 0 && proposalBy !== currentNumId;
+
+  return {
+    canPropose,
+    isProposer,
+    isPartnerPrompted,
+    proposerName,
+    partnerName,
+    partnerIsZombie,
+    minDeficit,
+    minRound,
+  };
+}
 
 /**
  * Replicates PHP's `PlayerManager::getNextPlayers(null, true)` exactly:
@@ -602,6 +707,7 @@ export class GameModel {
   public readonly scoreModalOpen$ = select(this.state$, (s) => s.scoreModalOpen);
   public readonly roundHistory$ = select(this.state$, (s) => s.roundHistory);
   public readonly targetScore$ = select(this.state$, (s) => s.targetScore);
+  public readonly concede$ = select(this.state$, (s) => s.concede);
   public readonly betAnimations$ = select(this.state$, (s) => s.betAnimations);
 
   getState(): LiveGameState {
@@ -905,6 +1011,18 @@ export class GameModel {
       }
     }
 
+    const rawConcede = gamedatas?.concede;
+    const concede: ConcedeState =
+      rawConcede && typeof rawConcede === "object"
+        ? {
+            enabled: true,
+            proposalBy: Number(rawConcede.proposalBy ?? 0) || 0,
+            usedThisRound: Boolean(rawConcede.usedThisRound),
+            partnerIsZombie: Boolean(rawConcede.partnerIsZombie),
+            minDeficit: Number(rawConcede.minDeficit ?? 400) || 400,
+            minRound: Number(rawConcede.minRound ?? 2) || 2,
+          }
+        : { ...initialConcedeState };
 
     this.setState({
       tableId: resolvedTableId,
@@ -957,6 +1075,7 @@ export class GameModel {
       scoreModalOpen: false,
       roundHistory,
       targetScore,
+      concede,
       betAnimations: [],
     });
     syncAnimCssVars();
@@ -1083,6 +1202,11 @@ export class GameModel {
       phoenixAllowedValues: [],
       selectedPhoenixValue: null,
       hasPlayedOrPassedInRound: false,
+      concede: {
+        ...prev.concede,
+        proposalBy: 0,
+        usedThisRound: false,
+      },
     });
   }
 
@@ -1978,6 +2102,38 @@ export class GameModel {
     this.update({ collectingTrickCountdown });
   }
 
+  applyConcedeProposal(playerId: number | string): void {
+    const prev = this.getState();
+    const id = Number(playerId) || 0;
+    this.update({
+      concede: {
+        ...prev.concede,
+        enabled: true,
+        proposalBy: id,
+        usedThisRound: true,
+      },
+    });
+  }
+
+  applyConcedeCancel(): void {
+    const prev = this.getState();
+    this.update({
+      concede: {
+        ...prev.concede,
+        proposalBy: 0,
+      },
+    });
+  }
+
+  applyConcedeResult(): void {
+    const prev = this.getState();
+    this.update({
+      concede: {
+        ...prev.concede,
+        proposalBy: 0,
+      },
+    });
+  }
 }
 
 declare global {

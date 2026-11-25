@@ -6,11 +6,14 @@ import {
   AutoSortOrder,
   Card,
   CardGroupId,
+  ConcedeState,
   HandSortOrder,
   LivePlayer,
   TrickLastComboState,
   canOrganizeHandInState,
+  getConcedeUiState,
   getNextPlayersDesc,
+  initialConcedeState,
 } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
@@ -110,6 +113,8 @@ export class TichuHand extends LitElement {
   @state() private currentPlayerId = "";
   @state() private isAllInfoExposed = false;
   @state() private hasPlayedOrPassedInRound = false;
+  @state() private round = 0;
+  @state() private concede: ConcedeState = { ...initialConcedeState };
   @state() private trickLastCombo: TrickLastComboState = {
     playerId: "",
     type: 99,
@@ -264,11 +269,51 @@ export class TichuHand extends LitElement {
           justify-content: flex-end;
           padding: 8px 15px 12px;
         }
-        #myhandwrap .settings-btn {
+        .hand-corner-controls {
           position: absolute;
           bottom: 14px;
           right: 15px;
           z-index: 2;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .concede-btn {
+          height: 36px;
+          padding: 0 11px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          border-radius: 10px;
+          border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.6));
+          background: var(--tichu-surface-bg, var(--bg-color-lighter));
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          color: var(--tichu-text, #1f2328);
+          box-shadow: var(--tichu-surface-shadow, var(--elevation));
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 600;
+          line-height: 1;
+          cursor: pointer;
+          transition:
+            background-color 140ms ease,
+            box-shadow 140ms ease,
+            transform 140ms ease;
+        }
+        .concede-btn:hover {
+          filter: brightness(1.05);
+          box-shadow:
+            0 2px 6px rgba(15, 23, 42, 0.24),
+            0 1px 2px rgba(15, 23, 42, 0.14);
+        }
+        .concede-btn:active {
+          transform: translateY(1px);
+        }
+        .concede-btn:focus-visible {
+          outline: 2px solid #0b72b5;
+          outline-offset: 2px;
         }
         .settings-btn {
           width: 36px;
@@ -310,11 +355,13 @@ export class TichuHand extends LitElement {
           outline-offset: 2px;
         }
         @media (prefers-reduced-motion: reduce) {
+          .concede-btn,
           .org-btn,
           .settings-btn,
           .settings-icon {
             transition: none;
           }
+          .concede-btn:active,
           .org-btn:active,
           .settings-btn:active,
           .settings-btn:hover .settings-icon {
@@ -322,6 +369,7 @@ export class TichuHand extends LitElement {
           }
         }
         @media (forced-colors: active) {
+          .concede-btn,
           .org-btn,
           .settings-btn {
             border-color: ButtonText;
@@ -333,6 +381,7 @@ export class TichuHand extends LitElement {
             color: HighlightText;
             border-color: Highlight;
           }
+          .concede-btn:focus-visible,
           .org-btn:focus-visible,
           .settings-btn:focus-visible {
             outline-color: Highlight;
@@ -429,6 +478,16 @@ export class TichuHand extends LitElement {
       () => window.gameModel.hasPlayedOrPassedInRound$,
       (hasPlayedOrPassedInRound) => (this.hasPlayedOrPassedInRound = hasPlayedOrPassedInRound),
     );
+    subscribe(
+      this,
+      () => window.gameModel.round$,
+      (round) => (this.round = round),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.concede$,
+      (concede) => (this.concede = concede),
+    );
   }
 
   private isReadOnly(): boolean {
@@ -474,6 +533,16 @@ export class TichuHand extends LitElement {
       hasPlayedOrPassedInRound: this.hasPlayedOrPassedInRound,
     });
 
+    const concedeUi = getConcedeUiState({
+      concede: this.concede,
+      players: this.players,
+      currentPlayerId: this.currentPlayerId,
+      isSpectator: this.isSpectator,
+      stateName: this.stateName,
+      round: this.round,
+    });
+    const showConcede = !this.isSpectator && !this.isReadOnly() && concedeUi.canPropose;
+
     return html`
       <tichu-action-bar></tichu-action-bar>
       <div
@@ -507,7 +576,13 @@ export class TichuHand extends LitElement {
             : nothing
         }
         <span class="sr-only" aria-live="polite">${this.liveAnnouncement}</span>
-        ${!this.isSpectator ? this.renderSettingsButton() : nothing}
+        ${
+          !this.isSpectator
+            ? html`<div class="hand-corner-controls">
+                ${showConcede ? this.renderConcedeButton() : nothing} ${this.renderSettingsButton()}
+              </div>`
+            : nothing
+        }
       </div>
       ${
         this.isSpectator
@@ -657,6 +732,38 @@ export class TichuHand extends LitElement {
     `;
   }
 
+  private renderConcedeButton() {
+    const concedeLabel = _("Concede");
+    const concedeTooltip = _("Propose to concede the match with your partner");
+    return html`
+      <button
+        type="button"
+        id="concede_button"
+        class="concede-btn"
+        data-tooltip=${concedeTooltip}
+        data-tooltip-touch="longpress"
+        aria-label=${concedeTooltip}
+        @click=${this.onProposeConcede}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+          <line x1="4" y1="22" x2="4" y2="15"></line>
+        </svg>
+        <span>${concedeLabel}</span>
+      </button>
+    `;
+  }
 
   private renderSettingsButton() {
     const settingsLabel = _("Settings");
@@ -752,6 +859,14 @@ export class TichuHand extends LitElement {
     window.gameModel.setSettingsModalOpen(true);
   }
 
+  onProposeConcede(e: Event) {
+    e.preventDefault();
+    e.stopPropagation();
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.onProposeConcede === "function") {
+      ui.onProposeConcede(e);
+    }
+  }
 
   getStock(): TichuStock | null {
     return (this.shadowRoot?.querySelector("tichu-stock") as TichuStock | null) ?? null;

@@ -638,6 +638,7 @@ final class LocalBugSqlLoader
       21,
       22,
       27,
+      GLOBAL_CONCEDE_PROPOSAL_BY,
       GAMESTATE_NEUTRALIZED_PLAYER_ID,
       GAMESTATE_UNDO_MOVES_PLAYER,
     ]);
@@ -730,6 +731,7 @@ final class LocalBugSqlLoader
       27 => 0,
       28 => 0,
       \Tichu::GLOBAL_LOCK_VERSION => 0,
+      GLOBAL_CONCEDE_PROPOSAL_BY => 0,
       100 => 2,
       101 => 1,
       102 => 1,

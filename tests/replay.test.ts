@@ -1343,3 +1343,92 @@ test("ReplayEngine: unpassCards after passCards & Tichu reopen preserves 56-card
   engine.prevRound();
   assert.equal(engine.getNotifIndex(), stopIdx);
 });
+
+test("ReplayEngine skips concedeProposal, concedeCancel, and concedeResult cleanly", () => {
+  const players = makePlayers();
+  // Standalone concede packets are dropped by tidyUpGamelogs because all 3 types are ignored;
+  // when co-located with non-ignored notifications, stepForward() skips them with empty ignoredNotifType.
+  const packets: NotifsPacket[] = [
+    {
+      packet_id: "1",
+      move_id: "1",
+      channel: `/player/p${P0}`,
+      data: [
+        {
+          type: "concedeProposal",
+          args: { player_id: P0, player_name: "Alice", team: 0 },
+        } as unknown as Notif,
+        {
+          type: "pass",
+          args: { player_id: P0, player_name: "Alice" },
+        } as unknown as Notif,
+      ],
+    },
+    {
+      packet_id: "2",
+      move_id: "2",
+      channel: `/player/p${P2}`,
+      data: [
+        {
+          type: "concedeCancel",
+          args: { player_id: P2, player_name: "Carol", reason: "declined" },
+        } as unknown as Notif,
+        {
+          type: "pass",
+          args: { player_id: P2, player_name: "Carol" },
+        } as unknown as Notif,
+      ],
+    },
+    {
+      packet_id: "3",
+      move_id: "3",
+      channel: "/table/t1",
+      data: [
+        {
+          type: "concedeResult",
+          args: {
+            team: 0,
+            player_id: P0,
+            player_name: "Alice",
+            player_id2: P2,
+            player_name2: "Carol",
+          },
+        } as unknown as Notif,
+        {
+          type: "pass",
+          args: { player_id: P1, player_name: "Bob" },
+        } as unknown as Notif,
+      ],
+    },
+    {
+      packet_id: "4",
+      move_id: "4",
+      channel: "/table/t1",
+      data: [
+        {
+          type: "concedeResult",
+          args: {
+            team: 0,
+            player_id: P0,
+            player_name: "Alice",
+            player_id2: P2,
+            player_name2: "Carol",
+          },
+        } as unknown as Notif,
+      ],
+    },
+  ];
+
+  const engine = new ReplayEngine(packets, players);
+  assert.equal(engine.getNotifs().length, 6);
+  while (engine.stepForward()) {
+    assert.equal(engine.getIgnoredNotifType(), "");
+  }
+  assert.equal(engine.getNotifIndex(), 6);
+  assert.equal(
+    isIgnoredReplayNotif({ type: "concedeProposal", args: {} } as unknown as Notif),
+    true,
+  );
+  assert.equal(isIgnoredReplayNotif({ type: "concedeCancel", args: {} } as unknown as Notif), true);
+  assert.equal(isIgnoredReplayNotif({ type: "concedeResult", args: {} } as unknown as Notif), true);
+});

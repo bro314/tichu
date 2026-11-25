@@ -176,6 +176,21 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
+  public function proposeConcede(): void
+  {
+    $this->setAjaxMode();
+    $this->game->proposeConcede();
+    $this->ajaxResponse();
+  }
+
+  public function respondConcede(): void
+  {
+    $this->setAjaxMode();
+    $accept = (bool) $this->getArg("accept", AT_bool, true);
+    $this->game->respondConcede($accept);
+    $this->ajaxResponse();
+  }
+
   /*
 		Example:
 

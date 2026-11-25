@@ -277,5 +277,36 @@ class LogManager
     }
     return $records;
   }
+
+  public static function getCurrentRoundForUpdate(): int
+  {
+    return (int) Table::getUniqueValueFromDB(
+      "SELECT IFNULL(MAX(log_round), 0) FROM actionlog FOR UPDATE"
+    );
+  }
+
+  /**
+   * @param array<int, int|string> $teamPlayerIds
+   */
+  public static function hasConcedeProposalInRound(
+    int $round,
+    array $teamPlayerIds,
+    bool $forUpdate = false
+  ): bool {
+    if ($round <= 0 || empty($teamPlayerIds)) {
+      return false;
+    }
+    $cleanIds = array_values(
+      array_filter(array_map("intval", $teamPlayerIds), static fn(int $id): bool => $id > 0)
+    );
+    if (empty($cleanIds)) {
+      return false;
+    }
+    $idList = implode(",", $cleanIds);
+    $sql =
+      "SELECT COUNT(*) FROM actionlog WHERE log_round = $round AND log_action = 'concedeProposal' AND log_player IN ($idList)" .
+      ($forUpdate ? " FOR UPDATE" : "");
+    return (int) Table::getUniqueValueFromDB($sql) > 0;
+  }
 }
 ?>

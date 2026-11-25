@@ -63,6 +63,7 @@ class Tichu extends Table
       "isAllInfoExposed" => 28, // Should the played card be shown and players smartly skipped? 0=FALSE, 1=TRUE
       // 29 was used by a legacy version for the phoenix value (see upgradeTableDb).
       "lockVersion" => self::GLOBAL_LOCK_VERSION, // table-wide change counter, see acquireGameLock()
+      "concedeProposalBy" => GLOBAL_CONCEDE_PROPOSAL_BY, // proposing player_id for mutual concede, 0 if none
 
       //options
       "gameLength" => 100, // 1 = 500pts, 2 = 1000pts, 3 = 2000pts
@@ -378,6 +379,7 @@ class Tichu extends Table
     $this->setGameStateInitialValue("mahjongOwner", 0);
     $this->setGameStateInitialValue("isAllInfoExposed", $this->bga->tableOptions->isTurnBased() ? 1 : 0);
     $this->setGameStateInitialValue("lockVersion", 0);
+    $this->setGameStateInitialValue("concedeProposalBy", 0);
 
     // Init statistics
     $this->initStat("table", "round_number", 0);
@@ -477,6 +479,36 @@ class Tichu extends Table
     $gameLengthIdx = max(0, min(2, (int) $this->getGameStateValue("gameLength") - 1));
     $result["targetScore"] = [500, 1000, 2000][$gameLengthIdx];
     $result["roundHistory"] = $this->buildRoundHistory($players, (int) $result["round"]);
+    $minDeficit = $this->getConcedeMinDeficit();
+    $concedePayload = [
+      "proposalBy" => 0,
+      "usedThisRound" => false,
+      "partnerIsZombie" => false,
+      "minDeficit" => $minDeficit,
+      "minRound" => CONCEDE_MIN_ROUND,
+    ];
+    if (isset($players[$currentPlayerId])) {
+      $viewerPartner = $this->findPartnerFromMap($currentPlayerId, $players);
+      $viewerPartnerId = $viewerPartner !== null ? (int) $viewerPartner["id"] : 0;
+      $rawProposer = (int) $this->getGameStateValue("concedeProposalBy", 0);
+      if (
+        $rawProposer > 0 &&
+        ($rawProposer === $currentPlayerId || $rawProposer === $viewerPartnerId)
+      ) {
+        $concedePayload["proposalBy"] = $rawProposer;
+      }
+      $concedePayload["usedThisRound"] = LogManager::hasConcedeProposalInRound(
+        (int) $result["round"],
+        [$currentPlayerId, $viewerPartnerId]
+      );
+      if ($viewerPartnerId > 0) {
+        $concedePayload["partnerIsZombie"] =
+          ((int) $this->getUniqueValueFromDB(
+            "SELECT player_zombie FROM player WHERE player_id = $viewerPartnerId"
+          )) !== 0;
+      }
+    }
+    $result["concede"] = $concedePayload;
     $result["gameVersion"] = intval($this->getGameStateValue("game_db_version", 0));
     $result["codeVersion"] = TICHU_CODE_VERSION;
 
@@ -735,6 +767,238 @@ class Tichu extends Table
     } else {
       $this->gamestate->nextState("nextPlayer");
     }
+  }
+
+  private function getConcedeMinDeficit(): int
+  {
+    $idx = max(0, min(2, (int) $this->getGameStateValue("gameLength", 2) - 1));
+    return [
+      CONCEDE_MIN_DEFICIT_HALF,
+      CONCEDE_MIN_DEFICIT_CLASSIC,
+      CONCEDE_MIN_DEFICIT_LONG,
+    ][$idx];
+  }
+
+  private function isInteractiveConcedeState(int $stateId): bool
+  {
+    return in_array(
+      $stateId,
+      [
+        ST_GRAND_TICHU_BETS,
+        ST_GIVE_CARDS,
+        ST_SHOW_PASSED_CARDS,
+        ST_PLAY_COMBO_OPEN,
+        ST_PLAY_COMBO,
+        ST_PLAY_BOMB,
+        ST_PHOENIX_PLAY,
+        ST_MAHJONG_PLAY,
+        ST_CONFIRM_TRICK,
+        ST_CHOOSE_DRAGON_GIFT,
+      ],
+      true
+    );
+  }
+
+  private function setConcedeProposalBy(int $value): void
+  {
+    $val = (int) $value;
+    $gId = GLOBAL_CONCEDE_PROPOSAL_BY;
+    $this->DbQuery(
+      "INSERT INTO global (global_id, global_value) VALUES ($gId, $val) ON DUPLICATE KEY UPDATE global_value = $val"
+    );
+    if (isset($this->gamestate) && is_array($this->gamestate->table_globals ?? null)) {
+      $this->gamestate->table_globals[$gId] = $val;
+    }
+  }
+
+  private function getLockedConcedeProposalBy(): int
+  {
+    $gId = GLOBAL_CONCEDE_PROPOSAL_BY;
+    return (int) ($this->getUniqueValueFromDB(
+      "SELECT global_value FROM global WHERE global_id = $gId FOR UPDATE"
+    ) ?? 0);
+  }
+
+  /**
+   * @param array<int|string, array<string, mixed>> $players
+   * @return array<string, mixed>|null
+   */
+  private function findPartnerFromMap(int $playerId, array $players): ?array
+  {
+    if (!isset($players[$playerId])) {
+      return null;
+    }
+    $team = (int) $players[$playerId]["team"];
+    foreach ($players as $candidate) {
+      if ((int) $candidate["id"] !== $playerId && (int) $candidate["team"] === $team) {
+        return $candidate;
+      }
+    }
+    return null;
+  }
+
+  function proposeConcede(): void
+  {
+    $this->acquireGameLock();
+    if (!$this->isInteractiveConcedeState($this->freshStateId)) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $playerId = (int) $this->getCurrentPlayerId();
+    $players = PlayerManager::getPlayersForConcedeCheck();
+    if (!isset($players[$playerId]) || (int) ($players[$playerId]["zombie"] ?? 0) !== 0) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $team = (int) $players[$playerId]["team"];
+    $partner = $this->findPartnerFromMap($playerId, $players);
+    if ($partner === null) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $partnerId = (int) $partner["id"];
+
+    $round = LogManager::getCurrentRoundForUpdate();
+    if ($round < CONCEDE_MIN_ROUND) {
+      throw new UserException(
+        clienttranslate("You can only propose to concede starting from Round 2")
+      );
+    }
+
+    $teamScores = PlayerManager::computeTeamScores($players);
+    $minDeficit = $this->getConcedeMinDeficit();
+    if ($teamScores[1 - $team] - $teamScores[$team] < $minDeficit) {
+      throw new UserException(
+        clienttranslate("Your team is not trailing by enough points to concede")
+      );
+    }
+
+    $existingProposal = $this->getLockedConcedeProposalBy();
+    $partnerIsZombie = (int) ($partner["zombie"] ?? 0) !== 0;
+
+    if ($partnerIsZombie) {
+      if ($existingProposal !== 0 && $existingProposal !== $playerId) {
+        throw new UserException(clienttranslate("A concede proposal is already pending"));
+      }
+      if (
+        $existingProposal === 0 &&
+        LogManager::hasConcedeProposalInRound($round, [$playerId, $partnerId], true)
+      ) {
+        throw new UserException(
+          clienttranslate("Your team has already proposed to concede this round")
+        );
+      }
+      $this->completeConcede($playerId, $team, $players);
+      return;
+    }
+
+    if ($existingProposal !== 0) {
+      throw new UserException(clienttranslate("A concede proposal is already pending"));
+    }
+    if (LogManager::hasConcedeProposalInRound($round, [$playerId, $partnerId], true)) {
+      throw new UserException(
+        clienttranslate("Your team has already proposed to concede this round")
+      );
+    }
+
+    $this->bumpGameVersion();
+    $this->setConcedeProposalBy($playerId);
+    $proposerName = (string) $players[$playerId]["name"];
+    LogManager::insert($playerId, "concedeProposal", ["team" => $team]);
+    NotificationManager::concedeProposal($playerId, $playerId, $proposerName, $team);
+    NotificationManager::concedeProposal($partnerId, $playerId, $proposerName, $team);
+    $this->syncStaleReturnState();
+  }
+
+  function respondConcede(bool $accept): void
+  {
+    $this->acquireGameLock();
+    if (!$this->isInteractiveConcedeState($this->freshStateId)) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $playerId = (int) $this->getCurrentPlayerId();
+    $players = PlayerManager::getPlayersForConcedeCheck();
+    if (!isset($players[$playerId]) || (int) ($players[$playerId]["zombie"] ?? 0) !== 0) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $team = (int) $players[$playerId]["team"];
+    $partner = $this->findPartnerFromMap($playerId, $players);
+    if ($partner === null) {
+      throw new UserException(clienttranslate("You cannot concede right now"));
+    }
+    $partnerId = (int) $partner["id"];
+    $proposerId = $this->getLockedConcedeProposalBy();
+
+    if ($accept) {
+      if ($proposerId !== $partnerId) {
+        throw new UserException(clienttranslate("There is no concede proposal to respond to"));
+      }
+      $round = LogManager::getCurrentRoundForUpdate();
+      if ($round < CONCEDE_MIN_ROUND) {
+        throw new UserException(
+          clienttranslate("You can only propose to concede starting from Round 2")
+        );
+      }
+      $teamScores = PlayerManager::computeTeamScores($players);
+      if ($teamScores[1 - $team] - $teamScores[$team] < $this->getConcedeMinDeficit()) {
+        throw new UserException(
+          clienttranslate("Your team is not trailing by enough points to concede")
+        );
+      }
+      $this->completeConcede($playerId, $team, $players);
+      return;
+    }
+
+    if ($proposerId !== $partnerId && $proposerId !== $playerId) {
+      throw new UserException(clienttranslate("There is no concede proposal to respond to"));
+    }
+    $reason = $proposerId === $playerId ? "withdrawn" : "declined";
+    $this->bumpGameVersion();
+    $this->setConcedeProposalBy(0);
+    $actorName = (string) $players[$playerId]["name"];
+    LogManager::insert($playerId, "concedeCancel", ["team" => $team]);
+    NotificationManager::concedeCancel($playerId, $playerId, $actorName, $reason);
+    NotificationManager::concedeCancel($partnerId, $playerId, $actorName, $reason);
+    $this->syncStaleReturnState();
+  }
+
+  /**
+   * @param array<int|string, array<string, mixed>> $players
+   */
+  private function completeConcede(int $actorId, int $team, array $players): void
+  {
+    if ($this->gameLockStale) {
+      $this->throwGameStateChanged();
+    }
+    $teamScores = PlayerManager::computeTeamScores($players);
+    if ($teamScores[1 - $team] <= $teamScores[$team]) {
+      throw new UserException(
+        clienttranslate("Your team is not trailing by enough points to concede")
+      );
+    }
+
+    $this->bumpGameVersion();
+    $this->setConcedeProposalBy(0);
+    LogManager::insert($actorId, "concedeAccept", ["team" => $team]);
+
+    $this->DbQuery("UPDATE player SET player_is_multiactive = 0");
+    PlayerManager::setAutopass(AUTOPASS_NONE);
+
+    $teammates = [];
+    foreach ($players as $candidate) {
+      if ((int) $candidate["team"] === $team) {
+        $teammates[] = $candidate;
+      }
+    }
+    $p1 = $teammates[0] ?? $players[$actorId];
+    $p2 = $teammates[1] ?? $p1;
+    NotificationManager::concedeResult(
+      $team,
+      (int) $p1["id"],
+      (string) $p1["name"],
+      (int) $p2["id"],
+      (string) $p2["name"]
+    );
+
+    $this->gamestate->nextState("endGame");
+    $this->relockGlobalsAfterFrameworkCommit();
   }
 
   function chooseDragonGift(int|string $playertogive, bool $checkAction = true): void
@@ -2089,6 +2353,33 @@ class Tichu extends Table
     ];
     LogManager::insert(0, "roundScore", $roundScore);
     NotificationManager::newScores($newScores, $roundScore);
+
+    $openConcedeProposerId = $this->getLockedConcedeProposalBy();
+    if ($openConcedeProposerId > 0) {
+      $this->setConcedeProposalBy(0);
+      $concedePlayers = PlayerManager::getPlayersForConcedeCheck();
+      $proposerRow = $concedePlayers[$openConcedeProposerId] ?? null;
+      if ($proposerRow !== null) {
+        $proposerTeam = (int) $proposerRow["team"];
+        $proposerName = (string) $proposerRow["name"];
+        $partnerRow = $this->findPartnerFromMap($openConcedeProposerId, $concedePlayers);
+        LogManager::insert($openConcedeProposerId, "concedeCancel", ["team" => $proposerTeam]);
+        NotificationManager::concedeCancel(
+          $openConcedeProposerId,
+          $openConcedeProposerId,
+          $proposerName,
+          "round_end"
+        );
+        if ($partnerRow !== null) {
+          NotificationManager::concedeCancel(
+            (int) $partnerRow["id"],
+            $openConcedeProposerId,
+            $proposerName,
+            "round_end"
+          );
+        }
+      }
+    }
 
     $max_score = max($newScores);
 

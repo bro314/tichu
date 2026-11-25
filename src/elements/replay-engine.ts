@@ -227,6 +227,9 @@ export function isIgnoredReplayNotif(notif: Notif): boolean {
   const args = notif.args as any;
   if (type === "autopass") return true;
   if (type === "botSuggestion") return true;
+  if (type === "concedeCancel") return true;
+  if (type === "concedeProposal") return true;
+  if (type === "concedeResult") return true;
   if (type === "confirmTichu") return true;
   if (type === "devConsole") return true;
   if (type === "hasBomb") return true;

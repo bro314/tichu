@@ -64,7 +64,10 @@ $machinestates = [
     "descriptionmyturn" => clienttranslate('${you} may call Grand Tichu'),
     "type" => "multipleactiveplayer",
     "possibleactions" => ["grandTichuBet", "tichuBet"],
-    "transitions" => ["dealLastCards" => ST_DEAL_LAST_CARDS],
+    "transitions" => [
+      "dealLastCards" => ST_DEAL_LAST_CARDS,
+      "endGame" => ST_GAME_END,
+    ],
   ],
 
   ST_DEAL_LAST_CARDS => [
@@ -87,6 +90,7 @@ $machinestates = [
       "showPassedCards" => ST_SHOW_PASSED_CARDS,
       // new state: cards are accepted automatically, immediately proceeds to NEW TRICK
       "acceptPassedCards" => ST_ACCEPT_PASSED_CARDS,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -100,7 +104,10 @@ $machinestates = [
     "type" => "multipleactiveplayer",
     "args" => "argShowPassedCards",
     "possibleactions" => ["acceptCards", "tichuBet"],
-    "transitions" => ["acceptCards" => ST_NEW_TRICK],
+    "transitions" => [
+      "acceptCards" => ST_NEW_TRICK,
+      "endGame" => ST_GAME_END,
+    ],
   ],
 
   // This is a newly added state replacing by ST_SHOW_PASSED_CARDS.
@@ -135,6 +142,7 @@ $machinestates = [
       "nextPlayer" => ST_NEXT_PLAYER,
       "mahjongPlayed" => ST_MAHJONG_PLAY,
       "zombiePass" => ST_NEXT_PLAYER,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -150,6 +158,7 @@ $machinestates = [
       "changePlayer" => ST_CHANGE_PLAYER,
       "mahjongPlayed" => ST_MAHJONG_PLAY,
       "zombiePass" => ST_NEXT_PLAYER,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -164,6 +173,7 @@ $machinestates = [
       "changePlayer" => ST_CHANGE_PLAYER,
       "nextPlayer" => ST_NEXT_PLAYER,
       "zombiePass" => ST_CHANGE_PLAYER,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -180,6 +190,7 @@ $machinestates = [
       "cancel" => ST_PLAY_COMBO_OPEN,
       "mahjongPlayed" => ST_MAHJONG_PLAY,
       "zombiePass" => ST_NEXT_PLAYER,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -192,6 +203,7 @@ $machinestates = [
     "transitions" => [
       "nextPlayer" => ST_NEXT_PLAYER,
       "zombiePass" => ST_NEXT_PLAYER,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -221,6 +233,7 @@ $machinestates = [
       "chooseDragonGift" => ST_CHOOSE_DRAGON_GIFT,
       "changePlayer" => ST_CHANGE_PLAYER,
       "zombiePass" => ST_NEW_TRICK,
+      "endGame" => ST_GAME_END,
     ],
   ],
 
@@ -235,6 +248,7 @@ $machinestates = [
       "newTrick" => ST_NEW_TRICK,
       "zombiePass" => ST_NEW_TRICK,
       "endRound" => ST_END_ROUND,
+      "endGame" => ST_GAME_END,
     ],
   ],
 

@@ -283,5 +283,38 @@ class PlayerManager
     }
     Table::DbQuery($sql);
   }
+
+  /**
+   * Lock and return all players with fields needed for concede eligibility/execution.
+   *
+   * @return array<int|string, array<string, mixed>>
+   */
+  public static function getPlayersForConcedeCheck(): array
+  {
+    return Table::getCollectionFromDb(
+      "SELECT player_id id, player_team team, player_name name, player_score score, player_zombie zombie, player_eliminated eliminated FROM player ORDER BY player_no FOR UPDATE"
+    );
+  }
+
+  /**
+   * Compute team scores `[0 => int, 1 => int]` from a player list.
+   * Both teammates store the full team score in `player_score`, so read each team once.
+   *
+   * @param array<int|string, array<string, mixed>> $players
+   * @return array{0: int, 1: int}
+   */
+  public static function computeTeamScores(array $players): array
+  {
+    $scores = [0 => 0, 1 => 0];
+    $seen = [0 => false, 1 => false];
+    foreach ($players as $player) {
+      $team = (int) ($player["team"] ?? $player["player_team"] ?? 0);
+      if (($team === 0 || $team === 1) && !$seen[$team]) {
+        $scores[$team] = (int) ($player["score"] ?? $player["player_score"] ?? 0);
+        $seen[$team] = true;
+      }
+    }
+    return $scores;
+  }
 }
 ?>

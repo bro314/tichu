@@ -34,6 +34,7 @@ import {
   CUSTOM_HAND_ORDER_TTL_MS,
   GameModel,
   canOrganizeHandInState,
+  getConcedeUiState,
 } from "../src/elements/game-model";
 import { Bet } from "../src/types/tichu-contracts";
 
@@ -3865,11 +3866,22 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
           isCurrentPlayerActive: true,
         });
         const outOpenNoSel = serializeLitTemplate(bar.render());
-        assert.ok(outOpenNoSel.includes('id="myPlayBomb"'), "#myPlayBomb stays visible in playComboOpen");
+        assert.ok(
+          outOpenNoSel.includes('id="myPlayBomb"'),
+          "#myPlayBomb stays visible in playComboOpen",
+        );
         assert.match(outOpenNoSel, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
         (bar as any).onPlayBomb(fakeEvent);
-        assert.equal(playComboCalls, 0, "Clicking disabled #myPlayBomb on own turn must not submit");
-        assert.equal(playBombCalls, 0, "Clicking #myPlayBomb on own turn must not invoke out-of-turn playBomb");
+        assert.equal(
+          playComboCalls,
+          0,
+          "Clicking disabled #myPlayBomb on own turn must not submit",
+        );
+        assert.equal(
+          playBombCalls,
+          0,
+          "Clicking #myPlayBomb on own turn must not invoke out-of-turn playBomb",
+        );
 
         // Valid non-bomb selection in playComboOpen keeps #myPlayBomb disabled (only bombs enable it)
         model.setSelectedCardIds([A7.id]);
@@ -3886,7 +3898,11 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         assert.ok(outOpenValidBomb.includes('id="myPlayBomb"'));
         assert.doesNotMatch(outOpenValidBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
         (bar as any).onPlayBomb(fakeEvent);
-        assert.equal(playComboCalls, 1, "Valid bomb on own turn in playComboOpen calls onPlayCombo");
+        assert.equal(
+          playComboCalls,
+          1,
+          "Valid bomb on own turn in playComboOpen calls onPlayCombo",
+        );
         assert.equal(playBombCalls, 0);
         assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-combo");
 
@@ -3899,10 +3915,17 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         // Even a valid beating non-bomb (not applicable vs Ace, test with 7 vs 2 below) or invalid selection stays disabled
         model.setSelectedCardIds([A7.id]);
         const outPlayComboInvalid = serializeLitTemplate(bar.render());
-        assert.ok(outPlayComboInvalid.includes('id="myPlayBomb"'), "#myPlayBomb stays visible on own turn in playCombo");
+        assert.ok(
+          outPlayComboInvalid.includes('id="myPlayBomb"'),
+          "#myPlayBomb stays visible on own turn in playCombo",
+        );
         assert.match(outPlayComboInvalid, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
         (bar as any).onPlayBomb(fakeEvent);
-        assert.equal(playComboCalls, 1, "Invalid selection on own turn does not submit via #myPlayBomb");
+        assert.equal(
+          playComboCalls,
+          1,
+          "Invalid selection on own turn does not submit via #myPlayBomb",
+        );
 
         // Valid beating non-bomb in playCombo (Single 7 over Single 5) must STILL keep #myPlayBomb disabled
         model.applyPlayCombo("2385075", [A5], "5", 0, SINGLE_COMBO, null);
@@ -3910,13 +3933,21 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         const outPlayComboValidNonBomb = serializeLitTemplate(bar.render());
         assert.match(outPlayComboValidNonBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
         (bar as any).onPlayBomb(fakeEvent);
-        assert.equal(playComboCalls, 1, "Valid non-bomb in playCombo must not submit via #myPlayBomb");
+        assert.equal(
+          playComboCalls,
+          1,
+          "Valid non-bomb in playCombo must not submit via #myPlayBomb",
+        );
 
         model.setSelectedCardIds([A5.id, B5.id, C5.id, D5.id]);
         const outPlayComboValidBomb = serializeLitTemplate(bar.render());
         assert.doesNotMatch(outPlayComboValidBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
         (bar as any).onPlayBomb(fakeEvent);
-        assert.equal(playComboCalls, 2, "Valid bomb on own turn in playCombo submits via onPlayCombo");
+        assert.equal(
+          playComboCalls,
+          2,
+          "Valid bomb on own turn in playCombo submits via onPlayCombo",
+        );
         assert.equal(playBombCalls, 0);
         assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-combo");
 
@@ -4481,7 +4512,11 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
         "status-actions wrapper should render",
       );
       const btns = htmlWithTrick.match(/<button[\s\S]*?<\/button>/g) || [];
-      assert.equal(btns.length, 2, "Both eye and scoreboard buttons should render when trickSize > 0");
+      assert.equal(
+        btns.length,
+        2,
+        "Both eye and scoreboard buttons should render when trickSize > 0",
+      );
       const eyeBtnHtml = btns[0]!;
       assert.ok(eyeBtnHtml.includes('type="button"'));
       assert.match(eyeBtnHtml, /data-tooltip=(?:"Show current trick"|Show current trick(?:\s|>))/);
@@ -4489,7 +4524,11 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.equal(eyeBtnHtml.includes("title="), false);
       assert.match(eyeBtnHtml, /aria-label=(?:"Show current trick"|Show current trick(?:\s|>))/);
       assert.match(eyeBtnHtml, /class="status-icon eye"[^>]*aria-hidden="true"/);
-      assert.equal(eyeBtnHtml.replace(/<[^>]+>/g, "").trim(), "", "Eye button should contain no visible text");
+      assert.equal(
+        eyeBtnHtml.replace(/<[^>]+>/g, "").trim(),
+        "",
+        "Eye button should contain no visible text",
+      );
 
       const scoreBtnHtml = btns[1]!;
       assert.ok(scoreBtnHtml.includes('type="button"'));
@@ -4497,7 +4536,11 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.match(scoreBtnHtml, /data-tooltip=(?:"Scoreboard"|Scoreboard(?:\s|>))/);
       assert.match(scoreBtnHtml, /aria-label=(?:"Scoreboard"|Scoreboard(?:\s|>))/);
       assert.match(scoreBtnHtml, /class="status-icon scoreboard"[^>]*aria-hidden="true"/);
-      assert.equal(scoreBtnHtml.replace(/<[^>]+>/g, "").trim(), "", "Scoreboard button should contain no visible text");
+      assert.equal(
+        scoreBtnHtml.replace(/<[^>]+>/g, "").trim(),
+        "",
+        "Scoreboard button should contain no visible text",
+      );
       assert.deepEqual(translatedKeys, [
         "Round:",
         "Trick:",
@@ -5663,8 +5706,15 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
           assert.equal(layer.titleText, "Dragon");
 
           // Moving from slowDragon to slowPhoenix must NOT warm-open in 60ms
-          emit("pointermove", { pointerType: "mouse", path: [slowPhoenix, boardBg, tichuGameHost] });
-          assert.equal(layer.isOpen, false, "Switching between slow triggers hides previous slow tooltip");
+          emit("pointermove", {
+            pointerType: "mouse",
+            path: [slowPhoenix, boardBg, tichuGameHost],
+          });
+          assert.equal(
+            layer.isOpen,
+            false,
+            "Switching between slow triggers hides previous slow tooltip",
+          );
           advance(TOOLTIP_TIMINGS.warmOpenMs + 200);
           assert.equal(layer.isOpen, false, "Slow-to-slow must not warm-open");
           advance(TOOLTIP_TIMINGS.slowHoverOpenMs - (TOOLTIP_TIMINGS.warmOpenMs + 200));
@@ -5686,7 +5736,10 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
             g.gameui = { bHideTooltips: true };
             assert.equal(areSlowTooltipsHidden(), true);
 
-            emit("pointermove", { pointerType: "mouse", path: [slowDragon, boardBg, tichuGameHost] });
+            emit("pointermove", {
+              pointerType: "mouse",
+              path: [slowDragon, boardBg, tichuGameHost],
+            });
             advance(TOOLTIP_TIMINGS.slowHoverOpenMs + 100);
             assert.equal(
               layer.isOpen,
@@ -5883,6 +5936,267 @@ test("groupPlayersByTeam groups strictly by player.team across TEAM_1_2, TEAM_1_
     groupedFallback.team1.map((p) => p.id),
     [2, 4],
   );
+});
+
+test("GameModel concede eligibility boundaries, F5 rehydration, round reset, and rollback safety", () => {
+  const makePlayers = (team0Score: number, team1Score: number) => ({
+    "10": {
+      id: 10,
+      name: "Alice",
+      color: "000000",
+      no: 1,
+      team: 0,
+      score: team0Score,
+      call_tichu: Bet.NO_BET_YET,
+      call_grand_tichu: Bet.NO_BET_YET,
+    },
+    "20": {
+      id: 20,
+      name: "Bob",
+      color: "ff0000",
+      no: 2,
+      team: 1,
+      score: team1Score,
+      call_tichu: Bet.NO_BET_YET,
+      call_grand_tichu: Bet.NO_BET_YET,
+    },
+    "30": {
+      id: 30,
+      name: "Carol",
+      color: "000000",
+      no: 3,
+      team: 0,
+      score: team0Score,
+      call_tichu: Bet.NO_BET_YET,
+      call_grand_tichu: Bet.NO_BET_YET,
+    },
+    "40": {
+      id: 40,
+      name: "Dave",
+      color: "ff0000",
+      no: 4,
+      team: 1,
+      score: team1Score,
+      call_tichu: Bet.NO_BET_YET,
+      call_grand_tichu: Bet.NO_BET_YET,
+    },
+  });
+
+  // 1. Rollback safety: omitted gamedatas.concede keeps concede disabled
+  const legacyModel = new GameModel();
+  legacyModel.hydrateFromGamedatas(
+    {
+      players: makePlayers(0, 500) as any,
+      round: 2,
+      trick: 1,
+      gamestate: { name: "playCombo", active_player: "10" },
+    },
+    10,
+    false,
+    true,
+  );
+  const legacyUi = getConcedeUiState({
+    concede: legacyModel.getState().concede,
+    players: legacyModel.getState().players,
+    currentPlayerId: legacyModel.getState().currentPlayerId,
+    isSpectator: legacyModel.getState().isSpectator,
+    stateName: legacyModel.getState().stateName,
+    round: legacyModel.getState().round,
+  });
+  assert.equal(legacyUi.canPropose, false);
+  assert.equal(legacyUi.isProposer, false);
+  assert.equal(legacyUi.isPartnerPrompted, false);
+
+  // 2. Round 1 blocked even with large deficit
+  const model = new GameModel();
+  model.hydrateFromGamedatas(
+    {
+      players: makePlayers(0, 450) as any,
+      round: 1,
+      trick: 1,
+      gamestate: { name: "playCombo", active_player: "10" },
+      concede: {
+        proposalBy: 0,
+        usedThisRound: false,
+        partnerIsZombie: false,
+        minDeficit: 400,
+        minRound: 2,
+      },
+    },
+    10,
+    false,
+    true,
+  );
+  assert.equal(
+    getConcedeUiState({
+      concede: model.getState().concede,
+      players: model.getState().players,
+      currentPlayerId: "10",
+      isSpectator: false,
+      stateName: "playCombo",
+      round: 1,
+    }).canPropose,
+    false,
+  );
+
+  // 3. Round 2 deficit thresholds: 395 blocked, 400 allowed (teammate scores must NOT be summed)
+  model.hydrateFromGamedatas(
+    {
+      players: makePlayers(0, 395) as any,
+      round: 2,
+      trick: 0,
+      gamestate: { name: "giveCards", multiactive: ["10", "20", "30", "40"] },
+      concede: {
+        proposalBy: 0,
+        usedThisRound: false,
+        partnerIsZombie: false,
+        minDeficit: 400,
+        minRound: 2,
+      },
+    },
+    10,
+    false,
+    true,
+  );
+  assert.equal(
+    getConcedeUiState({
+      concede: model.getState().concede,
+      players: model.getState().players,
+      currentPlayerId: "10",
+      isSpectator: false,
+      stateName: "giveCards",
+      round: 2,
+    }).canPropose,
+    false,
+  );
+
+  model.hydrateFromGamedatas(
+    {
+      players: makePlayers(-100, 300) as any,
+      round: 2,
+      trick: 0,
+      gamestate: { name: "giveCards", multiactive: ["10", "20", "30", "40"] },
+      concede: {
+        proposalBy: 0,
+        usedThisRound: false,
+        partnerIsZombie: false,
+        minDeficit: 400,
+        minRound: 2,
+      },
+    },
+    10,
+    false,
+    true,
+  );
+  assert.equal(
+    getConcedeUiState({
+      concede: model.getState().concede,
+      players: model.getState().players,
+      currentPlayerId: "10",
+      isSpectator: false,
+      stateName: "giveCards",
+      round: 2,
+    }).canPropose,
+    true,
+  );
+
+  // 4. Spectator always blocked
+  assert.equal(
+    getConcedeUiState({
+      concede: model.getState().concede,
+      players: model.getState().players,
+      currentPlayerId: "10",
+      isSpectator: true,
+      stateName: "giveCards",
+      round: 2,
+    }).canPropose,
+    false,
+  );
+
+  // 5. Proposer -> Partner prompt -> Cancel -> usedThisRound blocks -> enterNewRound resets
+  model.applyConcedeProposal(10);
+  const proposerUi = getConcedeUiState({
+    concede: model.getState().concede,
+    players: model.getState().players,
+    currentPlayerId: "10",
+    isSpectator: false,
+    stateName: "giveCards",
+    round: 2,
+  });
+  assert.equal(proposerUi.isProposer, true);
+  assert.equal(proposerUi.isPartnerPrompted, false);
+  assert.equal(proposerUi.canPropose, false);
+  assert.equal(proposerUi.partnerName, "Carol");
+
+  const partnerUi = getConcedeUiState({
+    concede: model.getState().concede,
+    players: model.getState().players,
+    currentPlayerId: "30",
+    isSpectator: false,
+    stateName: "giveCards",
+    round: 2,
+  });
+  assert.equal(partnerUi.isPartnerPrompted, true);
+  assert.equal(partnerUi.isProposer, false);
+  assert.equal(partnerUi.proposerName, "Alice");
+
+  model.applyConcedeCancel();
+  const afterCancel = getConcedeUiState({
+    concede: model.getState().concede,
+    players: model.getState().players,
+    currentPlayerId: "10",
+    isSpectator: false,
+    stateName: "giveCards",
+    round: 2,
+  });
+  assert.equal(afterCancel.isProposer, false);
+  assert.equal(
+    afterCancel.canPropose,
+    false,
+    "usedThisRound must prevent re-proposing in same round",
+  );
+
+  model.enterNewRound();
+  const nextRoundUi = getConcedeUiState({
+    concede: model.getState().concede,
+    players: model.getState().players,
+    currentPlayerId: "10",
+    isSpectator: false,
+    stateName: "grandTichuBets",
+    round: model.getState().round,
+  });
+  assert.equal(nextRoundUi.canPropose, true, "enterNewRound must clear usedThisRound");
+
+  // 6. Zombie partner fast-path preserves canPropose while proposal is pending
+  model.hydrateFromGamedatas(
+    {
+      players: makePlayers(0, 300) as any,
+      round: 2,
+      trick: 1,
+      gamestate: { name: "playCombo", active_player: "10" },
+      concede: {
+        proposalBy: 10,
+        usedThisRound: true,
+        partnerIsZombie: true,
+        minDeficit: 300,
+        minRound: 2,
+      },
+    },
+    10,
+    false,
+    true,
+  );
+  const zombieUi = getConcedeUiState({
+    concede: model.getState().concede,
+    players: model.getState().players,
+    currentPlayerId: "10",
+    isSpectator: false,
+    stateName: "playCombo",
+    round: 2,
+  });
+  assert.equal(zombieUi.canPropose, true);
+  model.applyConcedeResult();
+  assert.equal(model.getState().concede.proposalBy, 0);
 });
 
 test("Bug #22264: sort weights, sortHandCards with Group 1..4, computeDropTarget, and canOrganizeHandInState", async () => {

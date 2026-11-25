@@ -135,6 +135,16 @@ export interface TichuNotificationMap {
     callerName?: string;
   };
   botSuggestion: { codeVersion?: string; suggestion: Record<string, unknown> };
+  concedeProposal: { codeVersion?: string; player_id: number; player_name: string; team: number };
+  concedeCancel: { codeVersion?: string; player_id: number; player_name: string; reason: string };
+  concedeResult: {
+    codeVersion?: string;
+    team: number;
+    player_id: number;
+    player_name: string;
+    player_id2: number;
+    player_name2: string;
+  };
 }
 
 /**
@@ -158,6 +168,8 @@ export interface TichuActionMap {
   cancelPhoenix: {};
   cancel: {};
   chooseDragonGift: { player: number | string };
+  proposeConcede: {};
+  respondConcede: { accept: boolean | 0 | 1 };
 }
 
 export type TichuStatePossibleAction =
@@ -178,6 +190,14 @@ export interface TichuPlayer {
   pass?: string | number;
   no: number;
   team?: number | string;
+}
+
+export interface TichuConcedeState {
+  proposalBy: number;
+  usedThisRound: boolean;
+  partnerIsZombie: boolean;
+  minDeficit: number;
+  minRound: number;
 }
 
 export interface TichuGamedatas {
@@ -203,6 +223,7 @@ export interface TichuGamedatas {
   trick: number;
   roundHistory?: RoundScoreRecord[];
   targetScore?: number;
+  concede?: TichuConcedeState;
 }
 
 export type TypedNotif<K extends keyof TichuNotificationMap> = Notif<TichuNotificationMap[K]>;

@@ -870,6 +870,43 @@ function runTargetedScenarios(array $workers, int $reps, array &$report): array
       }
       return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
     },
+
+    // Partner respondConcede(accept=1) racing against final playCombo -> stEndRound() (#36963).
+    'respondConcede vs stEndRound' => function () use ($workers, $P1, $P2, $P3) {
+      $game = new \Tichu();
+      \LocalTichuScenarios::setupScenario($game, 'double_victory', $P2);
+      \LogManager::insert(0, 'newRound');
+      $game->incStat(1, 'round_number');
+      \APP_DbObject::DbQuery('UPDATE global SET global_value = 1 WHERE global_id = 100');
+      \APP_DbObject::DbQuery('UPDATE player SET player_score = 400 WHERE player_team = 0');
+      \APP_DbObject::DbQuery('UPDATE player SET player_score = 0 WHERE player_team = 1');
+      $rProp = dispatchBurst($workers, [act($P1, 'proposeConcede')]);
+      if ($rProp[0]['status'] !== 'ok') {
+        return ['skip' => true];
+      }
+      $lastCardId = (string) \LocalTichuScenarios::getCardId(1, 14);
+      $reqs = [
+        act($P3, 'respondConcede', ['accept' => '1']),
+        act($P2, 'playCombo', ['cards' => $lastCardId]),
+      ];
+      $results = dispatchBurst($workers, $reqs);
+      $errs = [];
+      $snap = readSnapshot($game);
+      $concedeBy = (int) \APP_DbObject::getUniqueValueFromDB(
+        'SELECT global_value FROM global WHERE global_id = ' . GLOBAL_CONCEDE_PROPOSAL_BY
+      );
+      if ($concedeBy !== 0) {
+        $errs[] = "concedeProposalBy=$concedeBy (expected 0 after either concede or stEndRound)";
+      }
+      $okCount = count(array_filter($results, fn($r) => $r['status'] === 'ok'));
+      if ($okCount === 0) {
+        $errs[] = 'neither respondConcede nor final playCombo succeeded';
+      }
+      if ($results[0]['status'] === 'ok' && $snap['id'] !== ST_GAME_END) {
+        $errs[] = "respondConcede succeeded yet state is {$snap['id']} instead of ST_GAME_END";
+      }
+      return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
+    },
   ];
 
   foreach ($scenarios as $name => $fn) {
@@ -1089,6 +1126,12 @@ function planBurst(\Tichu $game, array $s): array
         $add($p, 'playBomb', ['cards' => ids($bomb)]);
       }
     }
+    if (chance(0.02)) {
+      $add($p, 'proposeConcede');
+    }
+    if (chance(0.02)) {
+      $add($p, 'respondConcede', ['accept' => pick(['0', '1'])]);
+    }
   }
 
   // 3. Page loads, zombie turns, notificationHistory, botSuggest, and garbage.
@@ -1140,6 +1183,8 @@ function fuzzRequest(array $s): array
     'cancelPhoenix' => fn() => [],
     'cancel' => fn() => [],
     'chooseDragonGift' => fn() => ['player' => (string) mt_rand(0, 3)],
+    'proposeConcede' => fn() => [],
+    'respondConcede' => fn() => ['accept' => pick(['0', '1', 'x'])],
   ];
   $action = array_rand($actions);
   return [
