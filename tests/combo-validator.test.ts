@@ -29,6 +29,7 @@ import {
 } from "../src/elements/combo-validator";
 import { groupPlayersByTeam, hasBomb } from "../src/elements/utils";
 import {
+  CARD_GROUPS_UI_STORAGE_KEY,
   CUSTOM_HAND_ORDER_MAX_ENTRIES,
   CUSTOM_HAND_ORDER_STORAGE_KEY,
   CUSTOM_HAND_ORDER_TTL_MS,
@@ -6288,6 +6289,55 @@ test("Bug #22264: sort weights, sortHandCards with Group 1..4, computeDropTarget
     // Drag ungrouped card 3 into Group 1
     assert.deepEqual(computeDropTarget(80, mids, 3, groups), { dropIndex: 0, targetGroup: 1 });
 
+    // computeGroupStripes spans from very left to very right of each group without overlapping next group
+    const { computeGroupStripes } = require("../src/elements/tichu-stock");
+    const cardsForStripes = [A2, C5, B9, AA, DR];
+    // 1-card group followed by multi-card group followed by ungrouped
+    const stripes = computeGroupStripes(
+      cardsForStripes,
+      { [A2.id]: 1, [C5.id]: 2, [B9.id]: 2 },
+      100,
+      -60,
+      22,
+    );
+    assert.equal(stripes.length, 2);
+    // Card 0 left=0, Card 1 left=100-60+22=62 -> stripe 1 capped at 62-2=60
+    assert.deepEqual(stripes[0], {
+      groupId: 1,
+      startIndex: 0,
+      endIndex: 0,
+      leftPx: 0,
+      widthPx: 60,
+      cardIds: [A2.id],
+    });
+    // Card 1 left=62, Card 2 left=102, Card 3 (ungrouped) left=102+40+22=164 -> stripe 2 right=min(102+100, 164-2)=162 -> width=100
+    assert.deepEqual(stripes[1], {
+      groupId: 2,
+      startIndex: 1,
+      endIndex: 2,
+      leftPx: 62,
+      widthPx: 100,
+      cardIds: [C5.id, B9.id],
+    });
+    // All cards in one group -> full cardLeft[last] + itemWidth span
+    const fullStripe = computeGroupStripes(
+      [A2, C5, B9],
+      { [A2.id]: 3, [C5.id]: 3, [B9.id]: 3 },
+      100,
+      -60,
+      22,
+    );
+    assert.deepEqual(fullStripe, [
+      {
+        groupId: 3,
+        startIndex: 0,
+        endIndex: 2,
+        leftPx: 0,
+        widthPx: 180,
+        cardIds: [A2.id, C5.id, B9.id],
+      },
+    ]);
+
     // State gate: only after card passing is completed
     for (const s of [
       "",
@@ -6372,6 +6422,13 @@ test("Bug #22264: GameModel per-table custom hand persistence, round wipe, 90-da
 
     // 2. Post-passing state persists custom order & groups under tableId_playerId
     model.setGameState("playComboOpen", { activePlayerId: "1", isCurrentPlayerActive: true });
+    assert.equal(model.getState().cardGroupsUiEnabled, false);
+    model.setCardGroupsUiEnabled(true);
+    assert.equal(backing.get(CARD_GROUPS_UI_STORAGE_KEY), "1");
+    assert.equal(model.getState().cardGroupsUiEnabled, true);
+    model.setCardGroupsUiEnabled(false);
+    assert.equal(backing.get(CARD_GROUPS_UI_STORAGE_KEY), "0");
+    assert.equal(model.getState().cardGroupsUiEnabled, false);
     model.commitCustomHandOrder([DR.id, C5.id, B9.id, AA.id, A2.id], C5.id, 1);
     model.assignCardGroup([B9.id], 1);
     assert.equal(model.getState().handSortOrder, "preserve");
@@ -6533,34 +6590,53 @@ test("Bug #22264: TichuHand organize bar and TichuSettingsModal 4-way sort UI", 
       hand.performUpdate = () => {};
       hand.connectedCallback();
       try {
-        // Pre-passing giveCards: sort pills shown, group buttons omitted
+        // Pre-passing giveCards: single sort dropdown shown, toggle & group buttons omitted
         const prePassHtml = serializeLitTemplate(hand.render());
         assert.ok(prePassHtml.includes('id="hand-organize-bar"'));
-        assert.ok(prePassHtml.includes('id="order_by_rank"'));
-        assert.ok(prePassHtml.includes('id="order_by_rank_desc"'));
-        assert.ok(prePassHtml.includes('id="order_by_color"'));
-        assert.ok(prePassHtml.includes('id="order_by_color_desc"'));
+        assert.ok(prePassHtml.includes('id="hand_sort_select"'));
+        assert.ok(prePassHtml.includes("Rank ↑"));
+        assert.ok(prePassHtml.includes("Rank ↓"));
+        assert.ok(prePassHtml.includes("Suit ↑"));
+        assert.ok(prePassHtml.includes("Suit ↓"));
+        assert.equal(prePassHtml.includes('id="order_by_rank"'), false);
+        assert.equal(prePassHtml.includes('id="toggle_card_groups"'), false);
         assert.equal(/id=["']?group_btn_1["']?/.test(prePassHtml), false);
 
-        // Post-passing playCombo: group buttons 1..4 appear
+        // Post-passing playCombo with cardGroupsUiEnabled=false: toggle shown, group buttons hidden
         model.setGameState("playCombo", { activePlayerId: "1", isCurrentPlayerActive: true });
+        const toggleClosedHtml = serializeLitTemplate(hand.render());
+        assert.ok(toggleClosedHtml.includes('id="toggle_card_groups"'));
+        assert.match(toggleClosedHtml, /id="toggle_card_groups"[^>]*aria-pressed=(?:"false"|false)/);
+        assert.equal(/id=["']?group_btn_1["']?/.test(toggleClosedHtml), false);
+
+        // Toggling Card groups opens group buttons 1..4
+        (hand as any).onToggleCardGroups();
+        assert.equal(model.getState().cardGroupsUiEnabled, true);
         const playHtml = serializeLitTemplate(hand.render());
+        assert.match(playHtml, /id="toggle_card_groups"[^>]*aria-pressed=(?:"true"|true)/);
         assert.match(playHtml, /id=["']?group_btn_1["']?/);
         assert.match(playHtml, /id=["']?group_btn_4["']?/);
 
-        // Assign selected cards to Group 1, then click Group 1 with empty selection to select group
+        // Assign selected cards to Group 1, then click group stripe to select & toggle off
         model.setSelectedCardIds([A2.id, C5.id]);
         (hand as any).onGroupButtonClick(1);
         assert.deepEqual(model.getState().cardGroups, { [A2.id]: 1, [C5.id]: 1 });
         assert.deepEqual(model.getState().selectedCardIds, []);
 
-        (hand as any).onGroupButtonClick(1);
+        (hand as any).onGroupStripeClick({ detail: { groupId: 1 } });
         assert.deepEqual(model.getState().selectedCardIds, [A2.id, C5.id]);
+        (hand as any).onGroupStripeClick({ detail: { groupId: 1 } });
+        assert.deepEqual(model.getState().selectedCardIds, []);
 
-        // Custom order badge appears when handSortOrder === "preserve"
+        // Dropdown value change updates sort order
+        (hand as any).onSortSelectChange({ target: { value: "color-desc" } });
+        assert.equal(model.getState().handSortOrder, "color-desc");
+        assert.ok(calls.includes("order:color-desc"));
+
+        // Custom option appears in dropdown when handSortOrder === "preserve"
         model.commitCustomHandOrder([DR.id, AA.id, B9.id, A2.id, C5.id]);
         const customHtml = serializeLitTemplate(hand.render());
-        assert.ok(customHtml.includes('id="order_custom"'));
+        assert.ok(customHtml.includes("Custom"));
       } finally {
         hand.disconnectedCallback();
       }

@@ -14,6 +14,7 @@ import {
   getConcedeUiState,
   getNextPlayersDesc,
   initialConcedeState,
+  isAutoSortOrder,
 } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
@@ -103,6 +104,7 @@ export class TichuHand extends LitElement {
   @state() private handSortOrder: HandSortOrder = "rank";
   @state() private customHandOrder: string[] = [];
   @state() private cardGroups: Record<string, CardGroupId> = {};
+  @state() private cardGroupsUiEnabled = false;
   @state() private liveAnnouncement = "";
   @state() private stateName = "";
   @state() private isTiki = false;
@@ -159,12 +161,66 @@ export class TichuHand extends LitElement {
           background: var(--tichu-divider, rgba(15, 23, 42, 0.16));
           flex-shrink: 0;
         }
-        .group-cluster-label {
+        .org-select,
+        .org-select::picker(select) {
+          appearance: base-select;
+        }
+        .org-select {
+          height: 28px;
+          min-width: 108px;
+          padding: 0 9px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 7px;
+          border: 1px solid var(--tichu-btn-sec-border, rgba(15, 23, 42, 0.18));
+          background: var(--tichu-btn-sec-bg, rgba(255, 255, 255, 0.92));
+          color: var(--tichu-btn-sec-fg, #1e293b);
+          box-shadow: var(--tichu-btn-sec-shadow, 0 1px 2px rgba(15, 23, 42, 0.08));
+          font-family: inherit;
           font-size: 12px;
           font-weight: 600;
-          color: var(--tichu-text-muted, #334155);
-          margin-right: 2px;
-          user-select: none;
+          line-height: 1.2;
+          cursor: pointer;
+          transition:
+            background-color 140ms ease,
+            border-color 140ms ease;
+        }
+        .org-select:hover {
+          background: var(--tichu-btn-sec-bg-hover, #ffffff);
+        }
+        .org-select:focus-visible {
+          outline: 2px solid var(--tichu-dialog-accent, #0b72b5);
+          outline-offset: 2px;
+        }
+        .org-select::picker-icon {
+          color: var(--tichu-btn-sec-fg, #1e293b);
+          opacity: 0.78;
+        }
+        .org-select::picker(select) {
+          margin-top: 4px;
+          padding: 4px;
+          border-radius: 9px;
+          border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.16));
+          background: var(--tichu-dialog-surface, #ffffff);
+          color: var(--tichu-dialog-text, #1f2328);
+          box-shadow: 0 10px 28px rgba(15, 23, 42, 0.24);
+        }
+        .org-select option {
+          padding: 6px 10px;
+          border-radius: 6px;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--tichu-dialog-text, #1f2328);
+          cursor: pointer;
+        }
+        .org-select option:hover {
+          background: var(--tichu-dialog-surface-hover, #f2ece2);
+        }
+        .org-select option:checked {
+          background: var(--tichu-dialog-accent, #0b72b5);
+          color: var(--tichu-dialog-accent-fg, #ffffff);
         }
         .org-btn {
           height: 28px;
@@ -205,19 +261,6 @@ export class TichuHand extends LitElement {
         .org-btn:focus-visible {
           outline: 2px solid var(--tichu-dialog-accent, #0b72b5);
           outline-offset: 2px;
-        }
-        .custom-pill {
-          height: 28px;
-          padding: 0 9px;
-          display: inline-flex;
-          align-items: center;
-          border-radius: 7px;
-          background: var(--tichu-dialog-accent, #0b72b5);
-          color: var(--tichu-dialog-accent-fg, #ffffff);
-          font-size: 12px;
-          font-weight: 700;
-          line-height: 1;
-          user-select: none;
         }
         .group-btn {
           min-width: 30px;
@@ -357,6 +400,7 @@ export class TichuHand extends LitElement {
         @media (prefers-reduced-motion: reduce) {
           .concede-btn,
           .org-btn,
+          .org-select,
           .settings-btn,
           .settings-icon {
             transition: none;
@@ -371,18 +415,19 @@ export class TichuHand extends LitElement {
         @media (forced-colors: active) {
           .concede-btn,
           .org-btn,
+          .org-select,
           .settings-btn {
             border-color: ButtonText;
             color: ButtonText;
           }
-          .org-btn[aria-pressed="true"],
-          .custom-pill {
+          .org-btn[aria-pressed="true"] {
             background: Highlight;
             color: HighlightText;
             border-color: Highlight;
           }
           .concede-btn:focus-visible,
           .org-btn:focus-visible,
+          .org-select:focus-visible,
           .settings-btn:focus-visible {
             outline-color: Highlight;
           }
@@ -427,6 +472,11 @@ export class TichuHand extends LitElement {
       this,
       () => window.gameModel.cardGroups$,
       (groups) => (this.cardGroups = groups),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.cardGroupsUiEnabled$,
+      (enabled) => (this.cardGroupsUiEnabled = enabled),
     );
     subscribe(
       this,
@@ -568,6 +618,7 @@ export class TichuHand extends LitElement {
             .passedOrigins=${passedOrigins}
             @selection-change=${this.onSelectionChange}
             @hand-reorder=${this.onHandReorder}
+            @group-stripe-click=${this.onGroupStripeClick}
           ></tichu-stock>
         </div>
         ${
@@ -611,116 +662,111 @@ export class TichuHand extends LitElement {
     return html`
       <div id="hand-organize-bar" role="toolbar" aria-label=${_("Card order")}>
         <div class="organize-cluster">
-          <button
-            type="button"
-            id="order_by_rank"
-            class="org-btn"
-            aria-pressed=${this.handSortOrder === "rank" ? "true" : "false"}
-            @click=${() => this.onSortClick("rank")}
+          <label for="hand_sort_select" class="sr-only">${_("Card order")}</label>
+          <select
+            id="hand_sort_select"
+            name="hand_sort_order"
+            class="org-select"
+            .value=${this.handSortOrder}
+            @change=${this.onSortSelectChange}
           >
-            ${_("Rank ↑")}
-          </button>
-          <button
-            type="button"
-            id="order_by_rank_desc"
-            class="org-btn"
-            aria-pressed=${this.handSortOrder === "rank-desc" ? "true" : "false"}
-            @click=${() => this.onSortClick("rank-desc")}
-          >
-            ${_("Rank ↓")}
-          </button>
-          <button
-            type="button"
-            id="order_by_color"
-            class="org-btn"
-            aria-pressed=${this.handSortOrder === "color" ? "true" : "false"}
-            @click=${() => this.onSortClick("color")}
-          >
-            ${_("Suit ↑")}
-          </button>
-          <button
-            type="button"
-            id="order_by_color_desc"
-            class="org-btn"
-            aria-pressed=${this.handSortOrder === "color-desc" ? "true" : "false"}
-            @click=${() => this.onSortClick("color-desc")}
-          >
-            ${_("Suit ↓")}
-          </button>
-          ${
-            this.handSortOrder === "preserve"
-              ? html`<span id="order_custom" class="custom-pill" aria-current="true"
-                  >${_("Custom")}</span
-                >`
-              : nothing
-          }
+            <option value="rank" ?selected=${this.handSortOrder === "rank"}>${_("Rank ↑")}</option>
+            <option value="rank-desc" ?selected=${this.handSortOrder === "rank-desc"}>
+              ${_("Rank ↓")}
+            </option>
+            <option value="color" ?selected=${this.handSortOrder === "color"}>
+              ${_("Suit ↑")}
+            </option>
+            <option value="color-desc" ?selected=${this.handSortOrder === "color-desc"}>
+              ${_("Suit ↓")}
+            </option>
+            ${
+              this.handSortOrder === "preserve"
+                ? html`<option value="preserve" ?selected=${true}>${_("Custom")}</option>`
+                : nothing
+            }
+          </select>
         </div>
         ${
           canOrganize
             ? html`
                 <span class="organize-divider" aria-hidden="true"></span>
                 <div class="organize-cluster">
-                  <span class="group-cluster-label">${_("Groups")}</span>
-                  ${([1, 2, 3, 4] as const).map((g) => {
-                    const count = groupCounts[g];
-                    const allInGroupSelected =
-                      count > 0 &&
-                      selectedSet.size === count &&
-                      this.hand
-                        .filter((c) => this.cardGroups[String(c.id)] === g)
-                        .every((c) => selectedSet.has(String(c.id)));
-                    const tooltip =
-                      selectedSet.size > 0 && selectionMode === 2
-                        ? _("Assign selected cards to group")
-                        : count > 0
-                          ? _("Select cards in group")
-                          : _("Select cards first, then click a group");
-                    return html`
-                      <button
-                        type="button"
-                        id=${`group_btn_${g}`}
-                        class=${classMap({
-                          "org-btn": true,
-                          "group-btn": true,
-                          [`group-${g}`]: true,
-                          populated: count > 0,
-                        })}
-                        aria-pressed=${allInGroupSelected ? "true" : "false"}
-                        data-tooltip=${tooltip}
-                        data-tooltip-tier="slow"
-                        data-tooltip-touch="longpress"
-                        @click=${() => this.onGroupButtonClick(g)}
-                      >
-                        <span class="group-dot" aria-hidden="true"></span>
-                        <span>${g}</span>
-                      </button>
-                    `;
-                  })}
+                  <button
+                    type="button"
+                    id="toggle_card_groups"
+                    class="org-btn"
+                    aria-pressed=${this.cardGroupsUiEnabled ? "true" : "false"}
+                    @click=${this.onToggleCardGroups}
+                  >
+                    ${_("Card groups")}
+                  </button>
                   ${
-                    hasGroupedSelection && selectionMode === 2
+                    this.cardGroupsUiEnabled
                       ? html`
-                          <button
-                            type="button"
-                            id="group_btn_ungroup"
-                            class="org-btn"
-                            @click=${this.onUngroupSelected}
-                          >
-                            ${_("Ungroup")}
-                          </button>
-                        `
-                      : nothing
-                  }
-                  ${
-                    hasAnyGroup
-                      ? html`
-                          <button
-                            type="button"
-                            id="group_btn_clear"
-                            class="org-btn"
-                            @click=${this.onClearGroups}
-                          >
-                            ${_("Clear groups")}
-                          </button>
+                          ${([1, 2, 3, 4] as const).map((g) => {
+                            const count = groupCounts[g];
+                            const allInGroupSelected =
+                              count > 0 &&
+                              selectedSet.size === count &&
+                              this.hand
+                                .filter((c) => this.cardGroups[String(c.id)] === g)
+                                .every((c) => selectedSet.has(String(c.id)));
+                            const tooltip =
+                              selectedSet.size > 0 && selectionMode === 2
+                                ? _("Assign selected cards to group")
+                                : count > 0
+                                  ? _("Select cards in group")
+                                  : _("Select cards first, then click a group");
+                            return html`
+                              <button
+                                type="button"
+                                id=${`group_btn_${g}`}
+                                class=${classMap({
+                                  "org-btn": true,
+                                  "group-btn": true,
+                                  [`group-${g}`]: true,
+                                  populated: count > 0,
+                                })}
+                                aria-pressed=${allInGroupSelected ? "true" : "false"}
+                                data-tooltip=${tooltip}
+                                data-tooltip-tier="slow"
+                                data-tooltip-touch="longpress"
+                                @click=${() => this.onGroupButtonClick(g)}
+                              >
+                                <span class="group-dot" aria-hidden="true"></span>
+                                <span>${g}</span>
+                              </button>
+                            `;
+                          })}
+                          ${
+                            hasGroupedSelection && selectionMode === 2
+                              ? html`
+                                  <button
+                                    type="button"
+                                    id="group_btn_ungroup"
+                                    class="org-btn"
+                                    @click=${this.onUngroupSelected}
+                                  >
+                                    ${_("Ungroup")}
+                                  </button>
+                                `
+                              : nothing
+                          }
+                          ${
+                            hasAnyGroup
+                              ? html`
+                                  <button
+                                    type="button"
+                                    id="group_btn_clear"
+                                    class="org-btn"
+                                    @click=${this.onClearGroups}
+                                  >
+                                    ${_("Clear groups")}
+                                  </button>
+                                `
+                              : nothing
+                          }
                         `
                       : nothing
                   }
@@ -811,6 +857,31 @@ export class TichuHand extends LitElement {
     if (ui && typeof ui.onOrderChange === "function") {
       ui.onOrderChange(order);
     }
+  }
+
+  private onSortSelectChange(e: Event) {
+    const val = (e.target as HTMLSelectElement | null)?.value;
+    if (isAutoSortOrder(val)) {
+      this.onSortClick(val);
+    }
+  }
+
+  private onToggleCardGroups() {
+    window.gameModel.setCardGroupsUiEnabled(!this.cardGroupsUiEnabled);
+  }
+
+  private onGroupStripeClick(e: CustomEvent<{ groupId: CardGroupId }>) {
+    if (this.getSelectionMode() !== 2 || !canOrganizeHandInState(this.stateName)) return;
+    const groupId = e.detail.groupId;
+    const matchingIds = this.hand
+      .filter((c) => this.cardGroups[String(c.id)] === groupId)
+      .map((c) => String(c.id));
+    if (matchingIds.length === 0) return;
+
+    const selectedSet = new Set(this.selectedCardIds.map(String));
+    const allAlreadySelected =
+      selectedSet.size === matchingIds.length && matchingIds.every((id) => selectedSet.has(id));
+    window.gameModel.setSelectedCardIds(allAlreadySelected ? [] : matchingIds);
   }
 
   private onHandReorder(

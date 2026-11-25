@@ -182,6 +182,68 @@ export function computeDropTarget(
   };
 }
 
+export interface GroupStripeSpan {
+  groupId: CardGroupId;
+  startIndex: number;
+  endIndex: number;
+  leftPx: number;
+  widthPx: number;
+  cardIds: string[];
+}
+
+export function computeGroupStripes(
+  sortedCards: Card[],
+  cardGroups: Record<string, CardGroupId>,
+  itemWidth: number,
+  marginRight: number,
+  groupGapPx: number = GROUP_GAP_PX,
+): GroupStripeSpan[] {
+  const n = sortedCards.length;
+  if (n === 0) return [];
+
+  const getGrp = (idx: number): CardGroupId | 0 => {
+    const g = cardGroups[String(sortedCards[idx]!.id ?? "")];
+    return g === 1 || g === 2 || g === 3 || g === 4 ? g : 0;
+  };
+
+  const cardLeft: number[] = new Array(n);
+  cardLeft[0] = 0;
+  for (let i = 0; i < n - 1; i++) {
+    const gap = getGrp(i) !== getGrp(i + 1) ? groupGapPx : 0;
+    cardLeft[i + 1] = cardLeft[i]! + itemWidth + marginRight + gap;
+  }
+
+  const stripes: GroupStripeSpan[] = [];
+  let i = 0;
+  while (i < n) {
+    const g = getGrp(i);
+    if (g === 0) {
+      i++;
+      continue;
+    }
+    let end = i;
+    const cardIds = [String(sortedCards[i]!.id ?? "")];
+    while (end + 1 < n && getGrp(end + 1) === g) {
+      end++;
+      cardIds.push(String(sortedCards[end]!.id ?? ""));
+    }
+    const leftPx = cardLeft[i]!;
+    const rawRight = cardLeft[end]! + itemWidth;
+    const rightPx = end < n - 1 ? Math.min(rawRight, cardLeft[end + 1]! - 2) : rawRight;
+    const widthPx = Math.max(24, rightPx - leftPx);
+    stripes.push({
+      groupId: g,
+      startIndex: i,
+      endIndex: end,
+      leftPx,
+      widthPx,
+      cardIds,
+    });
+    i = end + 1;
+  }
+  return stripes;
+}
+
 export class TichuStock extends LitElement {
   @property({ type: Array }) cards: Card[] = [];
 
@@ -309,6 +371,69 @@ export class TichuStock extends LitElement {
           box-shadow: 0 0 8px var(--tichu-select-glow, rgba(56, 189, 248, 0.45));
           pointer-events: none;
           z-index: 25;
+        }
+        button.group-stripe-bar {
+          position: absolute;
+          top: calc(var(--stock-card-height, 150px) / 2 - 10px);
+          height: 20px;
+          z-index: 6;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border-radius: 5px;
+          background: var(--group-color, #0284c7);
+          color: #ffffff;
+          border: 1px solid rgba(255, 255, 255, 0.88);
+          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.34);
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 800;
+          line-height: 1;
+          cursor: pointer;
+          user-select: none;
+          translate: 0 0;
+          transition:
+            translate var(--tichu-card-select-ms, 100ms)
+              var(--tichu-anim-easing, cubic-bezier(0.22, 1, 0.36, 1)),
+            filter 120ms ease;
+        }
+        button.group-stripe-bar.group-1 {
+          --group-color: #0284c7;
+        }
+        button.group-stripe-bar.group-2 {
+          --group-color: #d97706;
+        }
+        button.group-stripe-bar.group-3 {
+          --group-color: #059669;
+        }
+        button.group-stripe-bar.group-4 {
+          --group-color: #9333ea;
+        }
+        button.group-stripe-bar.all-selected {
+          translate: 0 -20px;
+        }
+        button.group-stripe-bar:hover {
+          filter: brightness(1.08);
+        }
+        button.group-stripe-bar:focus-visible {
+          outline: 2.5px solid var(--tichu-select-ring, #0284c7);
+          outline-offset: 2px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          button.group-stripe-bar {
+            transition: none;
+          }
+        }
+        @media (forced-colors: active) {
+          button.group-stripe-bar {
+            background: Highlight;
+            color: HighlightText;
+            border-color: CanvasText;
+          }
+          button.group-stripe-bar:focus-visible {
+            outline-color: Highlight;
+          }
         }
       `,
     ];
@@ -567,6 +692,11 @@ export class TichuStock extends LitElement {
     const hiddenSet = new Set(this.externalHiddenIds.map((id) => String(id)));
     this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
     const stepPx = Math.max(16, itemWidth + marginRight);
+    const stripes =
+      !this.dragActive && !this.hideAllCards
+        ? computeGroupStripes(sortedCards, this.cardGroups, itemWidth, marginRight)
+        : [];
+    const groupStripeAriaPrefix = _("Select cards in group");
 
     return html`
       <div
@@ -623,6 +753,28 @@ export class TichuStock extends LitElement {
             `;
           },
         )}
+        ${stripes.map((s) => {
+          const allSelected =
+            isSelectable && s.cardIds.length > 0 && s.cardIds.every((id) => selectedSet.has(id));
+          return html`<button
+            type="button"
+            class=${classMap({
+              "group-stripe-bar": true,
+              [`group-${s.groupId}`]: true,
+              "all-selected": allSelected,
+            })}
+            data-group-stripe=${s.groupId}
+            style=${`left: ${s.leftPx}px; width: ${s.widthPx}px;`}
+            aria-pressed=${allSelected ? "true" : "false"}
+            aria-label=${`${groupStripeAriaPrefix} ${s.groupId}`}
+            data-tooltip=${_("Select cards in group")}
+            data-tooltip-tier="slow"
+            data-tooltip-touch="longpress"
+            @click=${(e: Event) => this.onGroupStripeClick(e, s.groupId)}
+          >
+            ${s.groupId}
+          </button>`;
+        })}
         ${
           this.dragActive && this.dropIndicatorX !== null
             ? html`<div
@@ -636,12 +788,28 @@ export class TichuStock extends LitElement {
     `;
   }
 
+  private onGroupStripeClick(e: Event, groupId: CardGroupId) {
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("group-stripe-click", {
+        detail: { groupId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   private findCardElementFromEvent(e: Event): TichuCard | null {
     const path = typeof e.composedPath === "function" ? e.composedPath() : [];
     for (const node of path) {
       const el = node as HTMLElement | null;
       if (!el || typeof el.classList === "undefined") continue;
-      if (el.classList.contains("passed-avatar-wrap")) return null;
+      if (
+        el.classList.contains("passed-avatar-wrap") ||
+        el.classList.contains("group-stripe-bar")
+      ) {
+        return null;
+      }
       if (el.tagName === "TICHU-CARD") {
         return el as TichuCard;
       }

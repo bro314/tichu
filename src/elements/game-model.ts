@@ -31,6 +31,7 @@ export type HandSortOrder = AutoSortOrder | "preserve";
 export type CardGroupId = 1 | 2 | 3 | 4;
 
 export const CUSTOM_HAND_ORDER_STORAGE_KEY = "tichu_hand_custom_order";
+export const CARD_GROUPS_UI_STORAGE_KEY = "tichu_card_groups_ui_enabled";
 export const CUSTOM_HAND_ORDER_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 3 months
 export const CUSTOM_HAND_ORDER_MAX_ENTRIES = 50;
 
@@ -180,6 +181,7 @@ export interface LiveGameState {
   handSortOrder: HandSortOrder;
   customHandOrder: string[];
   cardGroups: Record<string, CardGroupId>;
+  cardGroupsUiEnabled: boolean;
   stateName: string;
   activePlayerId: string;
   activePlayerIds: string[];
@@ -242,6 +244,17 @@ function getStoredHandSortOrder(): AutoSortOrder {
     // ignore storage errors
   }
   return "rank";
+}
+
+function getStoredCardGroupsUiEnabled(): boolean {
+  try {
+    if (typeof localStorage !== "undefined") {
+      return localStorage.getItem(CARD_GROUPS_UI_STORAGE_KEY) === "1";
+    }
+  } catch (_e) {
+    // ignore storage errors
+  }
+  return false;
 }
 
 function getCustomEntryKey(tableId: number, playerId: string): string {
@@ -415,6 +428,7 @@ export const initialLiveGameState: LiveGameState = {
   handSortOrder: initialAutoSortOrder,
   customHandOrder: [],
   cardGroups: {},
+  cardGroupsUiEnabled: getStoredCardGroupsUiEnabled(),
   stateName: "",
   activePlayerId: "",
   activePlayerIds: [],
@@ -664,6 +678,7 @@ export class GameModel {
   public readonly handSortOrder$ = select(this.state$, (s) => s.handSortOrder);
   public readonly customHandOrder$ = select(this.state$, (s) => s.customHandOrder);
   public readonly cardGroups$ = select(this.state$, (s) => s.cardGroups);
+  public readonly cardGroupsUiEnabled$ = select(this.state$, (s) => s.cardGroupsUiEnabled);
   public readonly stateName$ = select(this.state$, (s) => s.stateName);
   public readonly activePlayerId$ = select(this.state$, (s) => s.activePlayerId);
   public readonly activePlayerIds$ = select(this.state$, (s) => s.activePlayerIds);
@@ -1043,6 +1058,7 @@ export class GameModel {
       handSortOrder,
       customHandOrder,
       cardGroups,
+      cardGroupsUiEnabled: getStoredCardGroupsUiEnabled() || Object.keys(cardGroups).length > 0,
       stateName,
       activePlayerId,
       activePlayerIds,
@@ -1551,6 +1567,21 @@ export class GameModel {
     this.update({
       cardGroups: {},
     });
+  }
+
+  setCardGroupsUiEnabled(enabled: boolean): void {
+    const prev = this.getState();
+    const next = Boolean(enabled);
+    if (!isReadOnlyEnv(prev.isSpectator)) {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(CARD_GROUPS_UI_STORAGE_KEY, next ? "1" : "0");
+        }
+      } catch (_e) {
+        // ignore storage errors
+      }
+    }
+    this.update({ cardGroupsUiEnabled: next });
   }
 
   // Passing cards mutations

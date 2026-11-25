@@ -164,47 +164,6 @@ export class TichuCard extends LitElement {
           outline: 2.5px solid var(--tichu-select-ring, #0284c7);
           outline-offset: 2px;
         }
-        div#card[data-group="1"] {
-          --group-color: #0284c7;
-        }
-        div#card[data-group="2"] {
-          --group-color: #d97706;
-        }
-        div#card[data-group="3"] {
-          --group-color: #059669;
-        }
-        div#card[data-group="4"] {
-          --group-color: #9333ea;
-        }
-        .group-stripe {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 4px;
-          background: var(--group-color);
-          border-radius: var(--tichu-card-radius, 8px) var(--tichu-card-radius, 8px) 0 0;
-          pointer-events: none;
-        }
-        .group-badge {
-          position: absolute;
-          left: 4px;
-          bottom: 4px;
-          min-width: 18px;
-          height: 18px;
-          padding: 0 5px;
-          border-radius: 999px;
-          background: var(--group-color);
-          color: #ffffff;
-          font-size: 11px;
-          font-weight: 800;
-          line-height: 15px;
-          text-align: center;
-          border: 1.5px solid rgba(255, 255, 255, 0.92);
-          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.4);
-          pointer-events: none;
-          user-select: none;
-        }
         div#card.passed-highlight {
           box-shadow:
             0 0 0 2px #0ea5e9,
@@ -332,14 +291,6 @@ export class TichuCard extends LitElement {
           }
           div#card:focus-visible {
             outline-color: Highlight;
-          }
-          .group-stripe {
-            background: Highlight;
-          }
-          .group-badge {
-            background: Highlight;
-            color: HighlightText;
-            border-color: CanvasText;
           }
           .passed-avatar-wrap {
             border-color: CanvasText;
@@ -492,14 +443,7 @@ export class TichuCard extends LitElement {
         @click=${this.onClick}
         @keydown=${this.onKeyDown}
         @keyup=${this.onKeyUp}
-      >
-        ${
-          hasGroup
-            ? html`<span class="group-stripe" aria-hidden="true"></span
-                ><span class="group-badge" aria-hidden="true">${this.group}</span>`
-            : nothing
-        }
-      </div>
+      ></div>
       ${
         this.reserveFooter
           ? html`<div class="card-footer">
