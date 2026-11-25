@@ -1,7 +1,17 @@
 import { html, css, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
+import { classMap } from "lit/directives/class-map.js";
 import { Combo, Hand, substituteTemplate } from "./combo-validator";
-import { Card, LivePlayer, TrickLastComboState, getNextPlayersDesc } from "./game-model";
+import {
+  AutoSortOrder,
+  Card,
+  CardGroupId,
+  HandSortOrder,
+  LivePlayer,
+  TrickLastComboState,
+  canOrganizeHandInState,
+  getNextPlayersDesc,
+} from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 import "./tichu-action-bar";
@@ -86,7 +96,11 @@ export class TichuHand extends LitElement {
   @state() private isSpectator = false;
   @state() private hand: Card[] = [];
   @state() private selectedCardIds: string[] = [];
-  @state() private handSortOrder: "rank" | "color" = "rank";
+  @state() private baseSortOrder: AutoSortOrder = "rank";
+  @state() private handSortOrder: HandSortOrder = "rank";
+  @state() private customHandOrder: string[] = [];
+  @state() private cardGroups: Record<string, CardGroupId> = {};
+  @state() private liveAnnouncement = "";
   @state() private stateName = "";
   @state() private isTiki = false;
   @state() private clockwise = true;
@@ -119,6 +133,131 @@ export class TichuHand extends LitElement {
         #myhand {
           margin: 15px 250px 6px 15px;
           min-height: 184px;
+        }
+        #hand-organize-bar {
+          margin: 4px 250px 0 15px;
+          min-height: 34px;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 6px 10px;
+        }
+        .organize-cluster {
+          display: inline-flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 4px;
+        }
+        .organize-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--tichu-divider, rgba(15, 23, 42, 0.16));
+          flex-shrink: 0;
+        }
+        .group-cluster-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--tichu-text-muted, #334155);
+          margin-right: 2px;
+          user-select: none;
+        }
+        .org-btn {
+          height: 28px;
+          padding: 0 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          border-radius: 7px;
+          border: 1px solid var(--tichu-btn-sec-border, rgba(15, 23, 42, 0.18));
+          background: var(--tichu-btn-sec-bg, rgba(255, 255, 255, 0.92));
+          color: var(--tichu-btn-sec-fg, #1e293b);
+          box-shadow: var(--tichu-btn-sec-shadow, 0 1px 2px rgba(15, 23, 42, 0.08));
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          line-height: 1;
+          white-space: nowrap;
+          cursor: pointer;
+          transition:
+            background-color 140ms ease,
+            border-color 140ms ease,
+            color 140ms ease,
+            transform 120ms ease;
+        }
+        .org-btn:hover {
+          background: var(--tichu-btn-sec-bg-hover, #ffffff);
+        }
+        .org-btn:active {
+          background: var(--tichu-btn-sec-bg-active, #f1f5f9);
+          transform: translateY(1px);
+        }
+        .org-btn[aria-pressed="true"] {
+          background: var(--tichu-dialog-accent, #0b72b5);
+          border-color: var(--tichu-dialog-accent, #0b72b5);
+          color: var(--tichu-dialog-accent-fg, #ffffff);
+        }
+        .org-btn:focus-visible {
+          outline: 2px solid var(--tichu-dialog-accent, #0b72b5);
+          outline-offset: 2px;
+        }
+        .custom-pill {
+          height: 28px;
+          padding: 0 9px;
+          display: inline-flex;
+          align-items: center;
+          border-radius: 7px;
+          background: var(--tichu-dialog-accent, #0b72b5);
+          color: var(--tichu-dialog-accent-fg, #ffffff);
+          font-size: 12px;
+          font-weight: 700;
+          line-height: 1;
+          user-select: none;
+        }
+        .group-btn {
+          min-width: 30px;
+          padding: 0 8px;
+        }
+        .group-btn.group-1 {
+          --group-color: #0284c7;
+        }
+        .group-btn.group-2 {
+          --group-color: #d97706;
+        }
+        .group-btn.group-3 {
+          --group-color: #059669;
+        }
+        .group-btn.group-4 {
+          --group-color: #9333ea;
+        }
+        .group-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: var(--group-color);
+          flex-shrink: 0;
+        }
+        .group-btn.populated {
+          border-color: var(--group-color);
+        }
+        .group-btn[aria-pressed="true"] {
+          background: var(--group-color);
+          border-color: var(--group-color);
+          color: #ffffff;
+        }
+        .group-btn[aria-pressed="true"] .group-dot {
+          background: #ffffff;
+        }
+        .sr-only {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          margin: -1px;
+          padding: 0;
+          overflow: hidden;
+          clip-path: inset(50%);
+          white-space: nowrap;
+          border: 0;
         }
         .spectator-settings-bar {
           display: flex;
@@ -171,20 +310,30 @@ export class TichuHand extends LitElement {
           outline-offset: 2px;
         }
         @media (prefers-reduced-motion: reduce) {
+          .org-btn,
           .settings-btn,
           .settings-icon {
             transition: none;
           }
+          .org-btn:active,
           .settings-btn:active,
           .settings-btn:hover .settings-icon {
             transform: none;
           }
         }
         @media (forced-colors: active) {
+          .org-btn,
           .settings-btn {
             border-color: ButtonText;
             color: ButtonText;
           }
+          .org-btn[aria-pressed="true"],
+          .custom-pill {
+            background: Highlight;
+            color: HighlightText;
+            border-color: Highlight;
+          }
+          .org-btn:focus-visible,
           .settings-btn:focus-visible {
             outline-color: Highlight;
           }
@@ -212,8 +361,23 @@ export class TichuHand extends LitElement {
     );
     subscribe(
       this,
+      () => window.gameModel.baseSortOrder$,
+      (order) => (this.baseSortOrder = order),
+    );
+    subscribe(
+      this,
       () => window.gameModel.handSortOrder$,
       (order) => (this.handSortOrder = order),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.customHandOrder$,
+      (order) => (this.customHandOrder = order),
+    );
+    subscribe(
+      this,
+      () => window.gameModel.cardGroups$,
+      (groups) => (this.cardGroups = groups),
     );
     subscribe(
       this,
@@ -267,7 +431,20 @@ export class TichuHand extends LitElement {
     );
   }
 
+  private isReadOnly(): boolean {
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.isReadOnly === "function") {
+      return Boolean(ui.isReadOnly());
+    }
+    return (
+      this.isSpectator ||
+      typeof (window as any).g_replayFrom !== "undefined" ||
+      Boolean((window as any).g_archive_mode)
+    );
+  }
+
   private getSelectionMode(): 0 | 1 | 2 {
+    if (this.isReadOnly()) return 0;
     if (this.stateName === "giveCards") return 1;
     if (this.stateName === "grandTichuBets") return 0;
     return 2;
@@ -275,6 +452,11 @@ export class TichuHand extends LitElement {
 
   override render() {
     const selectionMode = this.getSelectionMode();
+    const canOrganize =
+      !this.isSpectator &&
+      !this.isReadOnly() &&
+      canOrganizeHandInState(this.stateName) &&
+      this.hand.length > 0;
     const canFulfillWish =
       this.mahjongWish >= 2 &&
       this.mahjongWish <= 14 &&
@@ -305,6 +487,10 @@ export class TichuHand extends LitElement {
             .scale=${1.0}
             .tiki=${this.isTiki}
             .sortMode=${this.handSortOrder}
+            .baseSortOrder=${this.baseSortOrder}
+            .reorderable=${canOrganize}
+            .customOrder=${this.customHandOrder}
+            .cardGroups=${this.cardGroups}
             .selectionMode=${selectionMode}
             .selectedIds=${this.selectedCardIds}
             .dynamicOverlap=${true}
@@ -312,8 +498,15 @@ export class TichuHand extends LitElement {
             .reserveFooter=${true}
             .passedOrigins=${passedOrigins}
             @selection-change=${this.onSelectionChange}
+            @hand-reorder=${this.onHandReorder}
           ></tichu-stock>
         </div>
+        ${
+          !this.isSpectator && !this.isReadOnly() && this.hand.length > 0
+            ? this.renderOrganizeBar(canOrganize, selectionMode)
+            : nothing
+        }
+        <span class="sr-only" aria-live="polite">${this.liveAnnouncement}</span>
         ${!this.isSpectator ? this.renderSettingsButton() : nothing}
       </div>
       ${
@@ -323,6 +516,147 @@ export class TichuHand extends LitElement {
       }
     `;
   }
+
+  private renderOrganizeBar(canOrganize: boolean, selectionMode: 0 | 1 | 2) {
+    const groupCounts: Record<CardGroupId, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const c of this.hand) {
+      const g = this.cardGroups[String(c.id)];
+      if (g === 1 || g === 2 || g === 3 || g === 4) {
+        groupCounts[g]++;
+      }
+    }
+    const hasAnyGroup =
+      groupCounts[1] > 0 || groupCounts[2] > 0 || groupCounts[3] > 0 || groupCounts[4] > 0;
+    const selectedSet = new Set(this.selectedCardIds.map(String));
+    const hasGroupedSelection = this.selectedCardIds.some((id) => {
+      const g = this.cardGroups[String(id)];
+      return g === 1 || g === 2 || g === 3 || g === 4;
+    });
+
+    return html`
+      <div id="hand-organize-bar" role="toolbar" aria-label=${_("Card order")}>
+        <div class="organize-cluster">
+          <button
+            type="button"
+            id="order_by_rank"
+            class="org-btn"
+            aria-pressed=${this.handSortOrder === "rank" ? "true" : "false"}
+            @click=${() => this.onSortClick("rank")}
+          >
+            ${_("Rank ↑")}
+          </button>
+          <button
+            type="button"
+            id="order_by_rank_desc"
+            class="org-btn"
+            aria-pressed=${this.handSortOrder === "rank-desc" ? "true" : "false"}
+            @click=${() => this.onSortClick("rank-desc")}
+          >
+            ${_("Rank ↓")}
+          </button>
+          <button
+            type="button"
+            id="order_by_color"
+            class="org-btn"
+            aria-pressed=${this.handSortOrder === "color" ? "true" : "false"}
+            @click=${() => this.onSortClick("color")}
+          >
+            ${_("Suit ↑")}
+          </button>
+          <button
+            type="button"
+            id="order_by_color_desc"
+            class="org-btn"
+            aria-pressed=${this.handSortOrder === "color-desc" ? "true" : "false"}
+            @click=${() => this.onSortClick("color-desc")}
+          >
+            ${_("Suit ↓")}
+          </button>
+          ${
+            this.handSortOrder === "preserve"
+              ? html`<span id="order_custom" class="custom-pill" aria-current="true"
+                  >${_("Custom")}</span
+                >`
+              : nothing
+          }
+        </div>
+        ${
+          canOrganize
+            ? html`
+                <span class="organize-divider" aria-hidden="true"></span>
+                <div class="organize-cluster">
+                  <span class="group-cluster-label">${_("Groups")}</span>
+                  ${([1, 2, 3, 4] as const).map((g) => {
+                    const count = groupCounts[g];
+                    const allInGroupSelected =
+                      count > 0 &&
+                      selectedSet.size === count &&
+                      this.hand
+                        .filter((c) => this.cardGroups[String(c.id)] === g)
+                        .every((c) => selectedSet.has(String(c.id)));
+                    const tooltip =
+                      selectedSet.size > 0 && selectionMode === 2
+                        ? _("Assign selected cards to group")
+                        : count > 0
+                          ? _("Select cards in group")
+                          : _("Select cards first, then click a group");
+                    return html`
+                      <button
+                        type="button"
+                        id=${`group_btn_${g}`}
+                        class=${classMap({
+                          "org-btn": true,
+                          "group-btn": true,
+                          [`group-${g}`]: true,
+                          populated: count > 0,
+                        })}
+                        aria-pressed=${allInGroupSelected ? "true" : "false"}
+                        data-tooltip=${tooltip}
+                        data-tooltip-tier="slow"
+                        data-tooltip-touch="longpress"
+                        @click=${() => this.onGroupButtonClick(g)}
+                      >
+                        <span class="group-dot" aria-hidden="true"></span>
+                        <span>${g}</span>
+                      </button>
+                    `;
+                  })}
+                  ${
+                    hasGroupedSelection && selectionMode === 2
+                      ? html`
+                          <button
+                            type="button"
+                            id="group_btn_ungroup"
+                            class="org-btn"
+                            @click=${this.onUngroupSelected}
+                          >
+                            ${_("Ungroup")}
+                          </button>
+                        `
+                      : nothing
+                  }
+                  ${
+                    hasAnyGroup
+                      ? html`
+                          <button
+                            type="button"
+                            id="group_btn_clear"
+                            class="org-btn"
+                            @click=${this.onClearGroups}
+                          >
+                            ${_("Clear groups")}
+                          </button>
+                        `
+                      : nothing
+                  }
+                </div>
+              `
+            : nothing
+        }
+      </div>
+    `;
+  }
+
 
   private renderSettingsButton() {
     const settingsLabel = _("Settings");
@@ -364,9 +698,60 @@ export class TichuHand extends LitElement {
     window.gameModel.setSelectedCardIds(e.detail.selectedIds);
   }
 
+  private onSortClick(order: AutoSortOrder) {
+    window.gameModel.setHandSortOrder(order);
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.onOrderChange === "function") {
+      ui.onOrderChange(order);
+    }
+  }
+
+  private onHandReorder(
+    e: CustomEvent<{
+      orderedIds: string[];
+      movedCardId: string;
+      targetGroup: CardGroupId | 0;
+      source?: string;
+    }>,
+  ) {
+    window.gameModel.commitCustomHandOrder(
+      e.detail.orderedIds,
+      e.detail.movedCardId,
+      e.detail.targetGroup,
+    );
+    if (e.detail.source === "keyboard") {
+      this.liveAnnouncement = _("Card moved");
+    }
+  }
+
+  private onGroupButtonClick(groupId: CardGroupId) {
+    if (this.getSelectionMode() !== 2 || !canOrganizeHandInState(this.stateName)) return;
+    if (this.selectedCardIds.length > 0) {
+      window.gameModel.assignCardGroup(this.selectedCardIds, groupId);
+      this.liveAnnouncement = _("Assigned to group");
+      return;
+    }
+    const matchingIds = this.hand
+      .filter((c) => this.cardGroups[String(c.id)] === groupId)
+      .map((c) => String(c.id));
+    if (matchingIds.length > 0) {
+      window.gameModel.setSelectedCardIds(matchingIds);
+    }
+  }
+
+  private onUngroupSelected() {
+    if (this.getSelectionMode() !== 2 || this.selectedCardIds.length === 0) return;
+    window.gameModel.assignCardGroup(this.selectedCardIds, 0);
+  }
+
+  private onClearGroups() {
+    window.gameModel.clearCardGroups();
+  }
+
   onOpenSettings() {
     window.gameModel.setSettingsModalOpen(true);
   }
+
 
   getStock(): TichuStock | null {
     return (this.shadowRoot?.querySelector("tichu-stock") as TichuStock | null) ?? null;

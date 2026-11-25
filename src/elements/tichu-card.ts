@@ -90,6 +90,18 @@ export class TichuCard extends LitElement {
 
   @property({ attribute: false }) passedOrigin: PassedOriginInfo | null = null;
 
+  @property({ type: Number }) group = 0;
+
+  @property({ type: Boolean, reflect: true }) dragging = false;
+
+  @property({ type: Number }) dragX = 0;
+
+  @property({ type: Number }) shiftX = 0;
+
+  @property({ type: Boolean }) reorderable = false;
+
+  @property({ type: Boolean }) noTransition = false;
+
   @state() private avatarLoadFailed = false;
 
   private lastAvatarUrl = "";
@@ -100,6 +112,9 @@ export class TichuCard extends LitElement {
         :host {
           display: inline-block;
           position: relative;
+        }
+        :host([dragging]) {
+          z-index: 20;
         }
         div#card {
           position: relative;
@@ -127,6 +142,69 @@ export class TichuCard extends LitElement {
         div#card.selectable {
           cursor: pointer;
         }
+        div#card.reorderable-card {
+          cursor: grab;
+        }
+        div#card.shifted {
+          translate: var(--shift-x, 0px) 0px;
+        }
+        div#card.dragging {
+          translate: var(--drag-x, 0px) -14px;
+          scale: 1.03;
+          cursor: grabbing;
+          transition: none;
+          box-shadow:
+            0 14px 28px rgba(15, 23, 42, 0.36),
+            0 0 0 2px var(--tichu-select-ring, #0284c7);
+        }
+        div#card.no-transition {
+          transition: none !important;
+        }
+        div#card:focus-visible {
+          outline: 2.5px solid var(--tichu-select-ring, #0284c7);
+          outline-offset: 2px;
+        }
+        div#card[data-group="1"] {
+          --group-color: #0284c7;
+        }
+        div#card[data-group="2"] {
+          --group-color: #d97706;
+        }
+        div#card[data-group="3"] {
+          --group-color: #059669;
+        }
+        div#card[data-group="4"] {
+          --group-color: #9333ea;
+        }
+        .group-stripe {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 4px;
+          background: var(--group-color);
+          border-radius: var(--tichu-card-radius, 8px) var(--tichu-card-radius, 8px) 0 0;
+          pointer-events: none;
+        }
+        .group-badge {
+          position: absolute;
+          left: 4px;
+          bottom: 4px;
+          min-width: 18px;
+          height: 18px;
+          padding: 0 5px;
+          border-radius: 999px;
+          background: var(--group-color);
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 15px;
+          text-align: center;
+          border: 1.5px solid rgba(255, 255, 255, 0.92);
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.4);
+          pointer-events: none;
+          user-select: none;
+        }
         div#card.passed-highlight {
           box-shadow:
             0 0 0 2px #0ea5e9,
@@ -148,6 +226,12 @@ export class TichuCard extends LitElement {
             0 0 0 4.5px var(--tichu-select-glow, rgba(56, 189, 248, 0.32)),
             0 10px 22px rgba(15, 23, 42, 0.28)
           );
+        }
+        div#card.stockitem_selected.shifted {
+          translate: var(--shift-x, 0px) -20px;
+        }
+        div#card.stockitem_selected.dragging {
+          translate: var(--drag-x, 0px) -26px;
         }
         div#card.passed-highlight.stockitem_selected {
           box-shadow:
@@ -246,6 +330,17 @@ export class TichuCard extends LitElement {
             outline: 2px solid Highlight;
             outline-offset: 1px;
           }
+          div#card:focus-visible {
+            outline-color: Highlight;
+          }
+          .group-stripe {
+            background: Highlight;
+          }
+          .group-badge {
+            background: Highlight;
+            color: HighlightText;
+            border-color: CanvasText;
+          }
           .passed-avatar-wrap {
             border-color: CanvasText;
           }
@@ -287,6 +382,45 @@ export class TichuCard extends LitElement {
     return { title: base.title, body: base.body, meta: "" };
   }
 
+  private getAccessibleCardLabel(): string {
+    if (!this.card) return "";
+    const color = Number(this.card.type);
+    const rank = Number(this.card.type_arg);
+    let baseLabel = "";
+    if (rank === 1) {
+      if (color === 1) baseLabel = _("Dragon");
+      else if (color === 2) baseLabel = _("Phoenix");
+      else if (color === 3) baseLabel = _("Dog");
+      else if (color === 4) baseLabel = _("Mahjong");
+    } else {
+      const rankLabel =
+        rank === 11
+          ? "J"
+          : rank === 12
+            ? "Q"
+            : rank === 13
+              ? "K"
+              : rank === 14
+                ? "A"
+                : String(rank);
+      const suitLabel =
+        color === 1
+          ? _("Swords")
+          : color === 2
+            ? _("Stars")
+            : color === 3
+              ? _("Pagodas")
+              : color === 4
+                ? _("Jade")
+                : "";
+      baseLabel = suitLabel ? `${rankLabel} ${suitLabel}` : rankLabel;
+    }
+    if (this.group >= 1 && this.group <= 4) {
+      return `${baseLabel} (${this.group})`;
+    }
+    return baseLabel;
+  }
+
   override render() {
     const baseWidth = 100;
     const baseHeight = 150;
@@ -299,6 +433,8 @@ export class TichuCard extends LitElement {
     this.style.setProperty("--height", `${height}px`);
     this.style.setProperty("--bg-width", `${14 * width}px`);
     this.style.setProperty("--bg-height", `${4 * height}px`);
+    this.style.setProperty("--drag-x", `${this.dragX}px`);
+    this.style.setProperty("--shift-x", `${this.shiftX}px`);
 
     if (this.pass) return this.renderPass(themeUrl);
     if (this.card === undefined) return;
@@ -319,6 +455,8 @@ export class TichuCard extends LitElement {
     const isPartner = origin?.seat === "partner";
     const showImg = Boolean(origin?.avatarUrl) && !this.avatarLoadFailed;
     const initial = (origin?.playerName?.trim()?.[0] ?? "?").toUpperCase();
+    const hasGroup = this.group >= 1 && this.group <= 4;
+    const interactive = this.selectable || this.reorderable;
 
     return html`<div
         id="card"
@@ -327,10 +465,19 @@ export class TichuCard extends LitElement {
           stockitem: true,
           stockitem_selected: this.selected,
           selectable: this.selectable,
+          "reorderable-card": this.reorderable && !this.dragging,
+          dragging: this.dragging,
+          shifted: !this.dragging && this.shiftX !== 0,
+          "no-transition": this.noTransition,
           "passed-highlight": showGlow,
           "wish-match": this.wishMatch,
         })}
         data-card-id=${this.card.id ?? ""}
+        data-group=${hasGroup ? this.group : nothing}
+        tabindex=${interactive ? "0" : nothing}
+        role=${interactive ? "button" : nothing}
+        aria-pressed=${this.selectable ? (this.selected ? "true" : "false") : nothing}
+        aria-label=${interactive ? this.getAccessibleCardLabel() : nothing}
         data-tooltip=${tooltipParts.body || nothing}
         data-tooltip-title=${tooltipParts.title || nothing}
         data-tooltip-meta=${tooltipParts.meta || nothing}
@@ -343,7 +490,16 @@ export class TichuCard extends LitElement {
             : nothing
         }
         @click=${this.onClick}
-      ></div>
+        @keydown=${this.onKeyDown}
+        @keyup=${this.onKeyUp}
+      >
+        ${
+          hasGroup
+            ? html`<span class="group-stripe" aria-hidden="true"></span
+                ><span class="group-badge" aria-hidden="true">${this.group}</span>`
+            : nothing
+        }
+      </div>
       ${
         this.reserveFooter
           ? html`<div class="card-footer">
@@ -390,6 +546,24 @@ export class TichuCard extends LitElement {
     const passSprite = this.tiki ? "img/tiki-icons-pass.png" : "img/tichu-icons-pass.png";
     this.style.setProperty("--card-url", `url(${themeUrl}${passSprite})`);
     return html`<div id="card" class="card stockitem pass" data-card-id=""></div>`;
+  }
+
+  private onKeyDown(e: KeyboardEvent) {
+    if (!this.selectable || !this.card || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this.onClick(e as unknown as MouseEvent);
+    } else if (e.key === " ") {
+      e.preventDefault();
+    }
+  }
+
+  private onKeyUp(e: KeyboardEvent) {
+    if (!this.selectable || !this.card || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      this.onClick(e as unknown as MouseEvent);
+    }
   }
 
   private onClick(e: MouseEvent) {

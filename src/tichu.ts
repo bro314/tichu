@@ -8,7 +8,7 @@
  * -----
  */
 import type { AnimTimings } from "./elements/anim-timings";
-import type { GameModel, LiveGamePrefs } from "./elements/game-model";
+import type { AutoSortOrder, GameModel, LiveGamePrefs } from "./elements/game-model";
 import type { TichuAnimationLayer } from "./elements/tichu-animation-layer";
 import { initStudioTestHelper } from "./studio-test";
 import { Bet } from "./types/tichu-contracts";
@@ -420,11 +420,18 @@ export class Tichu {
     return fallback;
   }
 
-  safeGetHandSortOrder(): "rank" | "color" {
+  safeGetHandSortOrder(): AutoSortOrder {
     try {
       if (typeof localStorage !== "undefined") {
         const stored = localStorage.getItem("tichu_hand_sort_order");
-        if (stored === "color" || stored === "rank") return stored;
+        if (
+          stored === "rank" ||
+          stored === "rank-desc" ||
+          stored === "color" ||
+          stored === "color-desc"
+        ) {
+          return stored;
+        }
       }
     } catch (_e) {
       // ignore storage errors
@@ -577,6 +584,13 @@ export class Tichu {
       avatarUrls[pid] = this.resolvePlayerAvatarUrl(Number(pid));
     }
 
+    const tableId = Number(
+      (this as any).table_id ||
+        (gamedatas as any)?.table_id ||
+        (window as any).bgaGameData?.tableId ||
+        1,
+    );
+
     window.gameModel?.hydrateFromGamedatas(
       gamedatas,
       this.player_id,
@@ -584,6 +598,7 @@ export class Tichu {
       this.bRealtime,
       this.readPrefs(),
       avatarUrls,
+      tableId,
     );
 
     this.enableAllPlayerPanels();
@@ -1291,15 +1306,21 @@ export class Tichu {
     this.persistUserPreference(104, num);
   }
 
-  onOrderChange(order: "rank" | "color") {
-    try {
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("tichu_hand_sort_order", order);
+  onOrderChange(order: AutoSortOrder) {
+    const safeOrder: AutoSortOrder =
+      order === "rank" || order === "rank-desc" || order === "color" || order === "color-desc"
+        ? order
+        : "rank";
+    if (!this.isReadOnly()) {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("tichu_hand_sort_order", safeOrder);
+        }
+      } catch (_e) {
+        // ignore storage errors
       }
-    } catch (_e) {
-      // ignore storage errors
     }
-    window.gameModel?.setHandSortOrder(order);
+    window.gameModel?.setHandSortOrder(safeOrder);
   }
 
   onReorderByRank(evt?: Event) {

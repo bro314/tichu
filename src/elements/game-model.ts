@@ -26,6 +26,38 @@ export type { Card, CardData, RoundBetOutcome, RoundScoreRecord };
 
 export type GrandTichuBetValue = -1 | 0 | 100 | 200;
 export type TichuBetValue = -1 | 0 | 100;
+export type AutoSortOrder = "rank" | "rank-desc" | "color" | "color-desc";
+export type HandSortOrder = AutoSortOrder | "preserve";
+export type CardGroupId = 1 | 2 | 3 | 4;
+
+export const CUSTOM_HAND_ORDER_STORAGE_KEY = "tichu_hand_custom_order";
+export const CUSTOM_HAND_ORDER_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 3 months
+export const CUSTOM_HAND_ORDER_MAX_ENTRIES = 50;
+
+const POST_PASSING_PLAY_STATES = new Set([
+  "newTrick",
+  "playComboOpen",
+  "playCombo",
+  "playBomb",
+  "phoenixPlay",
+  "mahjongPlay",
+  "nextPlayer",
+  "confirmTrick",
+  "chooseDragonGift",
+  "changePlayer",
+]);
+
+export function canOrganizeHandInState(stateName: string): boolean {
+  return POST_PASSING_PLAY_STATES.has(stateName);
+}
+
+export function isAutoSortOrder(val: unknown): val is AutoSortOrder {
+  return val === "rank" || val === "rank-desc" || val === "color" || val === "color-desc";
+}
+
+function isCardGroupId(val: unknown): val is CardGroupId {
+  return val === 1 || val === 2 || val === 3 || val === 4;
+}
 
 export interface LivePlayer {
   id: string;
@@ -83,11 +115,12 @@ export interface LiveGamePrefs {
   isTiki?: boolean;
   animationsEnabled?: boolean;
   theme?: number;
-  handSortOrder?: "rank" | "color";
+  handSortOrder?: AutoSortOrder;
   [prefId: number]: number | undefined;
 }
 
 export interface LiveGameState {
+  tableId: number;
   currentPlayerId: string;
   isSpectator: boolean;
   isRealtime: boolean;
@@ -101,7 +134,10 @@ export interface LiveGameState {
   collectingTrickCountdown: boolean;
   hand: Card[];
   selectedCardIds: string[];
-  handSortOrder: "rank" | "color";
+  baseSortOrder: AutoSortOrder;
+  handSortOrder: HandSortOrder;
+  customHandOrder: string[];
+  cardGroups: Record<string, CardGroupId>;
   stateName: string;
   activePlayerId: string;
   activePlayerIds: string[];
@@ -135,11 +171,29 @@ export interface LiveGameState {
   betAnimations: BetAnimation[];
 }
 
-function getStoredHandSortOrder(): "rank" | "color" {
+interface StoredCustomHandEntry {
+  round: number;
+  order: string[];
+  groups: Record<string, CardGroupId>;
+  updatedAt: number;
+}
+
+function isReadOnlyEnv(isSpectator: boolean): boolean {
+  if (isSpectator) return true;
+  if (typeof window !== "undefined") {
+    const ui = (window as any).gameui;
+    if (ui && typeof ui.isReadOnly === "function" && ui.isReadOnly()) return true;
+    if (typeof (window as any).g_replayFrom !== "undefined") return true;
+    if ((window as any).g_archive_mode) return true;
+  }
+  return false;
+}
+
+function getStoredHandSortOrder(): AutoSortOrder {
   try {
     if (typeof localStorage !== "undefined") {
       const raw = localStorage.getItem("tichu_hand_sort_order");
-      if (raw === "color" || raw === "rank") return raw;
+      if (isAutoSortOrder(raw)) return raw;
     }
   } catch (_e) {
     // ignore storage errors
@@ -147,7 +201,160 @@ function getStoredHandSortOrder(): "rank" | "color" {
   return "rank";
 }
 
+function getCustomEntryKey(tableId: number, playerId: string): string {
+  return `${tableId}_${playerId}`;
+}
+
+function normalizeStoredEntry(raw: any, now: number): StoredCustomHandEntry | null {
+  if (!raw || typeof raw !== "object") return null;
+  const round = Number(raw.round);
+  const updatedAt = Number(raw.updatedAt);
+  if (!Number.isFinite(round) || !Number.isFinite(updatedAt)) return null;
+  if (now - updatedAt > CUSTOM_HAND_ORDER_TTL_MS) return null;
+
+  const order: string[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(raw.order)) {
+    for (const id of raw.order) {
+      const s = String(id ?? "");
+      if (s && !seen.has(s)) {
+        seen.add(s);
+        order.push(s);
+      }
+    }
+  }
+
+  const groups: Record<string, CardGroupId> = {};
+  if (raw.groups && typeof raw.groups === "object" && !Array.isArray(raw.groups)) {
+    for (const [k, v] of Object.entries(raw.groups)) {
+      const g = Number(v);
+      if (k && isCardGroupId(g)) {
+        groups[String(k)] = g;
+      }
+    }
+  }
+
+  return { round, order, groups, updatedAt };
+}
+
+function readCustomOrderStore(now = Date.now()): {
+  store: Record<string, StoredCustomHandEntry>;
+  pruned: boolean;
+} {
+  const store: Record<string, StoredCustomHandEntry> = {};
+  let pruned = false;
+  try {
+    if (typeof localStorage === "undefined") return { store, pruned };
+    const raw = localStorage.getItem(CUSTOM_HAND_ORDER_STORAGE_KEY);
+    if (!raw) return { store, pruned };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { store, pruned: true };
+    }
+    for (const [key, val] of Object.entries(parsed)) {
+      const entry = normalizeStoredEntry(val, now);
+      if (entry) {
+        store[key] = entry;
+      } else {
+        pruned = true;
+      }
+    }
+  } catch (_e) {
+    // ignore storage/parse errors
+  }
+  return { store, pruned };
+}
+
+function writeCustomOrderStore(
+  store: Record<string, StoredCustomHandEntry>,
+  now = Date.now(),
+): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const validEntries = Object.entries(store)
+      .filter(([, entry]) => now - entry.updatedAt <= CUSTOM_HAND_ORDER_TTL_MS)
+      .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+      .slice(0, CUSTOM_HAND_ORDER_MAX_ENTRIES);
+    if (validEntries.length === 0) {
+      localStorage.removeItem(CUSTOM_HAND_ORDER_STORAGE_KEY);
+      return;
+    }
+    const nextStore: Record<string, StoredCustomHandEntry> = {};
+    for (const [k, v] of validEntries) {
+      nextStore[k] = v;
+    }
+    localStorage.setItem(CUSTOM_HAND_ORDER_STORAGE_KEY, JSON.stringify(nextStore));
+  } catch (_e) {
+    // ignore storage errors
+  }
+}
+
+function loadCustomHandEntry(
+  tableId: number,
+  playerId: string,
+  round: number,
+  now = Date.now(),
+): { order: string[]; groups: Record<string, CardGroupId> } | null {
+  if (!tableId || tableId <= 0 || !playerId) return null;
+  const { store, pruned } = readCustomOrderStore(now);
+  const key = getCustomEntryKey(tableId, playerId);
+  const entry = store[key];
+  if (!entry) {
+    if (pruned) writeCustomOrderStore(store, now);
+    return null;
+  }
+  if (entry.round !== round) {
+    delete store[key];
+    writeCustomOrderStore(store, now);
+    return null;
+  }
+  if (pruned) {
+    writeCustomOrderStore(store, now);
+  }
+  return { order: [...entry.order], groups: { ...entry.groups } };
+}
+
+function saveCustomHandEntry(
+  tableId: number,
+  playerId: string,
+  round: number,
+  order: string[],
+  groups: Record<string, CardGroupId>,
+  now = Date.now(),
+): void {
+  if (!tableId || tableId <= 0 || !playerId) return;
+  const { store } = readCustomOrderStore(now);
+  const key = getCustomEntryKey(tableId, playerId);
+  if (order.length === 0 && Object.keys(groups).length === 0) {
+    if (key in store) {
+      delete store[key];
+      writeCustomOrderStore(store, now);
+    }
+    return;
+  }
+  store[key] = {
+    round,
+    order: [...order],
+    groups: { ...groups },
+    updatedAt: now,
+  };
+  writeCustomOrderStore(store, now);
+}
+
+function deleteCustomHandEntry(tableId: number, playerId: string, now = Date.now()): void {
+  if (!tableId || tableId <= 0 || !playerId) return;
+  const { store, pruned } = readCustomOrderStore(now);
+  const key = getCustomEntryKey(tableId, playerId);
+  if (key in store || pruned) {
+    delete store[key];
+    writeCustomOrderStore(store, now);
+  }
+}
+
+const initialAutoSortOrder = getStoredHandSortOrder();
+
 export const initialLiveGameState: LiveGameState = {
+  tableId: 0,
   currentPlayerId: "",
   isSpectator: false,
   isRealtime: false,
@@ -161,7 +368,10 @@ export const initialLiveGameState: LiveGameState = {
   collectingTrickCountdown: false,
   hand: [],
   selectedCardIds: [],
-  handSortOrder: getStoredHandSortOrder(),
+  baseSortOrder: initialAutoSortOrder,
+  handSortOrder: initialAutoSortOrder,
+  customHandOrder: [],
+  cardGroups: {},
   stateName: "",
   activePlayerId: "",
   activePlayerIds: [],
@@ -297,6 +507,7 @@ function getTeamScoresFromPlayers(playersMap: Record<string, LivePlayer>): [numb
   return totals;
 }
 
+
 /**
  * Replicates PHP's `PlayerManager::getNextPlayers(null, true)` exactly:
  * Sorts players by `no` DESC, then rotates until `players[3].id === currentPlayerId`
@@ -344,7 +555,10 @@ export class GameModel {
   );
   public readonly hand$ = select(this.state$, (s) => s.hand);
   public readonly selectedCardIds$ = select(this.state$, (s) => s.selectedCardIds);
+  public readonly baseSortOrder$ = select(this.state$, (s) => s.baseSortOrder);
   public readonly handSortOrder$ = select(this.state$, (s) => s.handSortOrder);
+  public readonly customHandOrder$ = select(this.state$, (s) => s.customHandOrder);
+  public readonly cardGroups$ = select(this.state$, (s) => s.cardGroups);
   public readonly stateName$ = select(this.state$, (s) => s.stateName);
   public readonly activePlayerId$ = select(this.state$, (s) => s.activePlayerId);
   public readonly activePlayerIds$ = select(this.state$, (s) => s.activePlayerIds);
@@ -437,8 +651,11 @@ export class GameModel {
     isRealtime: boolean,
     prefs?: LiveGamePrefs,
     avatarUrls?: Record<string, string>,
+    tableId?: number,
   ): void {
     const currentId = String(currentPlayerId ?? "");
+    const rawTableId = Number(tableId || gamedatas?.table_id || 0);
+    const resolvedTableId = Number.isFinite(rawTableId) && rawTableId > 0 ? rawTableId : 0;
     const rawPlayers = gamedatas?.players ?? {};
     const handCounts = gamedatas?.handcount ?? gamedatas?.handCount ?? {};
     const capturedPointsMap = gamedatas?.capturedpoints ?? gamedatas?.capturedPoints ?? {};
@@ -617,10 +834,9 @@ export class GameModel {
           : 0;
     const theme = !Number.isNaN(rawTheme) && rawTheme >= 0 && rawTheme <= 10 ? rawTheme : 0;
     const storedSortOrder = getStoredHandSortOrder();
-    const handSortOrder: "rank" | "color" =
-      prefs?.handSortOrder === "color" || prefs?.handSortOrder === "rank"
-        ? prefs.handSortOrder
-        : storedSortOrder;
+    const baseSortOrder: AutoSortOrder = isAutoSortOrder(prefs?.handSortOrder)
+      ? prefs.handSortOrder
+      : storedSortOrder;
 
     const stateName = String(gamestate?.name ?? "");
     const activePlayerId = gamestate?.active_player ? String(gamestate.active_player) : "";
@@ -636,6 +852,32 @@ export class GameModel {
       Number(gamedatas?.isAllInfoExposed ?? gamedatas?.is_all_info_exposed) === 1;
 
     const hydratedRound = Number(gamedatas?.round ?? 0);
+    const hydratedHand = normalizeCards(gamedatas?.hand);
+    const handIdSet = new Set(hydratedHand.map((c) => c.id));
+    let handSortOrder: HandSortOrder = baseSortOrder;
+    let customHandOrder: string[] = [];
+    let cardGroups: Record<string, CardGroupId> = {};
+
+    const readOnly = isReadOnlyEnv(Boolean(isSpectator));
+    if (!readOnly && resolvedTableId > 0 && currentId) {
+      if (stateName === "gameEnd" || stateName === "endRound" || stateName === "newRound") {
+        deleteCustomHandEntry(resolvedTableId, currentId);
+      } else {
+        const storedCustom = loadCustomHandEntry(resolvedTableId, currentId, hydratedRound);
+        if (storedCustom && canOrganizeHandInState(stateName)) {
+          customHandOrder = storedCustom.order.filter((id) => handIdSet.has(id));
+          for (const [cid, grp] of Object.entries(storedCustom.groups)) {
+            if (handIdSet.has(cid) && isCardGroupId(grp)) {
+              cardGroups[cid] = grp;
+            }
+          }
+          if (customHandOrder.length > 0) {
+            handSortOrder = "preserve";
+          }
+        }
+      }
+    }
+
     const rawTargetScore = Number(gamedatas?.targetScore ?? 1000);
     const targetScore = !Number.isNaN(rawTargetScore) && rawTargetScore > 0 ? rawTargetScore : 1000;
     let roundHistory: RoundScoreRecord[];
@@ -663,7 +905,9 @@ export class GameModel {
       }
     }
 
+
     this.setState({
+      tableId: resolvedTableId,
       currentPlayerId: currentId,
       isSpectator: Boolean(isSpectator),
       isRealtime: Boolean(isRealtime),
@@ -675,9 +919,12 @@ export class GameModel {
       reopenedPassNotice: null,
       acceptingCardsCountdown: false,
       collectingTrickCountdown: false,
-      hand: normalizeCards(gamedatas?.hand),
+      hand: hydratedHand,
       selectedCardIds: [],
+      baseSortOrder,
       handSortOrder,
+      customHandOrder,
+      cardGroups,
       stateName,
       activePlayerId,
       activePlayerIds,
@@ -804,6 +1051,9 @@ export class GameModel {
       receivedCard: null,
       animatingAccept: false,
     }));
+    if (!isReadOnlyEnv(prev.isSpectator) && prev.tableId > 0 && prev.currentPlayerId) {
+      deleteCustomHandEntry(prev.tableId, prev.currentPlayerId);
+    }
     this.update({
       players,
       lastCombos,
@@ -820,6 +1070,9 @@ export class GameModel {
       capturedCards: [],
       hand: preserveInitialDeal ? prev.hand : [],
       selectedCardIds: [],
+      handSortOrder: prev.baseSortOrder,
+      customHandOrder: [],
+      cardGroups: {},
       currentTrick: [],
       currentTrickValue: 0,
       firstOutPlayerId: "",
@@ -930,9 +1183,15 @@ export class GameModel {
         pass: 0,
       };
     }
+    if (!isReadOnlyEnv(prev.isSpectator) && prev.tableId > 0 && prev.currentPlayerId) {
+      deleteCustomHandEntry(prev.tableId, prev.currentPlayerId);
+    }
     this.update({
       hand: [],
       selectedCardIds: [],
+      handSortOrder: prev.baseSortOrder,
+      customHandOrder: [],
+      cardGroups: {},
       reopenedPassNotice: null,
       players,
       hasPlayedOrPassedInRound: false,
@@ -957,9 +1216,18 @@ export class GameModel {
     const normalized = normalizeCards(cards);
     const validIds = new Set(normalized.map((c) => c.id));
     const prev = this.getState();
+    const nextCustomOrder = prev.customHandOrder.filter((id) => validIds.has(id));
+    const nextGroups: Record<string, CardGroupId> = {};
+    for (const [cid, grp] of Object.entries(prev.cardGroups)) {
+      if (validIds.has(cid)) {
+        nextGroups[cid] = grp;
+      }
+    }
     this.update({
       hand: normalized,
       selectedCardIds: prev.selectedCardIds.filter((id) => validIds.has(id)),
+      customHandOrder: nextCustomOrder,
+      cardGroups: nextGroups,
     });
   }
 
@@ -978,9 +1246,21 @@ export class GameModel {
       };
     }
 
+    if (
+      isInitialDeal &&
+      !isReadOnlyEnv(prev.isSpectator) &&
+      prev.tableId > 0 &&
+      prev.currentPlayerId
+    ) {
+      deleteCustomHandEntry(prev.tableId, prev.currentPlayerId);
+    }
+
     this.update({
       hand: nextHand,
       selectedCardIds: isInitialDeal ? [] : prev.selectedCardIds,
+      handSortOrder: isInitialDeal ? prev.baseSortOrder : prev.handSortOrder,
+      customHandOrder: isInitialDeal ? [] : prev.customHandOrder,
+      cardGroups: isInitialDeal ? {} : prev.cardGroups,
       players,
     });
   }
@@ -1009,15 +1289,144 @@ export class GameModel {
     this.update({ selectedCardIds: [] });
   }
 
-  setHandSortOrder(handSortOrder: "rank" | "color"): void {
-    try {
-      if (typeof localStorage !== "undefined") {
-        localStorage.setItem("tichu_hand_sort_order", handSortOrder);
+  setHandSortOrder(order: AutoSortOrder): void {
+    const safeOrder: AutoSortOrder = isAutoSortOrder(order) ? order : "rank";
+    const prev = this.getState();
+    const readOnly = isReadOnlyEnv(prev.isSpectator);
+    if (!readOnly) {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("tichu_hand_sort_order", safeOrder);
+        }
+      } catch (_e) {
+        // ignore storage errors
       }
-    } catch (_e) {
-      // ignore storage errors
+      if (prev.tableId > 0 && prev.currentPlayerId) {
+        saveCustomHandEntry(prev.tableId, prev.currentPlayerId, prev.round, [], prev.cardGroups);
+      }
     }
-    this.update({ handSortOrder });
+    this.update({
+      baseSortOrder: safeOrder,
+      handSortOrder: safeOrder,
+      customHandOrder: [],
+    });
+  }
+
+  commitCustomHandOrder(
+    orderedIds: string[],
+    movedCardId?: string,
+    targetGroup?: CardGroupId | 0,
+  ): void {
+    const prev = this.getState();
+    if (isReadOnlyEnv(prev.isSpectator) || !canOrganizeHandInState(prev.stateName)) {
+      return;
+    }
+    const validIds = new Set(prev.hand.map((c) => c.id));
+    const seen = new Set<string>();
+    const nextOrder: string[] = [];
+    for (const rawId of orderedIds) {
+      const id = String(rawId ?? "");
+      if (id && validIds.has(id) && !seen.has(id)) {
+        seen.add(id);
+        nextOrder.push(id);
+      }
+    }
+    for (const c of prev.hand) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        nextOrder.push(c.id);
+      }
+    }
+
+    const nextGroups: Record<string, CardGroupId> = {};
+    for (const [cid, grp] of Object.entries(prev.cardGroups)) {
+      if (validIds.has(cid) && isCardGroupId(grp)) {
+        nextGroups[cid] = grp;
+      }
+    }
+    if (movedCardId !== undefined && targetGroup !== undefined) {
+      const mid = String(movedCardId);
+      if (validIds.has(mid)) {
+        if (targetGroup === 0) {
+          delete nextGroups[mid];
+        } else if (isCardGroupId(targetGroup)) {
+          nextGroups[mid] = targetGroup;
+        }
+      }
+    }
+
+    if (prev.tableId > 0 && prev.currentPlayerId) {
+      saveCustomHandEntry(prev.tableId, prev.currentPlayerId, prev.round, nextOrder, nextGroups);
+    }
+    this.update({
+      handSortOrder: "preserve",
+      customHandOrder: nextOrder,
+      cardGroups: nextGroups,
+    });
+  }
+
+  assignCardGroup(cardIds: string[], groupId: CardGroupId | 0): void {
+    const prev = this.getState();
+    if (isReadOnlyEnv(prev.isSpectator) || !canOrganizeHandInState(prev.stateName)) {
+      return;
+    }
+    const validIds = new Set(prev.hand.map((c) => c.id));
+    const nextGroups: Record<string, CardGroupId> = {};
+    for (const [cid, grp] of Object.entries(prev.cardGroups)) {
+      if (validIds.has(cid) && isCardGroupId(grp)) {
+        nextGroups[cid] = grp;
+      }
+    }
+    let changed = false;
+    for (const rawId of cardIds) {
+      const cid = String(rawId ?? "");
+      if (!validIds.has(cid)) continue;
+      if (groupId === 0) {
+        if (cid in nextGroups) {
+          delete nextGroups[cid];
+          changed = true;
+        }
+      } else if (isCardGroupId(groupId)) {
+        if (nextGroups[cid] !== groupId) {
+          nextGroups[cid] = groupId;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) {
+      if (prev.selectedCardIds.length > 0) {
+        this.update({ selectedCardIds: [] });
+      }
+      return;
+    }
+
+    const persistedOrder = prev.handSortOrder === "preserve" ? prev.customHandOrder : [];
+    if (prev.tableId > 0 && prev.currentPlayerId) {
+      saveCustomHandEntry(
+        prev.tableId,
+        prev.currentPlayerId,
+        prev.round,
+        persistedOrder,
+        nextGroups,
+      );
+    }
+    this.update({
+      cardGroups: nextGroups,
+      selectedCardIds: [],
+    });
+  }
+
+  clearCardGroups(): void {
+    const prev = this.getState();
+    if (isReadOnlyEnv(prev.isSpectator)) return;
+    if (Object.keys(prev.cardGroups).length === 0) return;
+    const persistedOrder = prev.handSortOrder === "preserve" ? prev.customHandOrder : [];
+    if (prev.tableId > 0 && prev.currentPlayerId) {
+      saveCustomHandEntry(prev.tableId, prev.currentPlayerId, prev.round, persistedOrder, {});
+    }
+    this.update({
+      cardGroups: {},
+    });
   }
 
   // Passing cards mutations
@@ -1201,6 +1610,37 @@ export class GameModel {
     const nextSelectedIds = isCurrent
       ? prev.selectedCardIds.filter((id) => !playedIds.has(id))
       : prev.selectedCardIds;
+    const nextCustomHandOrder = isCurrent
+      ? prev.customHandOrder.filter((id) => !playedIds.has(id))
+      : prev.customHandOrder;
+    let nextCardGroups = prev.cardGroups;
+    if (isCurrent && Object.keys(prev.cardGroups).length > 0) {
+      nextCardGroups = {};
+      for (const [cid, grp] of Object.entries(prev.cardGroups)) {
+        if (!playedIds.has(cid)) {
+          nextCardGroups[cid] = grp;
+        }
+      }
+    }
+    if (
+      isCurrent &&
+      !isReadOnlyEnv(prev.isSpectator) &&
+      prev.tableId > 0 &&
+      prev.currentPlayerId &&
+      (prev.customHandOrder.length > 0 || Object.keys(prev.cardGroups).length > 0)
+    ) {
+      if (nextHand.length === 0) {
+        deleteCustomHandEntry(prev.tableId, prev.currentPlayerId);
+      } else {
+        saveCustomHandEntry(
+          prev.tableId,
+          prev.currentPlayerId,
+          prev.round,
+          nextCustomHandOrder,
+          nextCardGroups,
+        );
+      }
+    }
 
     const existingPlayer = prev.players[pid];
     const players = existingPlayer
@@ -1251,6 +1691,8 @@ export class GameModel {
     this.update({
       hand: nextHand,
       selectedCardIds: nextSelectedIds,
+      customHandOrder: nextCustomHandOrder,
+      cardGroups: nextCardGroups,
       players,
       hasPlayedOrPassedInRound: isCurrent ? true : prev.hasPlayedOrPassedInRound,
       lastCombos,
@@ -1535,6 +1977,7 @@ export class GameModel {
   setCollectingTrickCountdown(collectingTrickCountdown: boolean): void {
     this.update({ collectingTrickCountdown });
   }
+
 }
 
 declare global {

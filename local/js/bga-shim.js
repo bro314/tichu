@@ -1759,6 +1759,9 @@
     constructor() {
       const self = this;
       this.gamedatas = initPayload.gamedatas;
+      this.table_id = Number(
+        initPayload.tableId || (initPayload.gamedatas && initPayload.gamedatas.table_id) || 1,
+      );
       this.player_id = Number(initPayload.playerId);
       this.isSpectator = Boolean(initPayload.isSpectator);
       this.bRealtime = Boolean(initPayload.bRealtime);

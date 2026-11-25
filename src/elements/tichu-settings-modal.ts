@@ -1,6 +1,7 @@
 import { css, html, LitElement, nothing, PropertyValues } from "lit";
 import { state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
+import type { AutoSortOrder, HandSortOrder } from "./game-model";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
@@ -37,7 +38,7 @@ export function getThemeLabel(themeNo: number): string {
 
 export class TichuSettingsModal extends LitElement {
   @state() private settingsModalOpen = false;
-  @state() private handSortOrder: "rank" | "color" = "rank";
+  @state() private handSortOrder: HandSortOrder = "rank";
   @state() private squareTable = false;
   @state() private clockwise = true;
   @state() private isTiki = false;
@@ -707,6 +708,11 @@ export class TichuSettingsModal extends LitElement {
               <div class="setting-row">
                 <div class="setting-info">
                   <span id="pref-sort-label" class="setting-label">${_("Card order")}</span>
+                  ${
+                    this.handSortOrder === "preserve"
+                      ? html`<p class="row-hint">${_("Custom order active for this round")}</p>`
+                      : nothing
+                  }
                 </div>
                 <div class="segmented" role="radiogroup" aria-labelledby="pref-sort-label">
                   <label
@@ -719,7 +725,22 @@ export class TichuSettingsModal extends LitElement {
                       .checked=${this.handSortOrder === "rank"}
                       @change=${() => this.onHandSortChange("rank")}
                     />
-                    <span>${_("By rank")}</span>
+                    <span>${_("Rank ↑")}</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      segment: true,
+                      active: this.handSortOrder === "rank-desc",
+                    })}
+                  >
+                    <input
+                      type="radio"
+                      name="tichu-hand-sort"
+                      class="sr-only-input"
+                      .checked=${this.handSortOrder === "rank-desc"}
+                      @change=${() => this.onHandSortChange("rank-desc")}
+                    />
+                    <span>${_("Rank ↓")}</span>
                   </label>
                   <label
                     class=${classMap({ segment: true, active: this.handSortOrder === "color" })}
@@ -731,7 +752,22 @@ export class TichuSettingsModal extends LitElement {
                       .checked=${this.handSortOrder === "color"}
                       @change=${() => this.onHandSortChange("color")}
                     />
-                    <span>${_("By color")}</span>
+                    <span>${_("Suit ↑")}</span>
+                  </label>
+                  <label
+                    class=${classMap({
+                      segment: true,
+                      active: this.handSortOrder === "color-desc",
+                    })}
+                  >
+                    <input
+                      type="radio"
+                      name="tichu-hand-sort"
+                      class="sr-only-input"
+                      .checked=${this.handSortOrder === "color-desc"}
+                      @change=${() => this.onHandSortChange("color-desc")}
+                    />
+                    <span>${_("Suit ↓")}</span>
                   </label>
                 </div>
               </div>
@@ -962,15 +998,15 @@ export class TichuSettingsModal extends LitElement {
     `;
   }
 
-  onHandSortChange(order: "rank" | "color") {
+  onHandSortChange(order: AutoSortOrder) {
     window.gameModel.setHandSortOrder(order);
     const ui = (window as any).gameui;
-    if (order === "rank") {
-      if (ui && typeof ui.onReorderByRank === "function") {
-        ui.onReorderByRank();
-      }
-    } else if (ui && typeof ui.onReorderByColor === "function") {
+    if (order === "rank" && ui && typeof ui.onReorderByRank === "function") {
+      ui.onReorderByRank();
+    } else if (order === "color" && ui && typeof ui.onReorderByColor === "function") {
       ui.onReorderByColor();
+    } else if (ui && typeof ui.onOrderChange === "function") {
+      ui.onOrderChange(order);
     }
   }
 

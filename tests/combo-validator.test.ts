@@ -28,7 +28,13 @@ import {
   validatePassAction,
 } from "../src/elements/combo-validator";
 import { groupPlayersByTeam, hasBomb } from "../src/elements/utils";
-import { GameModel } from "../src/elements/game-model";
+import {
+  CUSTOM_HAND_ORDER_MAX_ENTRIES,
+  CUSTOM_HAND_ORDER_STORAGE_KEY,
+  CUSTOM_HAND_ORDER_TTL_MS,
+  GameModel,
+  canOrganizeHandInState,
+} from "../src/elements/game-model";
 import { Bet } from "../src/types/tichu-contracts";
 
 let nextCardId = 1;
@@ -5877,4 +5883,395 @@ test("groupPlayersByTeam groups strictly by player.team across TEAM_1_2, TEAM_1_
     groupedFallback.team1.map((p) => p.id),
     [2, 4],
   );
+});
+
+test("Bug #22264: sort weights, sortHandCards with Group 1..4, computeDropTarget, and canOrganizeHandInState", async () => {
+  await withMockLitEnv(() => {
+    const {
+      getLogicalRankWeight,
+      getWeightByRank,
+      getWeightByRankDesc,
+      getWeightByColor,
+      getWeightByColorDesc,
+      sortHandCards,
+      computeDropTarget,
+    } = require("../src/elements/tichu-stock");
+
+    assert.equal(getLogicalRankWeight(DOG), 0);
+    assert.equal(getLogicalRankWeight(MJ), 1);
+    assert.equal(getLogicalRankWeight(A2), 2);
+    assert.equal(getLogicalRankWeight(AA), 14);
+    assert.equal(getLogicalRankWeight(PH), 15);
+    assert.equal(getLogicalRankWeight(DR), 16);
+
+    const sample: TichuCard[] = [A2, DR, B9, MJ, AA, PH, DOG, C5];
+    assert.deepEqual(
+      sortHandCards(sample, "rank").map((c: TichuCard) => c.id),
+      [DOG.id, MJ.id, A2.id, C5.id, B9.id, AA.id, PH.id, DR.id],
+    );
+    assert.deepEqual(
+      sortHandCards(sample, "rank-desc").map((c: TichuCard) => c.id),
+      [DR.id, PH.id, AA.id, B9.id, C5.id, A2.id, MJ.id, DOG.id],
+    );
+
+    const suitSample: TichuCard[] = [DR, DA, AA, A2, PH, B0, MJ, B2, DOG];
+    assert.deepEqual(
+      sortHandCards(suitSample, "color").map((c: TichuCard) => c.id),
+      [DOG.id, MJ.id, A2.id, AA.id, B2.id, B0.id, DA.id, PH.id, DR.id],
+    );
+    assert.deepEqual(
+      sortHandCards(suitSample, "color-desc").map((c: TichuCard) => c.id),
+      [DR.id, PH.id, AA.id, A2.id, B0.id, B2.id, DA.id, MJ.id, DOG.id],
+    );
+
+    // Table combo passthrough when preserve has empty customOrder & empty groups
+    assert.deepEqual(
+      sortHandCards([DR, A2, MJ], "preserve").map((c: TichuCard) => c.id),
+      [DR.id, A2.id, MJ.id],
+    );
+
+    // Left-pinned Group 1..4 with intra-group auto-sort and custom preserve + fallback
+    const grouped = sortHandCards([A2, C5, B9, AA, DR], "rank-desc", "rank", [], {
+      [A2.id]: 2,
+      [B9.id]: 1,
+      [C5.id]: 1,
+    });
+    assert.deepEqual(
+      grouped.map((c: TichuCard) => c.id),
+      [B9.id, C5.id, A2.id, DR.id, AA.id],
+    );
+
+    const customGrouped = sortHandCards(
+      [A2, C5, B9, AA, DR],
+      "preserve",
+      "rank-desc",
+      [C5.id, B9.id, A2.id],
+      {
+        [A2.id]: 2,
+        [B9.id]: 1,
+        [C5.id]: 1,
+      },
+    );
+    // Group 1 (C5 then B9 by customOrder), Group 2 (A2), Ungrouped (DR then AA by baseSortOrder rank-desc)
+    assert.deepEqual(
+      customGrouped.map((c: TichuCard) => c.id),
+      [C5.id, B9.id, A2.id, DR.id, AA.id],
+    );
+
+    // computeDropTarget across groups and boundaries
+    const mids = [100, 130, 180, 210];
+    const groups = [1, 1, 2, 0];
+    // Stay in place keeps original group
+    assert.deepEqual(computeDropTarget(105, mids, 0, groups), { dropIndex: 0, targetGroup: 1 });
+    // Drag card 0 rightward past card 1 (stays Group 1)
+    assert.deepEqual(computeDropTarget(145, mids, 0, groups), { dropIndex: 1, targetGroup: 1 });
+    // Drag card 0 into Group 2 (just past card 2 at 180)
+    assert.deepEqual(computeDropTarget(185, mids, 0, groups), { dropIndex: 2, targetGroup: 2 });
+    // Drag card 0 across boundary toward ungrouped (past midpoint 195)
+    assert.deepEqual(computeDropTarget(200, mids, 0, groups), { dropIndex: 2, targetGroup: 0 });
+    // Drag card 0 to far right ungrouped
+    assert.deepEqual(computeDropTarget(240, mids, 0, groups), { dropIndex: 3, targetGroup: 0 });
+    // Drag ungrouped card 3 into Group 1
+    assert.deepEqual(computeDropTarget(80, mids, 3, groups), { dropIndex: 0, targetGroup: 1 });
+
+    // State gate: only after card passing is completed
+    for (const s of [
+      "",
+      "newRound",
+      "grandTichuBets",
+      "dealLastCards",
+      "giveCards",
+      "showPassedCards",
+      "acceptPassedCards",
+      "endRound",
+      "gameEnd",
+    ]) {
+      assert.equal(canOrganizeHandInState(s), false, `Expected ${s} to disallow custom organize`);
+    }
+    for (const s of [
+      "newTrick",
+      "playComboOpen",
+      "playCombo",
+      "playBomb",
+      "phoenixPlay",
+      "mahjongPlay",
+      "nextPlayer",
+      "confirmTrick",
+      "chooseDragonGift",
+      "changePlayer",
+    ]) {
+      assert.equal(canOrganizeHandInState(s), true, `Expected ${s} to allow custom organize`);
+    }
+  });
+});
+
+test("Bug #22264: GameModel per-table custom hand persistence, round wipe, 90-day TTL, 50-entry cap, and post-passing gate", () => {
+  const g = globalThis as any;
+  const savedLocalStorage = g.localStorage;
+  const savedDateNow = Date.now;
+  const backing = new Map<string, string>();
+  let nowMs = 1_800_000_000_000;
+
+  g.localStorage = {
+    getItem: (k: string) => backing.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      backing.set(k, String(v));
+    },
+    removeItem: (k: string) => {
+      backing.delete(k);
+    },
+  };
+  Date.now = () => nowMs;
+
+  try {
+    const makePlayers = () => ({
+      "1": { id: "1", name: "Alice", color: "000000", no: 1, team: 0, score: 0 },
+      "2": { id: "2", name: "Bob", color: "ff0000", no: 2, team: 1, score: 0 },
+      "3": { id: "3", name: "Carol", color: "000000", no: 3, team: 0, score: 0 },
+      "4": { id: "4", name: "Dave", color: "ff0000", no: 4, team: 1, score: 0 },
+    });
+    const handCards = [A2, C5, B9, AA, DR];
+
+    const model = new GameModel();
+    // 1. Pre-passing states reject custom ordering and grouping
+    model.hydrateFromGamedatas(
+      {
+        players: makePlayers() as any,
+        hand: handCards,
+        round: 2,
+        trick: 0,
+        gamestate: { name: "giveCards", multiactive: ["1"] },
+      },
+      1,
+      false,
+      false,
+      undefined,
+      undefined,
+      777,
+    );
+    model.commitCustomHandOrder([DR.id, A2.id, C5.id, B9.id, AA.id]);
+    model.assignCardGroup([DR.id, AA.id], 1);
+    assert.equal(model.getState().handSortOrder, "rank");
+    assert.deepEqual(model.getState().customHandOrder, []);
+    assert.deepEqual(model.getState().cardGroups, {});
+    assert.equal(backing.get(CUSTOM_HAND_ORDER_STORAGE_KEY), undefined);
+
+    // 2. Post-passing state persists custom order & groups under tableId_playerId
+    model.setGameState("playComboOpen", { activePlayerId: "1", isCurrentPlayerActive: true });
+    model.commitCustomHandOrder([DR.id, C5.id, B9.id, AA.id, A2.id], C5.id, 1);
+    model.assignCardGroup([B9.id], 1);
+    assert.equal(model.getState().handSortOrder, "preserve");
+    assert.deepEqual(model.getState().cardGroups, { [C5.id]: 1, [B9.id]: 1 });
+    assert.ok(backing.get(CUSTOM_HAND_ORDER_STORAGE_KEY)?.includes('"777_1"'));
+
+    // 3. Switching auto-sort updates tichu_hand_sort_order, exits preserve, keeps groups intact
+    model.setHandSortOrder("rank-desc");
+    assert.equal(backing.get("tichu_hand_sort_order"), "rank-desc");
+    assert.equal(model.getState().handSortOrder, "rank-desc");
+    assert.deepEqual(model.getState().customHandOrder, []);
+    assert.deepEqual(model.getState().cardGroups, { [C5.id]: 1, [B9.id]: 1 });
+
+    // Re-commit custom order and test F5 rehydration for same table & round
+    model.commitCustomHandOrder([DR.id, C5.id, B9.id, AA.id, A2.id]);
+    const refreshed = new GameModel();
+    refreshed.hydrateFromGamedatas(
+      {
+        players: makePlayers() as any,
+        hand: handCards,
+        round: 2,
+        trick: 3,
+        gamestate: { name: "playCombo", active_player: "2" },
+      },
+      1,
+      false,
+      false,
+      undefined,
+      undefined,
+      777,
+    );
+    assert.equal(refreshed.getState().handSortOrder, "preserve");
+    assert.deepEqual(refreshed.getState().customHandOrder, [DR.id, C5.id, B9.id, AA.id, A2.id]);
+    assert.deepEqual(refreshed.getState().cardGroups, { [C5.id]: 1, [B9.id]: 1 });
+
+    // 4. Different tableId stays isolated
+    const otherTable = new GameModel();
+    otherTable.hydrateFromGamedatas(
+      {
+        players: makePlayers() as any,
+        hand: handCards,
+        round: 2,
+        trick: 3,
+        gamestate: { name: "playCombo", active_player: "2" },
+      },
+      1,
+      false,
+      false,
+      undefined,
+      undefined,
+      888,
+    );
+    assert.equal(otherTable.getState().handSortOrder, "rank-desc");
+    assert.deepEqual(otherTable.getState().customHandOrder, []);
+    assert.deepEqual(otherTable.getState().cardGroups, {});
+
+    // 5. Playing cards prunes IDs from customHandOrder and cardGroups
+    refreshed.applyPlayCombo(1, [C5], "Single", 0, 1);
+    assert.equal(refreshed.getState().customHandOrder.includes(C5.id), false);
+    assert.equal(refreshed.getState().cardGroups[C5.id], undefined);
+    assert.equal(refreshed.getState().cardGroups[B9.id], 1);
+
+    // 6. Round completion immediately wipes localStorage entry for this table
+    refreshed.enterEndRound();
+    assert.equal(refreshed.getState().handSortOrder, "rank-desc");
+    assert.deepEqual(refreshed.getState().customHandOrder, []);
+    assert.deepEqual(refreshed.getState().cardGroups, {});
+    assert.equal(backing.get(CUSTOM_HAND_ORDER_STORAGE_KEY), undefined);
+
+    // 7. 90-day TTL expiration & 50-entry LRU cap
+    const storeSeed: Record<string, any> = {};
+    storeSeed["100_1"] = {
+      round: 1,
+      order: [DR.id],
+      groups: {},
+      updatedAt: nowMs - CUSTOM_HAND_ORDER_TTL_MS - 1000, // expired (> 3 months)
+    };
+    for (let i = 1; i <= 55; i++) {
+      storeSeed[`${2000 + i}_1`] = {
+        round: 1,
+        order: [A2.id],
+        groups: {},
+        updatedAt: nowMs - (60 - i) * 1000,
+      };
+    }
+    backing.set(CUSTOM_HAND_ORDER_STORAGE_KEY, JSON.stringify(storeSeed));
+
+    // Trigger write via a valid table save -> expired "100_1" and oldest entries > 50 must be pruned
+    model.hydrateFromGamedatas(
+      {
+        players: makePlayers() as any,
+        hand: handCards,
+        round: 4,
+        trick: 1,
+        gamestate: { name: "playComboOpen", active_player: "1" },
+      },
+      1,
+      false,
+      false,
+      undefined,
+      undefined,
+      999,
+    );
+    model.commitCustomHandOrder([A2.id, C5.id, B9.id, AA.id, DR.id]);
+    const finalStore = JSON.parse(backing.get(CUSTOM_HAND_ORDER_STORAGE_KEY) || "{}");
+    assert.equal(finalStore["100_1"], undefined, "Entry older than 90 days must expire");
+    assert.ok("999_1" in finalStore);
+    assert.equal(Object.keys(finalStore).length, CUSTOM_HAND_ORDER_MAX_ENTRIES);
+  } finally {
+    g.localStorage = savedLocalStorage;
+    Date.now = savedDateNow;
+  }
+});
+
+test("Bug #22264: TichuHand organize bar and TichuSettingsModal 4-way sort UI", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+
+    g._ = (s: string) => s;
+    const model = new GameModel();
+    g.window.gameModel = model;
+    const calls: string[] = [];
+    g.window.gameui = {
+      isReadOnly: () => false,
+      onOrderChange: (o: string) => calls.push(`order:${o}`),
+      onReorderByRank: () => calls.push("rank"),
+      onReorderByColor: () => calls.push("color"),
+    };
+
+    try {
+      const { TichuHand } = require("../src/elements/tichu-hand");
+      const { TichuSettingsModal } = require("../src/elements/tichu-settings-modal");
+
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, team: 0, score: 0 },
+            "2": { id: "2", name: "Bob", color: "ff0000", no: 2, team: 1, score: 0 },
+            "3": { id: "3", name: "Carol", color: "000000", no: 3, team: 0, score: 0 },
+            "4": { id: "4", name: "Dave", color: "ff0000", no: 4, team: 1, score: 0 },
+          } as any,
+          hand: [A2, C5, B9, AA, DR],
+          round: 1,
+          trick: 0,
+          gamestate: { name: "giveCards", multiactive: ["1"] },
+        },
+        1,
+        false,
+        false,
+        undefined,
+        undefined,
+        555,
+      );
+
+      const hand = new TichuHand();
+      hand.performUpdate = () => {};
+      hand.connectedCallback();
+      try {
+        // Pre-passing giveCards: sort pills shown, group buttons omitted
+        const prePassHtml = serializeLitTemplate(hand.render());
+        assert.ok(prePassHtml.includes('id="hand-organize-bar"'));
+        assert.ok(prePassHtml.includes('id="order_by_rank"'));
+        assert.ok(prePassHtml.includes('id="order_by_rank_desc"'));
+        assert.ok(prePassHtml.includes('id="order_by_color"'));
+        assert.ok(prePassHtml.includes('id="order_by_color_desc"'));
+        assert.equal(/id=["']?group_btn_1["']?/.test(prePassHtml), false);
+
+        // Post-passing playCombo: group buttons 1..4 appear
+        model.setGameState("playCombo", { activePlayerId: "1", isCurrentPlayerActive: true });
+        const playHtml = serializeLitTemplate(hand.render());
+        assert.match(playHtml, /id=["']?group_btn_1["']?/);
+        assert.match(playHtml, /id=["']?group_btn_4["']?/);
+
+        // Assign selected cards to Group 1, then click Group 1 with empty selection to select group
+        model.setSelectedCardIds([A2.id, C5.id]);
+        (hand as any).onGroupButtonClick(1);
+        assert.deepEqual(model.getState().cardGroups, { [A2.id]: 1, [C5.id]: 1 });
+        assert.deepEqual(model.getState().selectedCardIds, []);
+
+        (hand as any).onGroupButtonClick(1);
+        assert.deepEqual(model.getState().selectedCardIds, [A2.id, C5.id]);
+
+        // Custom order badge appears when handSortOrder === "preserve"
+        model.commitCustomHandOrder([DR.id, AA.id, B9.id, A2.id, C5.id]);
+        const customHtml = serializeLitTemplate(hand.render());
+        assert.ok(customHtml.includes('id="order_custom"'));
+      } finally {
+        hand.disconnectedCallback();
+      }
+
+      const modal = new TichuSettingsModal();
+      modal.performUpdate = () => {};
+      modal.connectedCallback();
+      try {
+        const modalHtml = serializeLitTemplate(modal.render());
+        assert.ok(modalHtml.includes("Rank ↑"));
+        assert.ok(modalHtml.includes("Rank ↓"));
+        assert.ok(modalHtml.includes("Suit ↑"));
+        assert.ok(modalHtml.includes("Suit ↓"));
+        assert.ok(modalHtml.includes("Custom order active for this round"));
+
+        modal.onHandSortChange("rank-desc");
+        assert.equal(model.getState().handSortOrder, "rank-desc");
+        assert.ok(calls.includes("order:rank-desc"));
+      } finally {
+        modal.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+    }
+  });
 });

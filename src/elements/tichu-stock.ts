@@ -1,29 +1,185 @@
-import { html, css, LitElement, PropertyValues } from "lit";
+import { html, css, LitElement, PropertyValues, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { classMap } from "lit/directives/class-map.js";
 import { repeat } from "lit/directives/repeat.js";
+import type { AutoSortOrder, CardGroupId, HandSortOrder } from "./game-model";
 import { Card } from "./model";
 import { ANIM_TIMINGS } from "./anim-timings";
 import { scaleAnimMs, shouldAnimate } from "./tichu-animation-layer";
 import "./tichu-card";
 import type { PassedOriginInfo, TichuCard } from "./tichu-card";
+import { getTooltipLayer } from "./tichu-tooltip-layer";
 import { hasBomb } from "./utils";
+
+export const GROUP_GAP_PX = 22;
+export const DRAG_DEADZONE_PX = 8;
 
 export function computeCardVisibleWidthPx(itemWidth: number, marginRight: number): number {
   return Math.min(itemWidth, Math.max(16, itemWidth + marginRight));
 }
 
-export function getWeightByRank(card: Card): number {
+export function getLogicalRankWeight(card: Card): number {
   const color = Number(card.type);
   const value = Number(card.type_arg);
-  return 2 * (4 * (value - 1) + (color - 1));
+  if (value === 1) {
+    if (color === 3) return 0; // Dog
+    if (color === 4) return 1; // Mahjong
+    if (color === 2) return 15; // Phoenix
+    if (color === 1) return 16; // Dragon
+  }
+  return value;
+}
+
+export function getWeightByRank(card: Card): number {
+  const color = Number(card.type);
+  const logicalRank = getLogicalRankWeight(card);
+  return 2 * (4 * logicalRank + (color - 1));
+}
+
+export function getWeightByRankDesc(card: Card): number {
+  const color = Number(card.type);
+  const logicalRank = getLogicalRankWeight(card);
+  return 2 * (4 * (16 - logicalRank) + (color - 1));
 }
 
 export function getWeightByColor(card: Card): number {
   const color = Number(card.type);
   const value = Number(card.type_arg);
+  if (value === 1) {
+    if (color === 3) return 0; // Dog
+    if (color === 4) return 2; // Mahjong
+    if (color === 2) return 200; // Phoenix
+    if (color === 1) return 202; // Dragon
+  }
   const type = (color - 1) * 14 + (value - 1);
-  return value === 1 ? 2 * type : 100 + 2 * type;
+  return 10 + 2 * type;
+}
+
+export function getWeightByColorDesc(card: Card): number {
+  const color = Number(card.type);
+  const value = Number(card.type_arg);
+  if (value === 1) {
+    if (color === 1) return 0; // Dragon
+    if (color === 2) return 2; // Phoenix
+    if (color === 4) return 200; // Mahjong
+    if (color === 3) return 202; // Dog
+  }
+  const type = (color - 1) * 14 + (14 - value);
+  return 10 + 2 * type;
+}
+
+export function compareCardsByAutoSort(a: Card, b: Card, mode: AutoSortOrder): number {
+  switch (mode) {
+    case "rank-desc":
+      return getWeightByRankDesc(a) - getWeightByRankDesc(b);
+    case "color":
+      return getWeightByColor(a) - getWeightByColor(b);
+    case "color-desc":
+      return getWeightByColorDesc(a) - getWeightByColorDesc(b);
+    case "rank":
+    default:
+      return getWeightByRank(a) - getWeightByRank(b);
+  }
+}
+
+function getGroupSortPriority(groupId: number | undefined): number {
+  if (groupId === 1 || groupId === 2 || groupId === 3 || groupId === 4) {
+    return groupId;
+  }
+  return 5; // Ungrouped last
+}
+
+export function sortHandCards(
+  cards: Card[],
+  sortMode: HandSortOrder,
+  baseSortOrder: AutoSortOrder = "rank",
+  customOrder: string[] = [],
+  cardGroups: Record<string, CardGroupId> = {},
+): Card[] {
+  const hasGroups = Object.keys(cardGroups).length > 0;
+  if (sortMode === "preserve" && customOrder.length === 0 && !hasGroups) {
+    return [...cards];
+  }
+
+  const customIndexMap = new Map<string, number>();
+  customOrder.forEach((id, idx) => customIndexMap.set(String(id), idx));
+
+  return [...cards].sort((a, b) => {
+    const idA = String(a.id ?? "");
+    const idB = String(b.id ?? "");
+    const gA = getGroupSortPriority(cardGroups[idA]);
+    const gB = getGroupSortPriority(cardGroups[idB]);
+    if (gA !== gB) return gA - gB;
+
+    if (sortMode === "preserve") {
+      const idxA = customIndexMap.get(idA);
+      const idxB = customIndexMap.get(idB);
+      if (idxA !== undefined && idxB !== undefined) return idxA - idxB;
+      if (idxA !== undefined) return -1;
+      if (idxB !== undefined) return 1;
+      return compareCardsByAutoSort(a, b, baseSortOrder);
+    }
+
+    return compareCardsByAutoSort(a, b, sortMode);
+  });
+}
+
+export function computeDropTarget(
+  pointerX: number,
+  slotMidpoints: number[],
+  fromIndex: number,
+  cardGroupList: number[] = [],
+): { dropIndex: number; targetGroup: CardGroupId | 0 } {
+  const n = slotMidpoints.length;
+  if (n === 0) return { dropIndex: 0, targetGroup: 0 };
+
+  let dropIndex = 0;
+  const remainingIndices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i === fromIndex) continue;
+    remainingIndices.push(i);
+    if (pointerX > slotMidpoints[i]!) {
+      dropIndex++;
+    }
+  }
+
+  const rawOrigGroup = cardGroupList[fromIndex] ?? 0;
+  const originalGroup: CardGroupId | 0 =
+    rawOrigGroup >= 1 && rawOrigGroup <= 4 ? (rawOrigGroup as CardGroupId) : 0;
+
+  if (dropIndex === fromIndex) {
+    return { dropIndex, targetGroup: originalGroup };
+  }
+
+  const remCount = remainingIndices.length;
+  if (remCount === 0) {
+    return { dropIndex: 0, targetGroup: originalGroup };
+  }
+
+  const groupOfOrig = (origIdx: number): CardGroupId | 0 => {
+    const g = cardGroupList[origIdx] ?? 0;
+    return g >= 1 && g <= 4 ? (g as CardGroupId) : 0;
+  };
+
+  if (dropIndex === 0) {
+    return { dropIndex, targetGroup: groupOfOrig(remainingIndices[0]!) };
+  }
+  if (dropIndex >= remCount) {
+    return { dropIndex: remCount, targetGroup: groupOfOrig(remainingIndices[remCount - 1]!) };
+  }
+
+  const leftOrig = remainingIndices[dropIndex - 1]!;
+  const rightOrig = remainingIndices[dropIndex]!;
+  const leftGroup = groupOfOrig(leftOrig);
+  const rightGroup = groupOfOrig(rightOrig);
+  if (leftGroup === rightGroup) {
+    return { dropIndex, targetGroup: leftGroup };
+  }
+  const boundaryMid = (slotMidpoints[leftOrig]! + slotMidpoints[rightOrig]!) / 2;
+  return {
+    dropIndex,
+    targetGroup: pointerX <= boundaryMid ? leftGroup : rightGroup,
+  };
 }
 
 export class TichuStock extends LitElement {
@@ -35,7 +191,15 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) tiki = false;
 
-  @property({ type: String }) sortMode: "rank" | "color" | "preserve" = "rank";
+  @property({ type: String }) sortMode: HandSortOrder = "rank";
+
+  @property({ type: String }) baseSortOrder: AutoSortOrder = "rank";
+
+  @property({ type: Boolean }) reorderable = false;
+
+  @property({ attribute: false }) customOrder: string[] = [];
+
+  @property({ attribute: false }) cardGroups: Record<string, CardGroupId> = {};
 
   @property({ type: Number }) selectionMode: 0 | 1 | 2 = 0;
 
@@ -61,9 +225,44 @@ export class TichuStock extends LitElement {
 
   @state() private pendingRevealIds: Set<string> = new Set();
 
+  @state() private dragActive = false;
+
+  @state() private dragCardId = "";
+
+  @state() private dragFromIndex = -1;
+
+  @state() private dragDropIndex = -1;
+
+  @state() private dragTargetGroup: CardGroupId | 0 = 0;
+
+  @state() private dragDeltaX = 0;
+
+  @state() private dropIndicatorX: number | null = null;
+
+  @state() private suppressTranslateTransition = false;
+
   private prevRects: Map<string, DOMRect> = new Map();
 
+  private dragReleaseRects: Map<string, DOMRect> = new Map();
+
   private resizeObserver?: ResizeObserver;
+
+  private suppressClickUntil = 0;
+
+  private pendingDrag: {
+    pointerId: number;
+    cardId: string;
+    fromIndex: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+    slotMidpoints: number[];
+    slotBounds: Array<{ left: number; right: number }>;
+    cardGroupList: number[];
+    cardStepPx: number;
+    zoomFactor: number;
+    stockLeft: number;
+  } | null = null;
 
   static override get styles() {
     return [
@@ -72,14 +271,24 @@ export class TichuStock extends LitElement {
           display: block;
         }
         div#stock {
+          position: relative;
           display: flex;
           height: var(--stock-height, 150px);
+        }
+        div#stock.reorderable {
+          touch-action: pan-y;
+          user-select: none;
+          -webkit-user-select: none;
         }
         div#stock.bomb {
           /* border-left: 15px solid red; */
         }
         tichu-card:not(:last-child) {
           margin-right: var(--card-margin-right, -75px);
+        }
+        tichu-card.group-boundary:not(:last-child) {
+          margin-right: calc(var(--card-margin-right, -75px) + 22px);
+          --card-visible-width: var(--card-boundary-visible-width, var(--stock-card-width, 100px));
         }
         tichu-card:last-child {
           --card-visible-width: var(--stock-card-width, 100px);
@@ -89,6 +298,17 @@ export class TichuStock extends LitElement {
         }
         tichu-card[data-pending-reveal] {
           visibility: hidden;
+        }
+        .drop-indicator {
+          position: absolute;
+          top: -4px;
+          width: 3px;
+          height: calc(var(--stock-card-height, 150px) + 8px);
+          border-radius: 999px;
+          background: var(--tichu-select-ring, #0284c7);
+          box-shadow: 0 0 8px var(--tichu-select-glow, rgba(56, 189, 248, 0.45));
+          pointer-events: none;
+          z-index: 25;
         }
       `,
     ];
@@ -102,14 +322,55 @@ export class TichuStock extends LitElement {
   override disconnectedCallback() {
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
+    this.pendingDrag = null;
+    this.resetDragState();
     super.disconnectedCallback();
+  }
+
+  private resetDragState() {
+    this.dragActive = false;
+    this.dragCardId = "";
+    this.dragFromIndex = -1;
+    this.dragDropIndex = -1;
+    this.dragTargetGroup = 0;
+    this.dragDeltaX = 0;
+    this.dropIndicatorX = null;
   }
 
   protected override willUpdate(changedProperties: PropertyValues) {
     super.willUpdate(changedProperties);
-    if ((changedProperties.has("sortMode") || changedProperties.has("cards")) && this.shadowRoot) {
+    if (changedProperties.has("cards") && (this.pendingDrag || this.dragActive)) {
+      const pointerId = this.pendingDrag?.pointerId;
+      this.pendingDrag = null;
+      this.resetDragState();
+      this.dragReleaseRects.clear();
+      if (pointerId !== undefined) {
+        const stockEl = this.shadowRoot?.getElementById("stock");
+        try {
+          if (stockEl?.hasPointerCapture?.(pointerId)) {
+            stockEl.releasePointerCapture(pointerId);
+          }
+        } catch (_e) {
+          // ignore
+        }
+      }
+    }
+
+    const layoutChanged =
+      changedProperties.has("sortMode") ||
+      changedProperties.has("baseSortOrder") ||
+      changedProperties.has("cards") ||
+      changedProperties.has("customOrder") ||
+      changedProperties.has("cardGroups");
+
+    if (layoutChanged && this.shadowRoot) {
       this.prevRects.clear();
-      if (!this.pass && !this.hideAllCards && shouldAnimate()) {
+      if (this.dragReleaseRects.size > 0) {
+        this.dragReleaseRects.forEach((rect, id) => {
+          this.prevRects.set(id, rect);
+        });
+        this.dragReleaseRects.clear();
+      } else if (!this.pass && !this.hideAllCards && shouldAnimate()) {
         const hiddenSet = new Set(this.externalHiddenIds.map(String));
         this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
         const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>("tichu-card"));
@@ -128,8 +389,15 @@ export class TichuStock extends LitElement {
     if (changedProperties.has("dynamicOverlap")) {
       this.updateResizeObserver();
     }
+    const layoutChanged =
+      changedProperties.has("sortMode") ||
+      changedProperties.has("baseSortOrder") ||
+      changedProperties.has("cards") ||
+      changedProperties.has("customOrder") ||
+      changedProperties.has("cardGroups");
+
     if (
-      (changedProperties.has("sortMode") || changedProperties.has("cards")) &&
+      layoutChanged &&
       this.prevRects.size > 0 &&
       !this.pass &&
       !this.hideAllCards &&
@@ -171,6 +439,15 @@ export class TichuStock extends LitElement {
       }
     }
     this.prevRects.clear();
+    if (this.suppressTranslateTransition) {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => {
+          this.suppressTranslateTransition = false;
+        });
+      } else {
+        this.suppressTranslateTransition = false;
+      }
+    }
   }
 
   private updateResizeObserver() {
@@ -191,16 +468,32 @@ export class TichuStock extends LitElement {
   }
 
   private getSortedCards(): Card[] {
-    if (this.sortMode === "preserve") {
-      return [...this.cards];
-    }
-    if (this.sortMode === "color") {
-      return [...this.cards].sort((a, b) => getWeightByColor(a) - getWeightByColor(b));
-    }
-    return [...this.cards].sort((a, b) => getWeightByRank(a) - getWeightByRank(b));
+    return sortHandCards(
+      this.cards,
+      this.sortMode,
+      this.baseSortOrder,
+      this.customOrder,
+      this.cardGroups,
+    );
   }
 
-  private computeMarginRightPx(): number {
+  private getGroupForCard(cardId: string): CardGroupId | 0 {
+    const g = this.cardGroups[cardId];
+    return g === 1 || g === 2 || g === 3 || g === 4 ? g : 0;
+  }
+
+  private countGroupBoundaries(sortedCards: Card[]): number {
+    if (sortedCards.length <= 1) return 0;
+    let count = 0;
+    for (let i = 0; i < sortedCards.length - 1; i++) {
+      const gA = this.getGroupForCard(String(sortedCards[i]!.id ?? ""));
+      const gB = this.getGroupForCard(String(sortedCards[i + 1]!.id ?? ""));
+      if (gA !== gB) count++;
+    }
+    return count;
+  }
+
+  private computeMarginRightPx(sortedCards: Card[]): number {
     const itemWidth = 100 * this.scale;
     const itemMargin = 5;
 
@@ -208,13 +501,17 @@ export class TichuStock extends LitElement {
       return -this.overlap * this.scale;
     }
 
-    if (this.cards.length <= 1) {
+    if (sortedCards.length <= 1) {
       return 0;
     }
 
-    const width = this.containerWidth || this.clientWidth || 600;
+    const boundaryCount = this.countGroupBoundaries(sortedCards);
+    const width = Math.max(
+      itemWidth + 60,
+      (this.containerWidth || this.clientWidth || 600) - boundaryCount * GROUP_GAP_PX,
+    );
     const availableWidthForOverlapPerItem =
-      (width - (itemWidth + itemMargin)) / (this.cards.length - 1);
+      (width - (itemWidth + itemMargin)) / (sortedCards.length - 1);
     let overlap = Math.floor(
       ((availableWidthForOverlapPerItem - itemMargin - 1) / itemWidth) * 100,
     );
@@ -225,48 +522,94 @@ export class TichuStock extends LitElement {
     return step - itemWidth;
   }
 
+  private getCardShiftX(idx: number, stepPx: number): number {
+    if (!this.dragActive || this.dragFromIndex < 0 || this.dragDropIndex < 0) return 0;
+    if (idx === this.dragFromIndex) return 0;
+    if (this.dragFromIndex < this.dragDropIndex) {
+      if (idx > this.dragFromIndex && idx <= this.dragDropIndex) {
+        return -stepPx;
+      }
+    } else if (this.dragFromIndex > this.dragDropIndex) {
+      if (idx >= this.dragDropIndex && idx < this.dragFromIndex) {
+        return stepPx;
+      }
+    }
+    return 0;
+  }
+
   override render() {
     const itemWidth = 100 * this.scale;
     const itemHeight = 150 * this.scale;
     const footerHeight = this.reserveFooter && !this.pass ? Math.round(34 * this.scale) : 0;
-    const marginRight = this.computeMarginRightPx();
+
+    if (this.pass) {
+      this.style.setProperty("--stock-height", `${itemHeight + footerHeight}px`);
+      this.style.setProperty("--card-footer-height", `${footerHeight}px`);
+      this.style.setProperty("--stock-card-width", `${itemWidth}px`);
+      this.style.setProperty("--stock-card-height", `${itemHeight}px`);
+      return this.renderPass();
+    }
+
+    const sortedCards = this.getSortedCards();
+    const marginRight = this.computeMarginRightPx(sortedCards);
     const visibleWidth = computeCardVisibleWidthPx(itemWidth, marginRight);
+    const boundaryVisibleWidth = computeCardVisibleWidthPx(itemWidth, marginRight + GROUP_GAP_PX);
     this.style.setProperty("--stock-height", `${itemHeight + footerHeight}px`);
     this.style.setProperty("--card-footer-height", `${footerHeight}px`);
     this.style.setProperty("--stock-card-width", `${itemWidth}px`);
+    this.style.setProperty("--stock-card-height", `${itemHeight}px`);
     this.style.setProperty("--card-visible-width", `${visibleWidth}px`);
+    this.style.setProperty("--card-boundary-visible-width", `${boundaryVisibleWidth}px`);
     this.style.setProperty("--card-margin-right", `${marginRight}px`);
 
-    if (this.pass) return this.renderPass();
-
-    const sortedCards = this.getSortedCards();
     const isSelectable = this.selectionMode > 0;
     const selectedSet = new Set(this.selectedIds.map((id) => String(id)));
     const hiddenSet = new Set(this.externalHiddenIds.map((id) => String(id)));
     this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
+    const stepPx = Math.max(16, itemWidth + marginRight);
 
     return html`
       <div
         id="stock"
+        ?data-dragging-active=${this.dragActive}
         class=${classMap({
           bomb: hasBomb(this.cards),
+          reorderable: this.reorderable && !this.hideAllCards,
         })}
+        @pointerdown=${this.onStockPointerDown}
+        @pointermove=${this.onStockPointerMove}
+        @pointerup=${this.onStockPointerUp}
+        @pointercancel=${this.onStockPointerCancel}
+        @keydown=${this.onStockKeyDown}
       >
         ${repeat(
           sortedCards,
           (card) => String(card.id ?? ""),
-          (card) => {
+          (card, idx) => {
             const cardIdStr = String(card.id ?? "");
             const isHidden = this.hideAllCards || hiddenSet.has(cardIdStr);
+            const group = this.getGroupForCard(cardIdStr);
+            const nextCard = sortedCards[idx + 1];
+            const isGroupBoundary =
+              nextCard !== undefined && group !== this.getGroupForCard(String(nextCard.id ?? ""));
+            const isDragging = this.dragActive && cardIdStr === this.dragCardId;
+            const shiftX = this.getCardShiftX(idx, stepPx);
             return html`
               <tichu-card
                 data-card-id=${cardIdStr}
+                class=${classMap({ "group-boundary": isGroupBoundary })}
                 ?data-pending-reveal=${isHidden}
                 .card=${card}
                 .scale=${this.scale}
                 .tiki=${this.tiki}
                 .selectable=${isSelectable}
+                .reorderable=${this.reorderable && !this.hideAllCards}
                 .selected=${isSelectable && selectedSet.has(cardIdStr)}
+                .group=${group}
+                .dragging=${isDragging}
+                .dragX=${isDragging ? this.dragDeltaX : 0}
+                .shiftX=${shiftX}
+                .noTransition=${this.suppressTranslateTransition}
                 .wishMatch=${
                   this.highlightedRank >= 2 &&
                   this.highlightedRank <= 14 &&
@@ -280,8 +623,287 @@ export class TichuStock extends LitElement {
             `;
           },
         )}
+        ${
+          this.dragActive && this.dropIndicatorX !== null
+            ? html`<div
+                class="drop-indicator"
+                aria-hidden="true"
+                style="left: ${this.dropIndicatorX}px"
+              ></div>`
+            : nothing
+        }
       </div>
     `;
+  }
+
+  private findCardElementFromEvent(e: Event): TichuCard | null {
+    const path = typeof e.composedPath === "function" ? e.composedPath() : [];
+    for (const node of path) {
+      const el = node as HTMLElement | null;
+      if (!el || typeof el.classList === "undefined") continue;
+      if (el.classList.contains("passed-avatar-wrap")) return null;
+      if (el.tagName === "TICHU-CARD") {
+        return el as TichuCard;
+      }
+    }
+    return null;
+  }
+
+  private onStockPointerDown(e: PointerEvent) {
+    if (!this.reorderable || this.pass || this.hideAllCards) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    const cardEl = this.findCardElementFromEvent(e);
+    const cardId = cardEl?.card?.id != null ? String(cardEl.card.id) : "";
+    if (!cardId) return;
+
+    const sortedCards = this.getSortedCards();
+    const fromIndex = sortedCards.findIndex((c) => String(c.id ?? "") === cardId);
+    if (fromIndex < 0) return;
+
+    this.pendingDrag = {
+      pointerId: e.pointerId,
+      cardId,
+      fromIndex,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      slotMidpoints: [],
+      slotBounds: [],
+      cardGroupList: [],
+      cardStepPx: 25,
+      zoomFactor: 1,
+      stockLeft: 0,
+    };
+  }
+
+  private onStockPointerMove(e: PointerEvent) {
+    const pending = this.pendingDrag;
+    if (!pending || e.pointerId !== pending.pointerId) return;
+
+    const dx = e.clientX - pending.startX;
+    const dy = e.clientY - pending.startY;
+
+    if (!pending.active) {
+      if (Math.abs(dy) > DRAG_DEADZONE_PX && Math.abs(dy) > Math.abs(dx)) {
+        this.pendingDrag = null;
+        return;
+      }
+      if (Math.abs(dx) <= DRAG_DEADZONE_PX || Math.abs(dx) < Math.abs(dy)) {
+        return;
+      }
+
+      if (!this.shadowRoot) {
+        this.pendingDrag = null;
+        return;
+      }
+      const stockEl = this.shadowRoot.getElementById("stock");
+      if (!stockEl) {
+        this.pendingDrag = null;
+        return;
+      }
+
+      const sortedCards = this.getSortedCards();
+      const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>("tichu-card"));
+      if (cardEls.length !== sortedCards.length || sortedCards.length <= 1) {
+        this.pendingDrag = null;
+        return;
+      }
+
+      const baseWidth = Math.max(1, 100 * this.scale);
+      const firstRect = cardEls[0]!.getBoundingClientRect();
+      const zoomFactor = firstRect.width > 0 ? firstRect.width / baseWidth : 1;
+      const stockRect = stockEl.getBoundingClientRect();
+
+      const slotMidpoints: number[] = [];
+      const slotBounds: Array<{ left: number; right: number }> = [];
+      const cardGroupList: number[] = [];
+      for (let i = 0; i < cardEls.length; i++) {
+        const rect = cardEls[i]!.getBoundingClientRect();
+        slotMidpoints.push((rect.left + rect.right) / 2);
+        slotBounds.push({
+          left: (rect.left - stockRect.left) / zoomFactor,
+          right: (rect.right - stockRect.left) / zoomFactor,
+        });
+        cardGroupList.push(this.getGroupForCard(String(sortedCards[i]!.id ?? "")));
+      }
+
+      const marginRight = this.computeMarginRightPx(sortedCards);
+      const cardStepPx = Math.max(16, baseWidth + marginRight);
+
+      pending.active = true;
+      pending.slotMidpoints = slotMidpoints;
+      pending.slotBounds = slotBounds;
+      pending.cardGroupList = cardGroupList;
+      pending.cardStepPx = cardStepPx;
+      pending.zoomFactor = zoomFactor;
+      pending.stockLeft = stockRect.left;
+
+      getTooltipLayer()?.hide();
+      try {
+        stockEl.setPointerCapture(e.pointerId);
+      } catch (_err) {
+        // ignore if unsupported
+      }
+
+      this.dragActive = true;
+      this.dragCardId = pending.cardId;
+      this.dragFromIndex = pending.fromIndex;
+    }
+
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
+    const scaledDx = dx / pending.zoomFactor;
+    const { dropIndex, targetGroup } = computeDropTarget(
+      e.clientX,
+      pending.slotMidpoints,
+      pending.fromIndex,
+      pending.cardGroupList,
+    );
+
+    const origGroup = (pending.cardGroupList[pending.fromIndex] ?? 0) as CardGroupId | 0;
+    let indicatorX: number | null = null;
+    if (dropIndex !== pending.fromIndex || targetGroup !== origGroup) {
+      const n = pending.slotBounds.length;
+      if (dropIndex <= 0) {
+        indicatorX = Math.max(0, pending.slotBounds[0]!.left - 4);
+      } else if (dropIndex >= n - 1) {
+        indicatorX = pending.slotBounds[n - 1]!.right + 4;
+      } else if (dropIndex < pending.fromIndex) {
+        indicatorX = pending.slotBounds[dropIndex]!.left - 2;
+      } else {
+        indicatorX = pending.slotBounds[dropIndex]!.left + pending.cardStepPx - 2;
+      }
+    }
+
+    this.dragDeltaX = scaledDx;
+    this.dragDropIndex = dropIndex;
+    this.dragTargetGroup = targetGroup;
+    this.dropIndicatorX = indicatorX;
+  }
+
+  private onStockPointerUp(e: PointerEvent) {
+    this.finishPointerDrag(e, false);
+  }
+
+  private onStockPointerCancel(e: PointerEvent) {
+    this.finishPointerDrag(e, true);
+  }
+
+  private finishPointerDrag(e: PointerEvent, cancelled: boolean) {
+    const pending = this.pendingDrag;
+    if (!pending || e.pointerId !== pending.pointerId) return;
+    this.pendingDrag = null;
+
+    const stockEl = this.shadowRoot?.getElementById("stock");
+    try {
+      if (stockEl?.hasPointerCapture?.(e.pointerId)) {
+        stockEl.releasePointerCapture(e.pointerId);
+      }
+    } catch (_err) {
+      // ignore
+    }
+
+    if (!pending.active) {
+      this.resetDragState();
+      return;
+    }
+
+    this.suppressClickUntil = Date.now() + 350;
+
+    if (!cancelled && this.shadowRoot) {
+      const sortedCards = this.getSortedCards();
+      const fromIndex = pending.fromIndex;
+      const dropIndex = this.dragDropIndex;
+      const targetGroup = this.dragTargetGroup;
+      const origGroup = (pending.cardGroupList[fromIndex] ?? 0) as CardGroupId | 0;
+
+      if (
+        fromIndex >= 0 &&
+        fromIndex < sortedCards.length &&
+        dropIndex >= 0 &&
+        (dropIndex !== fromIndex || targetGroup !== origGroup)
+      ) {
+        this.dragReleaseRects.clear();
+        const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>("tichu-card"));
+        for (const cardEl of cardEls) {
+          if (cardEl.pass || cardEl.card?.id == null) continue;
+          this.dragReleaseRects.set(String(cardEl.card.id), cardEl.getBoundingClientRect());
+        }
+        this.suppressTranslateTransition = true;
+
+        const ids = sortedCards.map((c) => String(c.id ?? ""));
+        const [movedId] = ids.splice(fromIndex, 1);
+        if (movedId) {
+          ids.splice(dropIndex, 0, movedId);
+          this.resetDragState();
+          this.dispatchEvent(
+            new CustomEvent("hand-reorder", {
+              detail: {
+                orderedIds: ids,
+                movedCardId: movedId,
+                targetGroup,
+                source: "pointer",
+              },
+              bubbles: true,
+              composed: true,
+            }),
+          );
+          return;
+        }
+      }
+    }
+
+    this.resetDragState();
+  }
+
+  private async onStockKeyDown(e: KeyboardEvent) {
+    if (!this.reorderable || this.pass || this.hideAllCards) return;
+    if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+
+    const cardEl = this.findCardElementFromEvent(e);
+    const cardId = cardEl?.card?.id != null ? String(cardEl.card.id) : "";
+    if (!cardId) return;
+
+    const sortedCards = this.getSortedCards();
+    const fromIndex = sortedCards.findIndex((c) => String(c.id ?? "") === cardId);
+    if (fromIndex < 0) return;
+
+    const delta = e.key === "ArrowLeft" ? -1 : 1;
+    const dropIndex = fromIndex + delta;
+    if (dropIndex < 0 || dropIndex >= sortedCards.length) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const ids = sortedCards.map((c) => String(c.id ?? ""));
+    const neighborId = ids[dropIndex]!;
+    const targetGroup = this.getGroupForCard(neighborId);
+    const [movedId] = ids.splice(fromIndex, 1);
+    if (!movedId) return;
+    ids.splice(dropIndex, 0, movedId);
+
+    this.dispatchEvent(
+      new CustomEvent("hand-reorder", {
+        detail: {
+          orderedIds: ids,
+          movedCardId: movedId,
+          targetGroup,
+          source: "keyboard",
+        },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+
+    await this.updateComplete;
+    const nextCardEl = this.shadowRoot?.querySelector<TichuCard>(
+      `tichu-card[data-card-id="${movedId}"]`,
+    );
+    const inner = nextCardEl?.shadowRoot?.getElementById("card") as HTMLElement | null;
+    inner?.focus?.();
   }
 
   renderPass() {
@@ -297,6 +919,7 @@ export class TichuStock extends LitElement {
 
   private onCardClick(e: CustomEvent<{ card: Card }>, card: Card) {
     e.stopPropagation();
+    if (Date.now() < this.suppressClickUntil) return;
     if (this.selectionMode === 0) return;
 
     const cardId = String(card.id);
