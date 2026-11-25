@@ -115,13 +115,14 @@ INSERT INTO `actionlog` (`log_id`, `log_player`, `log_round`, `log_trick`, `log_
 (5, 90002, 1, 1, 'combo', '{"description":"Pair of Aces","type":2,"cards":[{"id":"17","type":"1","type_arg":"14"},{"id":"30","type":"2","type_arg":"14"}],"phoenixValue":null}'),
 (6, 90003, 1, 1, 'changePlayer', '{"transition":"playBomb","active":90001,"last":"playCombo"}'),
 (7, 90003, 1, 1, 'pass', '[]'),
-(8, 90002, 1, 1, 'confirm', '{"nextPlayer":90002,"dragon":false}');
+(8, 90002, 1, 1, 'confirm', '{"nextPlayer":90002,"dragon":false}'),
+(9, 0, 1, 1, 'roundScore', '{"round":1,"cardPoints":[50,50],"doubleVictory":-1,"bets":{"90001":{"type":"T","won":true,"delta":100},"90004":{"type":"GT","won":false,"delta":-200}},"teamPoints":[150,-150],"teamTotals":[150,85]}');
 
 INSERT INTO `gamelog` (`gamelog_packet_id`, `gamelog_move_id`, `gamelog_private`, `gamelog_time`, `gamelog_player`, `gamelog_current_player`, `gamelog_notification`) VALUES
 (1, 1, 1, '2026-01-01 00:00:01', 90001, 90001, '[{"type":"dealCards","log":"A new round starts.","args":{"cards":[{"id":"5","type":"1","type_arg":"2","location":"hand","location_arg":"90001"}]}}]'),
 (2, 2, 1, '2026-01-01 00:00:02', 90003, 90003, '[{"type":"acceptCards","log":"You have accepted cards.","args":{"cards":[{"id":"43","type":"3","type_arg":"14","passed_from":"90001"}],"card1":"Ace","card2":"2","card3":"3"}}]'),
 (3, 3, 0, '2026-01-01 00:00:03', NULL, 90002, '[{"type":"playCombo","log":"${player_name} plays ${combo_name}","args":{"i18n":["combo_name"],"player_id":90002,"player_name":"prod_bob","combo_name":"Pair of Aces","cards":[{"id":"17","type":"1","type_arg":"14"},{"id":"30","type":"2","type_arg":"14"}],"points":0,"type":2,"phoenixValue":null}}]'),
-(4, 4, 0, '2026-01-01 00:00:04', NULL, 90001, '[{"type":"playerGoOut","log":"${player_name} has shed the cards from hand","args":{"firstout_id":90001,"player_id":90001,"player_name":"prod_alice"}},{"type":"newScores","log":"","args":{"newScores":{"90001":150,"90002":85,"90003":150,"90004":85}}}]'),
+(4, 4, 0, '2026-01-01 00:00:04', NULL, 90001, '[{"type":"playerGoOut","log":"${player_name} has shed the cards from hand","args":{"firstout_id":90001,"player_id":90001,"player_name":"prod_alice"}},{"type":"newScores","log":"","args":{"newScores":{"90001":150,"90002":85,"90003":150,"90004":85},"roundScore":{"round":1,"cardPoints":[50,50],"doubleVictory":-1,"bets":{"90001":{"type":"T","won":true,"delta":100},"90004":{"type":"GT","won":false,"delta":-200}},"teamPoints":[150,-150],"teamTotals":[150,85]}}}]'),
 (5, 5, 0, '2026-01-01 00:00:05', NULL, 90002, '[{"type":"gameStateChange","log":"","args":{"id":"75","name":"confirmTrick","active_player":"90002","multiactive":["90001","90002"],"_notified_privately":[90001],"args":{"_private":{"90001":{"values":[4,9]}}},"reflexion":{"total":{"90001":120,"90002":115,"90003":110,"90004":105}}}},{"type":"gameStateMultipleActiveUpdate","log":"","args":["90001","90002","90003","90004"]}]');
 
 INSERT INTO `stats` (`stats_type`, `stats_player_id`, `stats_value`) VALUES

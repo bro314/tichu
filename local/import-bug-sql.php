@@ -789,6 +789,15 @@ final class LocalBugSqlLoader
           static fn($item) => self::remapIdValue($item, $idMap),
           $v
         );
+      } elseif ((string) $k === 'bets' && is_array($v)) {
+        $remappedBets = [];
+        foreach ($v as $betPid => $betVal) {
+          $newBetPid = self::remapIdValue($betPid, $idMap);
+          $remappedBets[$newBetPid] = is_array($betVal)
+            ? self::remapActionLogArg($betVal, $idMap)
+            : $betVal;
+        }
+        $arg[$k] = $remappedBets;
       } elseif (is_array($v)) {
         $arg[$k] = self::remapActionLogArg($v, $idMap);
       }
@@ -866,6 +875,7 @@ final class LocalBugSqlLoader
     $listPlayerKeys = ['multiactive', '_notified_privately', 'passes', 'playerorder'];
     $mapPlayerKeys = [
       'newScores',
+      'bets',
       '_private',
       'players',
       'handcount',

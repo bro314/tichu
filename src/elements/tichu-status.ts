@@ -1,8 +1,8 @@
-import { css, html, LitElement } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { fire } from "./utils";
 
-/** Compact icon-based status HUD for round, trick, trick points, and trick inspection. */
+/** Compact icon-based status HUD for round, trick, trick points, trick inspection, and scoreboard. */
 export class TichuStatus extends LitElement {
   @property({ type: Number }) roundCount = 0;
   @property({ type: Number }) trickCount = 0;
@@ -72,18 +72,24 @@ export class TichuStatus extends LitElement {
         background-position: calc(var(--icon-size) * -2) calc(var(--icon-size) * -1);
       }
       .status-icon.eye {
-        --icon-size: 24px;
+        --icon-size: 22px;
         background-position: calc(var(--icon-size) * -2) calc(var(--icon-size) * -2);
       }
-      .trick-action {
-        display: flex;
-        justify-content: center;
+      .status-icon.scoreboard {
+        --icon-size: 22px;
+        background-position: calc(var(--icon-size) * -3) calc(var(--icon-size) * -2);
       }
-      .trick-btn {
-        width: 100%;
-        min-width: 48px;
+      .status-actions {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+      }
+      .status-action-btn {
+        flex: 1 1 0;
+        min-width: 26px;
         min-height: 26px;
-        padding: 2px 8px;
+        padding: 2px 4px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -96,43 +102,43 @@ export class TichuStatus extends LitElement {
           background-color 140ms ease,
           transform 140ms ease;
       }
-      .trick-btn .status-icon.eye {
+      .status-action-btn .status-icon {
         transition: transform 140ms ease;
       }
-      .trick-btn:hover {
+      .status-action-btn:hover {
         background: rgba(31, 35, 40, 0.09);
       }
-      .trick-btn:hover .status-icon.eye {
+      .status-action-btn:hover .status-icon {
         transform: scale(1.1);
       }
-      .trick-btn:active {
+      .status-action-btn:active {
         background: rgba(31, 35, 40, 0.14);
         transform: translateY(1px);
       }
-      .trick-btn:focus-visible {
+      .status-action-btn:focus-visible {
         outline: 2px solid #0b72b5;
         outline-offset: 2px;
       }
       @media (prefers-reduced-motion: reduce) {
-        .trick-btn,
-        .trick-btn .status-icon.eye {
+        .status-action-btn,
+        .status-action-btn .status-icon {
           transition: none;
         }
-        .trick-btn:hover .status-icon.eye,
-        .trick-btn:active {
+        .status-action-btn:hover .status-icon,
+        .status-action-btn:active {
           transform: none;
         }
       }
       @media (prefers-contrast: more) {
-        .trick-btn {
+        .status-action-btn {
           border: 1px solid currentColor;
         }
       }
       @media (forced-colors: active) {
-        .trick-btn {
+        .status-action-btn {
           border: 1px solid ButtonText;
         }
-        .trick-btn:focus-visible {
+        .status-action-btn:focus-visible {
           outline-color: Highlight;
         }
       }
@@ -159,6 +165,7 @@ export class TichuStatus extends LitElement {
       return html`
         <div class="status-panel">
           ${this.renderMetricRow("round", roundLabel, "roundCounter", this.roundCount)}
+          ${this.renderActions(false)}
         </div>
       `;
     }
@@ -171,7 +178,7 @@ export class TichuStatus extends LitElement {
         ${this.renderMetricRow("round", roundLabel, "roundCounter", this.roundCount)}
         ${this.renderMetricRow("trick", trickLabel, "trickCounter", this.trickCount)}
         ${this.renderMetricRow("points", trickPointsLabel, "currentTrickCounter", this.trickPoints)}
-        ${this.renderButton()}
+        ${this.renderActions(this.trickSize > 0)}
       </div>
     `;
   }
@@ -186,25 +193,45 @@ export class TichuStatus extends LitElement {
     `;
   }
 
-  private renderButton() {
-    if (this.trickSize === 0) return "";
-    const showTrickLabel = _("Show current trick");
-    return html`<div class="trick-action">
+  private renderActions(showEye: boolean) {
+    const eyeBtn = showEye ? this.renderEyeButton() : nothing;
+    const scoreboardLabel = _("Scoreboard");
+    return html`<div class="status-actions">
+      ${eyeBtn}
       <button
         type="button"
-        class="trick-btn"
-        data-tooltip=${showTrickLabel}
+        id="showScores"
+        class="status-action-btn score-btn"
+        data-tooltip=${scoreboardLabel}
         data-tooltip-touch="longpress"
-        aria-label=${showTrickLabel}
-        @click=${this.onShowClick}
+        aria-label=${scoreboardLabel}
+        @click=${this.onShowScoresClick}
       >
-        <span class="status-icon eye" aria-hidden="true"></span>
+        <span class="status-icon scoreboard" aria-hidden="true"></span>
       </button>
     </div>`;
   }
 
+  private renderEyeButton() {
+    const showTrickLabel = _("Show current trick");
+    return html`<button
+      type="button"
+      class="status-action-btn trick-btn"
+      data-tooltip=${showTrickLabel}
+      data-tooltip-touch="longpress"
+      aria-label=${showTrickLabel}
+      @click=${this.onShowClick}
+    >
+      <span class="status-icon eye" aria-hidden="true"></span>
+    </button>`;
+  }
+
   private onShowClick() {
     fire(this, "show-current-trick");
+  }
+
+  private onShowScoresClick() {
+    fire(this, "show-scores");
   }
 }
 customElements.define("tichu-status", TichuStatus);

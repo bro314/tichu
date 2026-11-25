@@ -233,5 +233,49 @@ class LogManager
     );
     return $count > 0;
   }
+
+  /**
+   * Return recorded per-round score summaries in ascending chronological order.
+   *
+   * @return array<int, array<string, mixed>>
+   */
+  public static function getRoundScores(): array
+  {
+    $rows = self::getLastActions("roundScore", false);
+    if (count($rows) === 0) {
+      return [];
+    }
+    $rows = array_reverse($rows);
+    $records = [];
+    foreach ($rows as $row) {
+      $arg = is_array($row["arg"] ?? null) ? $row["arg"] : [];
+      $cardPoints = is_array($arg["cardPoints"] ?? null) ? $arg["cardPoints"] : [0, 0];
+      $teamPoints = is_array($arg["teamPoints"] ?? null) ? $arg["teamPoints"] : [0, 0];
+      $teamTotals = is_array($arg["teamTotals"] ?? null) ? $arg["teamTotals"] : [0, 0];
+      $rawBets = is_array($arg["bets"] ?? null) ? $arg["bets"] : [];
+      $bets = [];
+      foreach ($rawBets as $pid => $betInfo) {
+        if (!is_array($betInfo)) {
+          continue;
+        }
+        $bets[(string) $pid] = [
+          "type" => (string) ($betInfo["type"] ?? "T") === "GT" ? "GT" : "T",
+          "won" => (bool) ($betInfo["won"] ?? false),
+          "delta" => (int) ($betInfo["delta"] ?? 0),
+        ];
+      }
+      $records[] = [
+        "round" => (int) ($arg["round"] ?? $row["round"] ?? 0),
+        "cardPoints" => [(int) ($cardPoints[0] ?? 0), (int) ($cardPoints[1] ?? 0)],
+        "doubleVictory" => array_key_exists("doubleVictory", $arg)
+          ? (int) $arg["doubleVictory"]
+          : -1,
+        "bets" => count($bets) > 0 ? $bets : (object) [],
+        "teamPoints" => [(int) ($teamPoints[0] ?? 0), (int) ($teamPoints[1] ?? 0)],
+        "teamTotals" => [(int) ($teamTotals[0] ?? 0), (int) ($teamTotals[1] ?? 0)],
+      ];
+    }
+    return $records;
+  }
 }
 ?>

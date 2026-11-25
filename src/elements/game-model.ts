@@ -1,5 +1,12 @@
 import { BehaviorSubject, Observable } from "rxjs";
-import type { Card, CardData, I18nLogPayload, TichuGamedatas } from "../types/tichu-contracts";
+import type {
+  Card,
+  CardData,
+  I18nLogPayload,
+  RoundBetOutcome,
+  RoundScoreRecord,
+  TichuGamedatas,
+} from "../types/tichu-contracts";
 import { ANIM_TIMINGS, syncAnimCssVars } from "./anim-timings";
 import { Combo, normalizeComboDescriptionInput, normalizePhoenixValue } from "./combo-validator";
 import type { TichuAnimationLayer } from "./tichu-animation-layer";
@@ -15,7 +22,7 @@ function getActiveAnimationLayer(): TichuAnimationLayer | null {
   return layer;
 }
 
-export type { Card, CardData };
+export type { Card, CardData, RoundBetOutcome, RoundScoreRecord };
 
 export type GrandTichuBetValue = -1 | 0 | 100 | 200;
 export type TichuBetValue = -1 | 0 | 100;
@@ -25,6 +32,7 @@ export interface LivePlayer {
   name: string;
   color: string;
   no: number;
+  team: number;
   score: number;
   callGrandTichu: GrandTichuBetValue;
   callTichu: TichuBetValue;
@@ -120,6 +128,9 @@ export interface LiveGameState {
   experimentalReplayOpen: boolean;
   trickModalOpen: boolean;
   settingsModalOpen: boolean;
+  scoreModalOpen: boolean;
+  roundHistory: RoundScoreRecord[];
+  targetScore: number;
   betAnimations: BetAnimation[];
 }
 
@@ -182,6 +193,9 @@ export const initialLiveGameState: LiveGameState = {
   experimentalReplayOpen: false,
   trickModalOpen: false,
   settingsModalOpen: false,
+  scoreModalOpen: false,
+  roundHistory: [],
+  targetScore: 1000,
   betAnimations: [],
 };
 
@@ -222,6 +236,60 @@ function normalizeTichuBet(val: any): TichuBetValue {
   const n = Number(val);
   if (n === 0 || n === 100) return n;
   return -1;
+}
+
+function toIntTuple(raw: any): [number, number] {
+  if (!Array.isArray(raw)) return [0, 0];
+  const a = Number(raw[0] ?? 0);
+  const b = Number(raw[1] ?? 0);
+  return [Number.isNaN(a) ? 0 : Math.trunc(a), Number.isNaN(b) ? 0 : Math.trunc(b)];
+}
+
+export function normalizeRoundScoreRecord(raw: any): RoundScoreRecord | null {
+  if (!raw || typeof raw !== "object") return null;
+  const bets: Record<string, RoundBetOutcome> = {};
+  if (raw.bets && typeof raw.bets === "object" && !Array.isArray(raw.bets)) {
+    for (const [pid, entry] of Object.entries(raw.bets)) {
+      if (!entry || typeof entry !== "object") continue;
+      const betObj = entry as any;
+      const type: "GT" | "T" = String(betObj.type ?? "T") === "GT" ? "GT" : "T";
+      const won = Boolean(betObj.won);
+      const deltaNum = Number(betObj.delta ?? (type === "GT" ? (won ? 200 : -200) : won ? 100 : -100));
+      bets[String(pid)] = {
+        type,
+        won,
+        delta: Number.isNaN(deltaNum) ? 0 : Math.trunc(deltaNum),
+      };
+    }
+  }
+  const roundNum = Number(raw.round ?? 0);
+  const dvNum = raw.doubleVictory !== undefined && raw.doubleVictory !== null ? Number(raw.doubleVictory) : -1;
+  const record: RoundScoreRecord = {
+    round: Number.isNaN(roundNum) ? 0 : Math.trunc(roundNum),
+    cardPoints: toIntTuple(raw.cardPoints),
+    doubleVictory: Number.isNaN(dvNum) ? -1 : Math.trunc(dvNum),
+    bets,
+    teamPoints: toIntTuple(raw.teamPoints),
+    teamTotals: toIntTuple(raw.teamTotals),
+  };
+  if (raw.isSyntheticPrior) {
+    record.isSyntheticPrior = true;
+    const through = Number(raw.priorThroughRound ?? 0);
+    if (!Number.isNaN(through) && through > 0) {
+      record.priorThroughRound = Math.trunc(through);
+    }
+  }
+  return record;
+}
+
+function getTeamScoresFromPlayers(playersMap: Record<string, LivePlayer>): [number, number] {
+  const totals: [number, number] = [0, 0];
+  for (const p of Object.values(playersMap)) {
+    if (p.team === 0 || p.team === 1) {
+      totals[p.team] = Number.isNaN(p.score) ? 0 : p.score;
+    }
+  }
+  return totals;
 }
 
 /**
@@ -311,6 +379,9 @@ export class GameModel {
   public readonly experimentalReplayOpen$ = select(this.state$, (s) => s.experimentalReplayOpen);
   public readonly trickModalOpen$ = select(this.state$, (s) => s.trickModalOpen);
   public readonly settingsModalOpen$ = select(this.state$, (s) => s.settingsModalOpen);
+  public readonly scoreModalOpen$ = select(this.state$, (s) => s.scoreModalOpen);
+  public readonly roundHistory$ = select(this.state$, (s) => s.roundHistory);
+  public readonly targetScore$ = select(this.state$, (s) => s.targetScore);
   public readonly betAnimations$ = select(this.state$, (s) => s.betAnimations);
 
   getState(): LiveGameState {
@@ -398,11 +469,20 @@ export class GameModel {
       const rawPass = Number(p?.pass ?? 0);
       const safePass = Number.isNaN(rawPass) ? 0 : rawPass;
 
+      const rawNo = Number(p?.no ?? p?.player_no ?? 0);
+      const safeNo = Number.isNaN(rawNo) ? 0 : rawNo;
+      const rawTeam = p?.team;
+      const parsedTeam =
+        rawTeam !== undefined && rawTeam !== null && rawTeam !== "" && !Number.isNaN(Number(rawTeam))
+          ? Number(rawTeam)
+          : (Math.max(1, safeNo || 1) - 1) % 2;
+
       players[pid] = {
         id: pid,
         name: String(p?.name ?? p?.player_name ?? ""),
         color: String(p?.color ?? p?.player_color ?? "000000"),
-        no: Number(p?.no ?? p?.player_no ?? 0),
+        no: safeNo,
+        team: parsedTeam,
         score: Number(p?.score ?? p?.player_score ?? 0),
         callGrandTichu: normalizeGrandTichuBet(p?.call_grand_tichu),
         callTichu: normalizeTichuBet(p?.call_tichu),
@@ -546,6 +626,34 @@ export class GameModel {
     const isAllInfoExposed =
       Number(gamedatas?.isAllInfoExposed ?? gamedatas?.is_all_info_exposed) === 1;
 
+    const hydratedRound = Number(gamedatas?.round ?? 0);
+    const rawTargetScore = Number(gamedatas?.targetScore ?? 1000);
+    const targetScore = !Number.isNaN(rawTargetScore) && rawTargetScore > 0 ? rawTargetScore : 1000;
+    let roundHistory: RoundScoreRecord[];
+    if (Array.isArray(gamedatas?.roundHistory)) {
+      roundHistory = gamedatas.roundHistory
+        .map(normalizeRoundScoreRecord)
+        .filter((r): r is RoundScoreRecord => r !== null);
+    } else {
+      const teamTotals = getTeamScoresFromPlayers(players);
+      if (hydratedRound > 1 || teamTotals[0] !== 0 || teamTotals[1] !== 0) {
+        roundHistory = [
+          {
+            round: 0,
+            isSyntheticPrior: true,
+            priorThroughRound: Math.max(1, hydratedRound - 1),
+            cardPoints: [0, 0],
+            doubleVictory: -1,
+            bets: {},
+            teamPoints: [teamTotals[0], teamTotals[1]],
+            teamTotals: [teamTotals[0], teamTotals[1]],
+          },
+        ];
+      } else {
+        roundHistory = [];
+      }
+    }
+
     this.setState({
       currentPlayerId: currentId,
       isSpectator: Boolean(isSpectator),
@@ -565,7 +673,7 @@ export class GameModel {
       activePlayerIds,
       isCurrentPlayerActive,
       bombActivePlayerId: null,
-      round: Number(gamedatas?.round ?? 0),
+      round: hydratedRound,
       trick: Number(gamedatas?.trick ?? 0),
       currentTrick: normalizeCards(gamedatas?.currentTrick),
       currentTrickValue: Number(
@@ -589,6 +697,9 @@ export class GameModel {
       experimentalReplayOpen: false,
       trickModalOpen: false,
       settingsModalOpen: false,
+      scoreModalOpen: false,
+      roundHistory,
+      targetScore,
       betAnimations: [],
     });
     syncAnimCssVars();
@@ -1267,8 +1378,12 @@ export class GameModel {
     this.update({ players, lastCombos });
   }
 
-  applyNewScores(newScores: Record<string | number, number | string>): void {
+  applyNewScores(
+    newScores: Record<string | number, number | string>,
+    roundScore?: RoundScoreRecord | null,
+  ): void {
     const prev = this.getState();
+    const prevTotals = getTeamScoresFromPlayers(prev.players);
     const players: Record<string, LivePlayer> = { ...prev.players };
     for (const [id, score] of Object.entries(newScores)) {
       const pid = String(id);
@@ -1280,7 +1395,32 @@ export class GameModel {
         };
       }
     }
-    this.update({ players });
+    const nextTotals = getTeamScoresFromPlayers(players);
+    const normalizedRecord = roundScore ? normalizeRoundScoreRecord(roundScore) : null;
+    let roundHistory = [...prev.roundHistory];
+    if (normalizedRecord) {
+      const existingIdx = roundHistory.findIndex(
+        (r) => !r.isSyntheticPrior && r.round === normalizedRecord.round,
+      );
+      if (existingIdx >= 0) {
+        roundHistory[existingIdx] = normalizedRecord;
+      } else {
+        roundHistory.push(normalizedRecord);
+      }
+    } else {
+      const fallbackRound = Math.max(1, prev.round || roundHistory.length + 1);
+      roundHistory.push({
+        round: fallbackRound,
+        isSyntheticPrior: true,
+        priorThroughRound: fallbackRound,
+        cardPoints: [0, 0],
+        doubleVictory: -1,
+        bets: {},
+        teamPoints: [nextTotals[0] - prevTotals[0], nextTotals[1] - prevTotals[1]],
+        teamTotals: [nextTotals[0], nextTotals[1]],
+      });
+    }
+    this.update({ players, roundHistory });
   }
 
   setAutopass(autopassValue: number | string | boolean): void {
@@ -1330,6 +1470,10 @@ export class GameModel {
 
   setSettingsModalOpen(settingsModalOpen: boolean): void {
     this.update({ settingsModalOpen: Boolean(settingsModalOpen) });
+  }
+
+  setScoreModalOpen(scoreModalOpen: boolean): void {
+    this.update({ scoreModalOpen: Boolean(scoreModalOpen) });
   }
 
   setAcceptingCardsCountdown(acceptingCardsCountdown: boolean): void {

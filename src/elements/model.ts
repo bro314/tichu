@@ -1,13 +1,20 @@
 import { BehaviorSubject } from "rxjs";
 import { Bet } from "../types/tichu-contracts";
-import type { Card, CardData, TichuNotificationMap as NotifTypes } from "../types/tichu-contracts";
+import type {
+  Card,
+  CardData,
+  RoundBetOutcome,
+  RoundScoreRecord,
+  TichuNotificationMap as NotifTypes,
+} from "../types/tichu-contracts";
 import { select } from "./utils";
 
 export { Bet };
-export type { Card, CardData, NotifTypes };
+export type { Card, CardData, NotifTypes, RoundBetOutcome, RoundScoreRecord };
 
 export interface ScoreBoard {
   rounds: RoundScore[];
+  records?: RoundScoreRecord[];
 }
 
 export interface RoundScore {
@@ -143,8 +150,8 @@ export class Model {
   init(players: Player[]) {
     if (players.length != 4) throw new Error("model requires 4 player ids");
     players = [...players].sort((p1, p2) => {
-      const p1No = Number(p1.no) ?? 0;
-      const p2No = Number(p2.no) ?? 0;
+      const p1No = Number(p1.no) || 0;
+      const p2No = Number(p2.no) || 0;
       return p1No - p2No;
     });
     this.updateState({
@@ -154,10 +161,17 @@ export class Model {
       activePlayerId: 0,
       firstoutPlayerId: 0,
       wish: 0,
-      players: players.map((p) => ({
-        ...EMPTY_PLAYER,
-        player: { ...p, id: Number(p.id), no: Number(p.no) },
-      })),
+      players: players.map((p) => {
+        const noNum = Number(p.no) || 0;
+        const teamNum =
+          p.team !== undefined && p.team !== null && p.team !== "" && !Number.isNaN(Number(p.team))
+            ? Number(p.team)
+            : (Math.max(1, noNum || 1) - 1) % 2;
+        return {
+          ...EMPTY_PLAYER,
+          player: { ...p, id: Number(p.id), no: noNum, team: teamNum },
+        };
+      }),
       passedCards: [],
       capturedCards: [],
     });

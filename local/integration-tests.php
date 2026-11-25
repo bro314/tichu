@@ -1116,14 +1116,26 @@ function test_double_victory_and_normal_round_scoring(): void
 
   $dvNotifs = $game->getNotificationsSince($beforeDvPacketId, P0, false);
   $p2GoOutNotif = null;
+  $dvNewScoresNotif = null;
   foreach ($dvNotifs as $pkt) {
-    if (($pkt['data'][0]['type'] ?? '') === 'playerGoOut' && (int) ($pkt['data'][0]['args']['player_id'] ?? 0) === P2) {
+    $pktType = $pkt['data'][0]['type'] ?? '';
+    if ($pktType === 'playerGoOut' && (int) ($pkt['data'][0]['args']['player_id'] ?? 0) === P2) {
       $p2GoOutNotif = $pkt['data'][0]['args'];
-      break;
+    }
+    if ($pktType === 'newScores') {
+      $dvNewScoresNotif = $pkt['data'][0]['args'];
     }
   }
   assertTrueVal($p2GoOutNotif !== null, 'Double Victory must still emit playerGoOut notification for the 2nd player out (partner P2)');
   assertSameVal(P0, (int) ($p2GoOutNotif['firstout_id'] ?? 0), 'playerGoOut on Double Victory should reference firstOutPlayer P0');
+  assertTrueVal($dvNewScoresNotif !== null && is_array($dvNewScoresNotif['roundScore'] ?? null), 'newScores notification must include structured roundScore payload');
+  assertSameVal(1, (int) ($dvNewScoresNotif['roundScore']['round'] ?? 0), 'Double Victory roundScore.round must be 1');
+  assertSameVal(0, (int) ($dvNewScoresNotif['roundScore']['doubleVictory'] ?? -1), 'Double Victory roundScore.doubleVictory must be 0');
+  assertSameVal([0, 0], $dvNewScoresNotif['roundScore']['cardPoints'] ?? [], 'Double Victory cardPoints must be [0, 0]');
+  assertSameVal([300, -200], $dvNewScoresNotif['roundScore']['teamPoints'] ?? [], 'Double Victory teamPoints must be [300, -200]');
+  assertSameVal([300, -200], $dvNewScoresNotif['roundScore']['teamTotals'] ?? [], 'Double Victory teamTotals must be [300, -200]');
+  assertSameVal(['type' => 'T', 'won' => true, 'delta' => 100], $dvNewScoresNotif['roundScore']['bets'][(string) P0] ?? [], 'P0 winning Tichu bet must be recorded');
+  assertSameVal(['type' => 'GT', 'won' => false, 'delta' => -200], $dvNewScoresNotif['roundScore']['bets'][(string) P1] ?? [], 'P1 losing Grand Tichu bet must be recorded');
 
   // Should score Double Victory (200) + Tichu (100) = 300 for Team 0, and -200 for Team 1, then start Round 2!
   $scores = \PlayerManager::getScores();
@@ -1134,6 +1146,20 @@ function test_double_victory_and_normal_round_scoring(): void
   assertSameVal('grandTichuBets', $game->gamestate->state()['name'], 'Game should transition to Round 2 grandTichuBets');
   assertSameVal(2, (int) \LogManager::getCurrentRoundAndTrick()['round'], 'Round counter should now be 2');
   assertSameVal(0, (int) \LogManager::getCurrentRoundAndTrick()['trick'], 'Trick counter should reset to 0 at start of Round 2');
+
+  // Verify getAllDatas() returns integer team, targetScore, and persisted roundHistory
+  $r2Payload = $game->getFullClientPayload(P0);
+  assertTrueVal(is_int($r2Payload['players'][P0]['team']), 'getAllDatas() must cast player team to int');
+  assertTrueVal(($r2Payload['targetScore'] ?? 0) > 0, 'getAllDatas() must include targetScore');
+  assertSameVal(1, count($r2Payload['roundHistory'] ?? []), 'getAllDatas() must return 1 roundHistory record after Round 1');
+  assertSameVal([300, -200], $r2Payload['roundHistory'][0]['teamTotals'] ?? [], 'roundHistory[0] teamTotals must match Round 1 totals');
+
+  // Verify pre-deploy running-game grace: deleting roundScore row mid-match synthesizes a reconciled prior row
+  \APP_DbObject::DbQuery("DELETE FROM actionlog WHERE log_action = 'roundScore'");
+  $gracePayload = $game->getFullClientPayload(P0);
+  assertSameVal(1, count($gracePayload['roundHistory'] ?? []), 'Missing roundScore in Round 2 must synthesize 1 prior row');
+  assertTrueVal((bool) ($gracePayload['roundHistory'][0]['isSyntheticPrior'] ?? false), 'Synthesized prior row must set isSyntheticPrior');
+  assertSameVal([300, -200], $gracePayload['roundHistory'][0]['teamTotals'] ?? [], 'Synthesized prior row must reconcile with player_score totals');
 
   // Advance Round 2 through grandTichuBets and giveCards into Trick 1 (playComboOpen)
   foreach ([P0, P1, P2, P3] as $pId) {
@@ -2157,6 +2183,7 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   $escapedComboFound = false;
   $changePlayerRemapped = false;
   $confirmRemapped = false;
+  $roundScoreRemapped = false;
   foreach ($logs as $log) {
     $arg = json_decode((string) $log['log_arg'], true);
     if ($log['log_action'] === 'tichuCall') {
@@ -2180,11 +2207,16 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
       assertSameVal(P1, (int) ($arg['nextPlayer'] ?? 0), 'confirm nextPlayer should remap to P1');
       $confirmRemapped = true;
     }
+    if ($log['log_action'] === 'roundScore') {
+      assertTrueVal(isset($arg['bets'][(string) P0], $arg['bets'][(string) P3]), 'roundScore.bets in actionlog must remap 90001->P0 and 90004->P3');
+      $roundScoreRemapped = true;
+    }
   }
   assertTrueVal($tichuTimestampFound, 'Fixture should contain tichuCall entry with preserved timestamp');
   assertTrueVal($escapedComboFound, 'Fixture should preserve HTML semicolon inside Pair of 2&#39;s');
   assertTrueVal($changePlayerRemapped, 'Fixture should remap changePlayer active & log_player');
   assertTrueVal($confirmRemapped, 'Fixture should remap confirm nextPlayer');
+  assertTrueVal($roundScoreRemapped, 'Fixture should remap roundScore.bets keys in actionlog');
 
   // Verify Tichu instance loads cleanly, produces valid client payload & gamelogs, and can collect the trick.
   $game = new \Tichu();
@@ -2207,6 +2239,10 @@ function test_production_bug_sql_loader_and_player_id_remapping(): void {
   assertSameVal([P0 => P2, P1 => P3, P2 => P0, P3 => P1], $swapResult['playerMap'], 'Two-phase swap should rotate overlapping player IDs without collision');
   $swappedActive = (int) \APP_DbObject::getUniqueValueFromDB('SELECT global_value FROM global WHERE global_id = 2');
   assertSameVal(P3, $swappedActive, 'Active player P1 should have swapped cleanly to P3');
+  $swappedRoundScoreRow = \APP_DbObject::getObjectFromDB("SELECT log_arg FROM actionlog WHERE log_action = 'roundScore' LIMIT 1");
+  $swappedRoundScoreArg = json_decode((string) ($swappedRoundScoreRow['log_arg'] ?? '{}'), true);
+  assertTrueVal(isset($swappedRoundScoreArg['bets'][(string) P2], $swappedRoundScoreArg['bets'][(string) P1]), 'Two-phase swap must rotate actionlog roundScore.bets keys P0->P2 and P3->P1');
+  assertTrueVal(!isset($swappedRoundScoreArg['bets'][(string) P0]), 'Old P0 key must not remain in swapped actionlog roundScore.bets');
 
   // Verify optional state override parameter.
   $overrideResult = importBugSqlFile($fixturePath, ST_PLAY_COMBO);

@@ -34,6 +34,23 @@ export interface I18nLogPayload {
   args: Record<string, unknown>;
 }
 
+export interface RoundBetOutcome {
+  type: "GT" | "T";
+  won: boolean;
+  delta: number;
+}
+
+export interface RoundScoreRecord {
+  round: number;
+  cardPoints: [number, number];
+  doubleVictory: number;
+  bets: Record<string, RoundBetOutcome>;
+  teamPoints: [number, number];
+  teamTotals: [number, number];
+  isSyntheticPrior?: boolean;
+  priorThroughRound?: number;
+}
+
 /**
  * Authoritative client-server notification contract.
  * Keys and payload properties mirror `modules/managers/NotificationManager.php`.
@@ -83,6 +100,7 @@ export interface TichuNotificationMap {
   newScores: {
     codeVersion?: string;
     newScores: { [key: number]: number | string; [key: string]: number | string };
+    roundScore?: RoundScoreRecord | null;
   };
   captureCards: {
     codeVersion?: string;
@@ -150,6 +168,7 @@ export interface TichuPlayer {
   call_grand_tichu: Bet;
   pass?: string | number;
   no: number;
+  team?: number | string;
 }
 
 export interface TichuGamedatas {
@@ -173,6 +192,8 @@ export interface TichuGamedatas {
   passes: number[];
   round: number;
   trick: number;
+  roundHistory?: RoundScoreRecord[];
+  targetScore?: number;
 }
 
 export type TypedNotif<K extends keyof TichuNotificationMap> = Notif<TichuNotificationMap[K]>;

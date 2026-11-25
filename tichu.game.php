@@ -434,7 +434,7 @@ class Tichu extends Table
     }
     unset($player);
 
-    $result["players"] = Utils::parseInt($players, ["id", "no"]);
+    $result["players"] = Utils::parseInt($players, ["id", "no", "team"]);
 
     $result["hand"] = array_values(CardManager::getCardsInLocation("hand", $currentPlayerId));
     $result["hasPlayedOrPassedInRound"] = LogManager::hasPlayerPlayedOrPassedInCurrentRound(
@@ -474,10 +474,122 @@ class Tichu extends Table
     $roundAndTrick = LogManager::getCurrentRoundAndTrick();
     $result["round"] = $roundAndTrick["round"] ?? 0;
     $result["trick"] = $roundAndTrick["trick"] ?? 0;
+    $gameLengthIdx = max(0, min(2, (int) $this->getGameStateValue("gameLength") - 1));
+    $result["targetScore"] = [500, 1000, 2000][$gameLengthIdx];
+    $result["roundHistory"] = $this->buildRoundHistory($players, (int) $result["round"]);
     $result["gameVersion"] = intval($this->getGameStateValue("game_db_version", 0));
     $result["codeVersion"] = TICHU_CODE_VERSION;
 
     return $result;
+  }
+
+  /**
+   * Build the round-by-round score history for `getAllDatas()`, reconciling any pre-deploy
+   * or rollback gaps against current cumulative team scores in `player`.
+   *
+   * @param array<int|string, array<string, mixed>> $players
+   * @return array<int, array<string, mixed>>
+   */
+  private function buildRoundHistory(array $players, int $currentRound): array
+  {
+    $currentTeamScores = [0, 0];
+    foreach ($players as $player) {
+      $teamIdx = (int) ($player["team"] ?? 0);
+      if ($teamIdx === 0 || $teamIdx === 1) {
+        $currentTeamScores[$teamIdx] = (int) ($player["score"] ?? 0);
+      }
+    }
+
+    $recorded = LogManager::getRoundScores();
+    $makeSyntheticRow = static function (
+      int $throughRound,
+      array $delta,
+      array $totals
+    ): array {
+      return [
+        "round" => 0,
+        "isSyntheticPrior" => true,
+        "priorThroughRound" => max(1, $throughRound),
+        "cardPoints" => [0, 0],
+        "doubleVictory" => -1,
+        "bets" => (object) [],
+        "teamPoints" => [(int) $delta[0], (int) $delta[1]],
+        "teamTotals" => [(int) $totals[0], (int) $totals[1]],
+      ];
+    };
+
+    if (count($recorded) === 0) {
+      if ($currentRound > 1 || $currentTeamScores[0] !== 0 || $currentTeamScores[1] !== 0) {
+        return [
+          $makeSyntheticRow(max(1, $currentRound - 1), $currentTeamScores, $currentTeamScores),
+        ];
+      }
+      return [];
+    }
+
+    $history = [];
+    $first = $recorded[0];
+    $firstTotals = $first["teamTotals"];
+    $firstPoints = $first["teamPoints"];
+    $priorTotals = [
+      (int) $firstTotals[0] - (int) $firstPoints[0],
+      (int) $firstTotals[1] - (int) $firstPoints[1],
+    ];
+    if ((int) $first["round"] > 1 || $priorTotals[0] !== 0 || $priorTotals[1] !== 0) {
+      $history[] = $makeSyntheticRow(
+        max(1, (int) $first["round"] - 1),
+        $priorTotals,
+        $priorTotals
+      );
+    }
+
+    $prevTotals = $priorTotals;
+    $prevRound = max(0, (int) $first["round"] - 1);
+    foreach ($recorded as $rec) {
+      $recTotals = $rec["teamTotals"];
+      $recPoints = $rec["teamPoints"];
+      $expectedPrev = [
+        (int) $recTotals[0] - (int) $recPoints[0],
+        (int) $recTotals[1] - (int) $recPoints[1],
+      ];
+      if (
+        $expectedPrev[0] !== $prevTotals[0] ||
+        $expectedPrev[1] !== $prevTotals[1] ||
+        (int) $rec["round"] > $prevRound + 1
+      ) {
+        $gapDelta = [
+          $expectedPrev[0] - $prevTotals[0],
+          $expectedPrev[1] - $prevTotals[1],
+        ];
+        if ($gapDelta[0] !== 0 || $gapDelta[1] !== 0) {
+          $history[] = $makeSyntheticRow(
+            max($prevRound + 1, (int) $rec["round"] - 1),
+            $gapDelta,
+            $expectedPrev
+          );
+        }
+      }
+      $history[] = $rec;
+      $prevTotals = [(int) $recTotals[0], (int) $recTotals[1]];
+      $prevRound = (int) $rec["round"];
+    }
+
+    if (
+      $prevTotals[0] !== $currentTeamScores[0] ||
+      $prevTotals[1] !== $currentTeamScores[1]
+    ) {
+      $trailingDelta = [
+        $currentTeamScores[0] - $prevTotals[0],
+        $currentTeamScores[1] - $prevTotals[1],
+      ];
+      $history[] = $makeSyntheticRow(
+        max($prevRound + 1, $currentRound - 1),
+        $trailingDelta,
+        $currentTeamScores
+      );
+    }
+
+    return $history;
   }
 
   /*
@@ -1736,6 +1848,9 @@ class Tichu extends Table
       $team_points[1] = 100 - $team_points[0];
     }
 
+    $cardPoints = $doubleVic >= 0 ? [0, 0] : [(int) $team_points[0], (int) $team_points[1]];
+    $bets = [];
+
     $bBetsGTMade = false;
     $bBetsTMade = false;
     $teams = [[], []];
@@ -1743,7 +1858,13 @@ class Tichu extends Table
       $teams[$player["team"]][] = $player;
       if ($player["call_grand_tichu"] == 200) {
         $bBetsGTMade = true;
-        if ($player_id == $firstOutPlayer) {
+        $won = $player_id == $firstOutPlayer;
+        $bets[(string) $player_id] = [
+          "type" => "GT",
+          "won" => $won,
+          "delta" => $won ? 200 : -200,
+        ];
+        if ($won) {
           $this->incStat(1, "grandtichu_won_number", (int) $player_id);
           $team_points[$player["team"]] += 200;
           $team_points_GT[$player["team"]] += 200;
@@ -1765,7 +1886,13 @@ class Tichu extends Table
 
       if ($player["call_tichu"] == 100) {
         $bBetsTMade = true;
-        if ($player_id == $firstOutPlayer) {
+        $won = $player_id == $firstOutPlayer;
+        $bets[(string) $player_id] = [
+          "type" => "T",
+          "won" => $won,
+          "delta" => $won ? 100 : -100,
+        ];
+        if ($won) {
           $this->incStat(1, "tichu_won_number", (int) $player_id);
           $team_points[$player["team"]] += 100;
           $team_points_T[$player["team"]] += 100;
@@ -1863,7 +1990,22 @@ class Tichu extends Table
     $deck->moveAllCardsInLocation(null, "deck");
 
     $newScores = PlayerManager::getScores();
-    NotificationManager::newScores($newScores);
+    $currDbRound = LogManager::getCurrentDbRoundAndTrick();
+    $finishedRound = max(1, (int) ($currDbRound["round"] ?? 1));
+    $teamTotals = [
+      (int) ($newScores[$teams[0][0]["id"]] ?? 0),
+      (int) ($newScores[$teams[1][0]["id"]] ?? 0),
+    ];
+    $roundScore = [
+      "round" => $finishedRound,
+      "cardPoints" => $cardPoints,
+      "doubleVictory" => $doubleVic,
+      "bets" => count($bets) > 0 ? $bets : (object) [],
+      "teamPoints" => [(int) $team_points[0], (int) $team_points[1]],
+      "teamTotals" => $teamTotals,
+    ];
+    LogManager::insert(0, "roundScore", $roundScore);
+    NotificationManager::newScores($newScores, $roundScore);
 
     $max_score = max($newScores);
 

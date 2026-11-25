@@ -46,3 +46,41 @@ export function hasBomb(cards: Card[]): boolean {
   if (!cards || cards.length < 4) return false;
   return new Hand(cards).hasBomb();
 }
+
+export interface ScoreBoardPlayer {
+  id: string | number;
+  name: string;
+  team?: number | string;
+  no?: number | string;
+  color?: string;
+  score?: number | string;
+}
+
+export interface TeamGroup {
+  team0: ScoreBoardPlayer[];
+  team1: ScoreBoardPlayer[];
+}
+
+/**
+ * Group players into Team 0 and Team 1 using `player.team`, falling back to
+ * `(no - 1) % 2` only when `team` is absent.
+ */
+export function groupPlayersByTeam(players: ScoreBoardPlayer[]): TeamGroup {
+  const sorted = [...players].sort((a, b) => (Number(a.no) || 0) - (Number(b.no) || 0));
+  const team0: ScoreBoardPlayer[] = [];
+  const team1: ScoreBoardPlayer[] = [];
+
+  for (const p of sorted) {
+    const rawTeam = p.team;
+    const hasTeam =
+      rawTeam !== undefined && rawTeam !== null && rawTeam !== "" && !Number.isNaN(Number(rawTeam));
+    const team = hasTeam ? Number(rawTeam) : (Math.max(1, Number(p.no || 1)) - 1) % 2;
+    if (team === 1) {
+      team1.push(p);
+    } else {
+      team0.push(p);
+    }
+  }
+
+  return { team0, team1 };
+}

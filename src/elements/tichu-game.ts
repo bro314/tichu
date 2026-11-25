@@ -12,6 +12,7 @@ import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
 import "./tichu-settings-modal";
+import "./tichu-score-modal";
 import "./tichu-tooltip-layer";
 import { getAnimationLayer } from "./tichu-animation-layer";
 import { getTooltipLayer } from "./tichu-tooltip-layer";
@@ -112,6 +113,13 @@ export class TichuGame extends LitElement {
       !document.querySelector("tichu-settings-modal")
     ) {
       document.body.appendChild(document.createElement("tichu-settings-modal"));
+    }
+    if (
+      typeof document !== "undefined" &&
+      document.body &&
+      !document.querySelector("tichu-score-modal")
+    ) {
+      document.body.appendChild(document.createElement("tichu-score-modal"));
     }
     getAnimationLayer();
     getTooltipLayer();

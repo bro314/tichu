@@ -58,6 +58,14 @@ html {
   --tichu-tooltip-border: rgba(255, 255, 255, 0.14);
   --tichu-tooltip-divider: rgba(255, 255, 255, 0.14);
   --tichu-tooltip-shadow: 0 10px 26px rgba(15, 23, 42, 0.34), 0 2px 6px rgba(15, 23, 42, 0.2);
+  --tichu-score-pos: #15803d;
+  --tichu-score-pos-bg: rgba(21, 128, 61, 0.13);
+  --tichu-score-neg: #dc2626;
+  --tichu-score-neg-bg: rgba(220, 38, 38, 0.13);
+  --tichu-score-dv-bg: rgba(217, 119, 6, 0.16);
+  --tichu-score-dv-fg: #b45309;
+  --tichu-score-current-bg: rgba(11, 114, 181, 0.09);
+  --tichu-score-stripe-bg: rgba(31, 35, 40, 0.025);
 }
 
 html.dark,
@@ -82,6 +90,14 @@ html[data-theme="dark"] {
   --tichu-tooltip-border: rgba(15, 23, 42, 0.18);
   --tichu-tooltip-divider: rgba(15, 23, 42, 0.14);
   --tichu-tooltip-shadow: 0 10px 28px rgba(0, 0, 0, 0.52), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --tichu-score-pos: #4ade80;
+  --tichu-score-pos-bg: rgba(74, 222, 128, 0.16);
+  --tichu-score-neg: #f87171;
+  --tichu-score-neg-bg: rgba(248, 113, 113, 0.16);
+  --tichu-score-dv-bg: rgba(251, 191, 36, 0.18);
+  --tichu-score-dv-fg: #fbbf24;
+  --tichu-score-current-bg: rgba(74, 163, 223, 0.14);
+  --tichu-score-stripe-bg: rgba(255, 255, 255, 0.03);
 }
 
 body {

@@ -27,7 +27,7 @@ import {
   translateDynamic,
   validatePassAction,
 } from "../src/elements/combo-validator";
-import { hasBomb } from "../src/elements/utils";
+import { groupPlayersByTeam, hasBomb } from "../src/elements/utils";
 import { GameModel } from "../src/elements/game-model";
 import { Bet } from "../src/types/tichu-contracts";
 
@@ -4438,7 +4438,7 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
         'Shadow DOM CSS must not hardcode url("img/...")',
       );
 
-      // 1. trickSize = 0 hides the Show current trick button and shows icons + counters + tooltips
+      // 1. trickSize = 0 hides the Show current trick eye button while keeping the Scoreboard button
       status.roundCount = 2;
       status.trickCount = 5;
       status.trickPoints = -25;
@@ -4461,39 +4461,55 @@ test("TichuStatus renders compact PNG icon HUD with accessible labels and toolti
       assert.ok(htmlZero.includes('<span class="visually-hidden">Round: </span>'));
       assert.ok(htmlZero.includes('<span class="visually-hidden">Trick: </span>'));
       assert.ok(htmlZero.includes('<span class="visually-hidden">Trick Points: </span>'));
-      assert.equal(htmlZero.includes("<button"), false);
-      assert.equal(htmlZero.includes("trick-action"), false);
+      assert.equal(htmlZero.includes("status-icon eye"), false);
+      assert.ok(htmlZero.includes('class="status-actions"'));
+      assert.match(htmlZero, /id=["']?showScores["']?/);
+      assert.match(htmlZero, /class="status-icon scoreboard"[^>]*aria-hidden="true"/);
 
-      // 2. trickSize = 4 renders icon-only button inside .trick-action with tooltip + aria-label
+      // 2. trickSize = 4 renders both eye and scoreboard icon-only buttons inside .status-actions
       translatedKeys.length = 0;
       status.trickSize = 4;
       const htmlWithTrick = serializeLitTemplate(status.render());
       assert.ok(
-        htmlWithTrick.includes('class="trick-action"'),
-        "trick-action wrapper should render when trickSize > 0",
+        htmlWithTrick.includes('class="status-actions"'),
+        "status-actions wrapper should render",
       );
-      const btnMatch = htmlWithTrick.match(/<button[\s\S]*?<\/button>/);
-      assert.ok(btnMatch, "Show current trick button should render when trickSize > 0");
-      const btnHtml = btnMatch![0];
-      assert.ok(btnHtml.includes('type="button"'));
-      assert.match(btnHtml, /data-tooltip=(?:"Show current trick"|Show current trick(?:\s|>))/);
-      assert.match(btnHtml, /data-tooltip-touch=(?:"longpress"|longpress(?:\s|>))/);
-      assert.equal(btnHtml.includes("title="), false);
-      assert.match(btnHtml, /aria-label=(?:"Show current trick"|Show current trick(?:\s|>))/);
-      assert.match(btnHtml, /class="status-icon eye"[^>]*aria-hidden="true"/);
-      const innerBtnText = btnHtml.replace(/<[^>]+>/g, "").trim();
-      assert.equal(innerBtnText, "", "Button should contain no visible text label");
-      assert.deepEqual(translatedKeys, ["Round:", "Trick:", "Trick Points:", "Show current trick"]);
+      const btns = htmlWithTrick.match(/<button[\s\S]*?<\/button>/g) || [];
+      assert.equal(btns.length, 2, "Both eye and scoreboard buttons should render when trickSize > 0");
+      const eyeBtnHtml = btns[0]!;
+      assert.ok(eyeBtnHtml.includes('type="button"'));
+      assert.match(eyeBtnHtml, /data-tooltip=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(eyeBtnHtml, /data-tooltip-touch=(?:"longpress"|longpress(?:\s|>))/);
+      assert.equal(eyeBtnHtml.includes("title="), false);
+      assert.match(eyeBtnHtml, /aria-label=(?:"Show current trick"|Show current trick(?:\s|>))/);
+      assert.match(eyeBtnHtml, /class="status-icon eye"[^>]*aria-hidden="true"/);
+      assert.equal(eyeBtnHtml.replace(/<[^>]+>/g, "").trim(), "", "Eye button should contain no visible text");
 
-      // 3. roundOnly mode (used on <tichu-pass-area>) renders only roundCounter and hides trick/points/button
+      const scoreBtnHtml = btns[1]!;
+      assert.ok(scoreBtnHtml.includes('type="button"'));
+      assert.match(scoreBtnHtml, /id=["']?showScores["']?/);
+      assert.match(scoreBtnHtml, /data-tooltip=(?:"Scoreboard"|Scoreboard(?:\s|>))/);
+      assert.match(scoreBtnHtml, /aria-label=(?:"Scoreboard"|Scoreboard(?:\s|>))/);
+      assert.match(scoreBtnHtml, /class="status-icon scoreboard"[^>]*aria-hidden="true"/);
+      assert.equal(scoreBtnHtml.replace(/<[^>]+>/g, "").trim(), "", "Scoreboard button should contain no visible text");
+      assert.deepEqual(translatedKeys, [
+        "Round:",
+        "Trick:",
+        "Trick Points:",
+        "Show current trick",
+        "Scoreboard",
+      ]);
+
+      // 3. roundOnly mode (used on <tichu-pass-area>) renders roundCounter + Scoreboard button and hides trick/points/eye
       translatedKeys.length = 0;
       status.roundOnly = true;
       const htmlRoundOnly = serializeLitTemplate(status.render());
       assert.match(htmlRoundOnly, /id=["']?roundCounter["']?[^>]*>2<\/span>/);
       assert.equal(htmlRoundOnly.includes("trickCounter"), false);
       assert.equal(htmlRoundOnly.includes("currentTrickCounter"), false);
-      assert.equal(htmlRoundOnly.includes("trick-action"), false);
-      assert.deepEqual(translatedKeys, ["Round:"]);
+      assert.equal(htmlRoundOnly.includes("status-icon eye"), false);
+      assert.match(htmlRoundOnly, /id=["']?showScores["']?/);
+      assert.deepEqual(translatedKeys, ["Round:", "Scoreboard"]);
     } finally {
       g._ = savedUnderscore;
       g.g_gamethemeurl = savedThemeUrl;
@@ -5718,5 +5734,147 @@ test("TichuTooltipLayer positioning, touch mode resolution, hover/warm/Escape, a
         g.window = savedWin;
       }
     },
+  );
+});
+
+test("GameModel hydrates roundHistory, handles rollback fallback, and upserts live roundScore", () => {
+  const model = new GameModel();
+  const basePlayers = {
+    "1": { id: "1", name: "Alice", color: "000000", no: 1, team: 0, score: "165" },
+    "2": { id: "2", name: "Bob", color: "ff0000", no: 2, team: 1, score: "35" },
+    "3": { id: "3", name: "Carol", color: "000000", no: 3, team: 0, score: "165" },
+    "4": { id: "4", name: "Dave", color: "ff0000", no: 4, team: 1, score: "35" },
+  };
+
+  model.hydrateFromGamedatas(
+    {
+      players: basePlayers,
+      round: 2,
+      trick: 1,
+      targetScore: 500,
+      roundHistory: [
+        {
+          round: 1,
+          cardPoints: [65, 35],
+          doubleVictory: -1,
+          bets: { "1": { type: "T", won: true, delta: 100 } },
+          teamPoints: [165, 35],
+          teamTotals: [165, 35],
+        },
+      ],
+      gamestate: { name: "playComboOpen", active_player: "1" },
+    } as any,
+    "1",
+    false,
+    true,
+  );
+
+  assert.equal(model.getState().targetScore, 500);
+  assert.equal(model.getState().players["1"]!.team, 0);
+  assert.equal(model.getState().players["2"]!.team, 1);
+  assert.equal(model.getState().roundHistory.length, 1);
+  assert.equal(model.getState().roundHistory[0]!.bets["1"]!.delta, 100);
+
+  // Upsert round 2 via applyNewScores with explicit roundScore
+  const round2Record = {
+    round: 2,
+    cardPoints: [0, 0] as [number, number],
+    doubleVictory: 1,
+    bets: { "4": { type: "GT" as const, won: true, delta: 200 } },
+    teamPoints: [0, 400] as [number, number],
+    teamTotals: [165, 435] as [number, number],
+  };
+  model.applyNewScores({ "1": 165, "2": 435, "3": 165, "4": 435 }, round2Record);
+  assert.equal(model.getState().roundHistory.length, 2);
+  assert.equal(model.getState().roundHistory[1]!.doubleVictory, 1);
+
+  // Idempotent upsert on duplicate round 2 notification
+  model.applyNewScores({ "1": 165, "2": 435, "3": 165, "4": 435 }, round2Record);
+  assert.equal(model.getState().roundHistory.length, 2);
+
+  // Modal state toggle
+  assert.equal(model.getState().scoreModalOpen, false);
+  model.setScoreModalOpen(true);
+  assert.equal(model.getState().scoreModalOpen, true);
+  model.setScoreModalOpen(false);
+  assert.equal(model.getState().scoreModalOpen, false);
+
+  // Rollback fallback: missing roundHistory on Round 3 synthesizes prior row from player scores
+  const rollbackModel = new GameModel();
+  rollbackModel.hydrateFromGamedatas(
+    {
+      players: {
+        "1": { id: "1", name: "Alice", color: "000000", no: 1, team: 0, score: "200" },
+        "2": { id: "2", name: "Bob", color: "ff0000", no: 2, team: 1, score: "100" },
+        "3": { id: "3", name: "Carol", color: "000000", no: 3, team: 0, score: "200" },
+        "4": { id: "4", name: "Dave", color: "ff0000", no: 4, team: 1, score: "100" },
+      },
+      round: 3,
+      trick: 0,
+      gamestate: { name: "grandTichuBets" },
+    } as any,
+    "1",
+    false,
+    true,
+  );
+  assert.equal(rollbackModel.getState().roundHistory.length, 1);
+  assert.equal(rollbackModel.getState().roundHistory[0]!.isSyntheticPrior, true);
+  assert.equal(rollbackModel.getState().roundHistory[0]!.priorThroughRound, 2);
+  assert.deepEqual(rollbackModel.getState().roundHistory[0]!.teamTotals, [200, 100]);
+
+  // Rollback newScores without roundScore synthesizes round delta row
+  rollbackModel.applyNewScores({ "1": 240, "2": 160, "3": 240, "4": 160 }, null);
+  assert.equal(rollbackModel.getState().roundHistory.length, 2);
+  assert.deepEqual(rollbackModel.getState().roundHistory[1]!.teamPoints, [40, 60]);
+  assert.deepEqual(rollbackModel.getState().roundHistory[1]!.teamTotals, [240, 160]);
+});
+
+test("groupPlayersByTeam groups strictly by player.team across TEAM_1_2, TEAM_1_4, and TEAM_RANDOM", () => {
+  // TEAM_1_2 style where player.team overrides alternating seats
+  const groupedCustom = groupPlayersByTeam([
+    { id: 10, name: "P1", no: 1, team: 0 },
+    { id: 20, name: "P2", no: 2, team: 0 },
+    { id: 30, name: "P3", no: 3, team: 1 },
+    { id: 40, name: "P4", no: 4, team: 1 },
+  ]);
+  assert.deepEqual(
+    groupedCustom.team0.map((p) => p.id),
+    [10, 20],
+  );
+  assert.deepEqual(
+    groupedCustom.team1.map((p) => p.id),
+    [30, 40],
+  );
+
+  // TEAM_RANDOM with string team values and unsorted input order
+  const groupedRandom = groupPlayersByTeam([
+    { id: 4, name: "Dave", no: 4, team: "0" },
+    { id: 2, name: "Bob", no: 2, team: "1" },
+    { id: 3, name: "Carol", no: 3, team: "1" },
+    { id: 1, name: "Alice", no: 1, team: "0" },
+  ]);
+  assert.deepEqual(
+    groupedRandom.team0.map((p) => p.id),
+    [1, 4],
+  );
+  assert.deepEqual(
+    groupedRandom.team1.map((p) => p.id),
+    [2, 3],
+  );
+
+  // Legacy fallback when team is omitted
+  const groupedFallback = groupPlayersByTeam([
+    { id: 1, name: "A", no: 1 },
+    { id: 2, name: "B", no: 2 },
+    { id: 3, name: "C", no: 3 },
+    { id: 4, name: "D", no: 4 },
+  ]);
+  assert.deepEqual(
+    groupedFallback.team0.map((p) => p.id),
+    [1, 3],
+  );
+  assert.deepEqual(
+    groupedFallback.team1.map((p) => p.id),
+    [2, 4],
   );
 });

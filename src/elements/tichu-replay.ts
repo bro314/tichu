@@ -1,6 +1,6 @@
 import { html, css, LitElement } from "lit";
 import { state } from "lit/decorators.js";
-import { Model, ScoreBoard } from "./model";
+import { Model, PlayerState, ScoreBoard } from "./model";
 import "./tichu-player";
 import "./tichu-stock";
 import "./tichu-card";
@@ -36,6 +36,10 @@ export class TichuReplay extends LitElement {
   @state() private wish = 0;
 
   @state() private playerIds: number[] = [];
+
+  @state() private players: PlayerState[] = [];
+
+  @state() private currentRound = 0;
 
   @state() private notifIndex = 0;
 
@@ -258,8 +262,20 @@ export class TichuReplay extends LitElement {
     );
     subscribe(
       this,
-      () => this.model.playerIds$,
-      (x) => (this.scoreBoard = createScoreBoard(this.engine.getNotifs(), x)),
+      () => this.model.players$,
+      (players) => {
+        this.players = players;
+        this.scoreBoard = createScoreBoard(
+          this.engine.getNotifs(),
+          players.map((ps) => ps.player.id),
+          players.map((ps) => ps.player),
+        );
+      },
+    );
+    subscribe(
+      this,
+      () => this.model.round$,
+      (round) => (this.currentRound = round),
     );
   }
 
@@ -341,7 +357,12 @@ export class TichuReplay extends LitElement {
           <div class="player right reverse">
             <tichu-player reverse .playerId=${ids[3] ?? 0}></tichu-player>
           </div>
-          <tichu-score-board .board=${this.scoreBoard}></tichu-score-board>
+          <tichu-score-board
+            .players=${this.players.map((ps) => ps.player)}
+            .rounds=${this.scoreBoard.records ?? []}
+            .currentRound=${this.currentRound}
+            compact
+          ></tichu-score-board>
           <div class="exit">
             <div>
               <button class="darkgray" @click=${this.exit}>${_("Back to Classic View")}</button>

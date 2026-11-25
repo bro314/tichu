@@ -184,11 +184,13 @@ class NotificationManager
 
   /**
    * @param array<int|string, mixed> $newScores
+   * @param array<string, mixed>|null $roundScore
    */
-  public static function newScores(array $newScores): void
+  public static function newScores(array $newScores, ?array $roundScore = null): void
   {
     self::broadcast("newScores", "", [
       "newScores" => $newScores,
+      "roundScore" => $roundScore,
     ]);
   }
 

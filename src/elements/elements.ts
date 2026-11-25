@@ -18,6 +18,7 @@ import "./tichu-hand";
 import "./tichu-played-cards";
 import "./tichu-trick-modal";
 import "./tichu-settings-modal";
+import "./tichu-score-modal";
 import "./tichu-tooltip-layer";
 import "./tichu-game";
 import { getTooltipLayer } from "./tichu-tooltip-layer";
@@ -35,6 +36,8 @@ export { TichuHand } from "./tichu-hand";
 export { TichuPlayedCards } from "./tichu-played-cards";
 export { TichuTrickModal } from "./tichu-trick-modal";
 export { TichuSettingsModal } from "./tichu-settings-modal";
+export { TichuScoreModal } from "./tichu-score-modal";
+export { TichuScoreBoard, groupPlayersByTeam } from "./tichu-score-board";
 export {
   TichuTooltipLayer,
   TOOLTIP_TIMINGS,

@@ -1,4 +1,13 @@
-import { Bet, Model, PlayerScore, RoundScore, ScoreBoard, State } from "./model";
+import {
+  Bet,
+  Model,
+  PlayerScore,
+  RoundBetOutcome,
+  RoundScore,
+  RoundScoreRecord,
+  ScoreBoard,
+  State,
+} from "./model";
 import type { TichuNotificationMap } from "../types/tichu-contracts";
 import { playerIdFromChannel } from "./utils";
 
@@ -71,7 +80,11 @@ export class ReplayEngine {
     this.notifIndex = 0;
     this.ignoredNotifType = "";
     this.states = [];
-    this.scoreBoard = createScoreBoard(this.notifs, this.model.getPlayerIds());
+    this.scoreBoard = createScoreBoard(
+      this.notifs,
+      this.model.getPlayerIds(),
+      this.model.getState().players.map((ps) => ps.player),
+    );
     this.recordState();
   }
 
@@ -228,16 +241,92 @@ export function isIgnoredReplayNotif(notif: Notif): boolean {
   return false;
 }
 
-export function createScoreBoard(notifs: Notif[], playerIds: number[]): ScoreBoard {
+export function createScoreBoard(
+  notifs: Notif[],
+  playerIds: number[],
+  players?: Array<{ id: string | number; team?: number | string; no?: number | string }>,
+): ScoreBoard {
   const rounds: RoundScore[] = [];
+  const records: RoundScoreRecord[] = [];
+  const playerTeam = new Map<number, 0 | 1>();
+  if (players && players.length > 0) {
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i]!;
+      const pid = Number(p.id);
+      const rawTeam = p.team;
+      const hasTeam =
+        rawTeam !== undefined &&
+        rawTeam !== null &&
+        rawTeam !== "" &&
+        !Number.isNaN(Number(rawTeam));
+      const teamIdx = hasTeam
+        ? Number(rawTeam) === 1
+          ? 1
+          : 0
+        : (Math.max(1, Number(p.no || i + 1)) - 1) % 2 === 1
+          ? 1
+          : 0;
+      playerTeam.set(pid, teamIdx);
+    }
+  } else {
+    for (let i = 0; i < playerIds.length; i++) {
+      playerTeam.set(playerIds[i]!, i % 2 === 1 ? 1 : 0);
+    }
+  }
+
+  let team0RepId = playerIds[0] ?? 0;
+  let team1RepId = playerIds[1] ?? 0;
+  let foundT0 = false;
+  let foundT1 = false;
+  for (const pid of playerIds) {
+    const teamIdx = playerTeam.get(pid) ?? 0;
+    if (teamIdx === 0 && !foundT0) {
+      team0RepId = pid;
+      foundT0 = true;
+    } else if (teamIdx === 1 && !foundT1) {
+      team1RepId = pid;
+      foundT1 = true;
+    }
+  }
+
   let roundCount = 1;
   let newScores: Record<string, string | number> = {};
   let oldScores: Record<string, string | number> = {};
+  let prevTeamTotals: [number, number] = [0, 0];
+  const gtBets = new Set<number>();
+  const tBets = new Set<number>();
+  let firstOutId: number | null = null;
+
   for (const notif of notifs) {
-    if ((notif.type as string) !== "newScores") continue;
+    const type = notif.type as string;
+    const args = (notif.args ?? {}) as any;
+
+    if (type === "grandTichuBet") {
+      if (Number(args?.bet) === 200) {
+        const pid = Number(args.player_id);
+        if (!Number.isNaN(pid) && pid > 0) gtBets.add(pid);
+      }
+      continue;
+    }
+    if (type === "tichuBet") {
+      if (Number(args?.bet) === 100) {
+        const pid = Number(args.player_id);
+        if (!Number.isNaN(pid) && pid > 0) tBets.add(pid);
+      }
+      continue;
+    }
+    if (type === "playerGoOut") {
+      if (firstOutId === null) {
+        const fid = Number(args?.firstout_id || args?.player_id || 0);
+        if (!Number.isNaN(fid) && fid > 0) firstOutId = fid;
+      }
+      continue;
+    }
+    if (type !== "newScores") continue;
 
     oldScores = newScores;
-    newScores = (notif.args as TichuNotificationMap["newScores"]).newScores;
+    const typedArgs = notif.args as TichuNotificationMap["newScores"];
+    newScores = typedArgs.newScores;
 
     const scores: PlayerScore[] = [];
     for (const id of playerIds) {
@@ -246,10 +335,100 @@ export function createScoreBoard(notifs: Notif[], playerIds: number[]): ScoreBoa
       const roundPoints = gamePoints - oldGamePoints;
       scores.push({ id, gamePoints, roundPoints });
     }
-    const round: RoundScore = { round: roundCount++, scores };
+    const thisRoundNum = roundCount++;
+    const round: RoundScore = { round: thisRoundNum, scores };
     rounds.push(round);
+
+    const teamTotals: [number, number] = [
+      toNumber(newScores[`${team0RepId}`]),
+      toNumber(newScores[`${team1RepId}`]),
+    ];
+    const embedded = typedArgs.roundScore;
+    if (embedded && typeof embedded === "object") {
+      const normBets: Record<string, RoundBetOutcome> = {};
+      if (embedded.bets && typeof embedded.bets === "object" && !Array.isArray(embedded.bets)) {
+        for (const [pid, b] of Object.entries(embedded.bets)) {
+          if (!b || typeof b !== "object") continue;
+          normBets[String(pid)] = {
+            type: b.type === "GT" ? "GT" : "T",
+            won: Boolean(b.won),
+            delta: Number(b.delta) || 0,
+          };
+        }
+      }
+      records.push({
+        round: Number(embedded.round) || thisRoundNum,
+        cardPoints: [
+          Number(embedded.cardPoints?.[0] ?? 0),
+          Number(embedded.cardPoints?.[1] ?? 0),
+        ],
+        doubleVictory:
+          embedded.doubleVictory !== undefined && embedded.doubleVictory !== null
+            ? Number(embedded.doubleVictory)
+            : -1,
+        bets: normBets,
+        teamPoints: [
+          Number(embedded.teamPoints?.[0] ?? teamTotals[0] - prevTeamTotals[0]),
+          Number(embedded.teamPoints?.[1] ?? teamTotals[1] - prevTeamTotals[1]),
+        ],
+        teamTotals: [
+          Number(embedded.teamTotals?.[0] ?? teamTotals[0]),
+          Number(embedded.teamTotals?.[1] ?? teamTotals[1]),
+        ],
+      });
+    } else {
+      const teamPoints: [number, number] = [
+        teamTotals[0] - prevTeamTotals[0],
+        teamTotals[1] - prevTeamTotals[1],
+      ];
+      const bets: Record<string, RoundBetOutcome> = {};
+      const betDelta: [number, number] = [0, 0];
+
+      for (const pid of Array.from(gtBets)) {
+        const teamIdx = playerTeam.get(pid) ?? 0;
+        const won = firstOutId !== null ? pid === firstOutId : teamPoints[teamIdx] >= 200;
+        const delta = won ? 200 : -200;
+        bets[String(pid)] = { type: "GT", won, delta };
+        betDelta[teamIdx] += delta;
+      }
+      for (const pid of Array.from(tBets)) {
+        if (gtBets.has(pid)) continue;
+        const teamIdx = playerTeam.get(pid) ?? 0;
+        const won =
+          firstOutId !== null ? pid === firstOutId : teamPoints[teamIdx] - betDelta[teamIdx] >= 100;
+        const delta = won ? 100 : -100;
+        bets[String(pid)] = { type: "T", won, delta };
+        betDelta[teamIdx] += delta;
+      }
+
+      const rem0 = teamPoints[0] - betDelta[0];
+      const rem1 = teamPoints[1] - betDelta[1];
+      let doubleVictory = -1;
+      let cardPoints: [number, number] = [rem0, rem1];
+      if (rem0 === 200 && rem1 === 0) {
+        doubleVictory = 0;
+        cardPoints = [0, 0];
+      } else if (rem1 === 200 && rem0 === 0) {
+        doubleVictory = 1;
+        cardPoints = [0, 0];
+      }
+
+      records.push({
+        round: thisRoundNum,
+        cardPoints,
+        doubleVictory,
+        bets,
+        teamPoints,
+        teamTotals,
+      });
+    }
+
+    prevTeamTotals = teamTotals;
+    gtBets.clear();
+    tBets.clear();
+    firstOutId = null;
   }
-  return { rounds };
+  return { rounds, records };
 }
 
 function toNumber(s?: string | number): number {

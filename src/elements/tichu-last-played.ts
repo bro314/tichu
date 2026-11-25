@@ -393,6 +393,7 @@ export class TichuLastPlayed extends LitElement {
           .trickPoints=${this.currentTrickValue}
           .trickSize=${this.currentTrick.length}
           @show-current-trick=${this.onShowCurrentTrick}
+          @show-scores=${this.onShowScores}
         ></tichu-status>
       </div>
     `;
@@ -717,6 +718,10 @@ export class TichuLastPlayed extends LitElement {
 
   private onShowCurrentTrick() {
     window.gameModel.setTrickModalOpen(true);
+  }
+
+  private onShowScores() {
+    window.gameModel.setScoreModalOpen(true);
   }
 }
 

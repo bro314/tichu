@@ -563,6 +563,9 @@ export class Tichu {
     if (document.body && !document.querySelector("tichu-settings-modal")) {
       document.body.appendChild(document.createElement("tichu-settings-modal"));
     }
+    if (document.body && !document.querySelector("tichu-score-modal")) {
+      document.body.appendChild(document.createElement("tichu-score-modal"));
+    }
     clearTimeout(this.acceptFlightTimeout);
     this.pendingAcceptFlush = null;
     this.getAnimationLayer()?.cancelAll?.();
@@ -2093,7 +2096,20 @@ export class Tichu {
         (this.gamedatas.players[pId] as any).score = String(newScores[pId]!);
       }
     }
-    window.gameModel?.applyNewScores(newScores);
+    const roundScore = notif.args.roundScore ?? null;
+    if (roundScore && this.gamedatas) {
+      const prevHist = Array.isArray(this.gamedatas.roundHistory)
+        ? [...this.gamedatas.roundHistory]
+        : [];
+      const idx = prevHist.findIndex((r) => !r.isSyntheticPrior && r.round === roundScore.round);
+      if (idx >= 0) {
+        prevHist[idx] = roundScore;
+      } else {
+        prevHist.push(roundScore);
+      }
+      this.gamedatas.roundHistory = prevHist;
+    }
+    window.gameModel?.applyNewScores(newScores, roundScore);
     this.notifqueue?.setSynchronousDuration?.(
       this.shouldAnimate() ? Math.max(1, this.getScaledAnimTiming("newScoresNotifMs", 700)) : 1,
     );

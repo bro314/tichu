@@ -1042,4 +1042,61 @@ test("ReplayEngine: tidyUpGamelogs, segmentNotifMoves, createScoreBoard, and isI
     { id: P2, roundPoints: 0, gamePoints: 0 },
     { id: P3, roundPoints: 0, gamePoints: 0 },
   ]);
+
+  // Verify createScoreBoard records reconstruct legacy rounds (Double Victory, bets, and custom team grouping)
+  const customTeamPlayers = [
+    { id: P0, no: 1, team: 0 },
+    { id: P1, no: 2, team: 0 },
+    { id: P2, no: 3, team: 1 },
+    { id: P3, no: 4, team: 1 },
+  ];
+  const sbDetailed = createScoreBoard(
+    [
+      // Round 1: legacy stream without embedded roundScore — P0 GT won, P2 T lost, Team 0 Double Victory
+      { type: "grandTichuBet", args: { player_id: P0, bet: 200 } } as unknown as Notif,
+      { type: "tichuBet", args: { player_id: P2, bet: 100 } } as unknown as Notif,
+      { type: "playerGoOut", args: { firstout_id: P0, player_id: P0 } } as unknown as Notif,
+      {
+        type: "newScores",
+        args: { newScores: { [P0]: 400, [P1]: 400, [P2]: -100, [P3]: -100 } },
+      } as unknown as Notif,
+      // Round 2: modern stream with explicit roundScore payload
+      {
+        type: "newScores",
+        args: {
+          newScores: { [P0]: 465, [P1]: 465, [P2]: -65, [P3]: -65 },
+          roundScore: {
+            round: 2,
+            cardPoints: [65, 35],
+            doubleVictory: -1,
+            bets: {},
+            teamPoints: [65, 35],
+            teamTotals: [465, -65],
+          },
+        },
+      } as unknown as Notif,
+    ],
+    [P0, P1, P2, P3],
+    customTeamPlayers,
+  );
+  assert.equal(sbDetailed.records?.length, 2);
+  assert.deepEqual(sbDetailed.records![0], {
+    round: 1,
+    cardPoints: [0, 0],
+    doubleVictory: 0,
+    bets: {
+      [String(P0)]: { type: "GT", won: true, delta: 200 },
+      [String(P2)]: { type: "T", won: false, delta: -100 },
+    },
+    teamPoints: [400, -100],
+    teamTotals: [400, -100],
+  });
+  assert.deepEqual(sbDetailed.records![1], {
+    round: 2,
+    cardPoints: [65, 35],
+    doubleVictory: -1,
+    bets: {},
+    teamPoints: [65, 35],
+    teamTotals: [465, -65],
+  });
 });

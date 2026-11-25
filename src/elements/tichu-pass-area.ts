@@ -254,6 +254,7 @@ export class TichuPassArea extends LitElement {
               roundOnly
               roundCount=${this.round}
               .roundCount=${this.round}
+              @show-scores=${this.onShowScores}
             ></tichu-status>`
           : nothing
       }
@@ -270,6 +271,10 @@ export class TichuPassArea extends LitElement {
         ${this.passSlots.map((slot) => this.renderSlot(slot))}
       </div>
     `;
+  }
+
+  private onShowScores() {
+    window.gameModel.setScoreModalOpen(true);
   }
 
   private onAvatarError(avatarKey: string) {
