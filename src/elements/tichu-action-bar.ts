@@ -224,8 +224,25 @@ export class TichuActionBar extends LitElement {
     });
   }
 
+  private getBombSelectionValidation(): ComboValidationResult {
+    return analyzeSelection({
+      selectedCards: this.getSelectedCards(),
+      handCards: this.hand,
+      lastCombo: this.getLastCombo(),
+      stateName: "playBomb",
+      mahjongWish: this.mahjongWish,
+    });
+  }
+
   private getPassValidation(): PassValidationResult {
     return validatePassAction(this.hand, this.getLastCombo(), this.mahjongWish);
+  }
+
+  private isBombPlayOnOwnTurn(): boolean {
+    return (
+      this.isCurrentPlayerActive &&
+      (this.stateName === "playComboOpen" || this.stateName === "playCombo")
+    );
   }
 
   override render() {
@@ -234,11 +251,10 @@ export class TichuActionBar extends LitElement {
       return "";
     }
 
+    const isBombAsPlay = this.isBombPlayOnOwnTurn();
     const showBomb =
-      (this.isCurrentPlayerActive && this.stateName === "confirmTrick") ||
-      (!this.isCurrentPlayerActive &&
-        (this.stateName === "playCombo" || this.stateName === "confirmTrick") &&
-        this.hand.length > 0);
+      this.hand.length > 0 &&
+      (isBombAsPlay || this.stateName === "playCombo" || this.stateName === "confirmTrick");
 
     const showTichu =
       this.currentPlayer !== null &&
@@ -257,19 +273,7 @@ export class TichuActionBar extends LitElement {
         <div id="pass_button">${this.renderPassButtonContent()}</div>
         <div id="pass_trick_button">${this.renderPassTrickButtonContent()}</div>
         <div class="space1"></div>
-        <div id="bomb_button">
-          ${
-            showBomb
-              ? html`<a
-                  href="#"
-                  id="myPlayBomb"
-                  class="action-button bgabutton bgabutton_gray"
-                  @click=${this.onPlayBomb}
-                  >${_("Play Bomb")}</a
-                >`
-              : ""
-          }
-        </div>
+        <div id="bomb_button">${showBomb ? this.renderBombButtonContent(isBombAsPlay) : ""}</div>
         <div id="tichu_button">
           ${
             showTichu
@@ -289,6 +293,32 @@ export class TichuActionBar extends LitElement {
       </div>
       ${wishBombCallout ? this.renderWishBombCallout(wishBombCallout) : ""}
     `;
+  }
+
+  private renderBombButtonContent(isBombAsPlay: boolean) {
+    if (isBombAsPlay) {
+      const validation = this.getBombSelectionValidation();
+      const bombTooltipTier =
+        validation.isValid && !validation.requiresPhoenixChoice ? "slow" : nothing;
+      return html`<a
+        href="#"
+        id="myPlayBomb"
+        class="action-button bgabutton bgabutton_gray ${validation.isValid ? "" : "disabled"}"
+        aria-disabled=${validation.isValid ? nothing : "true"}
+        data-tooltip=${validation.tooltip || nothing}
+        data-tooltip-tier=${bombTooltipTier}
+        data-tooltip-touch=${validation.isValid ? "longpress" : "tap"}
+        @click=${this.onPlayBomb}
+        >${_("Play Bomb")}</a
+      >`;
+    }
+    return html`<a
+      href="#"
+      id="myPlayBomb"
+      class="action-button bgabutton bgabutton_gray"
+      @click=${this.onPlayBomb}
+      >${_("Play Bomb")}</a
+    >`;
   }
 
   private getWishBombCallout(): WishBombCallout | null {
@@ -560,6 +590,11 @@ export class TichuActionBar extends LitElement {
   private onPlayBomb(e: Event) {
     e.preventDefault();
     if (this.isReadOnly()) return;
+    if (this.isBombPlayOnOwnTurn()) {
+      if (!this.getBombSelectionValidation().isValid) return;
+      this.executePlayCombo(e);
+      return;
+    }
     this.dispatchEvent(
       new CustomEvent("action-play-bomb", {
         bubbles: true,

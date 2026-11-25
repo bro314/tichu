@@ -3829,9 +3829,118 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         assert.equal(outPlayBombNoCallout.includes('id="wishBombCallout"'), false);
 
         model.setMahjongWish(0);
-        model.setHand([]);
+        model.setHand([A5, B5, C5, D5, A7]);
         model.enterNewTrick();
 
+        // Bug #106651: Keep #myPlayBomb visible on own turn (playComboOpen & playCombo)
+        // and behave identically to "Play" (disabled until selection is valid, invokes onPlayCombo)
+        let playComboCalls = 0;
+        let playBombCalls = 0;
+        const dispatchedEvents: string[] = [];
+        (bar as any).dispatchEvent = (evt: any) => {
+          dispatchedEvents.push(evt?.type ?? "");
+          return true;
+        };
+        g.window.gameui = {
+          isReadOnly: () => mockReadOnly,
+          onPlayCombo: () => {
+            playComboCalls++;
+          },
+          onPlayBomb: () => {
+            playBombCalls++;
+          },
+        };
+        const fakeEvent = { preventDefault: () => {} } as any;
+
+        model.setSelectedCardIds([]);
+        model.setGameState("playComboOpen", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        const outOpenNoSel = serializeLitTemplate(bar.render());
+        assert.ok(outOpenNoSel.includes('id="myPlayBomb"'), "#myPlayBomb stays visible in playComboOpen");
+        assert.match(outOpenNoSel, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 0, "Clicking disabled #myPlayBomb on own turn must not submit");
+        assert.equal(playBombCalls, 0, "Clicking #myPlayBomb on own turn must not invoke out-of-turn playBomb");
+
+        // Valid non-bomb selection in playComboOpen keeps #myPlayBomb disabled (only bombs enable it)
+        model.setSelectedCardIds([A7.id]);
+        const outOpenNonBomb = serializeLitTemplate(bar.render());
+        assert.ok(outOpenNonBomb.includes('id="myPlayBomb"'));
+        assert.match(outOpenNonBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 0, "Non-bomb selection must not submit via #myPlayBomb");
+        assert.equal(playBombCalls, 0);
+
+        // Valid bomb selection in playComboOpen enables #myPlayBomb and submits via onPlayCombo
+        model.setSelectedCardIds([A5.id, B5.id, C5.id, D5.id]);
+        const outOpenValidBomb = serializeLitTemplate(bar.render());
+        assert.ok(outOpenValidBomb.includes('id="myPlayBomb"'));
+        assert.doesNotMatch(outOpenValidBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 1, "Valid bomb on own turn in playComboOpen calls onPlayCombo");
+        assert.equal(playBombCalls, 0);
+        assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-combo");
+
+        model.applyPlayCombo("2385075", [AA], "Ace", 0, SINGLE_COMBO, null);
+        model.setGameState("playCombo", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        // Even a valid beating non-bomb (not applicable vs Ace, test with 7 vs 2 below) or invalid selection stays disabled
+        model.setSelectedCardIds([A7.id]);
+        const outPlayComboInvalid = serializeLitTemplate(bar.render());
+        assert.ok(outPlayComboInvalid.includes('id="myPlayBomb"'), "#myPlayBomb stays visible on own turn in playCombo");
+        assert.match(outPlayComboInvalid, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 1, "Invalid selection on own turn does not submit via #myPlayBomb");
+
+        // Valid beating non-bomb in playCombo (Single 7 over Single 5) must STILL keep #myPlayBomb disabled
+        model.applyPlayCombo("2385075", [A5], "5", 0, SINGLE_COMBO, null);
+        model.setSelectedCardIds([A7.id]);
+        const outPlayComboValidNonBomb = serializeLitTemplate(bar.render());
+        assert.match(outPlayComboValidNonBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 1, "Valid non-bomb in playCombo must not submit via #myPlayBomb");
+
+        model.setSelectedCardIds([A5.id, B5.id, C5.id, D5.id]);
+        const outPlayComboValidBomb = serializeLitTemplate(bar.render());
+        assert.doesNotMatch(outPlayComboValidBomb, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playComboCalls, 2, "Valid bomb on own turn in playCombo submits via onPlayCombo");
+        assert.equal(playBombCalls, 0);
+        assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-combo");
+
+        // In confirmTrick on own turn, #myPlayBomb stays enabled and invokes onPlayBomb (interrupting Collect)
+        model.setSelectedCardIds([]);
+        model.setGameState("confirmTrick", {
+          activePlayerId: "2385074",
+          activePlayerIds: ["2385074"],
+          isCurrentPlayerActive: true,
+        });
+        const outConfirmTrick = serializeLitTemplate(bar.render());
+        assert.ok(outConfirmTrick.includes('id="myPlayBomb"'));
+        assert.doesNotMatch(outConfirmTrick, /id="myPlayBomb"[^>]*class="[^"]*disabled/);
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playBombCalls, 1, "Clicking #myPlayBomb in confirmTrick invokes onPlayBomb");
+        assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-bomb");
+
+        // Out of turn in playCombo, #myPlayBomb stays enabled and invokes onPlayBomb
+        model.setGameState("playCombo", {
+          activePlayerId: "2385075",
+          activePlayerIds: ["2385075"],
+          isCurrentPlayerActive: false,
+        });
+        (bar as any).onPlayBomb(fakeEvent);
+        assert.equal(playBombCalls, 2, "Clicking #myPlayBomb out of turn invokes onPlayBomb");
+        assert.equal(dispatchedEvents[dispatchedEvents.length - 1], "action-play-bomb");
+
+        // Empty hand hides #myPlayBomb even in playComboOpen
+        model.setHand([]);
+        model.enterNewTrick();
         model.setGameState("playComboOpen", {
           activePlayerId: "2385074",
           activePlayerIds: ["2385074"],
