@@ -3415,6 +3415,169 @@ function test_partner_tichu_confirmation_beyond_threshold(): void
   assertSameVal('100', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'After resetTichus in new round, P2 must commit without partner prompt');
 }
 
+// ============================================================================
+// Test 22: test_tichu_reopen_pass_and_manual_unpass (#31597, #218304)
+// ============================================================================
+function test_tichu_reopen_pass_and_manual_unpass(): void
+{
+  $setupFreshGiveCards = static function (\Tichu $g): void {
+    $g->createNewGame(['gameLength' => 1, 'playerTeams' => TEAM_1_3, 'turnBased' => 0]);
+    foreach ([P0, P1, P2, P3] as $pid) {
+      callAction($g, $pid, 'grandTichuBet', ['bet' => '0']);
+    }
+    assertSameVal('giveCards', $g->gamestate->state(true, false, true)['name']);
+  };
+
+  $game = new \Tichu();
+  $setupFreshGiveCards($game);
+
+  $findNotifs = static function (\Tichu $g, int $sincePacketId, int $playerId, string $type): array {
+    $out = [];
+    foreach ($g->getNotificationsSince($sincePacketId, $playerId, false) as $pkt) {
+      foreach ($pkt['data'] ?? [] as $ev) {
+        if (($ev['type'] ?? '') === $type) {
+          $out[] = $ev['args'] ?? [];
+        }
+      }
+    }
+    return $out;
+  };
+
+  $pickPassIds = static fn(int $pid): array => array_map(
+    static fn($c) => (int) $c['id'],
+    array_slice(array_values(\CardManager::getDeck()->getCardsInLocation('hand', $pid)), 0, 3)
+  );
+
+  // 1) tichuBet when 0 players have passed -> no reopen, no reopened log
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P1, 'tichuBet', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P1)['call_tichu'], 'P1 Tichu bet must commit');
+  assertSameVal(
+    0,
+    count($findNotifs($game, $beforePkt, P0, 'unpassCards')),
+    'No unpassCards notif when 0 players had passed'
+  );
+  $reopenLogs = array_filter(
+    $findNotifs($game, $beforePkt, P0, 'log'),
+    static fn($a) => !empty($a)
+  );
+  $unpassLogRows = (int) \APP_DbObject::getUniqueValueFromDB(
+    "SELECT COUNT(*) FROM actionlog WHERE log_action = 'unpassCards'"
+  );
+  assertSameVal(0, $unpassLogRows, 'No unpassCards actionlog when 0 players had passed');
+
+  // 2) P0 and P1 pass -> P2 calls tichuBet (opponent of P1, wait >60s threshold so no prompt)
+  $oldTs = (string) (time() - 7200);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+  $p0Pass = $pickPassIds(P0);
+  $p1Pass = $pickPassIds(P1);
+  callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0Pass)]);
+  callAction($game, P1, 'giveTheCards', ['cards' => implode(';', $p1Pass)]);
+  assertTrueVal(!$game->gamestate->isPlayerActive(P0), 'P0 must be inactive after passing');
+  assertTrueVal(!$game->gamestate->isPlayerActive(P1), 'P1 must be inactive after passing');
+
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'tichuBet', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'P2 Tichu bet must commit');
+  assertTrueVal($game->gamestate->isPlayerActive(P0), 'P0 must be reactivated after P2 calls Tichu');
+  assertTrueVal($game->gamestate->isPlayerActive(P1), 'P1 must be reactivated after P2 calls Tichu');
+  assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P0), 'P0 must have 14 cards back in hand');
+  assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P1), 'P1 must have 14 cards back in hand');
+  assertSameVal(
+    0,
+    (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM card WHERE card_location = 'temporary'"),
+    'No cards should remain in temporary after P2 reopen'
+  );
+  $nullPassedFrom = (int) \APP_DbObject::getUniqueValueFromDB(
+    'SELECT COUNT(*) FROM card WHERE card_passed_from IS NOT NULL'
+  );
+  assertSameVal(0, $nullPassedFrom, 'card_passed_from must be cleared for reopened cards');
+
+  $p0Unpass = $findNotifs($game, $beforePkt, P0, 'unpassCards');
+  assertSameVal(1, count($p0Unpass), 'P0 must receive private unpassCards notif');
+  assertSameVal(true, (bool) $p0Unpass[0]['reopenedByTichu']);
+  assertSameVal(P2, (int) $p0Unpass[0]['callerId']);
+  assertSameVal(array_map('strval', $p0Pass), array_map('strval', $p0Unpass[0]['cardIds']), 'unpassCards must preserve [prev, partner, next] order');
+  assertSameVal(0, count($findNotifs($game, $beforePkt, P2, 'unpassCards')), 'P2 must not receive P0 unpassCards notif');
+
+  // 3) Unconfirmed tichuBet gate: P0 re-passes, P3 calls tichuBet within 60s (or partner P1 already called) -> P0 stays locked until confirmTichu(100)
+  callAction($game, P0, 'giveTheCards', ['cards' => implode(';', $p0Pass)]);
+  assertTrueVal(!$game->gamestate->isPlayerActive(P0), 'P0 must be inactive again after re-passing');
+
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P3, 'tichuBet', ['bet' => '100']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'P3 bet must wait for confirmTichu');
+  assertTrueVal(!$game->gamestate->isPlayerActive(P0), 'P0 must stay locked while P3 Tichu is unconfirmed');
+  assertSameVal(3, (int) \CardManager::getDeck()->countCardInLocation('temporary'), 'P0 cards must stay in temporary while unconfirmed');
+  assertSameVal(0, count($findNotifs($game, $beforePkt, P0, 'unpassCards')), 'No unpassCards before confirmTichu');
+
+  callAction($game, P3, 'confirmTichu', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P3)['call_tichu'], 'P3 bet must commit on confirmTichu');
+  assertTrueVal($game->gamestate->isPlayerActive(P0), 'P0 must reopen once P3 confirms Tichu');
+  assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P0));
+
+  // 4) Caller-already-passed + manual unpassCards validation (#218304)
+  $game2 = new \Tichu();
+  $setupFreshGiveCards($game2);
+  assertThrowsUserException(
+    static fn() => callAction($game2, P0, 'unpassCards'),
+    'have not passed',
+    'unpassCards when player is still active must throw UserException'
+  );
+  $g2p0 = $pickPassIds(P0);
+  $g2p1 = $pickPassIds(P1);
+  callAction($game2, P0, 'giveTheCards', ['cards' => implode(';', $g2p0)]);
+  callAction($game2, P1, 'giveTheCards', ['cards' => implode(';', $g2p1)]);
+
+  // P0 calls Tichu after already passing: P0 stays submitted; P1 is reopened
+  callAction($game2, P0, 'tichuBet', ['bet' => '100']);
+  assertTrueVal(!$game2->gamestate->isPlayerActive(P0), 'Caller P0 own pass must stay submitted');
+  assertTrueVal($game2->gamestate->isPlayerActive(P1), 'Other passer P1 must be reopened');
+  assertSameVal(11, (int) \CardManager::getDeck()->countCardInLocation('hand', P0));
+
+  // P0 manually undoes their pass while waiting
+  $beforeManual = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game2, P0, 'unpassCards');
+  assertTrueVal($game2->gamestate->isPlayerActive(P0), 'P0 must be reactivated after manual unpassCards');
+  assertSameVal(14, (int) \CardManager::getDeck()->countCardInLocation('hand', P0));
+  $manualNotifs = $findNotifs($game2, $beforeManual, P0, 'unpassCards');
+  assertSameVal(1, count($manualNotifs));
+  assertSameVal(false, (bool) $manualNotifs[0]['reopenedByTichu']);
+
+  // 5) Zombie exclusion: P3 zombie passes, P0 human passes, P1 calls Tichu -> P0 reopens, P3 stays locked in temporary
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 1 WHERE player_id = ' . P3);
+  $game2->reloadPlayersBasicInfos();
+  $game2->zombieTurn($game2->gamestate->state(true, false, true), P3);
+  assertTrueVal(!$game2->gamestate->isPlayerActive(P3), 'Zombie P3 should be inactive after zombie pass');
+  callAction($game2, P0, 'giveTheCards', ['cards' => implode(';', $g2p0)]);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+  callAction($game2, P1, 'tichuBet', ['bet' => '100']);
+  assertTrueVal($game2->gamestate->isPlayerActive(P0), 'Human P0 must reopen');
+  assertTrueVal(!$game2->gamestate->isPlayerActive(P3), 'Zombie P3 must remain inactive');
+  assertSameVal(
+    3,
+    (int) \APP_DbObject::getUniqueValueFromDB(
+      "SELECT COUNT(*) FROM card WHERE card_location = 'temporary' AND card_passed_from = " . P3
+    ),
+    'Zombie P3 temporary cards must remain untouched'
+  );
+  $game2->checkReturnState();
+
+  // Complete passing with all remaining live players -> playComboOpen, then unpassCards must throw
+  \APP_DbObject::DbQuery('UPDATE player SET player_zombie = 0 WHERE player_id = ' . P3);
+  $game2->reloadPlayersBasicInfos();
+  callAction($game2, P0, 'giveTheCards', ['cards' => implode(';', $pickPassIds(P0))]);
+  callAction($game2, P1, 'giveTheCards', ['cards' => implode(';', $pickPassIds(P1))]);
+  callAction($game2, P2, 'giveTheCards', ['cards' => implode(';', $pickPassIds(P2))]);
+  assertSameVal('playComboOpen', $game2->gamestate->state()['name'], 'Game must advance to playComboOpen');
+  assertSameVal(0, (int) \APP_DbObject::getUniqueValueFromDB("SELECT COUNT(*) FROM card WHERE card_location = 'temporary'"));
+  assertThrowsUserException(
+    static fn() => callAction($game2, P0, 'unpassCards'),
+    'already passed',
+    'unpassCards after all 4 players passed must throw UserException'
+  );
+}
+
 $tests = [
   'test_new_game_and_deal_8_cards',
   'test_grand_tichu_and_tichu_bets_and_confirmation_threshold',
@@ -3437,6 +3600,7 @@ $tests = [
   'test_day1_security_version_i18n_and_zombie_128k_guard',
   'test_passed_card_origin_and_first_move_persistence',
   'test_partner_tichu_confirmation_beyond_threshold',
+  'test_tichu_reopen_pass_and_manual_unpass',
 ];
 
 echo "====================================================================\n";

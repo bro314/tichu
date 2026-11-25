@@ -96,6 +96,7 @@ export interface LiveGameState {
   players: Record<string, LivePlayer>;
   playerOrderBottomToLeft: string[];
   passSlots: PassSlotState[];
+  reopenedPassNotice: string | null;
   acceptingCardsCountdown: boolean;
   collectingTrickCountdown: boolean;
   hand: Card[];
@@ -155,6 +156,7 @@ export const initialLiveGameState: LiveGameState = {
   players: {},
   playerOrderBottomToLeft: [],
   passSlots: [],
+  reopenedPassNotice: null,
   acceptingCardsCountdown: false,
   collectingTrickCountdown: false,
   hand: [],
@@ -254,7 +256,9 @@ export function normalizeRoundScoreRecord(raw: any): RoundScoreRecord | null {
       const betObj = entry as any;
       const type: "GT" | "T" = String(betObj.type ?? "T") === "GT" ? "GT" : "T";
       const won = Boolean(betObj.won);
-      const deltaNum = Number(betObj.delta ?? (type === "GT" ? (won ? 200 : -200) : won ? 100 : -100));
+      const deltaNum = Number(
+        betObj.delta ?? (type === "GT" ? (won ? 200 : -200) : won ? 100 : -100),
+      );
       bets[String(pid)] = {
         type,
         won,
@@ -263,7 +267,8 @@ export function normalizeRoundScoreRecord(raw: any): RoundScoreRecord | null {
     }
   }
   const roundNum = Number(raw.round ?? 0);
-  const dvNum = raw.doubleVictory !== undefined && raw.doubleVictory !== null ? Number(raw.doubleVictory) : -1;
+  const dvNum =
+    raw.doubleVictory !== undefined && raw.doubleVictory !== null ? Number(raw.doubleVictory) : -1;
   const record: RoundScoreRecord = {
     round: Number.isNaN(roundNum) ? 0 : Math.trunc(roundNum),
     cardPoints: toIntTuple(raw.cardPoints),
@@ -331,6 +336,7 @@ export class GameModel {
     select(this.state$, (s) => s.players[String(playerId)]);
   public readonly playerOrderBottomToLeft$ = select(this.state$, (s) => s.playerOrderBottomToLeft);
   public readonly passSlots$ = select(this.state$, (s) => s.passSlots);
+  public readonly reopenedPassNotice$ = select(this.state$, (s) => s.reopenedPassNotice);
   public readonly acceptingCardsCountdown$ = select(this.state$, (s) => s.acceptingCardsCountdown);
   public readonly collectingTrickCountdown$ = select(
     this.state$,
@@ -473,7 +479,10 @@ export class GameModel {
       const safeNo = Number.isNaN(rawNo) ? 0 : rawNo;
       const rawTeam = p?.team;
       const parsedTeam =
-        rawTeam !== undefined && rawTeam !== null && rawTeam !== "" && !Number.isNaN(Number(rawTeam))
+        rawTeam !== undefined &&
+        rawTeam !== null &&
+        rawTeam !== "" &&
+        !Number.isNaN(Number(rawTeam))
           ? Number(rawTeam)
           : (Math.max(1, safeNo || 1) - 1) % 2;
 
@@ -663,6 +672,7 @@ export class GameModel {
       players,
       playerOrderBottomToLeft,
       passSlots,
+      reopenedPassNotice: null,
       acceptingCardsCountdown: false,
       collectingTrickCountdown: false,
       hand: normalizeCards(gamedatas?.hand),
@@ -745,6 +755,7 @@ export class GameModel {
       activePlayerIds,
       isCurrentPlayerActive,
       bombActivePlayerId,
+      reopenedPassNotice: stateName === "giveCards" ? prev.reopenedPassNotice : null,
       acceptingCardsCountdown:
         stateName === "showPassedCards" ? prev.acceptingCardsCountdown : false,
       collectingTrickCountdown:
@@ -797,6 +808,7 @@ export class GameModel {
       players,
       lastCombos,
       passSlots,
+      reopenedPassNotice: null,
       lastComboPlayerId: "",
       trickLastCombo: {
         playerId: "",
@@ -855,6 +867,7 @@ export class GameModel {
     this.update({
       players,
       passSlots,
+      reopenedPassNotice: null,
     });
   }
 
@@ -920,6 +933,7 @@ export class GameModel {
     this.update({
       hand: [],
       selectedCardIds: [],
+      reopenedPassNotice: null,
       players,
       hasPlayedOrPassedInRound: false,
       firstOutPlayerId: "",
@@ -1096,9 +1110,47 @@ export class GameModel {
     this.update({
       hand: prev.hand.filter((c) => !idSet.has(c.id)),
       selectedCardIds: prev.selectedCardIds.filter((id) => !idSet.has(id)),
+      reopenedPassNotice: null,
       passSlots: prev.passSlots.map((s) =>
         s.givenCard && idSet.has(s.givenCard.id) ? { ...s, givenCard: null } : s,
       ),
+    });
+  }
+
+  applyUnpassCardsNotif(
+    cards: Card[],
+    reopenedByTichu: boolean,
+    noticeMessage: string | null = null,
+  ): void {
+    const normalized = normalizeCards(cards);
+    const prev = this.getState();
+    const returnedIdSet = new Set(normalized.map((c) => c.id));
+    const usedIds = new Set<string>();
+    const passSlots = prev.passSlots.map((slot, idx) => {
+      const matchByRecipient = normalized.find(
+        (c) =>
+          !usedIds.has(c.id) &&
+          c.location_arg !== undefined &&
+          String(c.location_arg) === slot.playerId,
+      );
+      const fallback =
+        !matchByRecipient && normalized[idx] && !usedIds.has(normalized[idx]!.id)
+          ? normalized[idx]!
+          : null;
+      const chosen = matchByRecipient ?? fallback ?? null;
+      if (chosen) {
+        usedIds.add(chosen.id);
+        return { ...slot, givenCard: chosen };
+      }
+      return slot;
+    });
+    const unslotted = normalized.filter((c) => !usedIds.has(c.id));
+    const filteredHand = prev.hand.filter((c) => !returnedIdSet.has(c.id));
+    this.update({
+      passSlots,
+      hand: unslotted.length > 0 ? [...filteredHand, ...unslotted] : filteredHand,
+      selectedCardIds: prev.selectedCardIds.filter((id) => !returnedIdSet.has(id)),
+      reopenedPassNotice: reopenedByTichu ? noticeMessage : null,
     });
   }
 

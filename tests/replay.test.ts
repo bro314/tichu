@@ -1100,3 +1100,246 @@ test("ReplayEngine: tidyUpGamelogs, segmentNotifMoves, createScoreBoard, and isI
     teamTotals: [465, -65],
   });
 });
+
+test("ReplayEngine: unpassCards after passCards & Tichu reopen preserves 56-card conservation and scrubbing", () => {
+  const deck = makeFullDeck();
+  const players = makePlayers([1, 2, 3, 4]);
+  const playerOrder: [number, number, number, number] = [P0, P1, P2, P3];
+  const packets: NotifsPacket[] = [];
+  let pktId = 1;
+  let moveId = 1;
+
+  // Deal first 8 cards
+  for (let pIdx = 0; pIdx < 4; pIdx++) {
+    const pid = playerOrder[pIdx]!;
+    const cards = deck.slice(pIdx * 14, pIdx * 14 + 8).map((c) => ({
+      ...c,
+      location: "hand",
+      location_arg: String(pid),
+    }));
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(moveId),
+      channel: `/player/p${pid}`,
+      data: [{ type: "dealCards", args: { cards } } as unknown as Notif],
+    });
+  }
+
+  // Grand Tichu bets = 0
+  for (const pid of playerOrder) {
+    moveId++;
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(moveId),
+      channel: "/table/t1",
+      data: [
+        {
+          type: "grandTichuBet",
+          args: { player_id: pid, player_name: `P${pid}`, bet: 0 },
+        } as unknown as Notif,
+      ],
+    });
+  }
+
+  // Deal last 6 cards
+  moveId++;
+  for (let pIdx = 0; pIdx < 4; pIdx++) {
+    const pid = playerOrder[pIdx]!;
+    const cards = deck.slice(pIdx * 14 + 8, pIdx * 14 + 14).map((c) => ({
+      ...c,
+      location: "hand",
+      location_arg: String(pid),
+    }));
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(moveId),
+      channel: `/player/p${pid}`,
+      data: [{ type: "dealCards", args: { cards } } as unknown as Notif],
+    });
+  }
+
+  // P0 and P1 pass their first 3 cards
+  for (let pIdx = 0; pIdx < 2; pIdx++) {
+    const pid = playerOrder[pIdx]!;
+    const c0 = deck[pIdx * 14]!;
+    const c1 = deck[pIdx * 14 + 1]!;
+    const c2 = deck[pIdx * 14 + 2]!;
+    moveId++;
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(moveId),
+      channel: `/player/p${pid}`,
+      data: [
+        {
+          type: "passCards",
+          args: {
+            cardIds: [c0.id, c1.id, c2.id],
+            card1: c0.type_arg,
+            card2: c1.type_arg,
+            card3: c2.type_arg,
+          },
+        } as unknown as Notif,
+      ],
+    });
+  }
+
+  // P2 calls Tichu during giveCards -> P0 & P1 receive unpassCards
+  const reopenMoveId = String(++moveId);
+  for (let pIdx = 0; pIdx < 2; pIdx++) {
+    const pid = playerOrder[pIdx]!;
+    const c0 = deck[pIdx * 14]!;
+    const c1 = deck[pIdx * 14 + 1]!;
+    const c2 = deck[pIdx * 14 + 2]!;
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: reopenMoveId,
+      channel: `/player/p${pid}`,
+      data: [
+        {
+          type: "unpassCards",
+          args: {
+            cardIds: [c0.id, c1.id, c2.id],
+            cards: [c0, c1, c2],
+            reopenedByTichu: true,
+            callerId: P2,
+            callerName: "Carol",
+          },
+        } as unknown as Notif,
+      ],
+    });
+  }
+  packets.push({
+    packet_id: String(pktId++),
+    move_id: reopenMoveId,
+    channel: "/table/t1",
+    data: [
+      {
+        type: "tichuBet",
+        args: { player_id: P2, player_name: "Carol", bet: 100 },
+      } as unknown as Notif,
+      {
+        type: "gameStateMultipleActiveUpdate",
+        args: [String(P0), String(P1), String(P2), String(P3)],
+      } as unknown as Notif,
+    ],
+  });
+
+  // P0 passes again, manually retracts via unpassCards, then all 4 pass final cards
+  const p0Alt = [deck[3]!, deck[4]!, deck[5]!];
+  packets.push(
+    {
+      packet_id: String(pktId++),
+      move_id: String(++moveId),
+      channel: `/player/p${P0}`,
+      data: [
+        {
+          type: "passCards",
+          args: {
+            cardIds: p0Alt.map((c) => c.id),
+            card1: p0Alt[0]!.type_arg,
+            card2: p0Alt[1]!.type_arg,
+            card3: p0Alt[2]!.type_arg,
+          },
+        } as unknown as Notif,
+      ],
+    },
+    {
+      packet_id: String(pktId++),
+      move_id: String(++moveId),
+      channel: `/player/p${P0}`,
+      data: [
+        {
+          type: "unpassCards",
+          args: {
+            cardIds: p0Alt.map((c) => c.id),
+            cards: p0Alt,
+            reopenedByTichu: false,
+          },
+        } as unknown as Notif,
+      ],
+    },
+  );
+
+  for (let pIdx = 0; pIdx < 4; pIdx++) {
+    const pid = playerOrder[pIdx]!;
+    const c0 = deck[pIdx * 14 + 3]!;
+    const c1 = deck[pIdx * 14 + 4]!;
+    const c2 = deck[pIdx * 14 + 5]!;
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(++moveId),
+      channel: `/player/p${pid}`,
+      data: [
+        {
+          type: "passCards",
+          args: {
+            cardIds: [c0.id, c1.id, c2.id],
+            card1: c0.type_arg,
+            card2: c1.type_arg,
+            card3: c2.type_arg,
+          },
+        } as unknown as Notif,
+      ],
+    });
+  }
+
+  moveId++;
+  for (const pid of playerOrder) {
+    packets.push({
+      packet_id: String(pktId++),
+      move_id: String(moveId),
+      channel: `/player/p${pid}`,
+      data: [
+        {
+          type: "acceptCards",
+          args: { cards: [], card1: "2", card2: "3", card3: "4" },
+        } as unknown as Notif,
+      ],
+    });
+  }
+
+  packets.push(
+    {
+      packet_id: String(pktId++),
+      move_id: String(++moveId),
+      channel: "/table/t1",
+      data: [
+        {
+          type: "gameStateChange",
+          args: { type: "activeplayer", active_player: String(P0) },
+        } as unknown as Notif,
+      ],
+    },
+    {
+      packet_id: String(pktId++),
+      move_id: String(++moveId),
+      channel: "/table/t1",
+      data: [
+        {
+          type: "newScores",
+          args: { newScores: { [P0]: 100, [P1]: 0, [P2]: 100, [P3]: 0 } },
+        } as unknown as Notif,
+      ],
+    },
+  );
+
+  const engine = new ReplayEngine(packets, players);
+  const forwardStates = assertStreamInvariants(engine, "unpass-reopen");
+  const N = engine.getNotifs().length;
+  engine.nextRound();
+  const stopIdx = engine.getNotifIndex();
+  assert.equal(
+    engine.getState().passedCards.length,
+    12,
+    "nextRound should stop at final 12 passed cards",
+  );
+  assert.equal(
+    engine.getState().passedCards.some((pc) => pc.accepted),
+    false,
+  );
+  assert.equal(deepEqual(engine.getState(), forwardStates[stopIdx]), true);
+  engine.nextRound();
+  assert.equal(engine.getNotifIndex(), N);
+  engine.prevRound();
+  assert.equal(engine.getNotifIndex(), stopIdx);
+});

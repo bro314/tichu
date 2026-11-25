@@ -806,6 +806,19 @@ class Tichu extends Table
     if ($player_id === null) {
       $player_id = (int) $this->getCurrentPlayerId();
       $this->checkMultiactiveActionFresh($player_id, ST_GIVE_CARDS, "giveCards");
+      if ($this->gameLockStale) {
+        $snapshotTichuCount = (int) $this->getUniqueValueFromDB(
+          "SELECT COUNT(*) FROM player WHERE player_call_tichu = 100"
+        );
+        $freshTichuCount = (int) $this->getUniqueValueFromDB(
+          "SELECT COUNT(*) FROM player WHERE player_call_tichu = 100 FOR UPDATE"
+        );
+        if ($freshTichuCount > $snapshotTichuCount) {
+          throw new UserException(
+            clienttranslate("A Tichu bet was just made — please review your pass.")
+          );
+        }
+      }
     } else {
       $this->acquireGameLockOrFail();
     }
@@ -848,6 +861,34 @@ class Tichu extends Table
     // The last player's request accepts the passed cards of everybody (stAcceptPassedCards),
     // which must not run on a stale snapshot.
     $this->setPlayerNonMultiactiveSafe((int) $player_id, "acceptPassedCards", false);
+  }
+
+  public function unpassCards(int|string|null $player_id = null): void
+  {
+    $this->acquireGameLockOrFail();
+    $playerId = $player_id !== null ? (int) $player_id : (int) $this->getCurrentPlayerId();
+    if ($this->freshStateId !== ST_GIVE_CARDS) {
+      throw new UserException(clienttranslate("All players have already passed their cards"));
+    }
+    $player = $this->getObjectFromDB(
+      "SELECT player_name name, player_is_multiactive multi, player_zombie zombie FROM player WHERE player_id = $playerId FOR UPDATE"
+    );
+    if (!$player || (int) $player["zombie"] === 1) {
+      throw new UserException(clienttranslate("You cannot undo passing cards right now"));
+    }
+    if ((int) $player["multi"] === 1) {
+      throw new UserException(clienttranslate("You have not passed your cards yet"));
+    }
+    $cards = CardManager::returnTemporaryCardsToHand($playerId);
+    $this->bumpGameVersion();
+    LogManager::insert($playerId, "unpassCards", ["reopenedByTichu" => false]);
+    NotificationManager::unpassCards($playerId, $cards, false);
+    $this->gamestate->setPlayersMultiactive([$playerId], "");
+    $this->giveExtraTime($playerId);
+    NotificationManager::log(
+      clienttranslate('${player_name} retracted their passed cards'),
+      ["player_name" => (string) $player["name"]]
+    );
   }
 
   /**
@@ -1216,14 +1257,56 @@ class Tichu extends Table
       $this->syncStaleReturnState();
       return;
     }
+    $reopenedIds = [];
+    if ($stateId === ST_GIVE_CARDS) {
+      $submittedRows = $this->getObjectListFromDB(
+        "SELECT player_id, player_zombie FROM player WHERE player_id <> $player_id AND player_is_multiactive = 0 FOR UPDATE"
+      );
+      foreach ($submittedRows as $row) {
+        if ((int) ($row["player_zombie"] ?? 0) === 0) {
+          $reopenedIds[] = (int) $row["player_id"];
+        }
+      }
+      if (!empty($reopenedIds) && $this->gameLockStale) {
+        // Reactivating multiactive players must run on a fresh snapshot so BGA's
+        // setPlayersMultiactive(), checkReturnState(), and async checkActivePlayersChange()
+        // see authoritative active players and trigger sendAsyncTableMove cleanly.
+        $this->throwGameStateChanged();
+      }
+    }
     $this->bumpGameVersion();
     LogManager::insert($player_id, "tichuCall", $now);
     $this->incStat(1, "tichu_number", $player_id);
     PlayerManager::tichuBet($player_id, 100);
-    NotificationManager::tichuBet($player_id, (string) ($player["name"] ?? ""), 100);
+    $callerName = (string) ($player["name"] ?? "");
+    NotificationManager::tichuBet($player_id, $callerName, 100);
+    if (!empty($reopenedIds)) {
+      foreach ($reopenedIds as $otherId) {
+        $returnedCards = CardManager::returnTemporaryCardsToHand($otherId);
+        LogManager::insert($otherId, "unpassCards", [
+          "reopenedByTichu" => true,
+          "callerId" => $player_id,
+        ]);
+        NotificationManager::unpassCards(
+          $otherId,
+          $returnedCards,
+          true,
+          $player_id,
+          $callerName
+        );
+      }
+      $this->gamestate->setPlayersMultiactive($reopenedIds, "");
+      foreach ($reopenedIds as $otherId) {
+        $this->giveExtraTime($otherId);
+      }
+      NotificationManager::log(
+        clienttranslate('${player_name} called Tichu — submitted passes have been reopened'),
+        ["player_name" => $callerName]
+      );
+    }
     if ($stateId == ST_GRAND_TICHU_BETS) {
       $this->setPlayerNonMultiactiveSafe($player_id, "dealLastCards", true);
-    } else {
+    } elseif (empty($reopenedIds)) {
       $this->syncStaleReturnState();
     }
   }

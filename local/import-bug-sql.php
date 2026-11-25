@@ -780,6 +780,7 @@ final class LocalBugSqlLoader
       'playerId',
       'firstout_id',
       'recipient',
+      'callerId',
     ];
     foreach ($arg as $k => $v) {
       if (in_array((string) $k, $playerKeys, true)) {
@@ -871,6 +872,7 @@ final class LocalBugSqlLoader
       'mahjongOwner',
       'firstoutplayer',
       'lastComboPlayer',
+      'callerId',
     ];
     $listPlayerKeys = ['multiactive', '_notified_privately', 'passes', 'playerorder'];
     $mapPlayerKeys = [

@@ -238,6 +238,30 @@ export class Model {
     this.removeCardsById(playerId, cardIds);
   }
 
+  unpassCards(playerId: number, cardIds: string[]) {
+    const idSet = new Set(cardIds.map((id) => String(id)));
+    const allPassed = this.getState().passedCards;
+    const retracted: Card[] = [];
+    const remaining: PassedCard[] = [];
+    for (const pc of allPassed) {
+      if (
+        pc.from === playerId &&
+        !pc.accepted &&
+        (idSet.size === 0 || idSet.has(String(pc.card.id)))
+      ) {
+        retracted.push(pc.card);
+      } else {
+        remaining.push(pc);
+      }
+    }
+    if (retracted.length === 0) return;
+    const playerState = this.getPlayerState(playerId);
+    const existingIds = new Set(playerState.cards.map((c) => String(c.id)));
+    const restored = retracted.filter((c) => !existingIds.has(String(c.id)));
+    this.updateState({ passedCards: remaining });
+    this.updatePlayerState(playerId, { cards: [...playerState.cards, ...restored] });
+  }
+
   addPassedCard(from: number, to: number, card: Card) {
     const passedCards = [...this.getState().passedCards];
     passedCards.push({ from, to, card, accepted: false });

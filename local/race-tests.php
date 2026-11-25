@@ -756,6 +756,120 @@ function runTargetedScenarios(array $workers, int $reps, array &$report): array
       }
       return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
     },
+
+    // Tichu call during giveCards concurrently with other players passing (#31597):
+    // P0 already passed; P1 calls Tichu while P2 & P3 pass concurrently.
+    'tichuBet reopen vs giveTheCards' => function () use ($workers, $all, $P0, $P1, $P2, $P3) {
+      $game = new \Tichu();
+      $game->createNewGame(['gameLength' => 1]);
+      foreach ($all as $p) {
+        $game->setCurrentPlayerId($p);
+        $game->beginPlayerAction();
+        $game->grandTichuBet(0);
+        $game->endPlayerAction();
+      }
+      $r0 = dispatchBurst($workers, [
+        act($P0, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P0))]),
+      ]);
+      if ($r0[0]['status'] !== 'ok') {
+        return ['skip' => true];
+      }
+      $reqs = [
+        act($P1, 'tichuBet', ['bet' => '100']),
+        act($P2, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P2))]),
+        act($P3, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P3))]),
+      ];
+      $results = dispatchBurst($workers, $reqs);
+      $errs = [];
+      $p1Tichu = (string) \APP_DbObject::getUniqueValueFromDB("SELECT player_call_tichu FROM player WHERE player_id = $P1");
+      $snap = readSnapshot($game);
+      if ($p1Tichu === '100' && $snap['name'] === 'giveCards' && !in_array($P0, $snap['multi'], true)) {
+        $errs[] = 'P0 must be reopened in giveCards after P1 tichuBet committed';
+      }
+      if ($p1Tichu !== '100' && $results[0]['status'] !== 'user') {
+        $errs[] = "unexpected P1 tichuBet status {$results[0]['status']}";
+      }
+      return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
+    },
+
+    // Manual Undo Pass vs 4th player finishing the exchange (#218304).
+    'unpassCards vs 4th giveTheCards' => function () use ($workers, $all, $P0, $P1, $P2, $P3) {
+      $game = new \Tichu();
+      $game->createNewGame(['gameLength' => 1]);
+      foreach ($all as $p) {
+        $game->setCurrentPlayerId($p);
+        $game->beginPlayerAction();
+        $game->grandTichuBet(0);
+        $game->endPlayerAction();
+      }
+      foreach ([$P0, $P1, $P2] as $p) {
+        $r = dispatchBurst($workers, [
+          act($p, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($p))]),
+        ]);
+        if ($r[0]['status'] !== 'ok') {
+          return ['skip' => true];
+        }
+      }
+      $reqs = [
+        act($P0, 'unpassCards'),
+        act($P3, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P3))]),
+      ];
+      $results = dispatchBurst($workers, $reqs);
+      $errs = [];
+      $snap = readSnapshot($game);
+      if ($snap['name'] === 'giveCards') {
+        if (!in_array($P0, $snap['multi'], true)) {
+          $errs[] = 'stayed in giveCards but P0 is not active';
+        }
+      } elseif ($snap['name'] === 'playComboOpen') {
+        if ($results[0]['status'] === 'ok') {
+          $errs[] = 'advanced to playComboOpen yet unpassCards succeeded';
+        }
+      } else {
+        $errs[] = "unexpected end state {$snap['name']}";
+      }
+      return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
+    },
+
+    // Tichu reopen when a zombie player has already passed must leave zombie inactive in temporary.
+    'tichuBet reopen with zombie' => function () use ($workers, $all, $P0, $P1, $P2, $P3) {
+      $game = new \Tichu();
+      $game->createNewGame(['gameLength' => 1]);
+      foreach ($all as $p) {
+        $game->setCurrentPlayerId($p);
+        $game->beginPlayerAction();
+        $game->grandTichuBet(0);
+        $game->endPlayerAction();
+      }
+      \APP_DbObject::DbQuery("UPDATE player SET player_zombie = 1 WHERE player_id = $P3");
+      $game->reloadPlayersBasicInfos();
+      $game->beginPlayerAction();
+      $game->zombieTurn($game->gamestate->state(true, false, true), $P3);
+      $game->endPlayerAction();
+      $r0 = dispatchBurst($workers, [
+        act($P0, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P0))]),
+      ]);
+      if ($r0[0]['status'] !== 'ok') {
+        return ['skip' => true];
+      }
+      $reqs = [
+        act($P1, 'tichuBet', ['bet' => '100']),
+        act($P2, 'giveTheCards', ['cards' => implode(';', \LocalTichuBot::pickThreeCardsToGive($P2))]),
+      ];
+      $results = dispatchBurst($workers, $reqs);
+      $errs = [];
+      $p3Multi = (int) \APP_DbObject::getUniqueValueFromDB("SELECT player_is_multiactive FROM player WHERE player_id = $P3");
+      if ($p3Multi !== 0) {
+        $errs[] = "zombie P3 became multiactive ($p3Multi)";
+      }
+      $p3Temp = (int) \APP_DbObject::getUniqueValueFromDB(
+        "SELECT COUNT(*) FROM card WHERE card_location = 'temporary' AND card_passed_from = $P3"
+      );
+      if ($p3Temp !== 3) {
+        $errs[] = "zombie P3 temporary count=$p3Temp (expected 3)";
+      }
+      return ['results' => $results, 'reqs' => $reqs, 'errors' => $errs, 'game' => $game];
+    },
   ];
 
   foreach ($scenarios as $name => $fn) {
@@ -895,6 +1009,15 @@ function planBurst(\Tichu $game, array $s): array
         shuffle($cardIds);
         $primary[] = [$p, 'giveTheCards', ['cards' => implode(';', $cardIds)]];
       }
+      $nonZombies = array_map(
+        'intval',
+        \APP_DbObject::getObjectListFromDB('SELECT player_id FROM player WHERE player_zombie = 0', true)
+      );
+      foreach ($s['players'] as $p) {
+        if (!in_array($p, $s['multi'], true) && in_array($p, $nonZombies, true) && chance(0.2)) {
+          $primary[] = [$p, 'unpassCards', []];
+        }
+      }
       break;
     case 'showPassedCards':
       foreach ($s['multi'] as $p) {
@@ -1011,6 +1134,7 @@ function fuzzRequest(array $s): array
     'pass' => fn() => ['onlyOnce' => pick(['true', 'false', '1', '0'])],
     'cancelAutopass' => fn() => [],
     'giveTheCards' => fn() => ['cards' => $randomCards()],
+    'unpassCards' => fn() => [],
     'acceptCards' => fn() => [],
     'collect' => fn() => [],
     'cancelPhoenix' => fn() => [],

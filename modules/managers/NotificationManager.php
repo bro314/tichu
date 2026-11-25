@@ -301,6 +301,29 @@ class NotificationManager
   }
 
   /**
+   * @param array<int, array<string, mixed>> $cards
+   */
+  public static function unpassCards(
+    int|string $playerId,
+    array $cards,
+    bool $reopenedByTichu,
+    ?int $callerId = null,
+    string $callerName = ""
+  ): void {
+    $cardIds = array_values(array_map(static fn(array $c): string => (string) $c["id"], $cards));
+    $args = [
+      "cardIds" => $cardIds,
+      "cards" => array_values($cards),
+      "reopenedByTichu" => $reopenedByTichu,
+    ];
+    if ($callerId !== null) {
+      $args["callerId"] = $callerId;
+      $args["callerName"] = $callerName;
+    }
+    self::notifyPlayerWithVersion((int) $playerId, "unpassCards", "", $args);
+  }
+
+  /**
    * @param array<string, mixed> $suggestion
    */
   public static function botSuggestion(int|string $player_id, array $suggestion): void

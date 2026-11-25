@@ -17,6 +17,7 @@ export class TichuPassArea extends LitElement {
   @state() private isSpectator = false;
   @state() private isCurrentPlayerActive = false;
   @state() private passSlots: PassSlotState[] = [];
+  @state() private reopenedPassNotice: string | null = null;
   @state() private players: Record<string, LivePlayer> = {};
   @state() private isTiki = false;
   @state() private clockwise = true;
@@ -164,6 +165,34 @@ export class TichuPassArea extends LitElement {
           align-items: center;
           justify-content: center;
         }
+        .playertable-bet-corner {
+          position: absolute;
+          top: 6px;
+          right: 6px;
+          z-index: 6;
+          pointer-events: auto;
+        }
+        .playertable-bet-corner .icon.small {
+          --icon-size: 24px;
+        }
+        .reopen-banner {
+          max-width: 560px;
+          margin: 0 auto 8px;
+          padding: 8px 14px;
+          border-radius: 8px;
+          border: 1px solid rgba(217, 119, 6, 0.45);
+          background: rgba(254, 243, 199, 0.94);
+          color: #78350f;
+          font-size: 13px;
+          font-weight: 600;
+          text-align: center;
+          box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+        }
+        :host-context(html[data-theme="dark"]) .reopen-banner {
+          border-color: rgba(251, 191, 36, 0.45);
+          background: rgba(120, 53, 15, 0.9);
+          color: #fef3c7;
+        }
         tichu-card.given-card,
         tichu-card.received-card {
           position: absolute;
@@ -213,6 +242,11 @@ export class TichuPassArea extends LitElement {
     );
     subscribe(
       this,
+      () => window.gameModel.reopenedPassNotice$,
+      (notice) => (this.reopenedPassNotice = notice),
+    );
+    subscribe(
+      this,
       () => window.gameModel.players$,
       (players) => (this.players = players),
     );
@@ -256,6 +290,11 @@ export class TichuPassArea extends LitElement {
               .roundCount=${this.round}
               @show-scores=${this.onShowScores}
             ></tichu-status>`
+          : nothing
+      }
+      ${
+        isVisible && this.stateName === "giveCards" && this.reopenedPassNotice
+          ? html`<div class="reopen-banner" role="status">${this.reopenedPassNotice}</div>`
           : nothing
       }
       <div
@@ -317,6 +356,23 @@ export class TichuPassArea extends LitElement {
         data-tooltip-touch=${showSelectHint ? "longpress" : nothing}
         @click=${() => this.onSlotClick(slot.dir - 1)}
       >
+        <div
+          class="playertable-bet-corner"
+          style="display: ${(isGrandTichu || isTichu) && hasCard ? "block" : "none"}"
+        >
+          <div
+            class="icon small grandtichucolor ${slot.playerId}"
+            style="display: ${isGrandTichu ? "inline-block" : "none"}"
+            data-tooltip=${_("Grand Tichu bet")}
+            data-tooltip-touch="tap"
+          ></div>
+          <div
+            class="icon small tichucolor ${slot.playerId}"
+            style="display: ${isTichu ? "inline-block" : "none"}"
+            data-tooltip=${_("Tichu bet")}
+            data-tooltip-touch="tap"
+          ></div>
+        </div>
         <div class="playertable-header">
           <div
             class=${classMap({

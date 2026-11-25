@@ -153,6 +153,9 @@ export class ReplayEngine {
     } else if (type === "passCards") {
       const cardIds: string[] = args.cardIds;
       this.model.passCards(notif.player_id, cardIds);
+    } else if (type === "unpassCards") {
+      const cardIds: string[] = Array.isArray(args.cardIds) ? args.cardIds : [];
+      this.model.unpassCards(notif.player_id, cardIds);
     } else if (type === "wishMade") {
       const wish = Number(args.wish);
       this.model.setWish(wish);
@@ -358,10 +361,7 @@ export function createScoreBoard(
       }
       records.push({
         round: Number(embedded.round) || thisRoundNum,
-        cardPoints: [
-          Number(embedded.cardPoints?.[0] ?? 0),
-          Number(embedded.cardPoints?.[1] ?? 0),
-        ],
+        cardPoints: [Number(embedded.cardPoints?.[0] ?? 0), Number(embedded.cardPoints?.[1] ?? 0)],
         doubleVictory:
           embedded.doubleVictory !== undefined && embedded.doubleVictory !== null
             ? Number(embedded.doubleVictory)
@@ -492,7 +492,13 @@ export function tidyUpGamelogs(gamelogs: NotifsPacket[]): void {
     if (String(thisPacket?.move_id) !== String(prevPacket?.move_id)) continue;
     if (!thisPacket?.channel.startsWith("/table/t")) continue;
     if (!prevPacket?.channel.startsWith("/player/p")) continue;
-    if (prevPacket.data.some((notif) => (notif.type as string) === "passCards")) continue;
+    if (
+      prevPacket.data.some(
+        (notif) =>
+          (notif.type as string) === "passCards" || (notif.type as string) === "unpassCards",
+      )
+    )
+      continue;
     swap(gamelogs, index, index - 1);
     index -= 2;
   }
@@ -539,6 +545,7 @@ export function segmentNotifMoves(notifs: ReplayNotif[]): void {
         }
       } else if (
         type === "passCards" ||
+        type === "unpassCards" ||
         (type === "tichuBet" && dealCountInRound > 4 && acceptCountInRound === 0)
       ) {
         if (currentPhase !== "passCards") {

@@ -126,6 +126,14 @@ export interface TichuNotificationMap {
     card2: string;
     card3: string;
   };
+  unpassCards: {
+    codeVersion?: string;
+    cardIds: string[];
+    cards: CardData[];
+    reopenedByTichu: boolean;
+    callerId?: number;
+    callerName?: string;
+  };
   botSuggestion: { codeVersion?: string; suggestion: Record<string, unknown> };
 }
 
@@ -144,6 +152,7 @@ export interface TichuActionMap {
   pass: { onlyOnce?: boolean | 0 | 1 };
   cancelAutopass: {};
   giveTheCards: { cards: string };
+  unpassCards: {};
   acceptCards: {};
   collect: {};
   cancelPhoenix: {};

@@ -121,6 +121,70 @@ class CardManager
     return $cards;
   }
 
+  /**
+   * Return the 3 temporary cards given by `$playerId`, ordered to match
+   * `PlayerManager::getNextPlayers($playerId, true)` slots `[0..2]` (prev, partner, next).
+   *
+   * @return array<int, array<string, mixed>>
+   */
+  public static function getGivenTemporaryCardsOrdered(int $playerId, bool $forUpdate = false): array
+  {
+    $sql =
+      "SELECT card_id id, card_type type, card_type_arg type_arg, card_location_arg location_arg, card_passed_from passed_from FROM card WHERE card_location = 'temporary' AND card_passed_from = $playerId";
+    if ($forUpdate) {
+      $sql .= " FOR UPDATE";
+    }
+    $rows = array_values(Table::getObjectListFromDB($sql));
+    if (empty($rows)) {
+      return [];
+    }
+    $nextPlayers = PlayerManager::getNextPlayers($playerId, true);
+    $ordered = [];
+    $usedIds = [];
+    for ($idx = 0; $idx < 3; $idx++) {
+      $recipientId = (int) ($nextPlayers[$idx]["id"] ?? 0);
+      foreach ($rows as $row) {
+        $cid = (int) $row["id"];
+        if (isset($usedIds[$cid])) {
+          continue;
+        }
+        if ((int) $row["location_arg"] === $recipientId) {
+          $ordered[] = $row;
+          $usedIds[$cid] = true;
+          break;
+        }
+      }
+    }
+    foreach ($rows as $row) {
+      $cid = (int) $row["id"];
+      if (!isset($usedIds[$cid])) {
+        $ordered[] = $row;
+      }
+    }
+    return $ordered;
+  }
+
+  /**
+   * Return a player's 3 `'temporary'` passed cards back to `'hand'` (`card_passed_from = NULL`).
+   * Preserves original recipient `location_arg` on the returned array so the client can pre-slot
+   * the retracted draft back into the matching pass targets.
+   *
+   * @return array<int, array<string, mixed>>
+   */
+  public static function returnTemporaryCardsToHand(int $playerId): array
+  {
+    $cards = self::getGivenTemporaryCardsOrdered($playerId, true);
+    if (count($cards) !== 3) {
+      throw new \Bga\GameFramework\UserException(
+        clienttranslate("You have not passed your cards yet")
+      );
+    }
+    Table::DbQuery(
+      "UPDATE card SET card_location = 'hand', card_location_arg = $playerId, card_passed_from = NULL WHERE card_location = 'temporary' AND card_passed_from = $playerId"
+    );
+    return $cards;
+  }
+
   public static function resetPassedCards(): void
   {
     Table::DbQuery("UPDATE card SET card_passed_from=NULL ");

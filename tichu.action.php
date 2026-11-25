@@ -133,6 +133,13 @@ class action_tichu extends APP_GameAction
     $this->ajaxResponse();
   }
 
+  public function unpassCards(): void
+  {
+    $this->setAjaxMode();
+    $this->game->unpassCards();
+    $this->ajaxResponse();
+  }
+
   public function acceptCards(): void
   {
     $this->setAjaxMode();

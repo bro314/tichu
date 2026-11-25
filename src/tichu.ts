@@ -1228,6 +1228,15 @@ export class Tichu {
           }
           break;
       }
+    } else if (!this.isReadOnly() && stateName === "giveCards") {
+      this.addActionButton(
+        "unpassCards_button",
+        _("Undo Pass"),
+        "onUnpassCards",
+        undefined,
+        false,
+        "gray",
+      );
     }
 
     if (!this.isReadOnly() && this.gamedatas?.players) {
@@ -1440,6 +1449,10 @@ export class Tichu {
     this.takeAction("giveTheCards", { cards: toGive });
   }
 
+  onUnpassCards() {
+    this.takeAction("unpassCards", {});
+  }
+
   onAcceptCards() {
     clearTimeout(this.autoAcceptTimeout);
     window.gameModel?.setAcceptingCardsCountdown(false);
@@ -1636,6 +1649,7 @@ export class Tichu {
       autopass: 1,
       acceptCards: undefined,
       passCards: undefined,
+      unpassCards: 1,
       devConsole: 1,
       botSuggestion: 1,
     };
@@ -1708,6 +1722,37 @@ export class Tichu {
     }
     window.gameModel?.applyPassCardsNotif(ids);
     this.notifqueue?.setSynchronousDuration?.(out ? out.durationMs : animate ? 50 : 1);
+  }
+
+  notif_unpassCards(notif: TypedNotif<"unpassCards">) {
+    this.traceNotif("unpassCards", notif);
+    const cards = notif.args.cards || [];
+    if (this.gamedatas) {
+      if (!this.gamedatas.hand) this.gamedatas.hand = [];
+      const existingIds = new Set(this.gamedatas.hand.map((c) => String(c.id)));
+      for (const card of cards) {
+        if (!existingIds.has(String(card.id))) {
+          this.gamedatas.hand.push(card);
+        }
+      }
+      if (!this.gamedatas.handcount) this.gamedatas.handcount = {};
+      this.gamedatas.handcount[this.player_id] = this.gamedatas.hand.length;
+    }
+    const callerName = String(notif.args.callerName ?? "");
+    const noticeMsg = notif.args.reopenedByTichu
+      ? typeof dojo !== "undefined" && typeof (dojo as any).string?.substitute === "function"
+        ? dojo.string.substitute(
+            _("Tichu called by ${player_name} — review or confirm your pass"),
+            {
+              player_name: callerName,
+            },
+          )
+        : _("Tichu called by ${player_name} — review or confirm your pass").replace(
+            "${player_name}",
+            callerName,
+          )
+      : null;
+    window.gameModel?.applyUnpassCardsNotif(cards, Boolean(notif.args.reopenedByTichu), noticeMsg);
   }
 
   notif_acceptCards(notif: TypedNotif<"acceptCards">) {
