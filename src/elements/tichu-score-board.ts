@@ -24,6 +24,14 @@ export class TichuScoreBoard extends LitElement {
           display: block;
           color: var(--tichu-dialog-text, #1f2328);
         }
+        :host([compact]) {
+          width: 100%;
+          box-sizing: border-box;
+          border-radius: var(--border-radius, 12px);
+          border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.16));
+          box-shadow: var(--elevation, 0 2px 8px rgba(15, 23, 42, 0.14));
+          overflow: hidden;
+        }
         *,
         *::before,
         *::after {
@@ -31,18 +39,21 @@ export class TichuScoreBoard extends LitElement {
         }
         .score-table-wrap {
           width: 100%;
-          overflow-x: auto;
+          background: var(--tichu-dialog-surface, #ffffff);
+          overflow-x: hidden;
         }
         table {
           width: 100%;
+          table-layout: fixed;
           border-collapse: separate;
           border-spacing: 0;
           font-size: 13px;
-          line-height: 1.35;
+          line-height: 1.3;
           font-variant-numeric: tabular-nums;
         }
         :host([compact]) table {
           font-size: 12px;
+          line-height: 1.25;
         }
         thead th {
           text-align: left;
@@ -59,15 +70,12 @@ export class TichuScoreBoard extends LitElement {
           text-align: center;
           white-space: nowrap;
         }
-        thead th.col-team {
-          min-width: 145px;
-        }
         :host([compact]) thead th {
-          padding: 5px 7px;
+          padding: 4px 6px;
           font-size: 11.5px;
         }
-        :host([compact]) thead th.col-team {
-          min-width: 112px;
+        :host([compact]) thead th.col-round {
+          width: 44px;
         }
         .team-names {
           display: block;
@@ -76,21 +84,22 @@ export class TichuScoreBoard extends LitElement {
           white-space: nowrap;
         }
         tbody tr {
-          background: var(--tichu-dialog-surface, #ffffff);
+          background: transparent;
         }
         tbody tr:nth-child(even) {
-          background: var(--tichu-score-stripe-bg, rgba(31, 35, 40, 0.025));
+          background: var(--tichu-score-stripe-bg, rgba(31, 35, 40, 0.035));
         }
-        tbody tr.current {
-          background: var(--tichu-score-current-bg, rgba(11, 114, 181, 0.09));
+        tbody tr.current,
+        tbody tr.current:nth-child(even) {
+          background: var(--tichu-score-current-bg, rgba(11, 114, 181, 0.12));
         }
         tbody td {
-          padding: 8px 10px;
+          padding: 7px 10px;
           border-bottom: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.12));
-          vertical-align: top;
+          vertical-align: middle;
         }
         :host([compact]) tbody td {
-          padding: 5px 7px;
+          padding: 3px 6px;
         }
         td.cell-round {
           text-align: center;
@@ -100,13 +109,29 @@ export class TichuScoreBoard extends LitElement {
         }
         .score-main {
           display: flex;
-          align-items: baseline;
+          align-items: center;
           justify-content: space-between;
-          gap: 8px;
+          gap: 6px;
+          min-width: 0;
+        }
+        :host([compact]) .score-main {
+          gap: 4px;
+        }
+        .round-delta-wrap {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          min-width: 0;
+        }
+        :host([compact]) .round-delta-wrap {
+          gap: 3px;
         }
         .round-delta {
           font-weight: 600;
           font-size: 13px;
+        }
+        :host([compact]) .round-delta {
+          font-size: 12px;
         }
         .round-delta.pos {
           color: var(--tichu-score-pos, #15803d);
@@ -119,62 +144,44 @@ export class TichuScoreBoard extends LitElement {
         }
         .running-total {
           font-weight: 700;
-          font-size: 14px;
+          font-size: 13.5px;
           color: var(--tichu-dialog-text, #1f2328);
+          flex-shrink: 0;
         }
         :host([compact]) .running-total {
-          font-size: 12.5px;
+          font-size: 12px;
         }
-        .score-meta {
-          margin-top: 4px;
-          display: flex;
-          flex-wrap: wrap;
+        .score-tag {
+          display: inline-flex;
           align-items: center;
-          gap: 4px;
-          font-size: 11px;
-          color: var(--tichu-dialog-text-muted, #57606a);
-        }
-        :host([compact]) .score-meta {
-          margin-top: 2px;
+          padding: 0 5px;
+          border-radius: 4px;
           font-size: 10.5px;
+          font-weight: 700;
+          line-height: 1.45;
+          flex-shrink: 0;
         }
-        .cards-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 3px;
-          padding: 1px 6px;
-          border-radius: 999px;
-          background: var(--tichu-dialog-segment-bg, #ebe4d8);
-          color: var(--tichu-dialog-text-muted, #57606a);
-          font-weight: 600;
+        :host([compact]) .score-tag {
+          padding: 0 4px;
+          font-size: 10px;
+          line-height: 1.4;
         }
-        .dv-pill {
-          display: inline-flex;
-          align-items: center;
-          padding: 1px 6px;
-          border-radius: 999px;
+        .score-tag.dv {
           background: var(--tichu-score-dv-bg, rgba(217, 119, 6, 0.16));
           color: var(--tichu-score-dv-fg, #b45309);
-          font-weight: 700;
         }
-        .bet-pill {
-          display: inline-flex;
-          align-items: center;
-          padding: 1px 6px;
-          border-radius: 999px;
-          font-weight: 700;
-          max-width: 100%;
-        }
-        .bet-pill.won {
+        .score-tag.won {
           background: var(--tichu-score-pos-bg, rgba(21, 128, 61, 0.14));
           color: var(--tichu-score-pos, #15803d);
         }
-        .bet-pill.lost {
+        .score-tag.lost {
           background: var(--tichu-score-neg-bg, rgba(220, 38, 38, 0.14));
           color: var(--tichu-score-neg, #dc2626);
         }
-        .prior-note {
-          font-style: italic;
+        .score-tag.prior {
+          background: var(--tichu-dialog-segment-bg, #ebe4d8);
+          color: var(--tichu-dialog-text-muted, #57606a);
+          font-weight: 600;
         }
         tfoot td {
           padding: 8px 10px;
@@ -183,24 +190,28 @@ export class TichuScoreBoard extends LitElement {
           border-top: 2px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
         }
         :host([compact]) tfoot td {
-          padding: 5px 7px;
+          padding: 4px 6px;
         }
         tfoot td.cell-round {
           color: var(--tichu-dialog-text, #1f2328);
         }
         tfoot td.cell-total {
           text-align: right;
-          font-size: 14.5px;
+          font-size: 14px;
         }
         :host([compact]) tfoot td.cell-total {
-          font-size: 13px;
+          font-size: 12.5px;
         }
         .empty-state {
           padding: 20px 12px;
           text-align: center;
           color: var(--tichu-dialog-text-muted, #57606a);
           font-size: 13px;
-          background: var(--tichu-dialog-surface, #ffffff);
+          background: transparent;
+        }
+        :host([compact]) .empty-state {
+          padding: 10px 8px;
+          font-size: 12px;
         }
       `,
     ];
@@ -306,6 +317,26 @@ export class TichuScoreBoard extends LitElement {
     `;
   }
 
+  private buildCellTitle(
+    r: RoundScoreRecord,
+    teamIdx: 0 | 1,
+    teamBets: Array<{ name: string; bet: RoundBetOutcome }>,
+  ): string {
+    if (r.isSyntheticPrior) {
+      return _("Prior rounds cumulative total");
+    }
+    const parts: string[] = [];
+    if (r.doubleVictory === teamIdx) {
+      parts.push(_("1-2 (+200)"));
+    } else if (r.doubleVictory < 0) {
+      parts.push(`${_("Cards")}: ${r.cardPoints[teamIdx] ?? 0}`);
+    }
+    for (const { name, bet } of teamBets) {
+      parts.push(`${name}: ${bet.type} ${formatSigned(bet.delta)}`);
+    }
+    return parts.join(" · ");
+  }
+
   private renderTeamCell(
     r: RoundScoreRecord,
     teamIdx: 0 | 1,
@@ -326,32 +357,28 @@ export class TichuScoreBoard extends LitElement {
       }
     }
 
+    const cellTitle = this.buildCellTitle(r, teamIdx, teamBets);
     return html`
-      <td>
+      <td title=${cellTitle}>
         <div class="score-main">
-          <span class="round-delta ${deltaClass}">${formatSigned(delta)}</span>
+          <span class="round-delta-wrap">
+            <span class="round-delta ${deltaClass}">${formatSigned(delta)}</span>
+            ${r.isSyntheticPrior
+              ? html`<span class="score-tag prior">${_("Prior")}</span>`
+              : nothing}
+            ${!r.isSyntheticPrior && r.doubleVictory === teamIdx
+              ? html`<span class="score-tag dv">1-2</span>`
+              : nothing}
+            ${!r.isSyntheticPrior
+              ? teamBets.map(
+                  ({ bet }) => html`
+                    <span class="score-tag ${bet.won ? "won" : "lost"}">${bet.type}</span>
+                  `,
+                )
+              : nothing}
+          </span>
           <span class="running-total">${total}</span>
         </div>
-        ${r.isSyntheticPrior
-          ? html`<div class="score-meta prior-note">${_("Prior rounds cumulative total")}</div>`
-          : html`
-              <div class="score-meta">
-                ${r.doubleVictory === teamIdx
-                  ? html`<span class="dv-pill">${_("1-2 (+200)")}</span>`
-                  : r.doubleVictory >= 0
-                    ? nothing
-                    : html`<span class="cards-chip"
-                        >${_("Cards")}: ${r.cardPoints[teamIdx] ?? 0}</span
-                      >`}
-                ${teamBets.map(
-                  ({ name, bet }) => html`
-                    <span class="bet-pill ${bet.won ? "won" : "lost"}">
-                      ${name}: ${bet.type} ${formatSigned(bet.delta)}
-                    </span>
-                  `,
-                )}
-              </div>
-            `}
       </td>
     `;
   }

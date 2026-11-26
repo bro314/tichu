@@ -157,6 +157,8 @@ export class TichuReplay extends LitElement {
         .grid tichu-score-board {
           grid-column: 2 / span 1;
           grid-row: 3 / span 1;
+          width: 100%;
+          max-width: 380px;
           place-self: center;
         }
 
@@ -167,7 +169,7 @@ export class TichuReplay extends LitElement {
             minmax(70px, 0fr)
             minmax(300px, 1fr)
             minmax(70px, 0fr);
-          grid-template-rows: 0fr 0fr 0fr 0fr;
+          grid-template-rows: auto auto auto minmax(auto, 1fr);
         }
         .squareTable .grid .top {
           grid-column: 3 / span 2;
@@ -190,6 +192,7 @@ export class TichuReplay extends LitElement {
         .squareTable .grid .bottom {
           grid-column: 2 / span 2;
           grid-row: 3 / span 1;
+          align-self: start;
         }
         .squareTable .grid .wishCell {
           grid-column: 3 / span 1;
@@ -203,7 +206,8 @@ export class TichuReplay extends LitElement {
         .squareTable .grid .exit {
           grid-column: 1 / span 2;
           grid-row: 4 / span 1;
-          margin-top: 50px;
+          align-self: start;
+          margin-top: 16px;
         }
         .squareTable .grid tichu-status {
           grid-column: 4 / span 1;
@@ -212,12 +216,10 @@ export class TichuReplay extends LitElement {
         .squareTable .grid tichu-score-board {
           grid-column: 4 / span 2;
           grid-row: 3 / span 2;
-          place-self: center;
-        }
-        .squareTable .grid {
-          grid-column: 4 / span 2;
-          grid-row: 3 / span 2;
-          place-self: center;
+          width: 100%;
+          max-width: 380px;
+          align-self: start;
+          justify-self: center;
         }
         .player {
           display: flex;
@@ -265,11 +267,6 @@ export class TichuReplay extends LitElement {
       () => this.model.players$,
       (players) => {
         this.players = players;
-        this.scoreBoard = createScoreBoard(
-          this.engine.getNotifs(),
-          players.map((ps) => ps.player.id),
-          players.map((ps) => ps.player),
-        );
       },
     );
     subscribe(

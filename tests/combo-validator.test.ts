@@ -1767,6 +1767,7 @@ function withMockLitEnv(
     TichuCardEl: any;
     TichuHand: any;
     TichuStatus: any;
+    TichuScoreBoard: any;
     TichuSettingsModal: any;
     TichuTooltipLayer: any;
     TOOLTIP_TIMINGS: any;
@@ -1864,6 +1865,7 @@ function withMockLitEnv(
     TichuCardEl: cardMod.TichuCard,
     TichuHand: handMod.TichuHand,
     TichuStatus: require("../src/elements/tichu-status").TichuStatus,
+    TichuScoreBoard: require("../src/elements/tichu-score-board").TichuScoreBoard,
     TichuSettingsModal: settingsModalMod.TichuSettingsModal,
     TichuTooltipLayer: tooltipLayerMod.TichuTooltipLayer,
     TOOLTIP_TIMINGS: tooltipLayerMod.TOOLTIP_TIMINGS,
@@ -5937,6 +5939,67 @@ test("groupPlayersByTeam groups strictly by player.team across TEAM_1_2, TEAM_1_
     groupedFallback.team1.map((p) => p.id),
     [2, 4],
   );
+});
+
+test("TichuScoreBoard uses opaque fixed-layout table, no-scroll wrap, and unified single-line rows", async () => {
+  await withMockLitEnv(({ TichuScoreBoard }) => {
+    const cssRaw = (TichuScoreBoard.styles || [])
+      .map((s: any) => s?.cssText ?? String(s ?? ""))
+      .join("\n");
+    assert.ok(cssRaw.includes("table-layout: fixed"), "Table must use fixed layout to truncate team names");
+    assert.ok(
+      /\.score-table-wrap[\s\S]*?background:\s*var\(--tichu-dialog-surface/.test(cssRaw),
+      "score-table-wrap must have an opaque surface background beneath zebra/current rows",
+    );
+    assert.ok(cssRaw.includes(":host([compact])"), "CSS should style compact host card");
+    assert.equal(
+      cssRaw.includes("overflow-y: auto"),
+      false,
+      "Compact scoreboard must never create an internal vertical scrollbar",
+    );
+
+    const board = new TichuScoreBoard();
+    board.players = [
+      { id: "1", name: "Alice", no: 1, team: 0 },
+      { id: "2", name: "Bob", no: 2, team: 1 },
+      { id: "3", name: "Carol", no: 3, team: 0 },
+      { id: "4", name: "Dave", no: 4, team: 1 },
+    ];
+    board.rounds = [
+      {
+        round: 1,
+        cardPoints: [0, 0],
+        doubleVictory: 0,
+        bets: { "1": { type: "GT", won: true, delta: 200 } },
+        teamPoints: [400, 0],
+        teamTotals: [400, 0],
+      },
+      {
+        round: 2,
+        cardPoints: [65, 35],
+        doubleVictory: -1,
+        bets: { "2": { type: "T", won: false, delta: -100 } },
+        teamPoints: [65, -65],
+        teamTotals: [465, -65],
+      },
+    ];
+    board.currentRound = 2;
+
+    // Both compact (replay) and full (live modal) render the unified single-line layout with title details
+    for (const isCompact of [true, false]) {
+      board.compact = isCompact;
+      const htmlStr = serializeLitTemplate(board.render());
+      assert.equal(htmlStr.includes("score-meta"), false, "Must not render two-line score-meta");
+      assert.equal(htmlStr.includes("cards-chip"), false, "Must not render two-line Cards: chip");
+      assert.ok(htmlStr.includes("score-tag dv"), "Should keep 1-2 micro tag");
+      assert.ok(htmlStr.includes("score-tag won"), "Should keep GT won tag");
+      assert.ok(htmlStr.includes("score-tag lost"), "Should keep T lost tag");
+      assert.ok(htmlStr.includes("+400"), "Must display signed delta");
+      assert.ok(htmlStr.includes("465"), "Must display running total");
+      assert.ok(htmlStr.includes("Alice: GT +200"), "Full bet detail should appear in title tooltip");
+      assert.ok(htmlStr.includes("Cards: 65"), "Card point detail should appear in title tooltip");
+    }
+  });
 });
 
 test("GameModel concede eligibility boundaries, F5 rehydration, round reset, and rollback safety", () => {
