@@ -1576,15 +1576,6 @@ export class Tichu {
       return;
     }
     const phoenixValue = Number(val);
-    if ((window.gameModel?.getState().hand.length ?? 0) === 1 && phoenixValue === 14) {
-      this.confirmationDialog(
-        _(
-          "Do you really want to choose Ace for the Phoenix in this bomb? It looks like your only remaining card can not be played on this bomb.",
-        ),
-        () => this.choosePhoenix(phoenixValue),
-      );
-      return;
-    }
     this.choosePhoenix(phoenixValue);
   }
 
