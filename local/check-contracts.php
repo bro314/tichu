@@ -1269,6 +1269,50 @@ foreach (["playCombo", "wishMade"] as $i18nNotif) {
   }
 }
 
+if (isset($notifMethods["playCombo"])) {
+  $pcTokens = $notifMethods["playCombo"]["bodyTokens"];
+  $pcCount = count($pcTokens);
+  $callsToLogSpec = false;
+  for ($pi = 0; $pi < $pcCount; $pi++) {
+    $pt = $pcTokens[$pi];
+    if (
+      is_array($pt) &&
+      $pt[0] === T_OBJECT_OPERATOR &&
+      ($nextIdx = nextSigToken($pcTokens, $pi + 1)) !== null &&
+      is_array($pcTokens[$nextIdx]) &&
+      $pcTokens[$nextIdx][0] === T_STRING &&
+      $pcTokens[$nextIdx][1] === "toLogSpec"
+    ) {
+      $callsToLogSpec = true;
+    }
+    if (
+      is_array($pt) &&
+      $pt[0] === T_CONSTANT_ENCAPSED_STRING &&
+      unquotePhpString($pt[1]) === "combo_name"
+    ) {
+      $nextIdx = nextSigToken($pcTokens, $pi + 1);
+      $isPayloadKey =
+        $nextIdx !== null &&
+        is_array($pcTokens[$nextIdx]) &&
+        $pcTokens[$nextIdx][0] === T_DOUBLE_ARROW;
+      if (!$isPayloadKey) {
+        addError(
+          $errors,
+          "i18n",
+          "NotificationManager.php:{$pt[2]} NotificationManager::playCombo() must omit 'combo_name' from outer 'i18n' so recursive { log, args } and numeric singles render cleanly"
+        );
+      }
+    }
+  }
+  if (!$callsToLogSpec) {
+    addError(
+      $errors,
+      "i18n",
+      "NotificationManager::playCombo() must emit \$combo->toLogSpec() for 'combo_name'"
+    );
+  }
+}
+
 // Disallow raw notifyAllPlayers / notifyPlayer outside NotificationManager::broadcast / notifyPlayerWithVersion
 // and Tichu::setPlayerNonMultiactiveSafe('gameStateMultipleActiveUpdate'), AND check NotificationManager::* +
 // new NotificationMessage(...) `${...}` placeholders across all deployable PHP files.

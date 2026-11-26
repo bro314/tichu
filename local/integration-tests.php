@@ -820,7 +820,7 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
     return $found;
   };
 
-  // H1: Straight 2..8 with Phoenix as 5 (numeric rank -> i18n only has combo_name)
+  // H1: Straight 2..8 with Phoenix as 5 (numeric rank -> outer i18n empty, toLogSpec omits inner i18n)
   \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
   \LocalTichuScenarios::assignPlayerHands([
     P0 => [[1, 2], [2, 3], [3, 4], [2, 1], [4, 6], [1, 7], [2, 8], [4, 14]],
@@ -834,11 +834,17 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   $notifH1 = $findLastPlayComboNotif($game, $beforeH1);
   assertTrueVal($notifH1 !== null, 'H1 playCombo notification should be emitted');
   assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}', $notifH1['log']);
-  assertSameVal('Run of 7 cards from 2 to 8', $notifH1['args']['combo_name']);
+  assertSameVal(
+    [
+      'log' => 'Run of ${count} cards from ${lowest} to ${highest}',
+      'args' => ['count' => 7, 'lowest' => '2', 'highest' => '8'],
+    ],
+    $notifH1['args']['combo_name']
+  );
   assertSameVal('5', $notifH1['args']['phoenix_rank']);
-  assertSameVal(['combo_name'], $notifH1['args']['i18n']);
+  assertSameVal([], $notifH1['args']['i18n']);
 
-  // H2: Full House with Phoenix as King (face rank -> i18n includes phoenix_rank)
+  // H2: Full House with Phoenix as King (face rank -> outer i18n includes phoenix_rank, omits combo_name)
   \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
   \LocalTichuScenarios::assignPlayerHands([
     P0 => [[2, 1], [1, 13], [2, 13], [3, 4], [4, 4], [4, 14]],
@@ -853,9 +859,15 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   $notifH2 = $findLastPlayComboNotif($game, $beforeH2);
   assertTrueVal($notifH2 !== null, 'H2 playCombo notification should be emitted');
   assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}', $notifH2['log']);
-  assertSameVal('Kings full of 4s', $notifH2['args']['combo_name']);
+  assertSameVal(
+    [
+      'log' => '${trip_rank} full of ${pair_rank}',
+      'args' => ['trip_rank' => 'Kings', 'pair_rank' => '4s', 'i18n' => ['trip_rank', 'pair_rank']],
+    ],
+    $notifH2['args']['combo_name']
+  );
   assertSameVal('King', $notifH2['args']['phoenix_rank']);
-  assertSameVal(['combo_name', 'phoenix_rank'], $notifH2['args']['i18n']);
+  assertSameVal(['phoenix_rank'], $notifH2['args']['i18n']);
 
   // H3: Pair of Queens with Phoenix granting Mahjong wish (wish = 12)
   \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
@@ -872,9 +884,15 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   $notifH3 = $findLastPlayComboNotif($game, $beforeH3);
   assertTrueVal($notifH3 !== null, 'H3 playCombo notification should be emitted');
   assertSameVal('${player_name} plays ${combo_name}, Phoenix as ${phoenix_rank}, and grants Mahjong\'s owner wish', $notifH3['log']);
-  assertSameVal('Pair of Queens', $notifH3['args']['combo_name']);
+  assertSameVal(
+    [
+      'log' => 'Pair of ${rank}',
+      'args' => ['rank' => 'Queens', 'i18n' => ['rank']],
+    ],
+    $notifH3['args']['combo_name']
+  );
   assertSameVal('Queen', $notifH3['args']['phoenix_rank']);
-  assertSameVal(['combo_name', 'phoenix_rank'], $notifH3['args']['i18n']);
+  assertSameVal(['phoenix_rank'], $notifH3['args']['i18n']);
 
   // H4: Single Phoenix does NOT append ", Phoenix as ..."
   \LocalTichuScenarios::setupScenario($game, 'mahjong_wish', P0);
@@ -886,9 +904,54 @@ function test_phoenix_single_and_ambiguous_combo_choice_and_cancel(): void
   $notifH4 = $findLastPlayComboNotif($game, $beforeH4);
   assertTrueVal($notifH4 !== null, 'H4 playCombo notification should be emitted');
   assertSameVal('${player_name} plays ${combo_name}', $notifH4['log']);
-  assertSameVal('Phoenix a half step above 10', $notifH4['args']['combo_name']);
+  assertSameVal(
+    [
+      'log' => 'Phoenix a half step above ${rank}',
+      'args' => ['rank' => '10'],
+    ],
+    $notifH4['args']['combo_name']
+  );
   assertSameVal('', $notifH4['args']['phoenix_rank']);
-  assertSameVal(['combo_name'], $notifH4['args']['i18n']);
+  assertSameVal([], $notifH4['args']['i18n']);
+
+  // H5: Numeric single vs named/special singles in playCombo notification
+  \LocalTichuScenarios::setupScenario($game, 'phoenix_ambiguous', P0);
+  \LocalTichuScenarios::assignPlayerHands([
+    P0 => [[1, 7], [4, 14]],
+    P1 => [[1, 12], [2, 14]],
+    P2 => [[1, 1], [3, 14]],
+    P3 => [[2, 2], [3, 2]],
+  ], 'captured_p0');
+  $sevenIdH5 = (string) \LocalTichuScenarios::getCardId(1, 7);
+  $queenIdH5 = (string) \LocalTichuScenarios::getCardId(1, 12);
+  $dragonIdH5 = (string) \LocalTichuScenarios::getCardId(1, 1);
+
+  $beforeH5Num = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  callAction($game, P0, 'playCombo', ['cards' => $sevenIdH5]);
+  $notifH5Num = $findLastPlayComboNotif($game, $beforeH5Num);
+  assertTrueVal($notifH5Num !== null, 'H5 numeric single playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}', $notifH5Num['log']);
+  assertSameVal('7', $notifH5Num['args']['combo_name']);
+  assertSameVal('', $notifH5Num['args']['phoenix_rank']);
+  assertSameVal([], $notifH5Num['args']['i18n']);
+
+  $beforeH5Face = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  callAction($game, P1, 'playCombo', ['cards' => $queenIdH5]);
+  $notifH5Face = $findLastPlayComboNotif($game, $beforeH5Face);
+  assertTrueVal($notifH5Face !== null, 'H5 named face single playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}', $notifH5Face['log']);
+  assertSameVal(['log' => 'Queen', 'args' => []], $notifH5Face['args']['combo_name']);
+  assertSameVal('', $notifH5Face['args']['phoenix_rank']);
+  assertSameVal([], $notifH5Face['args']['i18n']);
+
+  $beforeH5Dragon = (int) \APP_DbObject::getUniqueValueFromDB("SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog");
+  callAction($game, P2, 'playCombo', ['cards' => $dragonIdH5]);
+  $notifH5Dragon = $findLastPlayComboNotif($game, $beforeH5Dragon);
+  assertTrueVal($notifH5Dragon !== null, 'H5 Dragon single playCombo notification should be emitted');
+  assertSameVal('${player_name} plays ${combo_name}', $notifH5Dragon['log']);
+  assertSameVal(['log' => 'Dragon', 'args' => []], $notifH5Dragon['args']['combo_name']);
+  assertSameVal('', $notifH5Dragon['args']['phoenix_rank']);
+  assertSameVal([], $notifH5Dragon['args']['i18n']);
 }
 
 // ============================================================================

@@ -93,7 +93,7 @@ class NotificationManager
         ? (int) $combo->phoenixValue
         : null;
     $phoenixRank = $phoenixRankVal !== null ? CardManager::cardToStr($phoenixRankVal) : "";
-    $i18n = ["combo_name"];
+    $i18n = [];
     if ($phoenixRankVal !== null && CardManager::isTranslatableCardStr($phoenixRankVal)) {
       $i18n[] = "phoenix_rank";
     }
@@ -101,7 +101,7 @@ class NotificationManager
       "i18n" => $i18n,
       "player_id" => $playerId,
       "player_name" => $playerName,
-      "combo_name" => $combo->description ?? "",
+      "combo_name" => $combo->toLogSpec(),
       "phoenix_rank" => $phoenixRank,
       "cards" => $cards,
       "points" => CardManager::getTrickValue($cards),

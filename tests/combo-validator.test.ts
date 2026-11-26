@@ -3513,6 +3513,53 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     assert.equal(ui.gamedatas.lastComboDescription, "Pair of Queens");
     assert.equal(ui.gamedatas.lastCombo.description, "Pair of Queens");
 
+    ui.notif_playCombo({
+      args: {
+        player_id: 2,
+        player_name: "P2",
+        combo_name: "7",
+        i18n: [],
+        cards: [A7],
+        points: 0,
+        type: SINGLE_COMBO,
+      },
+    });
+    assert.equal(ui.gamedatas.lastComboDescription, "7");
+    assert.equal(ui.gamedatas.lastCombo.description, "7");
+
+    ui.notif_playCombo({
+      args: {
+        player_id: 2,
+        player_name: "P2",
+        combo_name: { log: "Jack", args: [] },
+        i18n: [],
+        cards: [AJ],
+        points: 0,
+        type: SINGLE_COMBO,
+      },
+    });
+    assert.equal(ui.gamedatas.lastComboDescription, "Jack");
+    assert.equal(ui.gamedatas.lastCombo.description, "Jack");
+
+    ui.notif_playCombo({
+      args: {
+        player_id: 2,
+        player_name: "P2",
+        combo_name: {
+          log: "${trip_rank} full of ${pair_rank}",
+          args: { trip_rank: "Kings", pair_rank: "4s", i18n: ["trip_rank", "pair_rank"] },
+        },
+        phoenix_rank: "King",
+        i18n: ["phoenix_rank"],
+        cards: [PH, AK, BK, A4, B4],
+        points: -5,
+        type: FULL_HOUSE_COMBO,
+        phoenixValue: 13,
+      },
+    });
+    assert.equal(ui.gamedatas.lastComboDescription, "Kings full of 4s");
+    assert.equal(ui.gamedatas.lastCombo.description, "Kings full of 4s");
+
     ui.pendingConfirmTichu = { grand: true, msg: "Confirm?", titleSave: "Turn" };
     ui.renderConfirmTichuButtons();
     assert.equal(addedButtons[0]?.label, "«no grand tichu»");
@@ -5946,7 +5993,10 @@ test("TichuScoreBoard uses opaque fixed-layout table, no-scroll wrap, and unifie
     const cssRaw = (TichuScoreBoard.styles || [])
       .map((s: any) => s?.cssText ?? String(s ?? ""))
       .join("\n");
-    assert.ok(cssRaw.includes("table-layout: fixed"), "Table must use fixed layout to truncate team names");
+    assert.ok(
+      cssRaw.includes("table-layout: fixed"),
+      "Table must use fixed layout to truncate team names",
+    );
     assert.ok(
       /\.score-table-wrap[\s\S]*?background:\s*var\(--tichu-dialog-surface/.test(cssRaw),
       "score-table-wrap must have an opaque surface background beneath zebra/current rows",
@@ -5996,7 +6046,10 @@ test("TichuScoreBoard uses opaque fixed-layout table, no-scroll wrap, and unifie
       assert.ok(htmlStr.includes("score-tag lost"), "Should keep T lost tag");
       assert.ok(htmlStr.includes("+400"), "Must display signed delta");
       assert.ok(htmlStr.includes("465"), "Must display running total");
-      assert.ok(htmlStr.includes("Alice: GT +200"), "Full bet detail should appear in title tooltip");
+      assert.ok(
+        htmlStr.includes("Alice: GT +200"),
+        "Full bet detail should appear in title tooltip",
+      );
       assert.ok(htmlStr.includes("Cards: 65"), "Card point detail should appear in title tooltip");
     }
   });
@@ -6669,7 +6722,10 @@ test("Bug #22264: TichuHand organize bar and TichuSettingsModal 4-way sort UI", 
         model.setGameState("playCombo", { activePlayerId: "1", isCurrentPlayerActive: true });
         const toggleClosedHtml = serializeLitTemplate(hand.render());
         assert.ok(toggleClosedHtml.includes('id="toggle_card_groups"'));
-        assert.match(toggleClosedHtml, /id="toggle_card_groups"[^>]*aria-pressed=(?:"false"|false)/);
+        assert.match(
+          toggleClosedHtml,
+          /id="toggle_card_groups"[^>]*aria-pressed=(?:"false"|false)/,
+        );
         assert.equal(/id=["']?group_btn_1["']?/.test(toggleClosedHtml), false);
 
         // Toggling Card groups opens group buttons 1..4
