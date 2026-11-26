@@ -171,6 +171,9 @@ function test_new_game_and_deal_8_cards(): void
   assertSameVal('1', (string) $randomRows[3]['player_team'], 'Seat 4 player_team should be 1');
   assertSameVal('ff0000', (string) $randomRows[3]['player_color'], 'Seat 4 player_color should be ff0000');
 
+  $gameOptions = $game->getGameOptions();
+  assertSameVal(TEAM_RANDOM, (int) ($gameOptions[101]['default'] ?? 0), 'Option 101 (Teams) should default to TEAM_RANDOM (#95467)');
+
   // Verify scenario "grand_tichu" deals the 8 expected powerhouse cards to P0
   $gtPayload = \LocalTichuScenarios::setupScenario($game, 'grand_tichu', P0);
   assertSameVal('grandTichuBets', $gtPayload['gamestate']['name']);

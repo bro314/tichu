@@ -60,7 +60,7 @@ $game_options = [
       ],
       4 => ["name" => totranslate("At random"), "tmdisplay" => totranslate("Random")],
     ],
-    "default" => 1,
+    "default" => 4,
   ],
   102 => [
     "name" => totranslate("Game Variant"),
