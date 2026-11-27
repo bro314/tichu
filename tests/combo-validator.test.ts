@@ -6784,3 +6784,110 @@ test("Bug #22264: TichuHand organize bar and TichuSettingsModal 4-way sort UI", 
     }
   });
 });
+
+test("Bug #258736: raised 16px drag deadzone and one-shot post-drag click suppression", async () => {
+  await withMockLitEnv(({ TichuStock }) => {
+    const { DRAG_DEADZONE_PX } = require("../src/elements/tichu-stock");
+    assert.equal(DRAG_DEADZONE_PX, 16);
+
+    const cards = [A2, C5, B9];
+    const cardEls = cards.map((card, i) => ({
+      tagName: "TICHU-CARD",
+      pass: false,
+      card,
+      classList: { contains: () => false },
+      getBoundingClientRect: () => ({
+        left: i * 50,
+        right: i * 50 + 100,
+        top: 0,
+        bottom: 150,
+        width: 100,
+        height: 150,
+      }),
+    }));
+    const stockEl = {
+      getBoundingClientRect: () => ({ left: 0, right: 200, top: 0, bottom: 150, width: 200, height: 150 }),
+      setPointerCapture: () => {},
+      hasPointerCapture: () => false,
+      releasePointerCapture: () => {},
+    };
+    const mockShadowRoot = {
+      getElementById: (id: string) => (id === "stock" ? stockEl : null),
+      querySelectorAll: (sel: string) => (sel === "tichu-card" ? cardEls : []),
+    };
+
+    const stock = new TichuStock();
+    stock.performUpdate = () => {};
+    stock.cards = cards;
+    stock.reorderable = true;
+    stock.selectionMode = 2;
+    stock.sortMode = "rank";
+    Object.defineProperty(stock, "shadowRoot", { value: mockShadowRoot, configurable: true });
+    const dispatched: Array<{ type: string; detail: any }> = [];
+    (stock as any).dispatchEvent = (evt: any) => {
+      dispatched.push({ type: evt.type, detail: evt.detail });
+      return true;
+    };
+
+    const makePtrEvent = (cardIdx: number, clientX: number, clientY = 50, pointerId = 1) => ({
+      pointerType: "mouse",
+      button: 0,
+      pointerId,
+      clientX,
+      clientY,
+      cancelable: true,
+      preventDefault: () => {},
+      composedPath: () => [cardEls[cardIdx]],
+    });
+    const makeClickEvent = (card: TichuCard) =>
+      ({
+        detail: { card },
+        stopPropagation: () => {},
+      }) as any;
+
+    try {
+      // 1) Horizontal drift of 12px (within 16px deadzone) does NOT start drag or suppress click
+      (stock as any).onStockPointerDown(makePtrEvent(0, 20));
+      (stock as any).onStockPointerMove(makePtrEvent(0, 32));
+      assert.equal((stock as any).dragActive, false);
+      (stock as any).onStockPointerUp(makePtrEvent(0, 32));
+      (stock as any).onCardClick(makeClickEvent(A2), A2);
+      assert.deepEqual(stock.getSelectedIds(), [A2.id]);
+      assert.equal(dispatched.filter((d) => d.type === "hand-reorder").length, 0);
+
+      // 2) Drag > 16px suppresses only the single trailing click on the dragged card (A2)
+      stock.unselectAll();
+      (stock as any).onStockPointerDown(makePtrEvent(0, 20));
+      (stock as any).onStockPointerMove(makePtrEvent(0, 44)); // +24px > 16px
+      assert.equal((stock as any).dragActive, true);
+      (stock as any).onStockPointerUp(makePtrEvent(0, 44));
+
+      // First trailing click on A2 is suppressed
+      (stock as any).onCardClick(makeClickEvent(A2), A2);
+      assert.deepEqual(stock.getSelectedIds(), []);
+      // Second click on A2 succeeds immediately (no 350ms blackout)
+      (stock as any).onCardClick(makeClickEvent(A2), A2);
+      assert.deepEqual(stock.getSelectedIds(), [A2.id]);
+
+      // 3) Drag on A2 does NOT swallow an immediate click on a different card (C5)
+      stock.unselectAll();
+      (stock as any).onStockPointerDown(makePtrEvent(0, 20));
+      (stock as any).onStockPointerMove(makePtrEvent(0, 44));
+      (stock as any).onStockPointerUp(makePtrEvent(0, 44));
+      (stock as any).onCardClick(makeClickEvent(C5), C5);
+      assert.deepEqual(stock.getSelectedIds(), [C5.id]);
+
+      // 4) A new pointerdown clears any armed suppression so rapid re-clicking on A2 works
+      stock.unselectAll();
+      (stock as any).onStockPointerDown(makePtrEvent(0, 20));
+      (stock as any).onStockPointerMove(makePtrEvent(0, 44));
+      (stock as any).onStockPointerUp(makePtrEvent(0, 44));
+      (stock as any).onStockPointerDown(makePtrEvent(0, 20));
+      (stock as any).onStockPointerUp(makePtrEvent(0, 20));
+      (stock as any).onCardClick(makeClickEvent(A2), A2);
+      assert.deepEqual(stock.getSelectedIds(), [A2.id]);
+    } finally {
+      stock.disconnectedCallback();
+    }
+  });
+});

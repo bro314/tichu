@@ -12,7 +12,7 @@ import { getTooltipLayer } from "./tichu-tooltip-layer";
 import { hasBomb } from "./utils";
 
 export const GROUP_GAP_PX = 22;
-export const DRAG_DEADZONE_PX = 8;
+export const DRAG_DEADZONE_PX = 16;
 
 export function computeCardVisibleWidthPx(itemWidth: number, marginRight: number): number {
   return Math.min(itemWidth, Math.max(16, itemWidth + marginRight));
@@ -309,7 +309,9 @@ export class TichuStock extends LitElement {
 
   private resizeObserver?: ResizeObserver;
 
-  private suppressClickUntil = 0;
+  private suppressClickCardId: string | null = null;
+
+  private suppressClickTimer: ReturnType<typeof setTimeout> | null = null;
 
   private pendingDrag: {
     pointerId: number;
@@ -448,8 +450,26 @@ export class TichuStock extends LitElement {
     this.resizeObserver?.disconnect();
     this.resizeObserver = undefined;
     this.pendingDrag = null;
+    this.clearSuppressClick();
     this.resetDragState();
     super.disconnectedCallback();
+  }
+
+  private clearSuppressClick() {
+    this.suppressClickCardId = null;
+    if (this.suppressClickTimer !== null) {
+      clearTimeout(this.suppressClickTimer);
+      this.suppressClickTimer = null;
+    }
+  }
+
+  private armSuppressClick(cardId: string) {
+    this.clearSuppressClick();
+    this.suppressClickCardId = cardId;
+    this.suppressClickTimer = setTimeout(() => {
+      this.suppressClickCardId = null;
+      this.suppressClickTimer = null;
+    }, 50);
   }
 
   private resetDragState() {
@@ -818,6 +838,7 @@ export class TichuStock extends LitElement {
   }
 
   private onStockPointerDown(e: PointerEvent) {
+    this.clearSuppressClick();
     if (!this.reorderable || this.pass || this.hideAllCards) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
 
@@ -979,7 +1000,7 @@ export class TichuStock extends LitElement {
       return;
     }
 
-    this.suppressClickUntil = Date.now() + 350;
+    this.armSuppressClick(pending.cardId);
 
     if (!cancelled && this.shadowRoot) {
       const sortedCards = this.getSortedCards();
@@ -1087,7 +1108,13 @@ export class TichuStock extends LitElement {
 
   private onCardClick(e: CustomEvent<{ card: Card }>, card: Card) {
     e.stopPropagation();
-    if (Date.now() < this.suppressClickUntil) return;
+    if (this.suppressClickCardId !== null) {
+      const suppressedId = this.suppressClickCardId;
+      this.clearSuppressClick();
+      if (suppressedId === String(card.id)) {
+        return;
+      }
+    }
     if (this.selectionMode === 0) return;
 
     const cardId = String(card.id);
