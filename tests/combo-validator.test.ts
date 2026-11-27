@@ -6806,7 +6806,14 @@ test("Bug #258736: raised 16px drag deadzone and one-shot post-drag click suppre
       }),
     }));
     const stockEl = {
-      getBoundingClientRect: () => ({ left: 0, right: 200, top: 0, bottom: 150, width: 200, height: 150 }),
+      getBoundingClientRect: () => ({
+        left: 0,
+        right: 200,
+        top: 0,
+        bottom: 150,
+        width: 200,
+        height: 150,
+      }),
       setPointerCapture: () => {},
       hasPointerCapture: () => false,
       releasePointerCapture: () => {},
