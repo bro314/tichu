@@ -53,7 +53,8 @@ class action_tichu extends APP_GameAction
   {
     $this->setAjaxMode();
     $bet = $this->getArg("bet", AT_enum, true, false, ["100"]);
-    $this->game->tichuBet();
+    $requireConfirm = (bool) $this->getArg("confirm", AT_bool, false, false);
+    $this->game->tichuBet(false, null, $requireConfirm);
     $this->ajaxResponse();
   }
 

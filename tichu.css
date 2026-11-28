@@ -400,6 +400,11 @@ html[data-theme="dark"] #spectatorbox a {
   /* transform is set dynamically using resize observers when factor < 1 */
   margin: 0px 10px;
 }
+@media (max-width: 760px) {
+  #game_play_area_wrap {
+    margin: 0px 4px;
+  }
+}
 #game_play_area {
   /* this is set dynamically using resize observers */
   width: 900px;
@@ -409,6 +414,13 @@ html[data-theme="dark"] #spectatorbox a {
   border: 1px solid var(--tichu-play-area-border, rgba(255, 255, 255, 0.25));
   box-shadow: var(--tichu-play-area-shadow, 0 12px 32px rgba(15, 23, 42, 0.22));
   padding-top: 15px;
+}
+#game_play_area.responsive-compact {
+  width: 100%;
+  max-width: 1200px;
+  margin: 6px auto 24px auto;
+  padding-top: 8px;
+  border-radius: 10px;
 }
 #game_play_area h3 {
   font-size: 20px;
@@ -486,8 +498,7 @@ html[data-theme="dark"] .player_board_inner .player_board_content {
   font-size: 14px;
 }
 #myhand {
-  /* The right margin makes room for the chat window. */
-  margin: 15px 250px 25px 15px;
+  margin: 12px 15px 6px 15px;
 }
 
 .smallCards {

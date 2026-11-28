@@ -30,7 +30,7 @@ const THEME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 export class TichuGame extends LitElement {
   @state() private experimentalReplayOpen = false;
   @state() private clockwise = true;
-  @state() private squareTable = false;
+  @state() private squareTable = true;
   @state() private theme = 0;
   @state() private isTiki = false;
   @state() private betAnimations: BetAnimation[] = [];

@@ -144,7 +144,7 @@ Per [`docs/BGA_OPEN_SOURCE_ECOSYSTEM.md`](file:///Users/brohlfs/git/tichu/docs/B
 
 ## 6. Official BGA 2025–2026 Modernization Workflows (`modernize-bga-game-project`)
 
-Consult `https://doc.studio.boardgamearena.com/framework-documentation/ai-tooling/` (or [Plan 13](file:///Users/brohlfs/git/tichu/plans/13-modern-bga-sounds-and-polyphonic-audio.md) and [Plan 18](file:///Users/brohlfs/git/tichu/plans/18-bundle-diet-modern-bga-esm-autowired-actions-and-tutorials.md)) when migrating Tichu's classic architecture toward modern BGA APIs. Before starting any migration workflow:
+Consult `https://doc.studio.boardgamearena.com/framework-documentation/ai-tooling/` (or [Plan 05](file:///Users/brohlfs/git/tichu/plans/05-modern-bga-sounds-and-polyphonic-audio.md) and [Plan 07](file:///Users/brohlfs/git/tichu/plans/07-bundle-diet-esm-autowired-actions-and-tutorials.md)) when migrating Tichu's classic architecture toward modern BGA APIs. Before starting any migration workflow:
 
 1. Refresh [`_ide_helper.php`](file:///Users/brohlfs/git/tichu/_ide_helper.php) and [`src/types/bga-framework.d.ts`](file:///Users/brohlfs/git/tichu/src/types/bga-framework.d.ts) from Studio.
 2. Never create new PHP traits during migration, and always edit TypeScript in `src/` (then run `npm run build`) rather than patching `tichu.js`.

@@ -454,7 +454,7 @@ export const initialLiveGameState: LiveGameState = {
   phoenixAllowedValues: [],
   selectedPhoenixValue: null,
   clockwise: true,
-  squareTable: false,
+  squareTable: true,
   confirmPassWithSelection: true,
   theme: 0,
   isTiki: false,
@@ -935,7 +935,9 @@ export class GameModel {
 
     // Resolve user preferences from either named fields or BGA numeric IDs (100..105)
     const squareTable =
-      prefs?.squareTable !== undefined ? Boolean(prefs.squareTable) : Number(prefs?.[100]) === 2;
+      prefs?.squareTable !== undefined
+        ? Boolean(prefs.squareTable)
+        : Number(prefs?.[100] ?? 2) === 2;
     const clockwise =
       prefs?.clockwise !== undefined ? Boolean(prefs.clockwise) : Number(prefs?.[101] ?? 1) === 2;
     const confirmPassWithSelection =

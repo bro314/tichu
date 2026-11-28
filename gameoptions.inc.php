@@ -79,6 +79,7 @@ $game_preferences = [
       1 => ["name" => totranslate("List")],
       2 => ["name" => totranslate("Square")],
     ],
+    "default" => 2,
   ],
   101 => [
     "name" => totranslate("Order of play"),

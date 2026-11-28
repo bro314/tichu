@@ -249,17 +249,19 @@ export class TichuScoreBoard extends LitElement {
             </tr>
           </thead>
           <tbody>
-            ${this.rounds.length === 0
-              ? html`
-                  <tr>
-                    <td colspan="3" class="empty-state">
-                      ${_(
-                        "No rounds completed yet. Round-by-round scores will appear here after Round 1.",
-                      )}
-                    </td>
-                  </tr>
-                `
-              : this.rounds.map((r) => this.renderRound(r, playerNamesById, playerTeamById))}
+            ${
+              this.rounds.length === 0
+                ? html`
+                    <tr>
+                      <td colspan="3" class="empty-state">
+                        ${_(
+                          "No rounds completed yet. Round-by-round scores will appear here after Round 1.",
+                        )}
+                      </td>
+                    </tr>
+                  `
+                : this.rounds.map((r) => this.renderRound(r, playerNamesById, playerTeamById))
+            }
           </tbody>
           <tfoot>
             <tr>
@@ -363,19 +365,25 @@ export class TichuScoreBoard extends LitElement {
         <div class="score-main">
           <span class="round-delta-wrap">
             <span class="round-delta ${deltaClass}">${formatSigned(delta)}</span>
-            ${r.isSyntheticPrior
-              ? html`<span class="score-tag prior">${_("Prior")}</span>`
-              : nothing}
-            ${!r.isSyntheticPrior && r.doubleVictory === teamIdx
-              ? html`<span class="score-tag dv">1-2</span>`
-              : nothing}
-            ${!r.isSyntheticPrior
-              ? teamBets.map(
-                  ({ bet }) => html`
-                    <span class="score-tag ${bet.won ? "won" : "lost"}">${bet.type}</span>
-                  `,
-                )
-              : nothing}
+            ${
+              r.isSyntheticPrior
+                ? html`<span class="score-tag prior">${_("Prior")}</span>`
+                : nothing
+            }
+            ${
+              !r.isSyntheticPrior && r.doubleVictory === teamIdx
+                ? html`<span class="score-tag dv">1-2</span>`
+                : nothing
+            }
+            ${
+              !r.isSyntheticPrior
+                ? teamBets.map(
+                    ({ bet }) => html`
+                      <span class="score-tag ${bet.won ? "won" : "lost"}">${bet.type}</span>
+                    `,
+                  )
+                : nothing
+            }
           </span>
           <span class="running-total">${total}</span>
         </div>

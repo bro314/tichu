@@ -42,10 +42,14 @@ export class TichuPlayedCards extends LitElement {
       css`
         :host {
           display: block;
+          container-type: inline-size;
         }
         #playedCards {
-          --w: 40px;
-          --h: 60px;
+          --w: clamp(18px, calc((100vw - 64px) / 14), 40px);
+          --h: calc(var(--w) * 1.5);
+          --card-margin: 3px;
+          box-sizing: border-box;
+          max-width: 100%;
         }
         #playedCards h3 {
           padding: 10px 15px;
@@ -58,11 +62,14 @@ export class TichuPlayedCards extends LitElement {
         }
         #playedCards #playedCardsFlexRow .space {
           flex-grow: 1;
+          min-width: 0;
         }
         #playedCards #playedCardsFlexCol {
           flex-grow: 0;
           display: flex;
           flex-direction: column;
+          max-width: 100%;
+          box-sizing: border-box;
           margin: 10px;
           padding: 5px;
           background-color: rgba(255, 255, 255, 0.2);
@@ -76,13 +83,36 @@ export class TichuPlayedCards extends LitElement {
         #playedCards .arg {
           width: var(--w);
           height: var(--h);
-          margin: 3px;
+          margin: var(--card-margin);
+          flex: 0 0 auto;
           border-radius: 3px;
           background-image: var(--card-sprite-url);
           background-position: calc(var(--x) * -1 * var(--w)) calc(var(--y) * -1 * var(--h));
           background-repeat: no-repeat;
           background-size: calc(var(--w) * 14) calc(var(--h) * 4);
           position: relative;
+        }
+        @supports (width: 1cqi) {
+          #playedCards {
+            --w: 40px;
+          }
+          @container (max-width: 699px) {
+            #playedCards {
+              --card-margin: 1.5px;
+              --w: clamp(18px, calc((100cqi - 60px) / 14), 40px);
+            }
+            #playedCards h3 {
+              padding: 8px 10px;
+              font-size: 14px;
+            }
+            #playedCards #playedCardsFlexCol {
+              margin: 6px 4px;
+              padding: 4px;
+            }
+            #playedCards .arg {
+              border-radius: 2px;
+            }
+          }
         }
         #playedCards .arg-label {
           font-size: 0;

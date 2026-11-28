@@ -1,5 +1,6 @@
 import { html, css, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
+import { classMap } from "lit/directives/class-map.js";
 import {
   Combo,
   ComboValidationResult,
@@ -32,6 +33,9 @@ export class TichuActionBar extends LitElement {
   @state() private firstOutPlayerId = "";
   @state() private acceptingCardsCountdown = false;
   @state() private collectingTrickCountdown = false;
+  @state() private compactMode: "desktop" | "medium" | "mobile" = "desktop";
+
+  private resizeObserver?: ResizeObserver;
 
   static override get styles() {
     return [
@@ -45,8 +49,10 @@ export class TichuActionBar extends LitElement {
           min-height: 32px;
           box-sizing: content-box;
           display: grid;
-          grid-template-columns:
-            repeat(3, minmax(130px, 160px)) minmax(24px, 1fr) repeat(2, minmax(130px, 160px));
+          grid-template-columns: repeat(3, minmax(130px, 160px)) minmax(24px, 1fr) repeat(
+              2,
+              minmax(130px, 160px)
+            );
           column-gap: 10px;
           align-items: center;
           background: var(--tichu-bar-bg, var(--bg-color-lighter));
@@ -124,6 +130,75 @@ export class TichuActionBar extends LitElement {
         #wishBombCallout .callout-msg {
           font-weight: 600;
           margin-right: 6px;
+        }
+        #buttons.compact-medium {
+          padding: 8px 10px;
+          column-gap: 6px;
+          grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(6px, 0.25fr) repeat(
+              2,
+              minmax(0, 1fr)
+            );
+        }
+        #buttons.compact-medium .bgabutton {
+          padding: 7px 6px;
+          font-size: 13px;
+        }
+        #buttons.compact-mobile {
+          padding: 8px 6px;
+          column-gap: 6px;
+          row-gap: 6px;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        #buttons.compact-mobile #play_button {
+          grid-column: 1;
+          grid-row: 1;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile #play_button.countdown {
+          grid-column: 1 / 4;
+        }
+        #buttons.compact-mobile #pass_button {
+          grid-column: 2;
+          grid-row: 1;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile #pass_trick_button {
+          grid-column: 3;
+          grid-row: 1;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile .space1 {
+          grid-column: 1;
+          grid-row: 2;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile #bomb_button {
+          grid-column: 2;
+          grid-row: 2;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile #tichu_button {
+          grid-column: 3;
+          grid-row: 2;
+          min-height: 36px;
+        }
+        #buttons.compact-mobile .bgabutton {
+          padding: 8px 4px;
+          font-size: 12px;
+          min-height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        #buttons.compact-mobile.compact-single-row #play_button,
+        #buttons.compact-mobile.compact-single-row #pass_button,
+        #buttons.compact-mobile.compact-single-row #pass_trick_button {
+          display: none;
+        }
+        #buttons.compact-mobile.compact-single-row .space1,
+        #buttons.compact-mobile.compact-single-row #bomb_button,
+        #buttons.compact-mobile.compact-single-row #tichu_button {
+          grid-row: 1;
         }
       `,
     ];
@@ -245,6 +320,33 @@ export class TichuActionBar extends LitElement {
     );
   }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    this.updateResponsiveMode(this.clientWidth);
+    if (typeof ResizeObserver !== "undefined" && !this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const entryWidth = entries[0]?.contentRect?.width;
+        const w = typeof entryWidth === "number" && entryWidth > 0 ? entryWidth : this.clientWidth;
+        this.updateResponsiveMode(w);
+      });
+      this.resizeObserver.observe(this);
+    }
+  }
+
+  override disconnectedCallback() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    super.disconnectedCallback();
+  }
+
+  updateResponsiveMode(width: number) {
+    const nextMode: "desktop" | "medium" | "mobile" =
+      !width || width >= 740 ? "desktop" : width >= 540 ? "medium" : "mobile";
+    if (nextMode !== this.compactMode) {
+      this.compactMode = nextMode;
+    }
+  }
+
   override render() {
     const readOnly = this.isReadOnly();
     if (readOnly || this.stateName === "gameEnd") {
@@ -263,10 +365,24 @@ export class TichuActionBar extends LitElement {
       !this.firstOutPlayerId;
 
     const isCountdown = this.acceptingCardsCountdown || this.collectingTrickCountdown;
+    const isPrePlaySingleRow =
+      this.compactMode === "mobile" &&
+      !isCountdown &&
+      (this.stateName === "grandTichuBets" ||
+        this.stateName === "giveCards" ||
+        this.stateName === "acceptPassedCards" ||
+        this.stateName === "showPassedCards");
     const wishBombCallout = this.getWishBombCallout();
 
     return html`
-      <div id="buttons">
+      <div
+        id="buttons"
+        class=${classMap({
+          "compact-medium": this.compactMode === "medium",
+          "compact-mobile": this.compactMode === "mobile",
+          "compact-single-row": isPrePlaySingleRow,
+        })}
+      >
         <div id="play_button" class=${isCountdown ? "countdown" : ""}>
           ${this.renderPlayButtonContent()}
         </div>

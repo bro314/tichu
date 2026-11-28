@@ -21,7 +21,24 @@ import { subscribe } from "./subscription-controller";
 import "./tichu-action-bar";
 import type { PassedOriginInfo } from "./tichu-card";
 import "./tichu-stock";
-import type { TichuStock } from "./tichu-stock";
+import type { StockRowMode, TichuStock } from "./tichu-stock";
+
+export const HAND_ROW_MODE_STORAGE_KEY = "tichu_hand_row_mode";
+export const COMPACT_HAND_MAX_WIDTH = 720;
+
+export function readStoredHandRowMode(): StockRowMode {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const raw = localStorage.getItem(HAND_ROW_MODE_STORAGE_KEY);
+      if (raw === "two") {
+        return "two";
+      }
+    }
+  } catch (_e) {
+    // ignore storage errors
+  }
+  return "single";
+}
 
 export interface BuildPassedOriginsParams {
   hand: Card[];
@@ -105,6 +122,11 @@ export class TichuHand extends LitElement {
   @state() private customHandOrder: string[] = [];
   @state() private cardGroups: Record<string, CardGroupId> = {};
   @state() private cardGroupsUiEnabled = false;
+  @state() private handRowMode: StockRowMode = "single";
+  @state() private compactHand = false;
+  @state() private stockTwoRows = false;
+  private hasLoadedStoredRowMode = false;
+  private resizeObserver?: ResizeObserver;
   @state() private liveAnnouncement = "";
   @state() private stateName = "";
   @state() private isTiki = false;
@@ -131,6 +153,7 @@ export class TichuHand extends LitElement {
       css`
         :host {
           display: block;
+          container-type: inline-size;
         }
         #myhandwrap {
           position: relative;
@@ -138,11 +161,33 @@ export class TichuHand extends LitElement {
           font-size: 14px;
         }
         #myhand {
-          margin: 15px 250px 6px 15px;
+          margin: 12px 15px 6px 15px;
           min-height: 184px;
         }
+        .hand-footer-row {
+          margin: 4px 15px 0 15px;
+          min-height: 36px;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px 10px;
+        }
+        @container (max-width: 599px) {
+          #myhandwrap {
+            padding: 6px 0 8px;
+          }
+          #myhand {
+            margin: 10px 6px 2px 6px;
+            min-height: 138px;
+            --stock-justify: center;
+          }
+          .hand-footer-row {
+            margin: 2px 6px 0 6px;
+          }
+        }
         #hand-organize-bar {
-          margin: 4px 250px 0 15px;
+          margin: 0;
           min-height: 34px;
           display: flex;
           flex-wrap: wrap;
@@ -313,13 +358,26 @@ export class TichuHand extends LitElement {
           padding: 8px 15px 12px;
         }
         .hand-corner-controls {
-          position: absolute;
-          bottom: 14px;
-          right: 15px;
-          z-index: 2;
+          margin-left: auto;
           display: inline-flex;
           align-items: center;
           gap: 8px;
+          flex-shrink: 0;
+        }
+        @media (max-width: 560px) {
+          #myhandwrap {
+            padding: 6px 0 10px;
+          }
+          #myhand {
+            margin: 6px 6px 6px 6px;
+            min-height: 0;
+          }
+          .hand-footer-row {
+            margin: 4px 6px 0 6px;
+          }
+          .spectator-settings-bar {
+            padding: 8px 6px 10px;
+          }
         }
         .concede-btn {
           height: 36px;
@@ -540,6 +598,38 @@ export class TichuHand extends LitElement {
     );
   }
 
+  private updateCompactWidth(width: number) {
+    if (width <= 0) return;
+    const isCompact = width <= COMPACT_HAND_MAX_WIDTH;
+    if (isCompact && !this.hasLoadedStoredRowMode) {
+      this.hasLoadedStoredRowMode = true;
+      this.handRowMode = readStoredHandRowMode();
+    }
+    this.compactHand = isCompact;
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    if (this.clientWidth > 0) {
+      this.updateCompactWidth(this.clientWidth);
+    }
+    if (typeof ResizeObserver !== "undefined" && !this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const w = entries[0]?.contentRect?.width ?? this.clientWidth;
+        if (w > 0) {
+          this.updateCompactWidth(w);
+        }
+      });
+      this.resizeObserver.observe(this);
+    }
+  }
+
+  override disconnectedCallback() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    super.disconnectedCallback();
+  }
+
   private isReadOnly(): boolean {
     const ui = (window as any).gameui;
     if (ui && typeof ui.isReadOnly === "function") {
@@ -592,14 +682,13 @@ export class TichuHand extends LitElement {
       round: this.round,
     });
     const showConcede = !this.isSpectator && !this.isReadOnly() && concedeUi.canPropose;
+    const hideHandWrap =
+      this.isSpectator || (this.stateName === "gameEnd" && this.hand.length === 0);
+    const effectiveRowMode: StockRowMode = this.compactHand ? this.handRowMode : "single";
 
     return html`
       <tichu-action-bar></tichu-action-bar>
-      <div
-        id="myhandwrap"
-        class="whiteblock"
-        style="display: ${this.isSpectator ? "none" : "block"}"
-      >
+      <div id="myhandwrap" class="whiteblock" style="display: ${hideHandWrap ? "none" : "block"}">
         <div id="myhand">
           <tichu-stock
             .cards=${this.hand}
@@ -613,30 +702,36 @@ export class TichuHand extends LitElement {
             .selectionMode=${selectionMode}
             .selectedIds=${this.selectedCardIds}
             .dynamicOverlap=${true}
+            .wrapRows=${true}
+            .rowMode=${effectiveRowMode}
             .highlightedRank=${highlightedRank}
             .reserveFooter=${true}
             .passedOrigins=${passedOrigins}
             @selection-change=${this.onSelectionChange}
             @hand-reorder=${this.onHandReorder}
             @group-stripe-click=${this.onGroupStripeClick}
+            @layout-change=${this.onStockLayoutChange}
           ></tichu-stock>
         </div>
-        ${
-          !this.isSpectator && !this.isReadOnly() && this.hand.length > 0
-            ? this.renderOrganizeBar(canOrganize, selectionMode)
-            : nothing
-        }
+        <div class="hand-footer-row">
+          ${
+            !this.isSpectator && !this.isReadOnly() && this.hand.length > 0
+              ? this.renderOrganizeBar(canOrganize, selectionMode)
+              : nothing
+          }
+          ${
+            !hideHandWrap
+              ? html`<div class="hand-corner-controls">
+                  ${showConcede ? this.renderConcedeButton() : nothing}
+                  ${this.renderSettingsButton()}
+                </div>`
+              : nothing
+          }
+        </div>
         <span class="sr-only" aria-live="polite">${this.liveAnnouncement}</span>
-        ${
-          !this.isSpectator
-            ? html`<div class="hand-corner-controls">
-                ${showConcede ? this.renderConcedeButton() : nothing} ${this.renderSettingsButton()}
-              </div>`
-            : nothing
-        }
       </div>
       ${
-        this.isSpectator
+        hideHandWrap
           ? html`<div class="spectator-settings-bar">${this.renderSettingsButton()}</div>`
           : nothing
       }
@@ -686,6 +781,36 @@ export class TichuHand extends LitElement {
                 : nothing
             }
           </select>
+          ${
+            this.compactHand && this.hand.length >= 2
+              ? html`<button
+                  type="button"
+                  id="toggle_hand_rows"
+                  class="org-btn"
+                  aria-pressed=${this.isTwoRowsActive() ? "true" : "false"}
+                  data-tooltip=${_("Switch between 1-row and 2-row hand layout")}
+                  data-tooltip-tier="slow"
+                  data-tooltip-touch="longpress"
+                  @click=${this.onToggleHandRows}
+                >
+                  <svg
+                    viewBox="0 0 14 14"
+                    width="13"
+                    height="13"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    aria-hidden="true"
+                  >
+                    <rect x="1.5" y="1.5" width="4.5" height="4.5" rx="0.8" />
+                    <rect x="8" y="1.5" width="4.5" height="4.5" rx="0.8" />
+                    <rect x="1.5" y="8" width="4.5" height="4.5" rx="0.8" />
+                    <rect x="8" y="8" width="4.5" height="4.5" rx="0.8" />
+                  </svg>
+                  <span>${_("2 rows")}</span>
+                </button>`
+              : nothing
+          }
         </div>
         ${
           canOrganize
@@ -868,6 +993,41 @@ export class TichuHand extends LitElement {
 
   private onToggleCardGroups() {
     window.gameModel.setCardGroupsUiEnabled(!this.cardGroupsUiEnabled);
+  }
+
+  private isTwoRowsActive(): boolean {
+    if (!this.compactHand) {
+      return false;
+    }
+    if (this.handRowMode === "two") {
+      return this.hand.length >= 2;
+    }
+    if (this.handRowMode === "single") {
+      return false;
+    }
+    return this.stockTwoRows;
+  }
+
+  private onStockLayoutChange(e: CustomEvent<{ twoRows: boolean }>) {
+    this.stockTwoRows = Boolean(e.detail?.twoRows);
+  }
+
+  private onToggleHandRows() {
+    if (!this.compactHand) {
+      return;
+    }
+    const next: StockRowMode = this.isTwoRowsActive() ? "single" : "two";
+    this.handRowMode = next;
+    if (!this.isReadOnly()) {
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem(HAND_ROW_MODE_STORAGE_KEY, next);
+        }
+      } catch (_e) {
+        // ignore storage errors
+      }
+    }
+    this.liveAnnouncement = next === "two" ? _("Two-row hand layout") : _("Single-row hand layout");
   }
 
   private onGroupStripeClick(e: CustomEvent<{ groupId: CardGroupId }>) {

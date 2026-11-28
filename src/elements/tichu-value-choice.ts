@@ -22,9 +22,15 @@ export class TichuValueChoice extends LitElement {
       css`
         :host {
           display: block;
+          container-type: inline-size;
         }
         #mahjongpanel,
         #phoenixpanel {
+          box-sizing: border-box;
+          max-width: 100%;
+          --choice-w: clamp(38px, calc((100vw - 64px) / 7), 70px);
+          --choice-h: calc(var(--choice-w) * 1.5);
+          --choice-gap: 5px;
           margin: 0px 15px 15px 15px;
           padding: 15px;
           background: var(--tichu-surface-bg, var(--bg-color-lighter));
@@ -41,24 +47,27 @@ export class TichuValueChoice extends LitElement {
         }
         #mahjong {
           display: grid;
-          grid-template-columns: repeat(7, 70px);
-          gap: 5px;
-          min-height: 105px;
+          grid-template-columns: repeat(7, var(--choice-w));
+          gap: var(--choice-gap);
+          min-height: var(--choice-h);
         }
         #phoenixChoice,
         #phoenixvalues {
           display: flex;
           flex-wrap: wrap;
-          gap: 5px;
-          min-height: 105px;
+          gap: var(--choice-gap);
+          min-height: var(--choice-h);
         }
         .stockitem {
-          width: 70px;
-          height: 105px;
+          width: var(--choice-w);
+          height: var(--choice-h);
           background-color: #fff;
           background-image: var(--table-icons-url);
           background-repeat: no-repeat;
           background-origin: border-box;
+          background-size: calc(var(--choice-w) * 8) calc(var(--choice-h) * 2);
+          background-position: calc(var(--col, 0) * -1 * var(--choice-w))
+            calc(var(--row, 0) * -1 * var(--choice-h));
           border-radius: var(--tichu-card-radius, 8px);
           box-shadow: var(
             --tichu-card-shadow,
@@ -69,6 +78,32 @@ export class TichuValueChoice extends LitElement {
           cursor: pointer;
           position: relative;
           user-select: none;
+        }
+        @supports (width: 1cqi) {
+          #mahjongpanel,
+          #phoenixpanel {
+            --choice-w: 70px;
+          }
+          @container (max-width: 599px) {
+            #mahjongpanel,
+            #phoenixpanel {
+              --choice-gap: 4px;
+              --choice-w: clamp(38px, calc((100cqi - 58px) / 7), 70px);
+              margin: 0px 6px 10px 6px;
+              padding: 10px;
+            }
+            #mahjongpanel h3,
+            #phoenixpanel h3 {
+              margin-bottom: 10px;
+              font-size: 16px;
+            }
+            #mahjong {
+              justify-content: center;
+            }
+            .stockitem {
+              border-radius: 6px;
+            }
+          }
         }
         #mahjong_item_15 {
           background-color: #e5e7eb;
@@ -169,7 +204,7 @@ export class TichuValueChoice extends LitElement {
                   stockitem: true,
                   stockitem_selected: isSelected,
                 })}
-                style="background-position: -${col * 70}px -${row * 105}px"
+                style="--col: ${col}; --row: ${row};"
                 @click=${() => this.onMahjongClick(val)}
                 @keydown=${(e: KeyboardEvent) =>
                   this.onTileKeyDown(e, () => this.onMahjongClick(val))}
@@ -207,7 +242,7 @@ export class TichuValueChoice extends LitElement {
                   stockitem: true,
                   stockitem_selected: isSelected,
                 })}
-                style="background-position: -${col * 70}px -${row * 105}px"
+                style="--col: ${col}; --row: ${row};"
                 @click=${() => this.onPhoenixClick(val)}
                 @keydown=${(e: KeyboardEvent) =>
                   this.onTileKeyDown(e, () => this.onPhoenixClick(val))}

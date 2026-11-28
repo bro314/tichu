@@ -25,7 +25,8 @@ export class TichuLastPlayed extends LitElement {
   @state() private mahjongWish = 0;
   @state() private isTiki = false;
   @state() private clockwise = true;
-  @state() private squareTable = false;
+  @state() private squareTable = true;
+  @state() private firstOutPlayerId = "";
   @state() private round = 0;
   @state() private trick = 0;
   @state() private currentTrickValue = 0;
@@ -33,6 +34,11 @@ export class TichuLastPlayed extends LitElement {
   @state() private winningHighlightPlayerId: string | null = null;
   @state() private pendingRevealByPlayer: Record<string, string[]> = {};
   @state() private hideAllForSweep = false;
+  @state() private compactLayout = false;
+  @state() private narrowCards = false;
+  @state() private failedAvatarKeys: Set<string> = new Set();
+
+  private resizeObserver?: ResizeObserver;
 
   static override get styles() {
     return [
@@ -239,6 +245,171 @@ export class TichuLastPlayed extends LitElement {
           background-color: rgba(255, 255, 255, 0.5);
           border-radius: var(--border-radius);
         }
+
+        /* Compact responsive layout (< 720px) */
+        #card-last-played-area.compact {
+          padding: 0 6px 8px 6px;
+          grid-gap: 6px;
+        }
+        #card-last-played-area.compact:not(.squareTable) {
+          grid-template-columns: minmax(0, 1fr) 60px;
+          grid-template-rows: auto auto auto auto;
+        }
+        #card-last-played-area.squareTable.compact {
+          grid-template-columns: 60px minmax(0, 1fr) minmax(0, 1fr) 60px;
+          grid-template-rows: auto auto auto;
+        }
+        #card-last-played-area.squareTable.compact .top {
+          grid-column: 2 / span 2;
+          grid-row: 1 / span 1;
+        }
+        #card-last-played-area.squareTable.compact .left {
+          grid-column: 1 / span 2;
+          grid-row: 2 / span 1;
+        }
+        #card-last-played-area.clockwise.squareTable.compact .left {
+          grid-column: 3 / span 2;
+        }
+        #card-last-played-area.squareTable.compact .right {
+          grid-column: 3 / span 2;
+          grid-row: 2 / span 1;
+        }
+        #card-last-played-area.clockwise.squareTable.compact .right {
+          grid-column: 1 / span 2;
+        }
+        #card-last-played-area.squareTable.compact .bottom {
+          grid-column: 2 / span 2;
+          grid-row: 3 / span 1;
+        }
+        #card-last-played-area.squareTable.compact #mahjongIndicator {
+          grid-column: 1 / span 1;
+          grid-row: 1 / span 1;
+        }
+        #card-last-played-area.squareTable.compact tichu-status {
+          grid-column: 4 / span 1;
+          grid-row: 1 / span 1;
+          place-self: start end;
+        }
+        #card-last-played-area.compact #mahjongIndicator,
+        #card-last-played-area.compact #mahjongIndicator .mahjong {
+          width: 54px;
+          height: 81px;
+        }
+        #card-last-played-area.compact #mahjongIndicator {
+          background-size: 54px 81px;
+        }
+        #card-last-played-area.compact #mahjongIndicator .mahjong {
+          background-size: 432px 162px;
+        }
+        .compact .last-played-container {
+          flex-direction: column;
+          padding: 5px 6px;
+          gap: 4px;
+          min-width: 0;
+          border-radius: 10px;
+        }
+        .compact .last-played-player {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          width: 100%;
+          padding-right: 0;
+          box-sizing: border-box;
+          min-width: 0;
+          line-height: 1;
+        }
+        .lp-avatar-wrap {
+          width: 22px;
+          height: 22px;
+          border-radius: 50%;
+          overflow: hidden;
+          flex-shrink: 0;
+          box-sizing: border-box;
+          background: #334155;
+        }
+        .lp-avatar-wrap.teammate {
+          border: 2px solid #0f9d58;
+        }
+        .lp-avatar-wrap.opponent {
+          border: 2px solid #475569;
+        }
+        .lp-avatar-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          border-radius: 50%;
+        }
+        .lp-avatar-fallback {
+          width: 100%;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 700;
+          color: #ffffff;
+          text-transform: uppercase;
+          user-select: none;
+        }
+        .lp-avatar-wrap.teammate .lp-avatar-fallback {
+          background: #0f9d58;
+        }
+        .lp-avatar-wrap.opponent .lp-avatar-fallback {
+          background: #334155;
+        }
+        .compact .last-played-player .last-played-icons {
+          gap: 5px;
+          margin-bottom: 0;
+          flex-shrink: 0;
+        }
+        .compact .last-played-player .stat-group {
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .compact .last-played-player .icon.hand,
+        .compact .last-played-player .icon.star {
+          --icon-size: 15px;
+          vertical-align: middle;
+        }
+        .compact .last-played-player .last-played-icons .count {
+          font-size: 12.5px;
+          min-width: auto;
+          line-height: 1;
+        }
+        .compact .last-played-badges {
+          margin-left: auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 2px;
+          flex-shrink: 0;
+        }
+        .compact .last-played-badges .icon {
+          --icon-size: 20px;
+          display: inline-block;
+        }
+        .compact .last-played-combo {
+          width: 100%;
+          min-width: 0;
+          min-height: 112.5px;
+          justify-content: center;
+        }
+        .compact .last-played-combo > tichu-stock {
+          --stock-justify: center;
+        }
+        .compact .last-played-combo .pass {
+          display: flex;
+          justify-content: center;
+          width: 100%;
+        }
+        .compact .last-played-combo .pass > tichu-stock {
+          width: 100%;
+          --stock-justify: center;
+        }
+        .compact.narrow-cards .last-played-combo {
+          min-height: 90px;
+        }
       `,
     ];
   }
@@ -312,6 +483,11 @@ export class TichuLastPlayed extends LitElement {
     );
     subscribe(
       this,
+      () => window.gameModel.firstOutPlayerId$,
+      (firstOutPlayerId) => (this.firstOutPlayerId = firstOutPlayerId),
+    );
+    subscribe(
+      this,
       () => window.gameModel.round$,
       (round) => (this.round = round),
     );
@@ -330,6 +506,44 @@ export class TichuLastPlayed extends LitElement {
       () => window.gameModel.currentTrick$,
       (cards) => (this.currentTrick = cards),
     );
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    this.updateResponsiveMode(this.clientWidth);
+    if (typeof ResizeObserver !== "undefined" && !this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const entryWidth = entries[0]?.contentRect?.width;
+        const w = typeof entryWidth === "number" && entryWidth > 0 ? entryWidth : this.clientWidth;
+        this.updateResponsiveMode(w);
+      });
+      this.resizeObserver.observe(this);
+    }
+  }
+
+  override disconnectedCallback() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    super.disconnectedCallback();
+  }
+
+  private updateResponsiveMode(width: number) {
+    if (!width || width <= 0) return;
+    const nextCompact = width < 720;
+    const nextNarrow = width < 560;
+    if (nextCompact !== this.compactLayout) {
+      this.compactLayout = nextCompact;
+    }
+    if (nextNarrow !== this.narrowCards) {
+      this.narrowCards = nextNarrow;
+    }
+  }
+
+  private onAvatarError(avatarKey: string) {
+    if (this.failedAvatarKeys.has(avatarKey)) return;
+    const next = new Set(this.failedAvatarKeys);
+    next.add(avatarKey);
+    this.failedAvatarKeys = next;
   }
 
   override render() {
@@ -354,6 +568,8 @@ export class TichuLastPlayed extends LitElement {
     const wishIdx = wishVisible ? this.mahjongWish - 2 : 0;
     const wishCol = wishIdx % 7;
     const wishRow = Math.floor(wishIdx / 7);
+    const mjW = this.compactLayout ? 54 : 75;
+    const mjH = this.compactLayout ? 81 : 112.5;
 
     return html`
       <div
@@ -362,6 +578,8 @@ export class TichuLastPlayed extends LitElement {
           squareTable: this.squareTable,
           clockwise: this.clockwise,
           tiki: this.isTiki,
+          compact: this.compactLayout,
+          "narrow-cards": this.narrowCards,
         })}
         style="display: ${isPassState ? "none" : "grid"}"
       >
@@ -377,13 +595,14 @@ export class TichuLastPlayed extends LitElement {
               ? html`<div
                   class="mahjong"
                   id="mahjong_${this.mahjongWish}"
-                  style="background-position: -${wishCol * 75}px -${wishRow * 112.5}px"
+                  style="background-position: -${wishCol * mjW}px -${wishRow * mjH}px"
                 ></div>`
               : ""
           }
         </div>
 
         <tichu-status
+          ?compact=${this.compactLayout}
           roundCount=${this.round}
           trickCount=${this.trick}
           trickPoints=${this.currentTrickValue}
@@ -426,7 +645,20 @@ export class TichuLastPlayed extends LitElement {
       String(this.activePlayerId) === id;
 
     const showGrandTichuColor = player.callGrandTichu === 200;
+    const showGrandTichuBlack = player.callGrandTichu === -1;
     const showTichuColor = player.callTichu === 100;
+    const showTichuBlack = player.callTichu === -1 && !showGrandTichuColor;
+    const isFirstOut = Boolean(id) && this.firstOutPlayerId === id;
+    const stockScale = this.narrowCards ? 0.6 : 0.75;
+
+    const avatarUrl = player.avatarUrl ?? "";
+    const avatarKey = `${id}|${avatarUrl}`;
+    const showImg = Boolean(avatarUrl) && !this.failedAvatarKeys.has(avatarKey);
+    const initial = (String(player.name || "").trim()[0] ?? "?").toUpperCase();
+    const isTeammate = !this.isSpectator && (pos === "bottom" || pos === "top");
+    const spectatorBorderStyle = this.isSpectator
+      ? `border-color: #${String(player.color || "475569").replace(/^#/, "")}`
+      : "";
 
     return html`
       <div
@@ -444,37 +676,144 @@ export class TichuLastPlayed extends LitElement {
         data-player-id=${id}
       >
         <div class="disabler" style="display: ${isDisablerVisible ? "block" : "none"}"></div>
-        <div class="last-played-player">
-          <div class="playertablename" style=${this.getPlayerNameColorStyle(player.color)}>
-            ${player.name}
-          </div>
-          <div class="last-played-icons">
-            <span class="stat-group" data-tooltip=${_("Cards in hand")} data-tooltip-touch="tap">
-              <div class="icon hand" id="icon_hand_${id}"></div>
-              <div class="count handcount ${id}">${player.handcount}</div>
-            </span>
-            <span class="stat-group" data-tooltip=${_("Points captured")} data-tooltip-touch="tap">
-              <div class="icon star" id="icon_star_${id}"></div>
-              <div class="count pointcount ${id}">${player.capturedPoints}</div>
-            </span>
-          </div>
-          <div class="last-played-bets">
-            <div
-              id="grandtichucolor_${id}"
-              class="icon big grandtichucolor ${id}"
-              style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
-              data-tooltip=${_("Grand Tichu bet")}
-              data-tooltip-touch="tap"
-            ></div>
-            <div
-              id="tichucolor_${id}"
-              class="icon big tichucolor ${id}"
-              style="display: ${showTichuColor ? "inline-block" : "none"}"
-              data-tooltip=${_("Tichu bet")}
-              data-tooltip-touch="tap"
-            ></div>
-          </div>
-        </div>
+        ${
+          this.compactLayout
+            ? html`
+                <div class="last-played-player">
+                  <div
+                    class=${classMap({
+                      "lp-avatar-wrap": true,
+                      teammate: isTeammate,
+                      opponent: !isTeammate,
+                    })}
+                    style=${spectatorBorderStyle}
+                    data-tooltip=${player.name}
+                    data-tooltip-touch="tap"
+                    aria-label=${player.name}
+                  >
+                    ${
+                      showImg
+                        ? html`<img
+                            class="lp-avatar-img"
+                            src=${avatarUrl}
+                            alt=""
+                            width="22"
+                            height="22"
+                            @error=${() => this.onAvatarError(avatarKey)}
+                          />`
+                        : html`<span class="lp-avatar-fallback" aria-hidden="true"
+                            >${initial}</span
+                          >`
+                    }
+                  </div>
+                  <div class="last-played-icons">
+                    <span
+                      class="stat-group"
+                      data-tooltip=${_("Cards in hand")}
+                      data-tooltip-touch="tap"
+                    >
+                      <div class="icon hand" id="icon_hand_${id}"></div>
+                      <div class="count handcount ${id}">${player.handcount}</div>
+                    </span>
+                    <span
+                      class="stat-group"
+                      data-tooltip=${_("Points captured")}
+                      data-tooltip-touch="tap"
+                    >
+                      <div class="icon star" id="icon_star_${id}"></div>
+                      <div class="count pointcount ${id}">${player.capturedPoints}</div>
+                    </span>
+                  </div>
+                  <div class="last-played-badges">
+                    ${
+                      showGrandTichuColor
+                        ? html`<div
+                            id="grandtichucolor_${id}"
+                            class="icon grandtichucolor ${id}"
+                            data-tooltip=${_("Grand Tichu bet")}
+                            data-tooltip-touch="tap"
+                          ></div>`
+                        : showGrandTichuBlack
+                          ? html`<div
+                              id="grandtichublack_${id}"
+                              class="icon grandtichublack ${id}"
+                              data-tooltip=${_("Grand Tichu bet yet to be made")}
+                              data-tooltip-touch="tap"
+                            ></div>`
+                          : ""
+                    }
+                    ${
+                      showTichuColor
+                        ? html`<div
+                            id="tichucolor_${id}"
+                            class="icon tichucolor ${id}"
+                            data-tooltip=${_("Tichu bet")}
+                            data-tooltip-touch="tap"
+                          ></div>`
+                        : showTichuBlack
+                          ? html`<div
+                              id="tichublack_${id}"
+                              class="icon tichublack ${id}"
+                              data-tooltip=${_("Tichu bet yet to be made")}
+                              data-tooltip-touch="tap"
+                            ></div>`
+                          : ""
+                    }
+                    ${
+                      isFirstOut
+                        ? html`<div
+                            id="firstoutcolor_${id}"
+                            class="icon firstoutcolor ${id}"
+                            data-tooltip=${_("First player out")}
+                            data-tooltip-touch="tap"
+                          ></div>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              `
+            : html`
+                <div class="last-played-player">
+                  <div class="playertablename" style=${this.getPlayerNameColorStyle(player.color)}>
+                    ${player.name}
+                  </div>
+                  <div class="last-played-icons">
+                    <span
+                      class="stat-group"
+                      data-tooltip=${_("Cards in hand")}
+                      data-tooltip-touch="tap"
+                    >
+                      <div class="icon hand" id="icon_hand_${id}"></div>
+                      <div class="count handcount ${id}">${player.handcount}</div>
+                    </span>
+                    <span
+                      class="stat-group"
+                      data-tooltip=${_("Points captured")}
+                      data-tooltip-touch="tap"
+                    >
+                      <div class="icon star" id="icon_star_${id}"></div>
+                      <div class="count pointcount ${id}">${player.capturedPoints}</div>
+                    </span>
+                  </div>
+                  <div class="last-played-bets">
+                    <div
+                      id="grandtichucolor_${id}"
+                      class="icon big grandtichucolor ${id}"
+                      style="display: ${showGrandTichuColor ? "inline-block" : "none"}"
+                      data-tooltip=${_("Grand Tichu bet")}
+                      data-tooltip-touch="tap"
+                    ></div>
+                    <div
+                      id="tichucolor_${id}"
+                      class="icon big tichucolor ${id}"
+                      style="display: ${showTichuColor ? "inline-block" : "none"}"
+                      data-tooltip=${_("Tichu bet")}
+                      data-tooltip-touch="tap"
+                    ></div>
+                  </div>
+                </div>
+              `
+        }
         <div id="lastcombo_${id}" class="lastcombo last-played-combo">
           ${
             combo.passed
@@ -483,7 +822,7 @@ export class TichuLastPlayed extends LitElement {
                     data-player-id=${id}
                     .cards=${[]}
                     .pass=${true}
-                    .scale=${0.75}
+                    .scale=${stockScale}
                     .tiki=${this.isTiki}
                     .hideAllCards=${this.hideAllForSweep}
                   ></tichu-stock
@@ -491,7 +830,7 @@ export class TichuLastPlayed extends LitElement {
               : html`<tichu-stock
                   data-player-id=${id}
                   .cards=${combo.cards}
-                  .scale=${0.75}
+                  .scale=${stockScale}
                   .disableCardTooltips=${true}
                   sortMode="preserve"
                   .tiki=${this.isTiki}
@@ -675,8 +1014,9 @@ export class TichuLastPlayed extends LitElement {
     const rect = el.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
     const zoom = getPlayAreaZoomFactor();
-    const w = 75 * zoom;
-    const h = 112.5 * zoom;
+    const cardScale = this.narrowCards ? 0.6 : 0.75;
+    const w = 100 * cardScale * zoom;
+    const h = 150 * cardScale * zoom;
     return new DOMRect(
       rect.left + rect.width / 2 - w / 2,
       rect.top + rect.height / 2 - h / 2,

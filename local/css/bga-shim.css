@@ -392,6 +392,10 @@ a:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
+#local-dev-bar.is-tt-hidden {
+  display: none !important;
+}
+
 /* ============================================================================
  * 2. Toast Notifications (#local-toast-container)
  * ============================================================================ */
@@ -706,17 +710,93 @@ a.bgabutton_secondary {
 }
 
 @media (max-width: 1120px) {
-  #main-game-layout {
+  #overall-content {
+    display: flex;
     flex-direction: column;
   }
+  #page-content,
+  #main-game-layout,
   #right-side {
+    display: contents;
+  }
+  #topbar {
+    order: 0;
+  }
+  #right-side-first-part {
+    order: 1;
     width: 100%;
-    flex: 1 1 auto;
+    padding: 0 6px;
+  }
+  #page-title {
+    order: 2;
+    margin: 6px 6px 4px 6px;
+  }
+  #after-page-title {
+    order: 3;
+  }
+  #left-side {
+    order: 4;
+    width: 100%;
+  }
+  #logs_wrap {
+    order: 5;
+    width: calc(100% - 12px);
+    margin: 6px 6px 12px;
+    max-height: 260px;
   }
   #player_boards {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 6px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  .player-board {
+    border-radius: 6px;
+    min-width: 0;
+  }
+  .player_board_inner {
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  #overall-content {
+    margin-top: 4px;
+  }
+  #page-title {
+    font-size: 95%;
+    line-height: 24px;
+    margin: 4px 6px 4px 6px;
+  }
+  #maintitlebar_content {
+    min-height: 34px;
+  }
+  #player_boards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .player-board {
+    padding: 3px;
+  }
+  .player-board .emblemwrap {
+    width: 24px;
+    height: 24px;
+    margin: 2px 6px 2px 2px;
+  }
+  .player-board .emblemwrap .avatar,
+  .player-board .emblemwrap .emblem {
+    width: 24px;
+    height: 24px;
+  }
+  .player-name {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .player_score {
+    font-size: 12px;
   }
 }
 
@@ -902,11 +982,31 @@ a.bgabutton_secondary {
   color: #1f2328;
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  min-width: 340px;
-  max-width: 90vw;
+  width: min(400px, calc(100vw - 24px));
+  min-width: 0;
+  max-width: calc(100vw - 24px);
   max-height: 85vh;
   overflow: auto;
   border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.bga-confirm-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #1f2328;
+}
+
+.bga-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.bga-confirm-actions .bgabutton {
+  margin: 0;
+  min-width: 72px;
 }
 
 .bga-popin-titlebar {

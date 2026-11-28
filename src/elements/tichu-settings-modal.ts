@@ -39,7 +39,7 @@ export function getThemeLabel(themeNo: number): string {
 export class TichuSettingsModal extends LitElement {
   @state() private settingsModalOpen = false;
   @state() private handSortOrder: HandSortOrder = "rank";
-  @state() private squareTable = false;
+  @state() private squareTable = true;
   @state() private clockwise = true;
   @state() private isTiki = false;
   @state() private animationsEnabled = true;

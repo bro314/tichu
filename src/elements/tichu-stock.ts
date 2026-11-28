@@ -14,6 +14,8 @@ import { hasBomb } from "./utils";
 export const GROUP_GAP_PX = 22;
 export const DRAG_DEADZONE_PX = 16;
 
+export type StockRowMode = "auto" | "single" | "two";
+
 export function computeCardVisibleWidthPx(itemWidth: number, marginRight: number): number {
   return Math.min(itemWidth, Math.max(16, itemWidth + marginRight));
 }
@@ -182,6 +184,263 @@ export function computeDropTarget(
   };
 }
 
+export interface DropSlot2D {
+  midX: number;
+  midY: number;
+  row: number;
+}
+
+export function computeDropTarget2D(
+  pointerX: number,
+  pointerY: number,
+  slots: DropSlot2D[],
+  fromIndex: number,
+  cardGroupList: number[] = [],
+): { dropIndex: number; targetGroup: CardGroupId | 0; targetRow: number } {
+  const n = slots.length;
+  if (n === 0) return { dropIndex: 0, targetGroup: 0, targetRow: 0 };
+
+  const rowSums = new Map<number, { sumY: number; count: number }>();
+  for (const s of slots) {
+    const entry = rowSums.get(s.row) ?? { sumY: 0, count: 0 };
+    entry.sumY += s.midY;
+    entry.count++;
+    rowSums.set(s.row, entry);
+  }
+  let targetRow = slots[0]!.row;
+  let bestDist = Infinity;
+  rowSums.forEach((entry, row) => {
+    const avgY = entry.sumY / entry.count;
+    const dist = Math.abs(pointerY - avgY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      targetRow = row;
+    }
+  });
+
+  let dropIndex = 0;
+  const remainingIndices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (i === fromIndex) continue;
+    remainingIndices.push(i);
+    const s = slots[i]!;
+    if (s.row < targetRow || (s.row === targetRow && pointerX > s.midX)) {
+      dropIndex++;
+    }
+  }
+
+  const rawOrigGroup = cardGroupList[fromIndex] ?? 0;
+  const originalGroup: CardGroupId | 0 =
+    rawOrigGroup >= 1 && rawOrigGroup <= 4 ? (rawOrigGroup as CardGroupId) : 0;
+
+  if (dropIndex === fromIndex && slots[fromIndex]?.row === targetRow) {
+    return { dropIndex, targetGroup: originalGroup, targetRow };
+  }
+
+  const remCount = remainingIndices.length;
+  if (remCount === 0) {
+    return { dropIndex: 0, targetGroup: originalGroup, targetRow };
+  }
+
+  const groupOfOrig = (origIdx: number): CardGroupId | 0 => {
+    const g = cardGroupList[origIdx] ?? 0;
+    return g >= 1 && g <= 4 ? (g as CardGroupId) : 0;
+  };
+
+  if (dropIndex === 0) {
+    return { dropIndex, targetGroup: groupOfOrig(remainingIndices[0]!), targetRow };
+  }
+  if (dropIndex >= remCount) {
+    return {
+      dropIndex: remCount,
+      targetGroup: groupOfOrig(remainingIndices[remCount - 1]!),
+      targetRow,
+    };
+  }
+
+  const leftOrig = remainingIndices[dropIndex - 1]!;
+  const rightOrig = remainingIndices[dropIndex]!;
+  const leftGroup = groupOfOrig(leftOrig);
+  const rightGroup = groupOfOrig(rightOrig);
+  if (leftGroup === rightGroup) {
+    return { dropIndex, targetGroup: leftGroup, targetRow };
+  }
+
+  const leftRow = slots[leftOrig]!.row;
+  const rightRow = slots[rightOrig]!.row;
+  if (leftRow !== rightRow) {
+    return {
+      dropIndex,
+      targetGroup: leftRow === targetRow ? leftGroup : rightGroup,
+      targetRow,
+    };
+  }
+
+  const boundaryMid = (slots[leftOrig]!.midX + slots[rightOrig]!.midX) / 2;
+  return {
+    dropIndex,
+    targetGroup: pointerX <= boundaryMid ? leftGroup : rightGroup,
+    targetRow,
+  };
+}
+
+export interface StockLayout {
+  twoRows: boolean;
+  row1Count: number;
+  effectiveScale: number;
+  itemWidth: number;
+  itemHeight: number;
+  marginRight: number;
+  visibleWidth: number;
+  boundaryVisibleWidth: number;
+  rowGapPx: number;
+}
+
+function getCardGroupFromMap(cardGroups: Record<string, CardGroupId>, card: Card): CardGroupId | 0 {
+  const g = cardGroups[String(card.id ?? "")];
+  return g === 1 || g === 2 || g === 3 || g === 4 ? g : 0;
+}
+
+function countBoundariesForCards(cards: Card[], cardGroups: Record<string, CardGroupId>): number {
+  if (cards.length <= 1) return 0;
+  let count = 0;
+  for (let i = 0; i < cards.length - 1; i++) {
+    if (
+      getCardGroupFromMap(cardGroups, cards[i]!) !== getCardGroupFromMap(cardGroups, cards[i + 1]!)
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function computeMarginRightForCards(
+  cards: Card[],
+  scale: number,
+  containerWidth: number,
+  cardGroups: Record<string, CardGroupId>,
+  dynamicOverlap: boolean,
+  fixedOverlap: number,
+): number {
+  const itemWidth = 100 * scale;
+
+  if (!dynamicOverlap) {
+    return -fixedOverlap * scale;
+  }
+  if (cards.length <= 1) {
+    return 0;
+  }
+
+  const boundaryCount = countBoundariesForCards(cards, cardGroups);
+  const availWidth = containerWidth > 0 ? containerWidth : 600;
+  const usableWidth = Math.max(itemWidth + 24, availWidth - boundaryCount * GROUP_GAP_PX - 2);
+  const rawStep = (usableWidth - itemWidth) / (cards.length - 1);
+  const minStep = Math.max(12, Math.round(itemWidth * 0.14));
+  const maxStep = Math.round(itemWidth * 0.65);
+  const step = Math.max(minStep, Math.min(maxStep, Math.floor(rawStep * 10) / 10));
+
+  return Math.round((step - itemWidth) * 10) / 10;
+}
+
+export function computeStockLayout(params: {
+  sortedCards: Card[];
+  scale: number;
+  containerWidth: number;
+  cardGroups: Record<string, CardGroupId>;
+  dynamicOverlap: boolean;
+  overlap: number;
+  wrapRows: boolean;
+  reserveFooter: boolean;
+  rowMode?: StockRowMode;
+}): StockLayout {
+  const {
+    sortedCards,
+    scale,
+    containerWidth,
+    cardGroups,
+    dynamicOverlap,
+    overlap,
+    wrapRows,
+    reserveFooter,
+    rowMode = "auto",
+  } = params;
+
+  const effectiveScale =
+    wrapRows && containerWidth > 0 && containerWidth < 430 ? Math.min(scale, 0.75) : scale;
+  const singleMargin = computeMarginRightForCards(
+    sortedCards,
+    effectiveScale,
+    containerWidth,
+    cardGroups,
+    dynamicOverlap,
+    overlap,
+  );
+  const singleVisibleSlice = 100 * effectiveScale + singleMargin;
+  let twoRows = false;
+  if (wrapRows) {
+    if (rowMode === "two") {
+      twoRows = sortedCards.length >= 2;
+    } else if (rowMode === "single") {
+      twoRows = false;
+    } else {
+      twoRows = Boolean(
+        sortedCards.length >= 8 && containerWidth > 0 && singleVisibleSlice < 42 * effectiveScale,
+      );
+    }
+  }
+
+  if (!twoRows) {
+    const itemWidth = 100 * effectiveScale;
+    const itemHeight = 150 * effectiveScale;
+    return {
+      twoRows: false,
+      row1Count: sortedCards.length,
+      effectiveScale,
+      itemWidth,
+      itemHeight,
+      marginRight: singleMargin,
+      visibleWidth: computeCardVisibleWidthPx(itemWidth, singleMargin),
+      boundaryVisibleWidth: computeCardVisibleWidthPx(itemWidth, singleMargin + GROUP_GAP_PX),
+      rowGapPx: 0,
+    };
+  }
+
+  const row1Count = Math.ceil(sortedCards.length / 2);
+  const row1 = sortedCards.slice(0, row1Count);
+  const row2 = sortedCards.slice(row1Count);
+  const row1Margin = computeMarginRightForCards(
+    row1,
+    effectiveScale,
+    containerWidth,
+    cardGroups,
+    dynamicOverlap,
+    overlap,
+  );
+  const row2Margin = computeMarginRightForCards(
+    row2,
+    effectiveScale,
+    containerWidth,
+    cardGroups,
+    dynamicOverlap,
+    overlap,
+  );
+  const marginRight = Math.min(row1Margin, row2Margin);
+  const itemWidth = 100 * effectiveScale;
+  const itemHeight = 150 * effectiveScale;
+
+  return {
+    twoRows: true,
+    row1Count,
+    effectiveScale,
+    itemWidth,
+    itemHeight,
+    marginRight,
+    visibleWidth: computeCardVisibleWidthPx(itemWidth, marginRight),
+    boundaryVisibleWidth: computeCardVisibleWidthPx(itemWidth, marginRight + GROUP_GAP_PX),
+    rowGapPx: reserveFooter ? (effectiveScale < 1 ? 8 : 10) : 24,
+  };
+}
+
 export interface GroupStripeSpan {
   groupId: CardGroupId;
   startIndex: number;
@@ -281,6 +540,10 @@ export class TichuStock extends LitElement {
 
   @property({ type: Boolean }) disableCardTooltips = false;
 
+  @property({ type: Boolean }) wrapRows = false;
+
+  @property({ type: String }) rowMode: StockRowMode = "auto";
+
   @property({ attribute: false }) passedOrigins: Record<string, PassedOriginInfo> = {};
 
   @state() private containerWidth = 0;
@@ -295,13 +558,27 @@ export class TichuStock extends LitElement {
 
   @state() private dragDropIndex = -1;
 
+  @state() private dragFromRow = 0;
+
+  @state() private dragTargetRow = 0;
+
   @state() private dragTargetGroup: CardGroupId | 0 = 0;
 
   @state() private dragDeltaX = 0;
 
+  @state() private dragDeltaY = 0;
+
   @state() private dropIndicatorX: number | null = null;
 
+  @state() private dropIndicatorRow = 0;
+
   @state() private suppressTranslateTransition = false;
+
+  private lastEffectiveScale = 1.0;
+
+  private lastComputedTwoRows = false;
+
+  private lastEmittedTwoRows: boolean | null = null;
 
   private prevRects: Map<string, DOMRect> = new Map();
 
@@ -317,10 +594,13 @@ export class TichuStock extends LitElement {
     pointerId: number;
     cardId: string;
     fromIndex: number;
+    fromRow: number;
+    twoRows: boolean;
     startX: number;
     startY: number;
     active: boolean;
     slotMidpoints: number[];
+    slotMeta: Array<{ midX: number; midY: number; row: number; left: number; right: number }>;
     slotBounds: Array<{ left: number; right: number }>;
     cardGroupList: number[];
     cardStepPx: number;
@@ -337,6 +617,25 @@ export class TichuStock extends LitElement {
         div#stock {
           position: relative;
           display: flex;
+          justify-content: var(--stock-justify, flex-start);
+          height: var(--stock-height, 150px);
+        }
+        div#stock.two-rows {
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-start;
+          height: auto;
+          padding-top: 20px;
+          gap: var(--stock-row-gap, 10px);
+        }
+        .stock-row {
+          display: flex;
+          justify-content: center;
+          width: 100%;
+        }
+        .stock-row-inner {
+          position: relative;
+          display: inline-flex;
           height: var(--stock-height, 150px);
         }
         div#stock.reorderable {
@@ -443,6 +742,9 @@ export class TichuStock extends LitElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    if (this.clientWidth > 0 && this.clientWidth !== this.containerWidth) {
+      this.containerWidth = this.clientWidth;
+    }
     this.updateResizeObserver();
   }
 
@@ -477,9 +779,13 @@ export class TichuStock extends LitElement {
     this.dragCardId = "";
     this.dragFromIndex = -1;
     this.dragDropIndex = -1;
+    this.dragFromRow = 0;
+    this.dragTargetRow = 0;
     this.dragTargetGroup = 0;
     this.dragDeltaX = 0;
+    this.dragDeltaY = 0;
     this.dropIndicatorX = null;
+    this.dropIndicatorRow = 0;
   }
 
   protected override willUpdate(changedProperties: PropertyValues) {
@@ -506,7 +812,8 @@ export class TichuStock extends LitElement {
       changedProperties.has("baseSortOrder") ||
       changedProperties.has("cards") ||
       changedProperties.has("customOrder") ||
-      changedProperties.has("cardGroups");
+      changedProperties.has("cardGroups") ||
+      changedProperties.has("rowMode");
 
     if (layoutChanged && this.shadowRoot) {
       this.prevRects.clear();
@@ -531,7 +838,7 @@ export class TichuStock extends LitElement {
 
   override updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
-    if (changedProperties.has("dynamicOverlap")) {
+    if (changedProperties.has("dynamicOverlap") || changedProperties.has("wrapRows")) {
       this.updateResizeObserver();
     }
     const layoutChanged =
@@ -539,7 +846,8 @@ export class TichuStock extends LitElement {
       changedProperties.has("baseSortOrder") ||
       changedProperties.has("cards") ||
       changedProperties.has("customOrder") ||
-      changedProperties.has("cardGroups");
+      changedProperties.has("cardGroups") ||
+      changedProperties.has("rowMode");
 
     if (
       layoutChanged &&
@@ -552,7 +860,7 @@ export class TichuStock extends LitElement {
       const hiddenSet = new Set(this.externalHiddenIds.map(String));
       this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
       const durationMs = Math.max(12, scaleAnimMs(ANIM_TIMINGS.handFlipMs));
-      const baseWidth = Math.max(1, 100 * this.scale);
+      const baseWidth = Math.max(1, 100 * this.lastEffectiveScale);
       const cardEls = Array.from(this.shadowRoot.querySelectorAll<TichuCard>("tichu-card"));
       for (const cardEl of cardEls) {
         if (cardEl.pass || cardEl.card?.id == null) continue;
@@ -593,10 +901,20 @@ export class TichuStock extends LitElement {
         this.suppressTranslateTransition = false;
       }
     }
+    if (this.lastComputedTwoRows !== this.lastEmittedTwoRows) {
+      this.lastEmittedTwoRows = this.lastComputedTwoRows;
+      this.dispatchEvent(
+        new CustomEvent("layout-change", {
+          detail: { twoRows: this.lastComputedTwoRows },
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }
   }
 
   private updateResizeObserver() {
-    if (this.dynamicOverlap && typeof ResizeObserver !== "undefined") {
+    if ((this.dynamicOverlap || this.wrapRows) && typeof ResizeObserver !== "undefined") {
       if (!this.resizeObserver) {
         this.resizeObserver = new ResizeObserver(() => {
           const w = this.clientWidth;
@@ -627,48 +945,9 @@ export class TichuStock extends LitElement {
     return g === 1 || g === 2 || g === 3 || g === 4 ? g : 0;
   }
 
-  private countGroupBoundaries(sortedCards: Card[]): number {
-    if (sortedCards.length <= 1) return 0;
-    let count = 0;
-    for (let i = 0; i < sortedCards.length - 1; i++) {
-      const gA = this.getGroupForCard(String(sortedCards[i]!.id ?? ""));
-      const gB = this.getGroupForCard(String(sortedCards[i + 1]!.id ?? ""));
-      if (gA !== gB) count++;
-    }
-    return count;
-  }
-
-  private computeMarginRightPx(sortedCards: Card[]): number {
-    const itemWidth = 100 * this.scale;
-    const itemMargin = 5;
-
-    if (!this.dynamicOverlap) {
-      return -this.overlap * this.scale;
-    }
-
-    if (sortedCards.length <= 1) {
-      return 0;
-    }
-
-    const boundaryCount = this.countGroupBoundaries(sortedCards);
-    const width = Math.max(
-      itemWidth + 60,
-      (this.containerWidth || this.clientWidth || 600) - boundaryCount * GROUP_GAP_PX,
-    );
-    const availableWidthForOverlapPerItem =
-      (width - (itemWidth + itemMargin)) / (sortedCards.length - 1);
-    let overlap = Math.floor(
-      ((availableWidthForOverlapPerItem - itemMargin - 1) / itemWidth) * 100,
-    );
-    if (overlap > 60) overlap = 60;
-    if (overlap < 12) overlap = 12;
-
-    const step = Math.round((itemWidth * overlap) / 100) + itemMargin;
-    return step - itemWidth;
-  }
-
-  private getCardShiftX(idx: number, stepPx: number): number {
+  private getCardShiftX(idx: number, stepPx: number, twoRows = false): number {
     if (!this.dragActive || this.dragFromIndex < 0 || this.dragDropIndex < 0) return 0;
+    if (twoRows && this.dragTargetRow !== this.dragFromRow) return 0;
     if (idx === this.dragFromIndex) return 0;
     if (this.dragFromIndex < this.dragDropIndex) {
       if (idx > this.dragFromIndex && idx <= this.dragDropIndex) {
@@ -682,41 +961,208 @@ export class TichuStock extends LitElement {
     return 0;
   }
 
-  override render() {
-    const itemWidth = 100 * this.scale;
-    const itemHeight = 150 * this.scale;
-    const footerHeight = this.reserveFooter && !this.pass ? Math.round(34 * this.scale) : 0;
+  private getEffectiveContainerWidth(): number {
+    return this.containerWidth || this.clientWidth || 0;
+  }
 
+  private computeCurrentLayout(sortedCards: Card[]): StockLayout {
+    return computeStockLayout({
+      sortedCards,
+      scale: this.scale,
+      containerWidth: this.getEffectiveContainerWidth(),
+      cardGroups: this.cardGroups,
+      dynamicOverlap: this.dynamicOverlap,
+      overlap: this.overlap,
+      wrapRows: this.wrapRows,
+      reserveFooter: this.reserveFooter,
+      rowMode: this.rowMode,
+    });
+  }
+
+  private renderCardRowContent(
+    rowCards: Card[],
+    rowStartIndex: number,
+    rowIdx: number,
+    layout: StockLayout,
+    isSelectable: boolean,
+    selectedSet: Set<string>,
+    hiddenSet: Set<string>,
+    stepPx: number,
+    groupStripeAriaPrefix: string,
+  ) {
+    const stripes =
+      !this.dragActive && !this.hideAllCards
+        ? computeGroupStripes(rowCards, this.cardGroups, layout.itemWidth, layout.marginRight)
+        : [];
+    const showIndicator =
+      this.dragActive &&
+      this.dropIndicatorX !== null &&
+      (!layout.twoRows || this.dropIndicatorRow === rowIdx);
+
+    return html`
+      ${repeat(
+        rowCards,
+        (card) => String(card.id ?? ""),
+        (card, localIdx) => {
+          const idx = rowStartIndex + localIdx;
+          const cardIdStr = String(card.id ?? "");
+          const isHidden = this.hideAllCards || hiddenSet.has(cardIdStr);
+          const group = this.getGroupForCard(cardIdStr);
+          const nextCard = rowCards[localIdx + 1];
+          const isGroupBoundary =
+            nextCard !== undefined && group !== this.getGroupForCard(String(nextCard.id ?? ""));
+          const isDragging = this.dragActive && cardIdStr === this.dragCardId;
+          const shiftX = this.getCardShiftX(idx, stepPx, layout.twoRows);
+          return html`
+            <tichu-card
+              data-card-id=${cardIdStr}
+              class=${classMap({ "group-boundary": isGroupBoundary })}
+              ?data-pending-reveal=${isHidden}
+              .card=${card}
+              .scale=${layout.effectiveScale}
+              .tiki=${this.tiki}
+              .selectable=${isSelectable}
+              .reorderable=${this.reorderable && !this.hideAllCards}
+              .selected=${isSelectable && selectedSet.has(cardIdStr)}
+              .group=${group}
+              .dragging=${isDragging}
+              .dragX=${isDragging ? this.dragDeltaX : 0}
+              .dragY=${isDragging ? this.dragDeltaY : 0}
+              .shiftX=${shiftX}
+              .noTransition=${this.suppressTranslateTransition}
+              .wishMatch=${
+                this.highlightedRank >= 2 &&
+                this.highlightedRank <= 14 &&
+                Number(card.type_arg) === this.highlightedRank
+              }
+              .reserveFooter=${this.reserveFooter}
+              .disableTooltip=${this.disableCardTooltips}
+              .passedOrigin=${this.passedOrigins[cardIdStr] ?? null}
+              @card-click=${(e: CustomEvent<{ card: Card }>) => this.onCardClick(e, card)}
+            ></tichu-card>
+          `;
+        },
+      )}
+      ${stripes.map((s) => {
+        const allSelected =
+          isSelectable && s.cardIds.length > 0 && s.cardIds.every((id) => selectedSet.has(id));
+        return html`<button
+          type="button"
+          class=${classMap({
+            "group-stripe-bar": true,
+            [`group-${s.groupId}`]: true,
+            "all-selected": allSelected,
+          })}
+          data-group-stripe=${s.groupId}
+          style=${`left: ${s.leftPx}px; width: ${s.widthPx}px;`}
+          aria-pressed=${allSelected ? "true" : "false"}
+          aria-label=${`${groupStripeAriaPrefix} ${s.groupId}`}
+          data-tooltip=${_("Select cards in group")}
+          data-tooltip-tier="slow"
+          data-tooltip-touch="longpress"
+          @click=${(e: Event) => this.onGroupStripeClick(e, s.groupId)}
+        >
+          ${s.groupId}
+        </button>`;
+      })}
+      ${
+        showIndicator
+          ? html`<div
+              class="drop-indicator"
+              aria-hidden="true"
+              style="left: ${this.dropIndicatorX}px"
+            ></div>`
+          : nothing
+      }
+    `;
+  }
+
+  override render() {
     if (this.pass) {
-      this.style.setProperty("--stock-height", `${itemHeight + footerHeight}px`);
-      this.style.setProperty("--card-footer-height", `${footerHeight}px`);
+      const itemWidth = 100 * this.scale;
+      const itemHeight = 150 * this.scale;
+      this.lastEffectiveScale = this.scale;
+      this.lastComputedTwoRows = false;
+      this.style.setProperty("--stock-height", `${itemHeight}px`);
+      this.style.setProperty("--card-footer-height", "0px");
       this.style.setProperty("--stock-card-width", `${itemWidth}px`);
       this.style.setProperty("--stock-card-height", `${itemHeight}px`);
       return this.renderPass();
     }
 
     const sortedCards = this.getSortedCards();
-    const marginRight = this.computeMarginRightPx(sortedCards);
-    const visibleWidth = computeCardVisibleWidthPx(itemWidth, marginRight);
-    const boundaryVisibleWidth = computeCardVisibleWidthPx(itemWidth, marginRight + GROUP_GAP_PX);
-    this.style.setProperty("--stock-height", `${itemHeight + footerHeight}px`);
+    const layout = this.computeCurrentLayout(sortedCards);
+    this.lastEffectiveScale = layout.effectiveScale;
+    this.lastComputedTwoRows = layout.twoRows;
+    const footerHeight = this.reserveFooter ? Math.round(34 * layout.effectiveScale) : 0;
+
+    this.style.setProperty("--stock-height", `${layout.itemHeight + footerHeight}px`);
     this.style.setProperty("--card-footer-height", `${footerHeight}px`);
-    this.style.setProperty("--stock-card-width", `${itemWidth}px`);
-    this.style.setProperty("--stock-card-height", `${itemHeight}px`);
-    this.style.setProperty("--card-visible-width", `${visibleWidth}px`);
-    this.style.setProperty("--card-boundary-visible-width", `${boundaryVisibleWidth}px`);
-    this.style.setProperty("--card-margin-right", `${marginRight}px`);
+    this.style.setProperty("--stock-card-width", `${layout.itemWidth}px`);
+    this.style.setProperty("--stock-card-height", `${layout.itemHeight}px`);
+    this.style.setProperty("--card-visible-width", `${layout.visibleWidth}px`);
+    this.style.setProperty("--card-boundary-visible-width", `${layout.boundaryVisibleWidth}px`);
+    this.style.setProperty("--card-margin-right", `${layout.marginRight}px`);
+    this.style.setProperty("--stock-row-gap", `${layout.rowGapPx}px`);
 
     const isSelectable = this.selectionMode > 0;
     const selectedSet = new Set(this.selectedIds.map((id) => String(id)));
     const hiddenSet = new Set(this.externalHiddenIds.map((id) => String(id)));
     this.pendingRevealIds.forEach((id) => hiddenSet.add(id));
-    const stepPx = Math.max(16, itemWidth + marginRight);
-    const stripes =
-      !this.dragActive && !this.hideAllCards
-        ? computeGroupStripes(sortedCards, this.cardGroups, itemWidth, marginRight)
-        : [];
+    const stepPx = Math.max(16, layout.itemWidth + layout.marginRight);
     const groupStripeAriaPrefix = _("Select cards in group");
+
+    if (layout.twoRows) {
+      const row1Cards = sortedCards.slice(0, layout.row1Count);
+      const row2Cards = sortedCards.slice(layout.row1Count);
+      return html`
+        <div
+          id="stock"
+          ?data-dragging-active=${this.dragActive}
+          class=${classMap({
+            "two-rows": true,
+            bomb: hasBomb(this.cards),
+            reorderable: this.reorderable && !this.hideAllCards,
+          })}
+          @pointerdown=${this.onStockPointerDown}
+          @pointermove=${this.onStockPointerMove}
+          @pointerup=${this.onStockPointerUp}
+          @pointercancel=${this.onStockPointerCancel}
+          @keydown=${this.onStockKeyDown}
+        >
+          <div class="stock-row">
+            <div class="stock-row-inner" data-row="0">
+              ${this.renderCardRowContent(
+                row1Cards,
+                0,
+                0,
+                layout,
+                isSelectable,
+                selectedSet,
+                hiddenSet,
+                stepPx,
+                groupStripeAriaPrefix,
+              )}
+            </div>
+          </div>
+          <div class="stock-row">
+            <div class="stock-row-inner" data-row="1">
+              ${this.renderCardRowContent(
+                row2Cards,
+                layout.row1Count,
+                1,
+                layout,
+                isSelectable,
+                selectedSet,
+                hiddenSet,
+                stepPx,
+                groupStripeAriaPrefix,
+              )}
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     return html`
       <div
@@ -732,78 +1178,17 @@ export class TichuStock extends LitElement {
         @pointercancel=${this.onStockPointerCancel}
         @keydown=${this.onStockKeyDown}
       >
-        ${repeat(
+        ${this.renderCardRowContent(
           sortedCards,
-          (card) => String(card.id ?? ""),
-          (card, idx) => {
-            const cardIdStr = String(card.id ?? "");
-            const isHidden = this.hideAllCards || hiddenSet.has(cardIdStr);
-            const group = this.getGroupForCard(cardIdStr);
-            const nextCard = sortedCards[idx + 1];
-            const isGroupBoundary =
-              nextCard !== undefined && group !== this.getGroupForCard(String(nextCard.id ?? ""));
-            const isDragging = this.dragActive && cardIdStr === this.dragCardId;
-            const shiftX = this.getCardShiftX(idx, stepPx);
-            return html`
-              <tichu-card
-                data-card-id=${cardIdStr}
-                class=${classMap({ "group-boundary": isGroupBoundary })}
-                ?data-pending-reveal=${isHidden}
-                .card=${card}
-                .scale=${this.scale}
-                .tiki=${this.tiki}
-                .selectable=${isSelectable}
-                .reorderable=${this.reorderable && !this.hideAllCards}
-                .selected=${isSelectable && selectedSet.has(cardIdStr)}
-                .group=${group}
-                .dragging=${isDragging}
-                .dragX=${isDragging ? this.dragDeltaX : 0}
-                .shiftX=${shiftX}
-                .noTransition=${this.suppressTranslateTransition}
-                .wishMatch=${
-                  this.highlightedRank >= 2 &&
-                  this.highlightedRank <= 14 &&
-                  Number(card.type_arg) === this.highlightedRank
-                }
-                .reserveFooter=${this.reserveFooter}
-                .disableTooltip=${this.disableCardTooltips}
-                .passedOrigin=${this.passedOrigins[cardIdStr] ?? null}
-                @card-click=${(e: CustomEvent<{ card: Card }>) => this.onCardClick(e, card)}
-              ></tichu-card>
-            `;
-          },
+          0,
+          0,
+          layout,
+          isSelectable,
+          selectedSet,
+          hiddenSet,
+          stepPx,
+          groupStripeAriaPrefix,
         )}
-        ${stripes.map((s) => {
-          const allSelected =
-            isSelectable && s.cardIds.length > 0 && s.cardIds.every((id) => selectedSet.has(id));
-          return html`<button
-            type="button"
-            class=${classMap({
-              "group-stripe-bar": true,
-              [`group-${s.groupId}`]: true,
-              "all-selected": allSelected,
-            })}
-            data-group-stripe=${s.groupId}
-            style=${`left: ${s.leftPx}px; width: ${s.widthPx}px;`}
-            aria-pressed=${allSelected ? "true" : "false"}
-            aria-label=${`${groupStripeAriaPrefix} ${s.groupId}`}
-            data-tooltip=${_("Select cards in group")}
-            data-tooltip-tier="slow"
-            data-tooltip-touch="longpress"
-            @click=${(e: Event) => this.onGroupStripeClick(e, s.groupId)}
-          >
-            ${s.groupId}
-          </button>`;
-        })}
-        ${
-          this.dragActive && this.dropIndicatorX !== null
-            ? html`<div
-                class="drop-indicator"
-                aria-hidden="true"
-                style="left: ${this.dropIndicatorX}px"
-              ></div>`
-            : nothing
-        }
       </div>
     `;
   }
@@ -854,10 +1239,13 @@ export class TichuStock extends LitElement {
       pointerId: e.pointerId,
       cardId,
       fromIndex,
+      fromRow: 0,
+      twoRows: false,
       startX: e.clientX,
       startY: e.clientY,
       active: false,
       slotMidpoints: [],
+      slotMeta: [],
       slotBounds: [],
       cardGroupList: [],
       cardStepPx: 25,
@@ -899,29 +1287,47 @@ export class TichuStock extends LitElement {
         return;
       }
 
-      const baseWidth = Math.max(1, 100 * this.scale);
+      const layout = this.computeCurrentLayout(sortedCards);
+      const baseWidth = Math.max(1, 100 * layout.effectiveScale);
       const firstRect = cardEls[0]!.getBoundingClientRect();
       const zoomFactor = firstRect.width > 0 ? firstRect.width / baseWidth : 1;
       const stockRect = stockEl.getBoundingClientRect();
+      const rowInners = layout.twoRows
+        ? Array.from(stockEl.querySelectorAll<HTMLElement>(".stock-row-inner"))
+        : [];
+      const rowLefts = rowInners.map((el) => el.getBoundingClientRect().left);
 
       const slotMidpoints: number[] = [];
+      const slotMeta: Array<{
+        midX: number;
+        midY: number;
+        row: number;
+        left: number;
+        right: number;
+      }> = [];
       const slotBounds: Array<{ left: number; right: number }> = [];
       const cardGroupList: number[] = [];
       for (let i = 0; i < cardEls.length; i++) {
         const rect = cardEls[i]!.getBoundingClientRect();
-        slotMidpoints.push((rect.left + rect.right) / 2);
-        slotBounds.push({
-          left: (rect.left - stockRect.left) / zoomFactor,
-          right: (rect.right - stockRect.left) / zoomFactor,
-        });
+        const row = layout.twoRows && i >= layout.row1Count ? 1 : 0;
+        const containerLeft = layout.twoRows ? (rowLefts[row] ?? stockRect.left) : stockRect.left;
+        const left = (rect.left - containerLeft) / zoomFactor;
+        const right = (rect.right - containerLeft) / zoomFactor;
+        const midX = (rect.left + rect.right) / 2;
+        const midY = (rect.top + rect.bottom) / 2;
+        slotMidpoints.push(midX);
+        slotMeta.push({ midX, midY, row, left, right });
+        slotBounds.push({ left, right });
         cardGroupList.push(this.getGroupForCard(String(sortedCards[i]!.id ?? "")));
       }
 
-      const marginRight = this.computeMarginRightPx(sortedCards);
-      const cardStepPx = Math.max(16, baseWidth + marginRight);
+      const cardStepPx = Math.max(16, baseWidth + layout.marginRight);
 
       pending.active = true;
+      pending.twoRows = layout.twoRows;
+      pending.fromRow = layout.twoRows && pending.fromIndex >= layout.row1Count ? 1 : 0;
       pending.slotMidpoints = slotMidpoints;
+      pending.slotMeta = slotMeta;
       pending.slotBounds = slotBounds;
       pending.cardGroupList = cardGroupList;
       pending.cardStepPx = cardStepPx;
@@ -938,6 +1344,7 @@ export class TichuStock extends LitElement {
       this.dragActive = true;
       this.dragCardId = pending.cardId;
       this.dragFromIndex = pending.fromIndex;
+      this.dragFromRow = pending.fromRow;
     }
 
     if (e.cancelable) {
@@ -945,32 +1352,85 @@ export class TichuStock extends LitElement {
     }
 
     const scaledDx = dx / pending.zoomFactor;
-    const { dropIndex, targetGroup } = computeDropTarget(
-      e.clientX,
-      pending.slotMidpoints,
-      pending.fromIndex,
-      pending.cardGroupList,
-    );
+    const scaledDy = pending.twoRows ? dy / pending.zoomFactor : 0;
 
-    const origGroup = (pending.cardGroupList[pending.fromIndex] ?? 0) as CardGroupId | 0;
+    let dropIndex: number;
+    let targetGroup: CardGroupId | 0;
+    let targetRow = 0;
     let indicatorX: number | null = null;
-    if (dropIndex !== pending.fromIndex || targetGroup !== origGroup) {
-      const n = pending.slotBounds.length;
-      if (dropIndex <= 0) {
-        indicatorX = Math.max(0, pending.slotBounds[0]!.left - 4);
-      } else if (dropIndex >= n - 1) {
-        indicatorX = pending.slotBounds[n - 1]!.right + 4;
-      } else if (dropIndex < pending.fromIndex) {
-        indicatorX = pending.slotBounds[dropIndex]!.left - 2;
-      } else {
-        indicatorX = pending.slotBounds[dropIndex]!.left + pending.cardStepPx - 2;
+
+    if (pending.twoRows) {
+      const res2d = computeDropTarget2D(
+        e.clientX,
+        e.clientY,
+        pending.slotMeta,
+        pending.fromIndex,
+        pending.cardGroupList,
+      );
+      dropIndex = res2d.dropIndex;
+      targetGroup = res2d.targetGroup;
+      targetRow = res2d.targetRow;
+
+      const origGroup = (pending.cardGroupList[pending.fromIndex] ?? 0) as CardGroupId | 0;
+      const movedPosition =
+        dropIndex !== pending.fromIndex ||
+        targetRow !== pending.fromRow ||
+        targetGroup !== origGroup;
+      if (movedPosition) {
+        const remainingInOrder: number[] = [];
+        for (let i = 0; i < pending.slotMeta.length; i++) {
+          if (i !== pending.fromIndex) remainingInOrder.push(i);
+        }
+        const beforeInTargetRow = remainingInOrder
+          .slice(0, dropIndex)
+          .filter((idx) => pending.slotMeta[idx]!.row === targetRow);
+        const allInTargetRow = remainingInOrder.filter(
+          (idx) => pending.slotMeta[idx]!.row === targetRow,
+        );
+        if (allInTargetRow.length === 0) {
+          indicatorX = 0;
+        } else if (beforeInTargetRow.length === 0) {
+          indicatorX = Math.max(0, pending.slotMeta[allInTargetRow[0]!]!.left - 4);
+        } else if (beforeInTargetRow.length >= allInTargetRow.length) {
+          const lastIdx = allInTargetRow[allInTargetRow.length - 1]!;
+          indicatorX = pending.slotMeta[lastIdx]!.right + 4;
+        } else {
+          const nextIdx = allInTargetRow[beforeInTargetRow.length]!;
+          indicatorX = pending.slotMeta[nextIdx]!.left - 2;
+        }
+      }
+    } else {
+      const res1d = computeDropTarget(
+        e.clientX,
+        pending.slotMidpoints,
+        pending.fromIndex,
+        pending.cardGroupList,
+      );
+      dropIndex = res1d.dropIndex;
+      targetGroup = res1d.targetGroup;
+
+      const origGroup = (pending.cardGroupList[pending.fromIndex] ?? 0) as CardGroupId | 0;
+      if (dropIndex !== pending.fromIndex || targetGroup !== origGroup) {
+        const n = pending.slotBounds.length;
+        if (dropIndex <= 0) {
+          indicatorX = Math.max(0, pending.slotBounds[0]!.left - 4);
+        } else if (dropIndex >= n - 1) {
+          indicatorX = pending.slotBounds[n - 1]!.right + 4;
+        } else if (dropIndex < pending.fromIndex) {
+          indicatorX = pending.slotBounds[dropIndex]!.left - 2;
+        } else {
+          indicatorX = pending.slotBounds[dropIndex]!.left + pending.cardStepPx - 2;
+        }
       }
     }
 
     this.dragDeltaX = scaledDx;
+    this.dragDeltaY = scaledDy;
     this.dragDropIndex = dropIndex;
+    this.dragTargetRow = targetRow;
     this.dragTargetGroup = targetGroup;
     this.dropIndicatorX = indicatorX;
+    this.dropIndicatorRow = targetRow;
   }
 
   private onStockPointerUp(e: PointerEvent) {

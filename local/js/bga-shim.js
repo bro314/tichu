@@ -1747,7 +1747,7 @@
   // ==========================================================================
 
   const DEFAULT_PREFS = {
-    100: 1, // Table layout: 1 = List, 2 = Square
+    100: 2, // Table layout: 1 = List, 2 = Square
     101: 1, // Order of play: 1 = Counterclockwise, 2 = Clockwise
     102: 1, // Unselect before passing: 1 = Enabled, 2 = Disabled
     103: 2, // Edition: 1 = Tiki, 2 = Standard
@@ -2286,6 +2286,95 @@
       setTimeout(() => {
         if (toast.parentNode) toast.parentNode.removeChild(toast);
       }, 4000);
+    }
+
+    confirmationDialog(text, callback, cancelCallback) {
+      const parent = document.body || document.documentElement;
+      if (!parent) {
+        if (typeof callback === "function") callback();
+        return;
+      }
+
+      const underlay = document.createElement("div");
+      underlay.className = "bga-popin-underlay";
+      underlay.id = "popin_confirmation_dialog_underlay";
+
+      const dialog = document.createElement("div");
+      dialog.className = "bga-popin-dialog bga-confirm-dialog";
+      dialog.setAttribute("role", "dialog");
+      dialog.setAttribute("aria-modal", "true");
+
+      const titlebar = document.createElement("div");
+      titlebar.className = "bga-popin-titlebar";
+      const titleSpan = document.createElement("span");
+      titleSpan.className = "bga-popin-title";
+      titleSpan.textContent = "Confirmation";
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "bga-popin-close";
+      closeBtn.setAttribute("aria-label", "Close");
+      closeBtn.textContent = "×";
+      titlebar.appendChild(titleSpan);
+      titlebar.appendChild(closeBtn);
+
+      const content = document.createElement("div");
+      content.className = "bga-popin-content";
+      const msgEl = document.createElement("p");
+      msgEl.className = "bga-confirm-text";
+      msgEl.textContent = String(text ?? "");
+      const actions = document.createElement("div");
+      actions.className = "bga-confirm-actions";
+
+      const yesBtn = document.createElement("button");
+      yesBtn.type = "button";
+      yesBtn.id = "confirmation_dialog_yes";
+      yesBtn.className = "bgabutton bgabutton_blue";
+      yesBtn.textContent = "Yes";
+
+      const noBtn = document.createElement("button");
+      noBtn.type = "button";
+      noBtn.id = "confirmation_dialog_no";
+      noBtn.className = "bgabutton bgabutton_gray";
+      noBtn.textContent = "No";
+
+      actions.appendChild(yesBtn);
+      actions.appendChild(noBtn);
+      content.appendChild(msgEl);
+      content.appendChild(actions);
+      dialog.appendChild(titlebar);
+      dialog.appendChild(content);
+      underlay.appendChild(dialog);
+      parent.appendChild(underlay);
+
+      let settled = false;
+      const onKeyDown = (evt) => {
+        if (evt.key === "Escape") {
+          evt.preventDefault();
+          finish(false);
+        }
+      };
+      const finish = (accepted) => {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener("keydown", onKeyDown);
+        if (underlay.parentNode) {
+          underlay.parentNode.removeChild(underlay);
+        }
+        if (accepted) {
+          if (typeof callback === "function") callback();
+        } else if (typeof cancelCallback === "function") {
+          cancelCallback();
+        }
+      };
+
+      yesBtn.addEventListener("click", () => finish(true));
+      noBtn.addEventListener("click", () => finish(false));
+      closeBtn.addEventListener("click", () => finish(false));
+      underlay.addEventListener("click", (evt) => {
+        if (evt.target === underlay) finish(false);
+      });
+      document.addEventListener("keydown", onKeyDown);
+      noBtn.focus();
     }
 
     ajaxcall(url, args, bind, resultHandler, allHandler) {

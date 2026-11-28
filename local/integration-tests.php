@@ -3479,6 +3479,38 @@ function test_partner_tichu_confirmation_beyond_threshold(): void
   \PlayerManager::resetTichus();
   callAction($game, P2, 'tichuBet', ['bet' => '100']);
   assertSameVal('100', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'After resetTichus in new round, P2 must commit without partner prompt');
+
+  // 8a) With requireConfirm (confirm => '1'), P2 receives generic confirmTichu even without partner/60s/unwinnable triggers
+  \PlayerManager::resetTichus();
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'tichuBet', ['bet' => '100', 'confirm' => '1']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'Mobile confirm=1 must wait for confirmTichu before committing');
+  $confirmMobile = $findConfirmNotif($game, $beforePkt, P2);
+  assertTrueVal($confirmMobile !== null, 'P2 must receive confirmTichu when confirm=1 is sent');
+  assertSameVal(false, (bool) ($confirmMobile['grand'] ?? true), 'confirmTichu for Tichu must have grand=false');
+  assertTrueVal(
+    str_contains((string) ($confirmMobile['msg'] ?? ''), 'Are you sure you want to call Tichu?'),
+    'confirm=1 fallback message must ask generic Tichu confirmation'
+  );
+
+  // Confirming once commits immediately
+  callAction($game, P2, 'confirmTichu', ['bet' => '100']);
+  assertSameVal('100', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'confirmTichu(100) after confirm=1 must commit in a single step');
+
+  // 8b) When partner P0 already called and P2 sends confirm=1, partner warning takes precedence
+  \PlayerManager::resetTichus();
+  \PlayerManager::tichuBet(P0, 100);
+  \APP_DbObject::DbQuery("UPDATE actionlog SET log_arg = '$oldTs' WHERE log_action = 'tichuCall'");
+  $beforePkt = (int) \APP_DbObject::getUniqueValueFromDB('SELECT IFNULL(MAX(gamelog_packet_id), 0) FROM gamelog');
+  callAction($game, P2, 'tichuBet', ['bet' => '100', 'confirm' => '1']);
+  assertSameVal('-1', (string) \PlayerManager::getPlayer(P2)['call_tichu'], 'Partner call + confirm=1 must await confirmTichu');
+  $confirmPartnerMobile = $findConfirmNotif($game, $beforePkt, P2);
+  assertTrueVal($confirmPartnerMobile !== null, 'P2 must receive confirmTichu when partner called and confirm=1');
+  assertTrueVal(
+    str_contains((string) ($confirmPartnerMobile['msg'] ?? ''), 'partner has already called Tichu'),
+    'Partner warning must take precedence over generic confirm=1 message'
+  );
 }
 
 // ============================================================================

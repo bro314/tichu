@@ -153,7 +153,7 @@ export interface TichuNotificationMap {
  */
 export interface TichuActionMap {
   grandTichuBet: { bet: "0" | "200" | 0 | 200 };
-  tichuBet: { bet: "100" | 100 };
+  tichuBet: { bet: "100" | 100; confirm?: boolean | 0 | 1 };
   confirmTichu: { bet: "0" | "100" | "200" | 0 | 100 | 200 };
   makeAWish: { wish: number | string };
   choosePhoenix: { phoenixValue?: number | string };

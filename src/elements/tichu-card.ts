@@ -96,6 +96,8 @@ export class TichuCard extends LitElement {
 
   @property({ type: Number }) dragX = 0;
 
+  @property({ type: Number }) dragY = 0;
+
   @property({ type: Number }) shiftX = 0;
 
   @property({ type: Boolean }) reorderable = false;
@@ -149,7 +151,7 @@ export class TichuCard extends LitElement {
           translate: var(--shift-x, 0px) 0px;
         }
         div#card.dragging {
-          translate: var(--drag-x, 0px) -14px;
+          translate: var(--drag-x, 0px) calc(var(--drag-y, 0px) - 14px);
           scale: 1.03;
           cursor: grabbing;
           transition: none;
@@ -190,7 +192,7 @@ export class TichuCard extends LitElement {
           translate: var(--shift-x, 0px) -20px;
         }
         div#card.stockitem_selected.dragging {
-          translate: var(--drag-x, 0px) -26px;
+          translate: var(--drag-x, 0px) calc(var(--drag-y, 0px) - 26px);
         }
         div#card.passed-highlight.stockitem_selected {
           box-shadow:
@@ -385,6 +387,7 @@ export class TichuCard extends LitElement {
     this.style.setProperty("--bg-width", `${14 * width}px`);
     this.style.setProperty("--bg-height", `${4 * height}px`);
     this.style.setProperty("--drag-x", `${this.dragX}px`);
+    this.style.setProperty("--drag-y", `${this.dragY}px`);
     this.style.setProperty("--shift-x", `${this.shiftX}px`);
 
     if (this.pass) return this.renderPass(themeUrl);

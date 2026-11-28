@@ -507,6 +507,20 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     return safeSessionGet("tichu_tt_drawer") === "1";
   }
 
+  function isTestBarSuppressedByUrl(): boolean {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      return params.get("notestbar") === "1";
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function getBarDefaultHidden(): boolean {
+    if (isTestBarSuppressedByUrl()) return true;
+    return safeSessionGet("tichu_tt_bar_hidden") === "1";
+  }
+
   function getActivePlayerIds(ui: any): number[] {
     const gd = ui?.gamedatas;
     const st = gd?.gamestate || {};
@@ -3429,7 +3443,11 @@ export function initStudioTestHelper(gameuiInstance: any): void {
 
     showTests(_open = true) {},
 
+    hideBar() {},
+
     showBar() {},
+
+    toggleBar() {},
 
     onQueueDrained() {
       scheduleAutoBot();
@@ -3509,6 +3527,37 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         }
         #studio-test-bar.is-collapsed #tt_bar_body {
           display: none;
+        }
+        #studio-test-bar.is-hidden,
+        #local-dev-bar.is-tt-hidden {
+          display: none !important;
+        }
+        #studio-test-bar-restore {
+          position: fixed;
+          right: 10px;
+          bottom: 10px;
+          z-index: 9001;
+          display: none;
+          align-items: center;
+          gap: 5px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          border: 1px solid #30363d;
+          background: rgba(22, 27, 34, 0.92);
+          color: #e6edf3;
+          font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        }
+        #studio-test-bar-restore.is-visible {
+          display: inline-flex;
+        }
+        #studio-test-bar-restore:hover {
+          background: #30363d;
+          border-color: #58a6ff;
+          color: #ffffff;
         }
         #studio-test-bar * {
           box-sizing: border-box;
@@ -3851,6 +3900,12 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         "Stop the current table, create a new 4-player Tichu table, express-start it, and navigate there (tt.expressStartNew).",
       ),
       stopTable: esc("Immediately abort and close the current BGA Studio table (tt.expressStop)."),
+      mobilePreview: esc(
+        "Open the local Mobile Viewport Preview (/mobile) with centered phone presets.",
+      ),
+      hideBar: esc(
+        "Hide this testing bar (persisted per tab; click the bottom-right pill or run tt.showBar() to restore).",
+      ),
       testsDrawer: esc("Show or hide the automated test buttons, scenarios, and command runner."),
       scenarioSelect: esc("Choose a deterministic Tichu scenario to load in local runner."),
       loadScenario: esc("Load the selected deterministic scenario into the local database."),
@@ -3877,7 +3932,8 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     const brandLabel = isLocalHost ? "🀄 Tichu Local" : "🀄 Tichu Studio";
     const localControlsHtml = isLocalHost
       ? `<button type="button" id="devbar_exposed" class="devbar-btn" data-tooltip="${tips.exposed}">⏱ Real-Time</button>` +
-        `<button type="button" id="devbar_mute" class="devbar-btn" data-tooltip="${tips.mute}">🔊</button>`
+        `<button type="button" id="devbar_mute" class="devbar-btn" data-tooltip="${tips.mute}">🔊</button>` +
+        `<a href="/mobile" id="devbar_mobile_preview" class="devbar-btn" data-tooltip="${tips.mobilePreview}">📱 Mobile</a>`
       : "";
     const replayBtnHtml = `<button type="button" id="devbar_replay" class="devbar-btn" style="display:none" data-tooltip="${tips.replay}">📼 Replay</button>`;
     const tableControlsHtml = isLocalHost
@@ -3921,6 +3977,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       tableControlsHtml +
       `<div class="devbar-divider"></div>` +
       `<button type="button" id="tt_btn_collapse" class="devbar-btn${initialOpen ? " active-toggle" : ""}" aria-expanded="${initialOpen ? "true" : "false"}" data-tooltip="${tips.testsDrawer}">${initialOpen ? "🧪 Tests ▾" : "🧪 Tests ▸"}</button>` +
+      `<button type="button" id="tt_btn_hide" class="devbar-btn" aria-label="Hide testing bar" data-tooltip="${tips.hideBar}">✕</button>` +
       `</div>` +
       `</div>` +
       `<div id="tt_bar_body">` +
@@ -4019,6 +4076,38 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       }
     };
 
+    let restoreBtn = document.getElementById("studio-test-bar-restore") as HTMLButtonElement | null;
+    if (!restoreBtn && document.body && typeof document.createElement === "function") {
+      restoreBtn = document.createElement("button");
+      restoreBtn.type = "button";
+      restoreBtn.id = "studio-test-bar-restore";
+      restoreBtn.title = "Show Tichu testing bar";
+      restoreBtn.textContent = "🀄 Tools";
+      document.body.appendChild(restoreBtn);
+    }
+
+    const suppressedByUrl = isTestBarSuppressedByUrl();
+    const setBarHidden = (hidden: boolean, persist = true) => {
+      hideTip();
+      bar.classList.toggle("is-hidden", hidden);
+      if (localDevBar) {
+        localDevBar.classList.toggle("is-tt-hidden", hidden);
+      }
+      if (restoreBtn) {
+        restoreBtn.classList.toggle("is-visible", hidden && !suppressedByUrl);
+      }
+      if (persist && !suppressedByUrl) {
+        safeSessionSet("tichu_tt_bar_hidden", hidden ? "1" : "0");
+      }
+    };
+
+    if (restoreBtn && !(restoreBtn as any).__ttBound) {
+      (restoreBtn as any).__ttBound = true;
+      restoreBtn.addEventListener("click", () => setBarHidden(false));
+    }
+
+    setBarHidden(getBarDefaultHidden(), false);
+
     const activeTt = () => win.tt || tt;
 
     let lastBarDirtyKey = "";
@@ -4115,6 +4204,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         stateType,
         isGameEnd,
         isSpectator,
+        viewerId,
         tableId,
         playerMeta,
         autoBotOn,
@@ -4248,6 +4338,10 @@ export function initStudioTestHelper(gameuiInstance: any): void {
         const muteEl = document.getElementById("devbar_mute");
         if (muteEl) {
           setText(muteEl, snap.isMuted ? "🔇" : "🔊");
+        }
+        const mobileLinkEl = document.getElementById("devbar_mobile_preview");
+        if (mobileLinkEl) {
+          setAttr(mobileLinkEl, "href", `/mobile?as=${snap.isSpectator ? 0 : snap.viewerId}`);
         }
       }
 
@@ -4383,6 +4477,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       switch (btn.id) {
         case "tt_btn_collapse":
           setDrawerOpen(bar.classList.contains("is-collapsed"));
+          break;
+        case "tt_btn_hide":
+          setBarHidden(true);
           break;
         case "tt_btn_others":
           void runTask("actForOthers", () => activeTt().actForOthers(), false, false);
@@ -4582,13 +4679,20 @@ export function initStudioTestHelper(gameuiInstance: any): void {
     (tt as any).refreshBar = refreshBar;
     (tt as any).scheduleRefreshBar = scheduleRefreshBar;
     (tt as any).showTests = showTests;
-    (tt as any).showBar = () => setDrawerOpen(true);
+    (tt as any).hideBar = () => setBarHidden(true);
+    (tt as any).showBar = () => {
+      setBarHidden(false);
+      setDrawerOpen(true);
+    };
+    (tt as any).toggleBar = () => setBarHidden(!bar.classList.contains("is-hidden"));
     (tt as any).onQueueDrained = scheduleAutoBot;
     if (win.tt && win.tt !== tt) {
       win.tt.refreshBar = refreshBar;
       win.tt.scheduleRefreshBar = scheduleRefreshBar;
       win.tt.showTests = showTests;
+      win.tt.hideBar = (tt as any).hideBar;
       win.tt.showBar = (tt as any).showBar;
+      win.tt.toggleBar = (tt as any).toggleBar;
       win.tt.onQueueDrained = scheduleAutoBot;
     }
 
@@ -4679,7 +4783,9 @@ export function initStudioTestHelper(gameuiInstance: any): void {
       refreshBar: tt.refreshBar,
       scheduleRefreshBar: tt.scheduleRefreshBar,
       showTests: tt.showTests,
+      hideBar: tt.hideBar,
       showBar: tt.showBar,
+      toggleBar: tt.toggleBar,
       onQueueDrained: tt.onQueueDrained,
     };
     mergedTt = Object.assign(existingTt, studioOverlay, preservedLocal);

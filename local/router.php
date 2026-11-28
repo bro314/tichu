@@ -591,6 +591,17 @@ if ($uri === '/local/bot') {
   }
 }
 
+// 5b. Mobile Viewport Preview Shell (GET /mobile)
+if ($uri === '/mobile') {
+  $devBarPlayers = buildDevBarPlayers($game, $viewerPlayerId);
+  $scenarios = \LocalTichuScenarios::getAvailableScenarios();
+  if (!headers_sent()) {
+    header('Content-Type: text/html; charset=utf-8');
+  }
+  include __DIR__ . '/mobile-preview.php';
+  return true;
+}
+
 // 6. Main Game Page (GET / or GET /table or GET /index.php)
 if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   $viewPlayerId = $isSpectator ? $defaultPlayerId : $viewerPlayerId;
@@ -644,6 +655,7 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
     }
   }
   $isViewerActive = !$isSpectator && in_array($viewerPlayerId, $activePlayerIds, true);
+  $suppressDevBar = isset($_GET['notestbar']) && $_GET['notestbar'] === '1';
 
   if (!headers_sent()) {
     header('Content-Type: text/html; charset=utf-8');
@@ -659,7 +671,7 @@ if ($uri === '/' || $uri === '/table' || $uri === '/index.php') {
   <link rel="stylesheet" href="/tichu.css?v=<?php echo (int) @filemtime($projectRoot . '/tichu.css'); ?>">
 </head>
 <body id="ebd-body" class="notouch-device theme0<?php echo $isViewerActive ? ' current_player_is_active' : ''; ?>">
-  <div id="local-dev-bar"></div>
+  <div id="local-dev-bar"<?php echo $suppressDevBar ? ' class="is-tt-hidden"' : ''; ?>></div>
   <div id="local-toast-container"></div>
 
   <div id="overall-content" class="<?php echo htmlspecialchars($overallClassAttr, ENT_QUOTES, 'UTF-8'); ?>">

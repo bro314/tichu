@@ -1433,7 +1433,7 @@ class Tichu extends Table
     $this->setPlayerNonMultiactiveSafe((int) $player_id, "dealLastCards", true);
   }
 
-  function tichuBet(bool $confirmed = false, int|string|null $player_id = null): void
+  function tichuBet(bool $confirmed = false, int|string|null $player_id = null, bool $requireConfirm = false): void
   {
     // A Tichu call only depends on the caller's own row and cards, which are read with the lock
     // held below, so it is accepted even if other players acted concurrently (stale snapshot).
@@ -1518,6 +1518,15 @@ class Tichu extends Table
       $now - intval($lastTichuCall["arg"]) < TICHU_CONFIRMATION_TRESHOLD
     ) {
       NotificationManager::confirmTichu($player_id, false);
+      $this->syncStaleReturnState();
+      return;
+    }
+    if (!$confirmed && $requireConfirm) {
+      NotificationManager::confirmTichu(
+        $player_id,
+        false,
+        clienttranslate("Are you sure you want to call Tichu?")
+      );
       $this->syncStaleReturnState();
       return;
     }

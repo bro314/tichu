@@ -464,7 +464,7 @@ export class Tichu {
     } catch (_e) {
       // ignore storage errors
     }
-    const pref100 = this.safeGetPref(100, 1);
+    const pref100 = this.safeGetPref(100, 2);
     const pref101 = this.safeGetPref(101, 1);
     const pref102 = this.safeGetPref(102, 1);
     const pref103 = this.safeGetPref(103, 2);
@@ -1431,6 +1431,24 @@ export class Tichu {
     const widthAvailable = areaWrapElement.clientWidth;
     const heightAvailable = document.documentElement.clientHeight - 120;
 
+    if (!this.experimentalArchiveModeEnabled && widthAvailable > 0 && widthAvailable < 760) {
+      areaElement?.classList.add("responsive-compact");
+      const compactMin = 352;
+      if (widthAvailable < compactMin) {
+        const compactFactor = Math.max(widthAvailable / compactMin, 0.5);
+        areaWrapElement.style.transform = `scale(${compactFactor})`;
+        areaWrapElement.style.transformOrigin = "top left";
+        gameElement.style.width = `${compactMin}px`;
+      } else {
+        areaWrapElement.style.transform = "";
+        areaWrapElement.style.transformOrigin = "";
+        gameElement.style.width = "100%";
+      }
+      return;
+    }
+
+    areaElement?.classList.remove("responsive-compact");
+
     const widthMax = 1200;
     const widthMin = this.experimentalArchiveModeEnabled ? 1000 : 900;
     const heightMin = this.experimentalArchiveModeEnabled ? 600 : 800;
@@ -1492,10 +1510,57 @@ export class Tichu {
     this.takeAction("grandTichuBet", { bet });
   }
 
+  isMobileConfirmContext(): boolean {
+    if (typeof document !== "undefined") {
+      const body = document.body;
+      if (
+        body?.classList?.contains("mobile_version") ||
+        body?.classList?.contains("touch-device")
+      ) {
+        return true;
+      }
+      if (document.getElementById("game_play_area")?.classList?.contains("responsive-compact")) {
+        return true;
+      }
+    }
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      if (window.matchMedia("(pointer: coarse)").matches) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private scrollPageTitleIntoViewIfNeeded(): void {
+    if (typeof document === "undefined" || typeof window === "undefined") return;
+    const titleEl = document.getElementById("page-title");
+    if (
+      !titleEl ||
+      typeof titleEl.getBoundingClientRect !== "function" ||
+      typeof titleEl.scrollIntoView !== "function"
+    ) {
+      return;
+    }
+    const rect = titleEl.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
+    if (rect.top < 0 || (vh > 0 && rect.bottom > vh)) {
+      titleEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
   onTichuBet(evt?: Event) {
     if (evt) {
       evt.preventDefault?.();
       evt.stopPropagation?.();
+    }
+    if (this.isReadOnly()) return;
+    if (this.pendingConfirmTichu !== null) {
+      this.scrollPageTitleIntoViewIfNeeded();
+      return;
+    }
+    if (this.isMobileConfirmContext()) {
+      this.takeAction("tichuBet", { bet: Bet.TICHU, confirm: 1 });
+      return;
     }
     this.takeAction("tichuBet", { bet: Bet.TICHU });
   }
@@ -2156,6 +2221,7 @@ export class Tichu {
     }
     this.updatePageTitle();
     this.renderConfirmTichuButtons();
+    this.scrollPageTitleIntoViewIfNeeded();
   }
 
   notif_mahjongWishGranted(notif: TypedNotif<"mahjongWishGranted">) {

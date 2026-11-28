@@ -283,7 +283,9 @@ export class TichuScoreModal extends LitElement {
 
   protected override updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
-    const dialog = this.shadowRoot?.getElementById("tichu-score-dialog") as HTMLDialogElement | null;
+    const dialog = this.shadowRoot?.getElementById(
+      "tichu-score-dialog",
+    ) as HTMLDialogElement | null;
     if (!dialog) return;
 
     if (this.scoreModalOpen) {

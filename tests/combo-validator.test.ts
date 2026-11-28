@@ -1719,6 +1719,243 @@ test("tt.suggest and tt.actMyTurn strictly follow server botSuggestion notificat
   }
 });
 
+test("initStudioTestHelper supports hiding/showing #studio-test-bar and ?notestbar=1", () => {
+  const g = globalThis as any;
+  const savedWindow = g.window;
+  const savedDocument = g.document;
+  const savedSession = g.sessionStorage;
+  const savedLocal = g.localStorage;
+  const savedCSS = g.CSS;
+  const savedElement = g.Element;
+
+  try {
+    function createDomEnv(search: string, hostname = "localhost") {
+      const sessionMap = new Map<string, string>();
+      const sessionMock = {
+        getItem: (k: string) => (sessionMap.has(k) ? sessionMap.get(k)! : null),
+        setItem: (k: string, v: string) => sessionMap.set(k, String(v)),
+        removeItem: (k: string) => sessionMap.delete(k),
+      };
+      const localMap = new Map<string, string>();
+      const localMock = {
+        getItem: (k: string) => (localMap.has(k) ? localMap.get(k)! : null),
+        setItem: (k: string, v: string) => localMap.set(k, String(v)),
+        removeItem: (k: string) => localMap.delete(k),
+      };
+
+      const byId = new Map<string, any>();
+
+      class MockEl {
+        tagName: string;
+        _id = "";
+        _classSet = new Set<string>();
+        _attrs = new Map<string, string>();
+        _listeners = new Map<string, Array<(e: any) => void>>();
+        _children: MockEl[] = [];
+        _innerHTML = "";
+        parentNode: any = null;
+        style: Record<string, string> = {};
+        textContent = "";
+        type = "";
+        title = "";
+        disabled = false;
+        value = "";
+        classList = {
+          add: (...cls: string[]) => cls.forEach((c) => this._classSet.add(c)),
+          remove: (...cls: string[]) => cls.forEach((c) => this._classSet.delete(c)),
+          contains: (c: string) => this._classSet.has(c),
+          toggle: (c: string, force?: boolean) => {
+            const next = force === undefined ? !this._classSet.has(c) : Boolean(force);
+            if (next) this._classSet.add(c);
+            else this._classSet.delete(c);
+            return next;
+          },
+        };
+        constructor(tag: string) {
+          this.tagName = tag.toUpperCase();
+        }
+        get id() {
+          return this._id;
+        }
+        set id(val: string) {
+          if (this._id && byId.get(this._id) === this) byId.delete(this._id);
+          this._id = String(val || "");
+          if (this._id) byId.set(this._id, this);
+        }
+        set className(val: string) {
+          this._classSet = new Set(
+            String(val || "")
+              .split(/\s+/)
+              .filter(Boolean),
+          );
+        }
+        get className() {
+          return Array.from(this._classSet).join(" ");
+        }
+        get innerHTML() {
+          return this._innerHTML;
+        }
+        set innerHTML(html: string) {
+          this._innerHTML = String(html || "");
+          const re = /id="([^"]+)"/g;
+          let m: RegExpExecArray | null;
+          while ((m = re.exec(this._innerHTML)) !== null) {
+            const childId = m[1]!;
+            if (!byId.has(childId)) {
+              const child = new MockEl("DIV");
+              child.id = childId;
+              child.parentNode = this;
+              this._children.push(child);
+            }
+          }
+        }
+        appendChild(child: MockEl) {
+          child.parentNode = this;
+          this._children.push(child);
+          if (child.id) byId.set(child.id, child);
+          return child;
+        }
+        insertBefore(child: MockEl) {
+          return this.appendChild(child);
+        }
+        contains(other: any): boolean {
+          return other === this || this._children.includes(other);
+        }
+        setAttribute(name: string, val: string) {
+          this._attrs.set(name, String(val));
+        }
+        getAttribute(name: string) {
+          return this._attrs.get(name) ?? null;
+        }
+        querySelector() {
+          return null;
+        }
+        querySelectorAll() {
+          return [];
+        }
+        closest(sel: string) {
+          if (sel === "button.devbar-btn" && this.tagName === "BUTTON") return this;
+          return null;
+        }
+        addEventListener(type: string, fn: (e: any) => void) {
+          const list = this._listeners.get(type) || [];
+          list.push(fn);
+          this._listeners.set(type, list);
+        }
+        click() {
+          const list = this._listeners.get("click") || [];
+          for (const fn of list) fn({ target: this });
+        }
+        getBoundingClientRect() {
+          return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+        }
+      }
+
+      const head = new MockEl("HEAD");
+      const body = new MockEl("BODY");
+      const localDevBar = new MockEl("DIV");
+      localDevBar.id = "local-dev-bar";
+      body.appendChild(localDevBar);
+
+      const doc = {
+        head,
+        body,
+        createElement: (tag: string) => new MockEl(tag),
+        getElementById: (id: string) => byId.get(id) ?? null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      };
+
+      const ui: any = {
+        player_id: 2385074,
+        isSpectator: false,
+        gamedatas: {
+          players: {
+            "2385074": { id: "2385074", name: "p0", no: 1, color: "000000", score: "0" },
+          },
+          gamestate: {
+            id: "60",
+            name: "playCombo",
+            type: "activeplayer",
+            active_player: "2385074",
+          },
+          hand: [],
+          handcount: { 2385074: 14 },
+        },
+        bga: { players: { getActivePlayerIds: () => [2385074] } },
+      };
+
+      g.Element = MockEl;
+      g.CSS = { escape: (s: string) => String(s) };
+      g.sessionStorage = sessionMock;
+      g.localStorage = localMock;
+      g.document = doc;
+      g.window = {
+        location: { hostname, search },
+        console: globalThis.console,
+        addEventListener: () => {},
+        setTimeout: globalThis.setTimeout,
+        clearTimeout: globalThis.clearTimeout,
+        requestAnimationFrame: (fn: () => void) => {
+          fn();
+          return 1;
+        },
+        cancelAnimationFrame: () => {},
+        gameui: ui,
+      };
+
+      const { initStudioTestHelper } = require("../src/studio-test");
+      initStudioTestHelper(ui);
+
+      return { tt: g.window.tt, doc, sessionMap, localDevBar };
+    }
+
+    // 1. Default visible -> hideBar() / showBar() / toggleBar() toggle bar + restore pill + sessionStorage
+    const env1 = createDomEnv("");
+    const bar1 = env1.doc.getElementById("studio-test-bar");
+    const restore1 = env1.doc.getElementById("studio-test-bar-restore");
+    assert.ok(bar1, "#studio-test-bar must be mounted");
+    assert.ok(restore1, "#studio-test-bar-restore pill must be mounted");
+    assert.equal(bar1.classList.contains("is-hidden"), false);
+    assert.equal(restore1.classList.contains("is-visible"), false);
+
+    env1.tt.hideBar();
+    assert.equal(bar1.classList.contains("is-hidden"), true);
+    assert.equal(env1.localDevBar.classList.contains("is-tt-hidden"), true);
+    assert.equal(restore1.classList.contains("is-visible"), true);
+    assert.equal(env1.sessionMap.get("tichu_tt_bar_hidden"), "1");
+
+    restore1.click();
+    assert.equal(bar1.classList.contains("is-hidden"), false);
+    assert.equal(env1.localDevBar.classList.contains("is-tt-hidden"), false);
+    assert.equal(restore1.classList.contains("is-visible"), false);
+    assert.equal(env1.sessionMap.get("tichu_tt_bar_hidden"), "0");
+
+    env1.tt.toggleBar();
+    assert.equal(bar1.classList.contains("is-hidden"), true);
+    env1.tt.showBar();
+    assert.equal(bar1.classList.contains("is-hidden"), false);
+    assert.equal(bar1.classList.contains("is-collapsed"), false);
+
+    // 2. ?notestbar=1 suppresses both the bar and the floating restore pill without clobbering sessionStorage
+    const env2 = createDomEnv("?as=2385074&notestbar=1");
+    const bar2 = env2.doc.getElementById("studio-test-bar");
+    const restore2 = env2.doc.getElementById("studio-test-bar-restore");
+    assert.ok(env2.tt && typeof env2.tt.status === "function", "window.tt must still attach");
+    assert.equal(bar2.classList.contains("is-hidden"), true);
+    assert.equal(env2.localDevBar.classList.contains("is-tt-hidden"), true);
+    assert.equal(restore2.classList.contains("is-visible"), false);
+    assert.equal(env2.sessionMap.has("tichu_tt_bar_hidden"), false);
+  } finally {
+    g.window = savedWindow;
+    g.document = savedDocument;
+    g.sessionStorage = savedSession;
+    g.localStorage = savedLocal;
+    g.CSS = savedCSS;
+    g.Element = savedElement;
+  }
+});
+
 // =========================================================================
 // Animation Origin / Destination, Pass-Card Flights & Trick Pass Sweep Tests
 // =========================================================================
@@ -1764,9 +2001,11 @@ function withMockLitEnv(
     TichuStock: any;
     TichuActionBar: any;
     TichuValueChoice: any;
+    TichuPlayedCards: any;
     TichuCardEl: any;
     TichuHand: any;
     TichuStatus: any;
+    TichuTrickModal: any;
     TichuScoreBoard: any;
     TichuSettingsModal: any;
     TichuTooltipLayer: any;
@@ -1778,6 +2017,10 @@ function withMockLitEnv(
     getThemeLabel: (themeNo: number) => string;
     buildPassedOriginsMap: any;
     computeCardVisibleWidthPx: any;
+    computeStockLayout: any;
+    computeDropTarget2D: any;
+    PASS_SLOT_CARD_OFFSET_X: number;
+    PASS_SLOT_CARD_OFFSET_Y: number;
   }) => Promise<void> | void,
 ): Promise<void> {
   const g = globalThis as any;
@@ -1862,9 +2105,11 @@ function withMockLitEnv(
     TichuStock: stockMod.TichuStock,
     TichuActionBar: require("../src/elements/tichu-action-bar").TichuActionBar,
     TichuValueChoice: require("../src/elements/tichu-value-choice").TichuValueChoice,
+    TichuPlayedCards: require("../src/elements/tichu-played-cards").TichuPlayedCards,
     TichuCardEl: cardMod.TichuCard,
     TichuHand: handMod.TichuHand,
     TichuStatus: require("../src/elements/tichu-status").TichuStatus,
+    TichuTrickModal: require("../src/elements/tichu-trick-modal").TichuTrickModal,
     TichuScoreBoard: require("../src/elements/tichu-score-board").TichuScoreBoard,
     TichuSettingsModal: settingsModalMod.TichuSettingsModal,
     TichuTooltipLayer: tooltipLayerMod.TichuTooltipLayer,
@@ -1876,6 +2121,8 @@ function withMockLitEnv(
     getThemeLabel: settingsModalMod.getThemeLabel,
     buildPassedOriginsMap: handMod.buildPassedOriginsMap,
     computeCardVisibleWidthPx: stockMod.computeCardVisibleWidthPx,
+    computeStockLayout: stockMod.computeStockLayout,
+    computeDropTarget2D: stockMod.computeDropTarget2D,
   };
 
   return Promise.resolve(fn(mods)).finally(() => {
@@ -3806,14 +4053,16 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
       assert.match(actionBarCss, /display:\s*grid/);
       assert.match(
         actionBarCss,
-        /grid-template-columns:\s*repeat\(3,\s*minmax\(130px,\s*160px\)\)\s+minmax\(24px,\s*1fr\)\s+repeat\(2,\s*minmax\(130px,\s*160px\)\)/,
+        /grid-template-columns:\s*repeat\(\s*3,\s*minmax\(130px,\s*160px\)\s*\)\s+minmax\(24px,\s*1fr\)\s+repeat\(\s*2,\s*minmax\(130px,\s*160px\)\s*\)/,
       );
       assert.match(actionBarCss, /min-height:\s*32px/);
       assert.doesNotMatch(
         actionBarCss,
-        /max-width:\s*760px|grid-row:\s*2|\.space2/,
-        "Action bar must stay single-row with equal-width buttons and flush-right Bomb/Tichu",
+        /max-width:\s*760px|\.space2/,
+        "Action bar must not use legacy 760px media-query fallback or .space2",
       );
+      assert.ok(actionBarCss.includes("#buttons.compact-medium"));
+      assert.ok(actionBarCss.includes("#buttons.compact-mobile"));
 
       const bar = new TichuActionBar();
       bar.performUpdate = () => {};
@@ -6895,6 +7144,1115 @@ test("Bug #258736: raised 16px drag deadzone and one-shot post-drag click suppre
       assert.deepEqual(stock.getSelectedIds(), [A2.id]);
     } finally {
       stock.disconnectedCallback();
+    }
+  });
+});
+
+test("Square Table default, Tichu::rescale() compact/floor, and TichuLastPlayed compact header & 0.6 scale", async () => {
+  await withMockLitEnv(({ TichuLastPlayed, TichuStatus }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedThemeUrl = g.g_gamethemeurl;
+    const savedGameModel = g.window.gameModel;
+    const savedDoc = g.document;
+    const savedDocEl = g.document.documentElement;
+    const savedGetElById = g.document.getElementById;
+
+    try {
+      g._ = (s: string) => s;
+      g.g_gamethemeurl = "/tichu/";
+
+      const { GameModel } = require("../src/elements/game-model");
+      const { Tichu } = require("../src/tichu");
+
+      // 1. Default pref 100 -> Square Table
+      const model = new GameModel();
+      assert.equal(model.getState().squareTable, true);
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, score: "0" },
+            "2": { id: "2", name: "Bob", color: "ff0000", no: 2, score: "0" },
+            "3": { id: "3", name: "Carol", color: "000000", no: 3, score: "0" },
+            "4": { id: "4", name: "Dave", color: "ff0000", no: 4, score: "0" },
+          },
+          gamestate: {
+            id: "50",
+            name: "playCombo",
+            type: "activeplayer",
+            active_player: "1",
+            args: {},
+          },
+          hand: [],
+        },
+        "1",
+        false,
+        true,
+        {},
+      );
+      assert.equal(model.getState().squareTable, true, "Omitted pref 100 must default to Square");
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, score: "0" },
+          },
+          gamestate: {
+            id: "50",
+            name: "playCombo",
+            type: "activeplayer",
+            active_player: "1",
+            args: {},
+          },
+          hand: [],
+        },
+        "1",
+        false,
+        true,
+        { 100: 1 },
+      );
+      assert.equal(model.getState().squareTable, false, "Explicit pref 100=1 must select List");
+
+      const tichuInst = new Tichu();
+      tichuInst.safeGetPref = (_id: number, fallback: number) => fallback;
+      const defaultPrefs = tichuInst.readPrefs();
+      assert.equal(defaultPrefs[100], 2);
+      assert.equal(defaultPrefs.squareTable, true);
+
+      // 2. Tichu::rescale() breakpoints: >=760 desktop, 352..759 1:1 compact, <352 floor, replay unchanged
+      const makeAreaClassList = () => {
+        const set = new Set<string>();
+        return {
+          set,
+          add: (c: string) => set.add(c),
+          remove: (c: string) => set.delete(c),
+          contains: (c: string) => set.has(c),
+        };
+      };
+      const areaClassList = makeAreaClassList();
+      const areaEl: any = { style: {} as Record<string, string>, classList: areaClassList };
+      const replayEl: any = { style: {} as Record<string, string> };
+      const areaWrapEl: any = { clientWidth: 950, style: {} as Record<string, string> };
+      g.document.documentElement = { clientHeight: 1000 };
+      g.document.getElementById = (id: string) => {
+        if (id === "game_play_area") return areaEl;
+        if (id === "game_play_replay") return replayEl;
+        if (id === "game_play_area_wrap") return areaWrapEl;
+        return null;
+      };
+
+      tichuInst.experimentalArchiveModeEnabled = false;
+      tichuInst.rescale();
+      assert.equal(areaWrapEl.style.transform, "");
+      assert.equal(areaEl.style.width, "950px");
+      assert.equal(areaClassList.contains("responsive-compact"), false);
+
+      areaWrapEl.clientWidth = 382; // 390px phone minus 4px wrap margins
+      tichuInst.rescale();
+      assert.equal(areaWrapEl.style.transform, "");
+      assert.equal(areaEl.style.width, "100%");
+      assert.equal(areaClassList.contains("responsive-compact"), true);
+
+      areaWrapEl.clientWidth = 312; // 320px legacy phone
+      tichuInst.rescale();
+      assert.match(areaWrapEl.style.transform, /^scale\(0\.886/);
+      assert.equal(areaEl.style.width, "352px");
+      assert.equal(areaClassList.contains("responsive-compact"), true);
+
+      tichuInst.experimentalArchiveModeEnabled = true;
+      areaWrapEl.clientWidth = 500;
+      tichuInst.rescale();
+      assert.equal(replayEl.style.width, "1000px");
+      assert.equal(areaClassList.contains("responsive-compact"), false);
+
+      g.document.getElementById = savedGetElById;
+
+      // 3. TichuStatus compact styles + TichuLastPlayed compact single-row header & 0.6 card scale
+      const statusCss = TichuStatus.styles?.cssText ?? String(TichuStatus.styles ?? "");
+      assert.ok(statusCss.includes(":host([compact])"), "TichuStatus must style :host([compact])");
+
+      const lpCss = (TichuLastPlayed.styles || [])
+        .map((s: any) => s?.cssText ?? String(s ?? ""))
+        .join("\n");
+      assert.ok(lpCss.includes("#card-last-played-area.squareTable.compact"));
+      assert.ok(lpCss.includes(".lp-avatar-wrap"));
+
+      g.window.gameModel = model;
+      const lp = new TichuLastPlayed();
+      (lp as any).squareTable = true;
+      (lp as any).clockwise = true;
+      (lp as any).isSpectator = false;
+      (lp as any).playerOrderBottomToLeft = ["1", "2", "3", "4"];
+      (lp as any).players = {
+        "1": {
+          id: "1",
+          name: "Alice",
+          color: "000000",
+          no: 1,
+          handcount: 14,
+          capturedPoints: 0,
+          callGrandTichu: 200,
+          callTichu: 0,
+          avatarUrl: "",
+        },
+        "2": {
+          id: "2",
+          name: "Bob",
+          color: "ff0000",
+          no: 2,
+          handcount: 0,
+          capturedPoints: 35,
+          callGrandTichu: 0,
+          callTichu: -1,
+          avatarUrl: "/avatar-1.png",
+        },
+        "3": {
+          id: "3",
+          name: "Carol",
+          color: "000000",
+          no: 3,
+          handcount: 9,
+          capturedPoints: 10,
+          callGrandTichu: -1,
+          callTichu: -1,
+          avatarUrl: "",
+        },
+        "4": {
+          id: "4",
+          name: "Dave",
+          color: "ff0000",
+          no: 4,
+          handcount: 11,
+          capturedPoints: 0,
+          callGrandTichu: 0,
+          callTichu: 100,
+          avatarUrl: "",
+        },
+      };
+      (lp as any).firstOutPlayerId = "2";
+      (lp as any).mahjongWish = 8;
+      (lp as any).round = 2;
+      (lp as any).trick = 3;
+      (lp as any).currentTrickValue = 15;
+      (lp as any).compactLayout = true;
+      (lp as any).narrowCards = true;
+
+      const compactHtml = serializeLitTemplate(lp.render());
+      assert.ok(compactHtml.includes("squareTable") && compactHtml.includes("compact"));
+      assert.ok(compactHtml.includes("narrow-cards"));
+      assert.ok(compactHtml.includes("<tichu-status"));
+      assert.ok(
+        compactHtml.includes('data-tooltip="Alice"') || compactHtml.includes("data-tooltip=Alice"),
+      );
+      assert.ok(compactHtml.includes("lp-avatar-fallback"));
+      assert.ok(compactHtml.includes("/avatar-1.png"));
+      assert.ok(compactHtml.includes('id="icon_hand_1"') || compactHtml.includes("id=icon_hand_1"));
+      assert.ok(compactHtml.includes('id="icon_star_2"') || compactHtml.includes("id=icon_star_2"));
+      assert.ok(
+        compactHtml.includes('id="grandtichucolor_1"') ||
+          compactHtml.includes("id=grandtichucolor_1"),
+      );
+      assert.ok(
+        compactHtml.includes('id="firstoutcolor_2"') || compactHtml.includes("id=firstoutcolor_2"),
+      );
+      assert.equal(
+        compactHtml.includes('id="grandtichucolor_2"') ||
+          compactHtml.includes("id=grandtichucolor_2"),
+        false,
+      );
+      assert.ok(compactHtml.includes("background-position: -324px -0px"));
+
+      const mockLastComboEl = {
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 100, height: 90 }),
+      };
+      Object.defineProperty(lp, "shadowRoot", {
+        value: {
+          getElementById: (id: string) => (id === "lastcombo_1" ? mockLastComboEl : null),
+        },
+        configurable: true,
+      });
+      const anchorNarrow = lp.getSeatAnchorRect("1");
+      assert.ok(anchorNarrow);
+      assert.equal(anchorNarrow.width, 60);
+      assert.equal(anchorNarrow.height, 90);
+
+      (lp as any).narrowCards = false;
+      const anchorNormal = lp.getSeatAnchorRect("1");
+      assert.ok(anchorNormal);
+      assert.equal(anchorNormal.width, 75);
+      assert.equal(anchorNormal.height, 112.5);
+    } finally {
+      g._ = savedUnderscore;
+      g.g_gamethemeurl = savedThemeUrl;
+      g.window.gameModel = savedGameModel;
+      g.document.documentElement = savedDocEl;
+      g.document.getElementById = savedGetElById;
+      g.document = savedDoc;
+    }
+  });
+});
+
+test("TichuPassArea responsive compact layout, slotScale, roundOnly slim pill, and direct cardBox target rect", async () => {
+  await withMockLitEnv(({ TichuPassArea, TichuStatus }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedThemeUrl = g.g_gamethemeurl;
+    const savedGameModel = g.window.gameModel;
+
+    try {
+      g._ = (s: string) => s;
+      g.g_gamethemeurl = "/tichu/";
+
+      const statusCss = TichuStatus.styles?.cssText ?? String(TichuStatus.styles ?? "");
+      assert.ok(
+        statusCss.includes(":host([compact]) .status-panel.round-only"),
+        "TichuStatus must render roundOnly compact mode as horizontal pill",
+      );
+
+      const passCss = (TichuPassArea.styles || [])
+        .map((s: any) => s?.cssText ?? String(s ?? ""))
+        .join("\n");
+      assert.ok(
+        /#playertables\.compact\s*\{[^}]*align-items:\s*flex-start/.test(passCss),
+        "#playertables.compact must use align-items: flex-start so partner slot stays shifted up",
+      );
+
+      const status = new TichuStatus();
+      status.roundOnly = true;
+      status.roundCount = 3;
+      const roundOnlyHtml = serializeLitTemplate(status.render());
+      assert.ok(roundOnlyHtml.includes("status-panel round-only"));
+
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, score: "0" },
+            "2": { id: "2", name: "Bob", color: "ff0000", no: 2, score: "0" },
+            "3": { id: "3", name: "Carol", color: "000000", no: 3, score: "0" },
+            "4": { id: "4", name: "Dave", color: "ff0000", no: 4, score: "0" },
+          },
+          gamestate: {
+            id: "40",
+            name: "giveCards",
+            type: "multipleactiveplayer",
+            multiactive: ["1"],
+            args: {},
+          },
+          hand: [A2, B3, C4, D5],
+        },
+        "1",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+
+      const passArea = new TichuPassArea();
+      passArea.performUpdate = () => {};
+      passArea.connectedCallback();
+      try {
+        passArea.updateResponsiveLayout(352);
+        const html352 = serializeLitTemplate(passArea.render());
+        assert.ok(html352.includes("pass-status-wrap compact"));
+        assert.ok(html352.includes("--slot-card-w: 91px; --slot-card-h: 137px;"));
+        assert.ok(html352.includes("<tichu-status"));
+
+        passArea.updateResponsiveLayout(382);
+        const html382 = serializeLitTemplate(passArea.render());
+        assert.ok(html382.includes("pass-status-wrap compact"));
+        assert.ok(html382.includes("--slot-card-w: 100px; --slot-card-h: 150px;"));
+
+        passArea.updateResponsiveLayout(900);
+        const html900 = serializeLitTemplate(passArea.render());
+        assert.equal(html900.includes("pass-status-wrap compact"), false);
+
+        const directBoxRect = new MockDOMRect(25, 90, 91, 136.5);
+        Object.defineProperty(passArea, "shadowRoot", {
+          value: {
+            getElementById: (id: string) =>
+              id === "give_1"
+                ? { getBoundingClientRect: () => directBoxRect }
+                : id === "playertable_2"
+                  ? { getBoundingClientRect: () => new MockDOMRect(100, 200, 140, 248) }
+                  : null,
+          },
+          configurable: true,
+        });
+        const measuredDirect = passArea.getSlotCardTargetRect(0);
+        assert.deepEqual(measuredDirect, directBoxRect);
+
+        const fallbackRect = passArea.getSlotCardTargetRect(1);
+        assert.ok(fallbackRect);
+        assert.equal(fallbackRect.left, 120);
+        assert.equal(fallbackRect.top, 284);
+      } finally {
+        passArea.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.g_gamethemeurl = savedThemeUrl;
+      g.window.gameModel = savedGameModel;
+    }
+  });
+});
+
+test("Mobile Step 4: centered last-played cards, fluid trick modal, responsive action bar, hand margin/hide, and 2-row 14-card stock", async () => {
+  await withMockLitEnv(
+    ({
+      TichuLastPlayed,
+      TichuTrickModal,
+      TichuActionBar,
+      TichuHand,
+      TichuStock,
+      computeStockLayout,
+      computeDropTarget2D,
+    }) => {
+      const g = globalThis as any;
+      const savedUnderscore = g._;
+      const savedThemeUrl = g.g_gamethemeurl;
+      const savedGameModel = g.window.gameModel;
+      const savedGameUi = g.window.gameui;
+
+      try {
+        g._ = (s: string) => s;
+        g.g_gamethemeurl = "/tichu/";
+
+        // 1. Centered <tichu-stock> inside compact .last-played-combo
+        const lpCss = (TichuLastPlayed.styles || [])
+          .map((s: any) => s?.cssText ?? String(s ?? ""))
+          .join("\n");
+        assert.ok(lpCss.includes("--stock-justify: center;"));
+        const stockCss = (TichuStock.styles || [])
+          .map((s: any) => s?.cssText ?? String(s ?? ""))
+          .join("\n");
+        assert.ok(stockCss.includes("var(--stock-justify, flex-start)"));
+        assert.ok(stockCss.includes("div#stock.two-rows"));
+
+        // 2. Responsive <tichu-trick-modal>
+        const trickModalCss = (TichuTrickModal.styles || [])
+          .map((s: any) => s?.cssText ?? String(s ?? ""))
+          .join("\n");
+        assert.ok(trickModalCss.includes("width: min(540px, calc(100vw - 24px))"));
+        assert.ok(trickModalCss.includes("width: 100%"));
+
+        const model = new GameModel();
+        const hand14 = [A2, A3, A4, A5, A6, A7, A8, B2, B3, B4, B5, B6, B7, B8];
+        model.hydrateFromGamedatas(
+          {
+            players: {
+              "1": {
+                id: "1",
+                name: "Alice",
+                color: "000000",
+                no: 1,
+                score: "0",
+                call_tichu: "-1",
+                call_grand_tichu: "0",
+              } as any,
+            },
+            gamestate: {
+              id: "50",
+              name: "playComboOpen",
+              type: "activeplayer",
+              active_player: "1",
+              args: {},
+            },
+            hand: hand14,
+          },
+          "1",
+          false,
+          true,
+        );
+        model.setTrickModalOpen(true);
+        g.window.gameModel = model;
+        g.window.gameui = { isReadOnly: () => false };
+
+        const trickModal = new TichuTrickModal();
+        trickModal.performUpdate = () => {};
+        trickModal.connectedCallback();
+        try {
+          const modalHtml = serializeLitTemplate(trickModal.render());
+          assert.ok(modalHtml.includes("<tichu-stock"));
+        } finally {
+          trickModal.disconnectedCallback();
+        }
+
+        // 3. Responsive <tichu-action-bar> breakpoints & pre-play single-row collapse
+        const abCss = (TichuActionBar.styles || [])
+          .map((s: any) => s?.cssText ?? String(s ?? ""))
+          .join("\n");
+        assert.ok(abCss.includes("#buttons.compact-mobile.compact-single-row"));
+
+        const bar = new TichuActionBar();
+        bar.performUpdate = () => {};
+        bar.connectedCallback();
+        try {
+          bar.updateResponsiveMode(900);
+          assert.equal(serializeLitTemplate(bar.render()).includes("compact-"), false);
+          bar.updateResponsiveMode(640);
+          assert.ok(serializeLitTemplate(bar.render()).includes("compact-medium"));
+          bar.updateResponsiveMode(382);
+          const mobilePlayHtml = serializeLitTemplate(bar.render());
+          assert.ok(mobilePlayHtml.includes("compact-mobile"));
+          assert.equal(mobilePlayHtml.includes("compact-single-row"), false);
+
+          model.update({ stateName: "playCombo" });
+          assert.equal(serializeLitTemplate(bar.render()).includes("compact-single-row"), false);
+
+          model.update({ stateName: "grandTichuBets" });
+          assert.ok(serializeLitTemplate(bar.render()).includes("compact-single-row"));
+
+          model.update({ stateName: "giveCards" });
+          assert.ok(serializeLitTemplate(bar.render()).includes("compact-single-row"));
+
+          bar.updateResponsiveMode(900);
+          assert.equal(serializeLitTemplate(bar.render()).includes("compact-single-row"), false);
+
+          model.update({ stateName: "playComboOpen" });
+        } finally {
+          bar.disconnectedCallback();
+        }
+
+        // 4. <tichu-hand> reclaimed margin, .hand-footer-row, and gameEnd empty hand hiding
+        const handCss = (TichuHand.styles || [])
+          .map((s: any) => s?.cssText ?? String(s ?? ""))
+          .join("\n");
+        assert.equal(handCss.includes("250px"), false, "250px dead right margin must be reclaimed");
+        assert.ok(handCss.includes(".hand-footer-row"));
+
+        const handEl = new TichuHand();
+        handEl.performUpdate = () => {};
+        handEl.connectedCallback();
+        try {
+          const htmlActive = serializeLitTemplate(handEl.render());
+          assert.ok(htmlActive.includes("hand-footer-row"));
+          assert.equal(htmlActive.includes("spectator-settings-bar"), false);
+
+          model.update({ stateName: "gameEnd", hand: [] });
+          const htmlGameEnd = serializeLitTemplate(handEl.render());
+          assert.ok(htmlGameEnd.includes("display: none"));
+          assert.ok(htmlGameEnd.includes("spectator-settings-bar"));
+          assert.ok(htmlGameEnd.includes('id="settings_button"'));
+        } finally {
+          handEl.disconnectedCallback();
+        }
+
+        // 5. <tichu-stock> 2-row layout, per-row group stripes, 2D drag drop, and FLIP baseWidth
+        const layout340 = computeStockLayout({
+          sortedCards: hand14,
+          scale: 1.0,
+          containerWidth: 340,
+          cardGroups: {},
+          dynamicOverlap: true,
+          overlap: 75,
+          wrapRows: true,
+          reserveFooter: true,
+        });
+        assert.equal(layout340.twoRows, true);
+        assert.equal(layout340.row1Count, 7);
+        assert.equal(layout340.effectiveScale, 0.75);
+
+        const layout500 = computeStockLayout({
+          sortedCards: hand14,
+          scale: 1.0,
+          containerWidth: 500,
+          cardGroups: {},
+          dynamicOverlap: true,
+          overlap: 75,
+          wrapRows: true,
+          reserveFooter: true,
+        });
+        assert.equal(layout500.twoRows, true);
+        assert.equal(layout500.row1Count, 7);
+        assert.equal(layout500.effectiveScale, 1.0);
+
+        const layout860 = computeStockLayout({
+          sortedCards: hand14,
+          scale: 1.0,
+          containerWidth: 860,
+          cardGroups: {},
+          dynamicOverlap: true,
+          overlap: 75,
+          wrapRows: true,
+          reserveFooter: true,
+        });
+        assert.equal(layout860.twoRows, false);
+
+        const layoutSmallHand = computeStockLayout({
+          sortedCards: hand14.slice(0, 6),
+          scale: 1.0,
+          containerWidth: 340,
+          cardGroups: {},
+          dynamicOverlap: true,
+          overlap: 75,
+          wrapRows: true,
+          reserveFooter: true,
+        });
+        assert.equal(layoutSmallHand.twoRows, false);
+
+        // Multi-row rendering splits group stripes cleanly across Row 1 and Row 2
+        const stock = new TichuStock();
+        stock.cards = hand14;
+        stock.dynamicOverlap = true;
+        stock.wrapRows = true;
+        stock.reserveFooter = true;
+        stock.selectionMode = 2;
+        stock.sortMode = "preserve";
+        stock.customOrder = hand14.map((c) => String(c.id));
+        stock.cardGroups = Object.fromEntries(hand14.slice(0, 10).map((c) => [String(c.id), 1]));
+        (stock as any).containerWidth = 340;
+        const twoRowHtml = serializeLitTemplate(stock.render());
+        assert.ok(twoRowHtml.includes('class="two-rows"') || twoRowHtml.includes("two-rows"));
+        assert.ok(twoRowHtml.includes('data-row="0"'));
+        assert.ok(twoRowHtml.includes('data-row="1"'));
+        const stripeMatches = twoRowHtml.match(/data-group-stripe/g) || [];
+        assert.equal(
+          stripeMatches.length,
+          2,
+          "Group 1 spanning rows 0..1 must emit two row stripes",
+        );
+        assert.equal((stock as any).lastEffectiveScale, 0.75);
+
+        // 2D drag drop across rows
+        const slots2D = [
+          { midX: 50, midY: 60, row: 0 },
+          { midX: 90, midY: 60, row: 0 },
+          { midX: 130, midY: 60, row: 0 },
+          { midX: 50, midY: 200, row: 1 },
+          { midX: 90, midY: 200, row: 1 },
+          { midX: 130, midY: 200, row: 1 },
+        ];
+        const groups2D = [1, 1, 0, 2, 2, 0];
+        // Drag card 0 (Row 0, Group 1) into middle of Row 1 (between idx 3 and 4, Group 2)
+        const crossDown = computeDropTarget2D(70, 200, slots2D, 0, groups2D);
+        assert.equal(crossDown.targetRow, 1);
+        assert.equal(crossDown.dropIndex, 3);
+        assert.equal(crossDown.targetGroup, 2);
+
+        // Drag card 4 (Row 1, Group 2) into start of Row 0 (before idx 0, Group 1)
+        const crossUp = computeDropTarget2D(20, 60, slots2D, 4, groups2D);
+        assert.equal(crossUp.targetRow, 0);
+        assert.equal(crossUp.dropIndex, 0);
+        assert.equal(crossUp.targetGroup, 1);
+      } finally {
+        g._ = savedUnderscore;
+        g.g_gamethemeurl = savedThemeUrl;
+        g.window.gameModel = savedGameModel;
+        g.window.gameui = savedGameUi;
+      }
+    },
+  );
+});
+
+test("Mobile-only Tichu confirmation triggers standard backend confirmTichu flow, keeps desktop & Grand Tichu immediate", async () => {
+  await withMockLitEnv(() => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedBody = g.document.body;
+    const savedGetElById = g.document.getElementById;
+    const savedMatchMedia = g.window.matchMedia;
+    const savedInnerHeight = g.window.innerHeight;
+
+    try {
+      g._ = (s: string) => s;
+      const { Tichu } = require("../src/tichu");
+
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": {
+              id: "1",
+              name: "Alice",
+              color: "000000",
+              no: 1,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+            } as any,
+            "2": {
+              id: "2",
+              name: "Bob",
+              color: "ff0000",
+              no: 2,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+            } as any,
+            "3": {
+              id: "3",
+              name: "Carol",
+              color: "000000",
+              no: 3,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+            } as any,
+            "4": {
+              id: "4",
+              name: "Dave",
+              color: "ff0000",
+              no: 4,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "0",
+            } as any,
+          },
+          playerorder: ["1", "2", "3", "4"],
+          gamestate: {
+            id: "50",
+            name: "playComboOpen",
+            type: "activeplayer",
+            active_player: "1",
+            description: "Alice must play a combination",
+            descriptionmyturn: "You must play a combination",
+            args: {},
+          },
+          hand: [A2],
+        },
+        "1",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+
+      let bodyClasses = new Set<string>();
+      let areaClasses = new Set<string>();
+      let coarsePointer = false;
+      let pageTitleRect = { top: -80, bottom: -20 };
+      let scrollIntoViewCalls = 0;
+      const buttons = new Map<string, () => void>();
+      const pageTitleEl = {
+        getBoundingClientRect: () => pageTitleRect,
+        scrollIntoView: () => {
+          scrollIntoViewCalls++;
+        },
+      };
+
+      g.window.innerHeight = 800;
+      g.document.body = { classList: { contains: (c: string) => bodyClasses.has(c) } };
+      g.document.getElementById = (id: string) => {
+        if (id === "game_play_area")
+          return { classList: { contains: (c: string) => areaClasses.has(c) } };
+        if (id === "page-title") return pageTitleEl;
+        return null;
+      };
+      g.window.matchMedia = (q: string) => ({
+        matches: q === "(pointer: coarse)" ? coarsePointer : false,
+      });
+
+      const ui = new Tichu();
+      ui.player_id = 1;
+      ui.isSpectator = false;
+      ui.stateName = "playComboOpen";
+      ui.gamedatas = {
+        gamestate: {
+          name: "playComboOpen",
+          description: "Alice must play a combination",
+          descriptionmyturn: "You must play a combination",
+          args: {},
+        },
+      } as any;
+
+      const taken: Array<{ action: string; args: any }> = [];
+      let confirmDialogCalls = 0;
+      ui.takeAction = (action: string, args: any) => taken.push({ action, args });
+      ui.confirmationDialog = () => {
+        confirmDialogCalls++;
+      };
+      ui.removeActionButtons = () => buttons.clear();
+      ui.addActionButton = (id: string, _label: string, cb: () => void) => {
+        buttons.set(id, cb);
+      };
+      ui.updatePageTitle = () => {};
+      ui.onUpdateActionButtons = () => {};
+
+      // 1. Desktop: immediate tichuBet without confirm flag or dialog
+      assert.equal(ui.isMobileConfirmContext(), false);
+      ui.onTichuBet();
+      assert.equal(confirmDialogCalls, 0);
+      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU } });
+
+      // 2. Detection signals
+      bodyClasses.add("mobile_version");
+      assert.equal(ui.isMobileConfirmContext(), true);
+      bodyClasses.clear();
+      bodyClasses.add("touch-device");
+      assert.equal(ui.isMobileConfirmContext(), true);
+      bodyClasses.clear();
+      coarsePointer = true;
+      assert.equal(ui.isMobileConfirmContext(), true);
+      coarsePointer = false;
+      areaClasses.add("responsive-compact");
+      assert.equal(ui.isMobileConfirmContext(), true);
+
+      // 3. Mobile Tichu sends confirm: 1 (no client confirmationDialog popup)
+      ui.onTichuBet();
+      assert.equal(confirmDialogCalls, 0);
+      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU, confirm: 1 } });
+
+      // 4. Backend replies with confirmTichu -> renders #page-title buttons & scrolls into view if off-screen
+      const countAtPrompt = taken.length;
+      ui.notif_confirmTichu({
+        args: { grand: false, msg: "Are you sure you want to call Tichu?" },
+      } as any);
+      assert.equal(scrollIntoViewCalls, 1);
+      assert.ok(buttons.has("cancelTichu"));
+      assert.ok(buttons.has("confirmTichu"));
+
+      // Tapping Tichu again while confirmTichu is open sends no extra action and scrolls title into view
+      ui.onTichuBet();
+      assert.equal(taken.length, countAtPrompt);
+      assert.equal(scrollIntoViewCalls, 2);
+
+      // Clicking "no tichu" clears pendingConfirmTichu without sending any action
+      buttons.get("cancelTichu")!();
+      assert.equal(taken.length, countAtPrompt);
+
+      // Re-open prompt when title is already visible (no unnecessary scroll), then confirm -> sends confirmTichu(100)
+      pageTitleRect = { top: 40, bottom: 100 };
+      ui.onTichuBet();
+      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU, confirm: 1 } });
+      ui.notif_confirmTichu({
+        args: { grand: false, msg: "Are you sure you want to call Tichu?" },
+      } as any);
+      assert.equal(scrollIntoViewCalls, 2);
+      buttons.get("confirmTichu")!();
+      assert.deepEqual(taken.at(-1), { action: "confirmTichu", args: { bet: Bet.TICHU } });
+
+      // 5. Grand Tichu remains immediate on mobile
+      ui.onGrandTichuBet(Bet.GRAND_TICHU);
+      assert.equal(confirmDialogCalls, 0);
+      assert.deepEqual(taken.at(-1), { action: "grandTichuBet", args: { bet: Bet.GRAND_TICHU } });
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.document.body = savedBody;
+      g.document.getElementById = savedGetElById;
+      g.window.matchMedia = savedMatchMedia;
+      g.window.innerHeight = savedInnerHeight;
+    }
+  });
+});
+
+test("Fluid <tichu-value-choice>, <tichu-played-cards>, and gameinfos.inc.php mobile min width", async () => {
+  const fs = require("fs");
+  const path = require("path");
+  const gameinfosRaw = fs.readFileSync(path.join(process.cwd(), "gameinfos.inc.php"), "utf8");
+  const minMatch = gameinfosRaw.match(
+    /"game_interface_width"\s*=>\s*\[\s*[\s\S]*?"min"\s*=>\s*(\d+)/,
+  );
+  assert.ok(minMatch, "gameinfos.inc.php must declare game_interface_width.min");
+  const minWidth = Number(minMatch![1]);
+  assert.equal(minWidth, 360);
+  assert.ok(
+    minWidth >= 320 && minWidth <= 740,
+    "game_interface_width.min must fit BGA [320, 740] range",
+  );
+
+  await withMockLitEnv(({ TichuValueChoice, TichuPlayedCards }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedThemeUrl = g.g_gamethemeurl;
+    const savedGameModel = g.window.gameModel;
+    try {
+      g._ = (s: string) => s;
+      g.g_gamethemeurl = "/tichu/";
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, score: "0" } as any,
+            "2": { id: "2", name: "Bob", color: "ff0000", no: 2, score: "0" } as any,
+            "3": { id: "3", name: "Carol", color: "000000", no: 3, score: "0" } as any,
+            "4": { id: "4", name: "Dave", color: "ff0000", no: 4, score: "0" } as any,
+          },
+          playerorder: ["1", "2", "3", "4"],
+          isAllInfoExposed: 1,
+          phoenixValues: [2, 8, 14],
+          gamestate: {
+            id: "65",
+            name: "mahjongPlay",
+            type: "activeplayer",
+            active_player: "1",
+            args: {},
+          },
+          hand: [A2],
+        },
+        "1",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+      model.setPhoenixAllowedValues([2, 8, 14]);
+
+      const vcCss = (TichuValueChoice.styles || [])
+        .map((s: any) => s.cssText || String(s))
+        .join("\n");
+      assert.match(vcCss, /container-type:\s*inline-size/);
+      assert.match(vcCss, /@container\s*\(max-width:\s*599px\)/);
+      assert.ok(vcCss.includes("--choice-w"));
+      assert.match(
+        vcCss,
+        /background-size:\s*calc\(var\(--choice-w\)\s*\*\s*8\)\s*calc\(var\(--choice-h\)\s*\*\s*2\)/,
+      );
+
+      const vcMahjong = new TichuValueChoice();
+      vcMahjong.mode = "mahjong";
+      vcMahjong.performUpdate = () => {};
+      vcMahjong.connectedCallback();
+      try {
+        const htmlMahjong = serializeLitTemplate(vcMahjong.render());
+        assert.ok(htmlMahjong.includes("--col: 0; --row: 0;"));
+        assert.ok(htmlMahjong.includes("--col: 6; --row: 1;"));
+        assert.equal(htmlMahjong.includes("-70px"), false);
+        assert.equal(htmlMahjong.includes("-105px"), false);
+      } finally {
+        vcMahjong.disconnectedCallback();
+      }
+
+      const vcPhoenix = new TichuValueChoice();
+      vcPhoenix.mode = "phoenix";
+      vcPhoenix.performUpdate = () => {};
+      vcPhoenix.connectedCallback();
+      try {
+        const htmlPhoenix = serializeLitTemplate(vcPhoenix.render());
+        assert.ok(htmlPhoenix.includes('id="phoenixChoice_item_14"'));
+        assert.ok(htmlPhoenix.includes("--col: 5; --row: 1;"));
+        assert.equal(htmlPhoenix.includes("-70px"), false);
+      } finally {
+        vcPhoenix.disconnectedCallback();
+      }
+
+      const pcCss = (TichuPlayedCards.styles || [])
+        .map((s: any) => s.cssText || String(s))
+        .join("\n");
+      assert.match(pcCss, /container-type:\s*inline-size/);
+      assert.match(pcCss, /@container\s*\(max-width:\s*699px\)/);
+      assert.ok(pcCss.includes("--card-margin"));
+      assert.ok(pcCss.includes("calc((100cqi - 60px) / 14)"));
+    } finally {
+      g._ = savedUnderscore;
+      g.g_gamethemeurl = savedThemeUrl;
+      g.window.gameModel = savedGameModel;
+    }
+  });
+});
+
+test("Hand row-mode toggle (#toggle_hand_rows): auto, single, two, persistence, and read-only guard", async () => {
+  await withMockLitEnv(({ TichuHand, computeStockLayout }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+    const savedStorage = g.localStorage;
+
+    try {
+      g._ = (s: string) => s;
+      let rowModeGetCalls = 0;
+      const store = new Map<string, string>([["tichu_hand_row_mode", "two"]]);
+      g.localStorage = {
+        getItem: (k: string) => {
+          if (k === "tichu_hand_row_mode") {
+            rowModeGetCalls++;
+          }
+          return store.has(k) ? store.get(k)! : null;
+        },
+        setItem: (k: string, v: string) => {
+          store.set(k, String(v));
+        },
+      };
+
+      const hand14 = Array.from({ length: 14 }, (_, i) => ({
+        id: String(100 + i),
+        type: String((i % 4) + 1),
+        type_arg: String((i % 13) + 2),
+      }));
+
+      // 1. computeStockLayout explicit rowMode overrides & exact edge-to-edge mobile fill at 0.75x
+      const singleMobile = computeStockLayout({
+        sortedCards: hand14,
+        scale: 1.0,
+        containerWidth: 340,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "single",
+      });
+      assert.equal(singleMobile.twoRows, false);
+      assert.equal(singleMobile.effectiveScale, 0.75);
+
+      const single353 = computeStockLayout({
+        sortedCards: hand14,
+        scale: 1.0,
+        containerWidth: 353,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "single",
+      });
+      assert.equal(single353.twoRows, false);
+      assert.equal(single353.effectiveScale, 0.75);
+      assert.equal(single353.itemWidth, 75);
+      const step353 = single353.itemWidth + single353.marginRight;
+      const totalWidth353 = single353.itemWidth + 13 * step353;
+      assert.ok(step353 >= 20, `Expected readable slice >= 20px, got ${step353}`);
+      assert.ok(
+        totalWidth353 >= 345 && totalWidth353 <= 353,
+        `Expected full width fill, got ${totalWidth353}`,
+      );
+
+      const handCss = (TichuHand.styles || [])
+        .map((s: any) => s?.cssText ?? String(s ?? ""))
+        .join("\n");
+      assert.match(handCss, /container-type:\s*inline-size/);
+      assert.match(handCss, /@container\s*\(max-width:\s*599px\)/);
+
+      const twoDesktop = computeStockLayout({
+        sortedCards: hand14,
+        scale: 1.0,
+        containerWidth: 860,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "two",
+      });
+      assert.equal(twoDesktop.twoRows, true);
+      assert.equal(twoDesktop.row1Count, 7);
+
+      const twoSmallHand = computeStockLayout({
+        sortedCards: hand14.slice(0, 6),
+        scale: 1.0,
+        containerWidth: 860,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "two",
+      });
+      assert.equal(twoSmallHand.twoRows, true);
+      assert.equal(twoSmallHand.row1Count, 3);
+
+      const twoOneCard = computeStockLayout({
+        sortedCards: hand14.slice(0, 1),
+        scale: 1.0,
+        containerWidth: 340,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "two",
+      });
+      assert.equal(twoOneCard.twoRows, false);
+
+      // 2. TichuHand toggle visibility, aria-pressed sync, toggling, and localStorage persistence
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": { id: "1", name: "Alice", color: "000000", no: 1, score: "0" } as any,
+            "2": { id: "2", name: "Bob", color: "ff0000", no: 2, score: "0" } as any,
+            "3": { id: "3", name: "Carol", color: "000000", no: 3, score: "0" } as any,
+            "4": { id: "4", name: "Dave", color: "ff0000", no: 4, score: "0" } as any,
+          },
+          playerorder: ["1", "2", "3", "4"],
+          gamestate: {
+            id: "50",
+            name: "playComboOpen",
+            type: "activeplayer",
+            active_player: "1",
+            args: {},
+          },
+          hand: hand14,
+        },
+        "1",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+      let mockReadOnly = false;
+      g.window.gameui = { isReadOnly: () => mockReadOnly };
+
+      const handEl = new TichuHand();
+      handEl.performUpdate = () => {};
+      handEl.connectedCallback();
+      try {
+        // 2a. Desktop / >720px: does not read localStorage, hides toggle, forces single row
+        (handEl as any).updateCompactWidth(740);
+        assert.equal(rowModeGetCalls, 0);
+        assert.equal((handEl as any).isTwoRowsActive(), false);
+        assert.equal(
+          serializeLitTemplate(handEl.render()).includes('id="toggle_hand_rows"'),
+          false,
+        );
+
+        // Toggle call is ignored when >720px
+        (handEl as any).onToggleHandRows();
+        assert.equal(rowModeGetCalls, 0);
+
+        // 2b. Resizing to <=720px lazily reads localStorage ("two") and shows toggle
+        (handEl as any).updateCompactWidth(390);
+        assert.equal(rowModeGetCalls, 1);
+        const htmlCompactFromStoredTwo = serializeLitTemplate(handEl.render());
+        assert.ok(htmlCompactFromStoredTwo.includes('id="toggle_hand_rows"'));
+        assert.match(
+          htmlCompactFromStoredTwo,
+          /id="toggle_hand_rows"[^>]*aria-pressed=["']?true["']?/,
+        );
+
+        // Toggle from two -> single
+        (handEl as any).onToggleHandRows();
+        assert.equal(store.get("tichu_hand_row_mode"), "single");
+        assert.match(
+          serializeLitTemplate(handEl.render()),
+          /id="toggle_hand_rows"[^>]*aria-pressed=["']?false["']?/,
+        );
+
+        // Toggle from single -> two
+        (handEl as any).onToggleHandRows();
+        assert.equal(store.get("tichu_hand_row_mode"), "two");
+        assert.match(
+          serializeLitTemplate(handEl.render()),
+          /id="toggle_hand_rows"[^>]*aria-pressed=["']?true["']?/,
+        );
+
+        // Read-only skip
+        mockReadOnly = true;
+        (handEl as any).onToggleHandRows();
+        assert.equal(store.get("tichu_hand_row_mode"), "two");
+        mockReadOnly = false;
+
+        // Resizing back to >720px hides toggle and forces single row even with "two" stored
+        (handEl as any).updateCompactWidth(740);
+        assert.equal((handEl as any).isTwoRowsActive(), false);
+        assert.equal(
+          serializeLitTemplate(handEl.render()).includes('id="toggle_hand_rows"'),
+          false,
+        );
+
+        // Hidden at <=720px when hand has < 2 cards
+        (handEl as any).updateCompactWidth(390);
+        model.update({ hand: hand14.slice(0, 1) });
+        assert.equal(
+          serializeLitTemplate(handEl.render()).includes('id="toggle_hand_rows"'),
+          false,
+        );
+      } finally {
+        handEl.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
+      g.localStorage = savedStorage;
     }
   });
 });

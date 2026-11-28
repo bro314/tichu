@@ -24,6 +24,10 @@ export class TichuPassArea extends LitElement {
   @state() private round = 0;
   @state() private pendingRevealCardIds: Set<string> = new Set();
   @state() private failedAvatarKeys: Set<string> = new Set();
+  @state() private compactLayout = false;
+  @state() private slotScale = 1.0;
+
+  private resizeObserver?: ResizeObserver;
 
   static override get styles() {
     return [
@@ -176,7 +180,9 @@ export class TichuPassArea extends LitElement {
           --icon-size: 24px;
         }
         .reopen-banner {
+          width: calc(100% - 12px);
           max-width: 560px;
+          box-sizing: border-box;
           margin: 0 auto 8px;
           padding: 8px 14px;
           border-radius: 8px;
@@ -202,6 +208,77 @@ export class TichuPassArea extends LitElement {
         }
         tichu-card[data-pending-reveal] {
           visibility: hidden;
+        }
+
+        /* Compact responsive layout (< 720px) */
+        .pass-status-wrap.compact {
+          display: flex;
+          justify-content: flex-end;
+          padding: 0 6px 4px 6px;
+        }
+        .pass-status-wrap.compact tichu-status {
+          position: static;
+          top: auto;
+          right: auto;
+        }
+        #playertables.compact {
+          width: 100%;
+          max-width: 560px;
+          padding: 0 6px;
+          gap: 6px;
+          align-items: flex-start;
+          justify-content: center;
+          box-sizing: border-box;
+        }
+        #playertables.compact .playertable {
+          flex: 1 1 0;
+          min-width: 0;
+          max-width: 140px;
+          width: auto;
+          height: auto;
+          padding: 6px;
+          margin: 4px 0 8px 0;
+        }
+        #playertables.compact .playertable_1,
+        #playertables.compact .playertable_3 {
+          margin: 22px 0 8px 0;
+        }
+        #playertables.compact .playertable-header {
+          gap: 3px;
+          margin-bottom: 6px;
+        }
+        #playertables.compact .playertable-avatar-wrap {
+          width: 32px;
+          height: 32px;
+        }
+        #playertables.compact .playertable-avatar-fallback {
+          font-size: 13px;
+        }
+        #playertables.compact .playertablename {
+          font-size: 13px;
+          height: 18px;
+          line-height: 18px;
+        }
+        #playertables.compact .playertable-bet-corner {
+          top: 4px;
+          right: 4px;
+        }
+        #playertables.compact .playertable-bet-corner .icon.small {
+          --icon-size: 20px;
+        }
+        #playertables.compact .playertablecard {
+          position: relative;
+          width: var(--slot-card-w, 100px);
+          height: var(--slot-card-h, 150px);
+          margin: 0 auto;
+        }
+        #playertables.compact .playertablebackground .tichubets .icon.big {
+          --icon-size: 48px;
+        }
+        #playertables.compact tichu-card.given-card,
+        #playertables.compact tichu-card.received-card {
+          top: 0;
+          left: 0;
         }
         @media (forced-colors: active) {
           .playertable-avatar-wrap,
@@ -267,6 +344,42 @@ export class TichuPassArea extends LitElement {
     );
   }
 
+  override connectedCallback() {
+    super.connectedCallback();
+    this.updateResponsiveLayout(this.clientWidth);
+    if (typeof ResizeObserver !== "undefined" && !this.resizeObserver) {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const entryWidth = entries[0]?.contentRect?.width;
+        const w = typeof entryWidth === "number" && entryWidth > 0 ? entryWidth : this.clientWidth;
+        this.updateResponsiveLayout(w);
+      });
+      this.resizeObserver.observe(this);
+    }
+  }
+
+  override disconnectedCallback() {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = undefined;
+    super.disconnectedCallback();
+  }
+
+  updateResponsiveLayout(width: number) {
+    if (!width || width <= 0) return;
+    const nextCompact = width < 720;
+    let nextScale = 1.0;
+    if (width < 480) {
+      const slotWidth = (width - 24) / 3;
+      const cardAvail = slotWidth - 18;
+      nextScale = Math.max(0.7, Math.min(1.0, Math.floor((cardAvail / 100) * 100) / 100));
+    }
+    if (nextCompact !== this.compactLayout) {
+      this.compactLayout = nextCompact;
+    }
+    if (nextScale !== this.slotScale) {
+      this.slotScale = nextScale;
+    }
+  }
+
   override render() {
     const themeUrl = typeof g_gamethemeurl !== "undefined" ? g_gamethemeurl : "";
     this.style.setProperty("--ui-icons-url", `url(${themeUrl}img/tichu-ui-icons.png)`);
@@ -280,16 +393,21 @@ export class TichuPassArea extends LitElement {
         this.stateName === "showPassedCards" ||
         this.stateName === "acceptPassedCards" ||
         hasPendingPassCards);
+    const cardW = Math.round(100 * this.slotScale);
+    const cardH = Math.round(150 * this.slotScale);
 
     return html`
       ${
         isVisible
-          ? html`<tichu-status
-              roundOnly
-              roundCount=${this.round}
-              .roundCount=${this.round}
-              @show-scores=${this.onShowScores}
-            ></tichu-status>`
+          ? html`<div class=${classMap({ "pass-status-wrap": true, compact: this.compactLayout })}>
+              <tichu-status
+                roundOnly
+                ?compact=${this.compactLayout}
+                roundCount=${this.round}
+                .roundCount=${this.round}
+                @show-scores=${this.onShowScores}
+              ></tichu-status>
+            </div>`
           : nothing
       }
       ${
@@ -304,8 +422,9 @@ export class TichuPassArea extends LitElement {
           clockwise: this.clockwise,
           giveCards: this.stateName === "giveCards",
           active: this.isCurrentPlayerActive,
+          compact: this.compactLayout,
         })}
-        style="display: ${isVisible ? "flex" : "none"}"
+        style="display: ${isVisible ? "flex" : "none"}; --slot-card-w: ${cardW}px; --slot-card-h: ${cardH}px;"
       >
         ${this.passSlots.map((slot) => this.renderSlot(slot))}
       </div>
@@ -423,7 +542,7 @@ export class TichuPassArea extends LitElement {
                   data-card-id=${slot.givenCard.id ?? ""}
                   ?data-pending-reveal=${givenHidden}
                   .card=${slot.givenCard}
-                  .scale=${1.0}
+                  .scale=${this.slotScale}
                   .tiki=${this.isTiki}
                   class=${classMap({
                     "given-card": true,
@@ -436,7 +555,7 @@ export class TichuPassArea extends LitElement {
             slot.receivedCard
               ? html`<tichu-card
                   .card=${slot.receivedCard}
-                  .scale=${1.0}
+                  .scale=${this.slotScale}
                   .tiki=${this.isTiki}
                   class=${classMap({
                     "received-card": true,
@@ -543,6 +662,13 @@ export class TichuPassArea extends LitElement {
   }
 
   getSlotCardTargetRect(slotIndex: number): DOMRect | null {
+    const cardBox = this.shadowRoot?.getElementById(`give_${slotIndex + 1}`);
+    if (cardBox) {
+      const boxRect = cardBox.getBoundingClientRect();
+      if (boxRect && boxRect.width > 0 && boxRect.height > 0) {
+        return boxRect;
+      }
+    }
     const slotEl = this.shadowRoot?.getElementById(`playertable_${slotIndex + 1}`);
     if (!slotEl) return null;
     const rect = slotEl.getBoundingClientRect();

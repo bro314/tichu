@@ -25,15 +25,16 @@ export class TichuTrickModal extends LitElement {
           display: flex;
           align-items: flex-start;
           justify-content: center;
-          padding: min(180px, 18vh) 20px 20px;
+          padding: min(140px, 14vh) 12px 16px;
         }
         .custom_popin {
           background: #f6f0e6;
           color: #1f2328;
           border-radius: 8px;
           box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-          min-width: 540px;
-          max-width: 90vw;
+          width: min(540px, calc(100vw - 24px));
+          min-width: 0;
+          max-width: calc(100vw - 24px);
           max-height: 85vh;
           overflow: auto;
           border: 1px solid rgba(0, 0, 0, 0.2);
@@ -65,11 +66,11 @@ export class TichuTrickModal extends LitElement {
           color: #1f2328;
         }
         .custom_popin_content {
-          padding: 16px;
-          min-width: 500px;
+          padding: 12px 14px 16px;
+          min-width: 0;
         }
         #currentTrickCards {
-          width: 500px;
+          width: 100%;
         }
       `,
     ];
@@ -129,6 +130,7 @@ export class TichuTrickModal extends LitElement {
                   sortMode="preserve"
                   .tiki=${this.isTiki}
                   .dynamicOverlap=${true}
+                  .wrapRows=${true}
                 ></tichu-stock>
               </div>
             </div>

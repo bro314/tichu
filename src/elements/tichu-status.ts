@@ -9,6 +9,7 @@ export class TichuStatus extends LitElement {
   @property({ type: Number }) trickPoints = 0;
   @property({ type: Number }) trickSize = 0;
   @property({ type: Boolean }) roundOnly = false;
+  @property({ type: Boolean, reflect: true }) compact = false;
 
   static override get styles() {
     return css`
@@ -153,6 +154,34 @@ export class TichuStatus extends LitElement {
         border: 0 !important;
         white-space: nowrap !important;
       }
+      :host([compact]) .status-panel {
+        padding: 4px 6px;
+        gap: 2px;
+        border-radius: 10px;
+      }
+      :host([compact]) .status-row {
+        grid-template-columns: 18px minmax(2ch, auto);
+        column-gap: 4px;
+        font-size: 13.5px;
+        line-height: 18px;
+      }
+      :host([compact]) .status-icon {
+        --icon-size: 18px;
+      }
+      :host([compact]) .status-actions {
+        gap: 2px;
+      }
+      :host([compact]) .status-action-btn {
+        min-width: 22px;
+        min-height: 22px;
+        padding: 1px 2px;
+      }
+      :host([compact]) .status-panel.round-only {
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 3px 8px;
+      }
     `;
   }
 
@@ -163,7 +192,7 @@ export class TichuStatus extends LitElement {
     const roundLabel = _("Round:");
     if (this.roundOnly) {
       return html`
-        <div class="status-panel">
+        <div class="status-panel round-only">
           ${this.renderMetricRow("round", roundLabel, "roundCounter", this.roundCount)}
           ${this.renderActions(false)}
         </div>
