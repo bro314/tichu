@@ -4122,8 +4122,8 @@
               `Expected grandTichuBets, got ${s0.state.name}`,
             );
             assertCond(s0.hand.length === 8, `Expected 8 cards in P0 hand, got ${s0.hand.length}`);
-            assertCond(Boolean(document.getElementById("makeGTBet")), "Missing #makeGTBet button");
-            assertCond(Boolean(document.getElementById("noBet")), "Missing #noBet button");
+            assertCond(Boolean(queryDeep("#makeGTBet")), "Missing #makeGTBet button");
+            assertCond(Boolean(queryDeep("#noBet")), "Missing #noBet button");
 
             await tt.betGrandTichu(200, 0);
             tt.assertUI();
@@ -4342,9 +4342,9 @@
               `Expected chooseDragonGift, got ${sGift.state.name}`,
             );
             assertCond(
-              Boolean(document.getElementById("giveDragonBefore_button")) &&
-                Boolean(document.getElementById("giveDragonAfter_button")),
-              "Expected Dragon Gift opponent buttons in #generalactions",
+              Boolean(queryDeep("#giveDragonBefore_button")) &&
+                Boolean(queryDeep("#giveDragonAfter_button")),
+              "Expected Dragon Gift opponent buttons in <tichu-action-bar>",
             );
 
             // Gift the 35-point Dragon trick to enemy index 0 (P1: dashwood1)

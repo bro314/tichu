@@ -178,12 +178,12 @@ export class TichuHand extends LitElement {
             padding: 6px 0 8px;
           }
           #myhand {
-            margin: 10px 6px 2px 6px;
+            margin: 10px 6px 6px 6px;
             min-height: 138px;
             --stock-justify: center;
           }
           .hand-footer-row {
-            margin: 2px 6px 0 6px;
+            margin: 6px 6px 0 6px;
           }
         }
         #hand-organize-bar {
@@ -245,7 +245,7 @@ export class TichuHand extends LitElement {
         .org-select::picker(select) {
           margin-top: 4px;
           padding: 4px;
-          border-radius: 9px;
+          border-radius: 8px;
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.16));
           background: var(--tichu-dialog-surface, #ffffff);
           color: var(--tichu-dialog-text, #1f2328);
@@ -386,7 +386,7 @@ export class TichuHand extends LitElement {
           align-items: center;
           justify-content: center;
           gap: 6px;
-          border-radius: 10px;
+          border-radius: 8px;
           border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.6));
           background: var(--tichu-surface-bg, var(--bg-color-lighter));
           backdrop-filter: blur(8px);
@@ -423,7 +423,7 @@ export class TichuHand extends LitElement {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          border-radius: 10px;
+          border-radius: 8px;
           border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.6));
           background: var(--tichu-surface-bg, var(--bg-color-lighter));
           backdrop-filter: blur(8px);
@@ -782,7 +782,7 @@ export class TichuHand extends LitElement {
             }
           </select>
           ${
-            this.compactHand && this.hand.length >= 2
+            this.compactHand && this.hand.length >= 7
               ? html`<button
                   type="button"
                   id="toggle_hand_rows"

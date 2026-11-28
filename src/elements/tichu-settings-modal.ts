@@ -64,7 +64,7 @@ export class TichuSettingsModal extends LitElement {
           background: var(--tichu-dialog-bg, #faf6ef);
           color: var(--tichu-dialog-text, #1f2328);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
-          border-radius: 14px;
+          border-radius: 8px;
           padding: 0;
           margin: auto;
           width: min(560px, calc(100vw - 32px));
@@ -208,7 +208,7 @@ export class TichuSettingsModal extends LitElement {
           flex-shrink: 0;
           background: var(--tichu-dialog-surface, #ffffff);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
-          border-radius: 12px;
+          border-radius: 8px;
           overflow: hidden;
         }
         .setting-row {
@@ -261,7 +261,7 @@ export class TichuSettingsModal extends LitElement {
           flex-shrink: 0;
           align-items: center;
           padding: 3px;
-          border-radius: 9px;
+          border-radius: 8px;
           background: var(--tichu-dialog-segment-bg, #ebe4d8);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
           gap: 2px;
@@ -382,7 +382,7 @@ export class TichuSettingsModal extends LitElement {
           flex-direction: column;
           gap: 4px;
           padding: 5px;
-          border-radius: 10px;
+          border-radius: 8px;
           border: 1.5px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
           background: var(--tichu-dialog-surface, #ffffff);
           cursor: pointer;

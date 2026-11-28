@@ -473,13 +473,8 @@ a:hover {
   box-shadow: 0 3px 8px #0000004d;
   font-size: 110%;
   font-weight: 700;
-  line-height: 32px;
+  line-height: 1.35;
   text-align: center;
-}
-
-#gameaction_status_wrap,
-#maintitlebar_content {
-  min-height: 42px;
 }
 
 #page-title.fixed-page-title {
@@ -725,11 +720,16 @@ a.bgabutton_secondary {
   #right-side-first-part {
     order: 1;
     width: 100%;
-    padding: 0 6px;
+    padding: 0 10px;
   }
   #page-title {
     order: 2;
-    margin: 6px 6px 4px 6px;
+  }
+  #overall-content #page-title {
+    margin-top: 8px;
+  }
+  #overall-content #page-title.fixed-page-title {
+    margin-top: 0;
   }
   #after-page-title {
     order: 3;
@@ -740,19 +740,19 @@ a.bgabutton_secondary {
   }
   #logs_wrap {
     order: 5;
-    width: calc(100% - 12px);
-    margin: 6px 6px 12px;
+    width: calc(100% - 20px);
+    margin: 8px 10px 12px;
     max-height: 260px;
   }
   #player_boards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-    gap: 6px;
-    padding-top: 2px;
-    padding-bottom: 2px;
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 0;
   }
   .player-board {
-    border-radius: 6px;
+    border-radius: 8px;
     min-width: 0;
   }
   .player_board_inner {
@@ -760,24 +760,23 @@ a.bgabutton_secondary {
   }
 }
 
+@media (max-width: 760px) {
+  #logs_wrap {
+    width: calc(100% - 8px);
+    margin: 8px 4px 12px;
+  }
+}
+
 @media (max-width: 640px) {
   #overall-content {
-    margin-top: 4px;
+    margin-top: 0;
   }
   #page-title {
     font-size: 95%;
-    line-height: 24px;
-    margin: 4px 6px 4px 6px;
-  }
-  #maintitlebar_content {
-    min-height: 34px;
   }
   #player_boards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .player-board {
-    padding: 3px;
+    gap: 8px;
   }
   .player-board .emblemwrap {
     width: 24px;
@@ -900,7 +899,7 @@ a.bgabutton_secondary {
 
 #logs_wrap {
   background: var(--bg-color-lighter, rgba(246, 231, 212, 0.85));
-  border-radius: var(--border-radius, 6px);
+  border-radius: var(--border-radius, 8px);
   box-shadow: var(--elevation);
   padding: 8px;
   max-height: 460px;

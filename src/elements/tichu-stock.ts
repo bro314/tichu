@@ -379,7 +379,10 @@ export function computeStockLayout(params: {
   let twoRows = false;
   if (wrapRows) {
     if (rowMode === "two") {
-      twoRows = sortedCards.length >= 2;
+      const maxStep = Math.round(100 * effectiveScale * 0.65);
+      twoRows = Boolean(
+        sortedCards.length >= 7 && (containerWidth <= 0 || singleVisibleSlice < maxStep),
+      );
     } else if (rowMode === "single") {
       twoRows = false;
     } else {
@@ -1094,7 +1097,7 @@ export class TichuStock extends LitElement {
     const layout = this.computeCurrentLayout(sortedCards);
     this.lastEffectiveScale = layout.effectiveScale;
     this.lastComputedTwoRows = layout.twoRows;
-    const footerHeight = this.reserveFooter ? Math.round(34 * layout.effectiveScale) : 0;
+    const footerHeight = this.reserveFooter ? 34 : 0;
 
     this.style.setProperty("--stock-height", `${layout.itemHeight + footerHeight}px`);
     this.style.setProperty("--card-footer-height", `${footerHeight}px`);

@@ -27,7 +27,7 @@ export class TichuScoreBoard extends LitElement {
         :host([compact]) {
           width: 100%;
           box-sizing: border-box;
-          border-radius: var(--border-radius, 12px);
+          border-radius: var(--border-radius, 8px);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.16));
           box-shadow: var(--elevation, 0 2px 8px rgba(15, 23, 42, 0.14));
           overflow: hidden;

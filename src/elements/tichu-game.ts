@@ -65,7 +65,7 @@ export class TichuGame extends LitElement {
           gap: 10px 14px;
           margin: 0 0 10px;
           padding: 10px 14px;
-          border-radius: 12px;
+          border-radius: var(--border-radius, 8px);
           border: 1px solid var(--tichu-surface-border, rgba(31, 35, 40, 0.16));
           background: var(--tichu-surface-bg, var(--bg-color-lighter));
           color: var(--tichu-text, #1f2328);
@@ -422,10 +422,10 @@ export class TichuGame extends LitElement {
           `,
         )}
         ${this.renderConcedeBanner()}
-        <tichu-value-choice mode="mahjong"></tichu-value-choice>
-        <tichu-value-choice mode="phoenix"></tichu-value-choice>
         <tichu-last-played></tichu-last-played>
         <tichu-pass-area></tichu-pass-area>
+        <tichu-value-choice mode="mahjong"></tichu-value-choice>
+        <tichu-value-choice mode="phoenix"></tichu-value-choice>
         <tichu-hand></tichu-hand>
         <tichu-played-cards></tichu-played-cards>
       </div>

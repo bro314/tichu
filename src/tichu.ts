@@ -42,8 +42,6 @@ export class Tichu {
   private pendingConfirmTichu: {
     grand: boolean;
     msg: string;
-    titleSave: string;
-    descSave?: string;
   } | null = null;
   private pendingConfirmConcede = false;
   debugBreadcrumbs: Array<{
@@ -101,7 +99,7 @@ export class Tichu {
 
   mahjongValues = {
     get items() {
-      return [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((v) => ({
+      return [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((v) => ({
         id: v,
         type: v - 2,
       }));
@@ -770,11 +768,7 @@ export class Tichu {
       const nextName = notif.args.name;
       if (nextName === "newRound" || nextName === "endRound" || nextName === "gameEnd") {
         this.pendingConfirmTichu = null;
-      } else {
-        this.pendingConfirmTichu.titleSave = notif.args.descriptionmyturn ?? "";
-        this.pendingConfirmTichu.descSave = notif.args.description ?? "";
-        notif.args.descriptionmyturn = this.pendingConfirmTichu.msg;
-        notif.args.description = this.pendingConfirmTichu.msg;
+        window.gameModel?.setPendingConfirmTichu(null);
       }
     }
     this.ensureGamestateReflexion(notif?.args);
@@ -1112,27 +1106,9 @@ export class Tichu {
 
   onEnteringStateChooseDragonGift(args?: any) {
     const enemies = args?.enemies ?? (this.gamedatas?.gamestate as any)?.args?.enemies;
-    if (!this.isCurrentPlayerActive() || !enemies) return;
-    if (
-      document.getElementById("giveDragonBefore_button") ||
-      document.getElementById("giveDragonAfter_button")
-    ) {
-      return;
+    if (enemies) {
+      window.gameModel?.enterChooseDragonGift(enemies);
     }
-    const left = this.clockwise ? 0 : 1;
-    const right = this.clockwise ? 1 : 0;
-    const leftLabel = typeof enemies[left] === "object" ? enemies[left].name : enemies[left];
-    const rightLabel = typeof enemies[right] === "object" ? enemies[right].name : enemies[right];
-    const giveLeftText =
-      typeof dojo !== "undefined" && typeof (dojo as any).string?.substitute === "function"
-        ? dojo.string.substitute(_("Give cards to ${player_name}"), { player_name: leftLabel })
-        : _("Give cards to ${player_name}").replace("${player_name}", String(leftLabel ?? ""));
-    const giveRightText =
-      typeof dojo !== "undefined" && typeof (dojo as any).string?.substitute === "function"
-        ? dojo.string.substitute(_("Give cards to ${player_name}"), { player_name: rightLabel })
-        : _("Give cards to ${player_name}").replace("${player_name}", String(rightLabel ?? ""));
-    this.addActionButton("giveDragonBefore_button", giveLeftText, () => this.onGiveDragon(left));
-    this.addActionButton("giveDragonAfter_button", giveRightText, () => this.onGiveDragon(right));
   }
 
   onEnteringStateConfirmTrick(_args?: any) {
@@ -1182,6 +1158,7 @@ export class Tichu {
     }
     if (stateName === "newRound" || stateName === "endRound" || stateName === "gameEnd") {
       this.pendingConfirmTichu = null;
+      window.gameModel?.setPendingConfirmTichu(null);
     }
     document
       .getElementById("game_play_area")
@@ -1196,50 +1173,21 @@ export class Tichu {
       isCurrentPlayerActive: this.isCurrentPlayerActive(),
     });
 
-    if (this.pendingConfirmTichu !== null) {
-      this.renderConfirmTichuButtons();
-      return;
+    if (stateName === "chooseDragonGift") {
+      const enemies = args?.enemies ?? (this.gamedatas?.gamestate as any)?.args?.enemies;
+      if (enemies) {
+        window.gameModel?.enterChooseDragonGift(enemies);
+      }
     }
 
     if (this.isCurrentPlayerActive() && !this.isReadOnly()) {
       switch (stateName) {
-        case "giveCards":
-          this.addActionButton(
-            "resetPassCards_button",
-            _("Reset choices"),
-            "onResetPassCards",
-            undefined,
-            false,
-            "gray",
-          );
-          this.addActionButton("passCards_button", _("Pass selected cards"), "onPassCards");
-          break;
-
         case "showPassedCards":
           clearTimeout(this.autoAcceptTimeout);
           if (document.visibilityState === "visible") {
             window.gameModel?.setAcceptingCardsCountdown(true);
             this.autoAcceptTimeout = window.setTimeout(() => this.onAcceptCards(), 2000);
           }
-          this.addActionButton("acceptCards_button", _("Accept cards"), "onAcceptCards");
-          break;
-
-        case "mahjongPlay":
-          this.addActionButton("chooseWish", _("Make a wish"), "onMakeAWish");
-          this.addActionButton("noWish_button", _("No wish"), "onNoWish", undefined, false, "gray");
-          break;
-
-        case "phoenixPlay":
-          this.addActionButton(
-            "choosePhoenix",
-            _("Choose a value for the Phoenix"),
-            "onChoosePhoenix",
-          );
-          this.addActionButton("cancelPhoenix", _("Cancel"), "cancelPhoenix");
-          break;
-
-        case "chooseDragonGift":
-          this.onEnteringStateChooseDragonGift(args);
           break;
 
         case "confirmTrick":
@@ -1249,44 +1197,6 @@ export class Tichu {
             this.autoCollectTimeout = window.setTimeout(() => this.collect(), 2000);
           }
           break;
-      }
-    } else if (!this.isReadOnly() && stateName === "giveCards") {
-      this.addActionButton(
-        "unpassCards_button",
-        _("Undo Pass"),
-        "onUnpassCards",
-        undefined,
-        false,
-        "gray",
-      );
-    }
-
-    if (!this.isReadOnly() && this.gamedatas?.players) {
-      const player = this.gamedatas.players[this.player_id];
-      if (player && String(player.call_grand_tichu) === Bet.NO_BET_YET) {
-        this.addActionButton(
-          "noBet",
-          _("No bet"),
-          () => this.onGrandTichuBet(Bet.NO_BET),
-          undefined,
-          false,
-          "gray",
-        );
-
-        this.addActionButton(
-          "makeGTBet",
-          _("Grand Tichu"),
-          () => this.onGrandTichuBet(Bet.GRAND_TICHU),
-          undefined,
-          false,
-          "red",
-        );
-        const makeGtBtn = document.getElementById("makeGTBet");
-        if (makeGtBtn) {
-          makeGtBtn.setAttribute("data-tooltip", _("Bet 200 Points, that you will finish first"));
-          makeGtBtn.setAttribute("data-tooltip-tier", "slow");
-          makeGtBtn.setAttribute("data-tooltip-touch", "longpress");
-        }
       }
     }
   }
@@ -1358,9 +1268,6 @@ export class Tichu {
 
   onDirectionChange(clockwise: boolean) {
     window.gameModel?.setClockwise(Boolean(clockwise));
-    if (this.stateName === "chooseDragonGift") {
-      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args);
-    }
   }
 
   changeOrder(clockwise: boolean) {
@@ -1506,46 +1413,42 @@ export class Tichu {
     this.takeAction("acceptCards", {});
   }
 
+  private openConfirmTichu(grand: boolean): void {
+    const state = window.gameModel?.getState();
+    const currentId = state?.currentPlayerId || String(this.player_id ?? "");
+    const currentPlayer = currentId ? state?.players?.[currentId] : undefined;
+    const partnerCalled = currentPlayer
+      ? Object.values(state?.players ?? {}).some(
+          (p) =>
+            p.id !== currentPlayer.id &&
+            p.team === currentPlayer.team &&
+            (p.callTichu === 100 || p.callGrandTichu === 200),
+        )
+      : false;
+    const hasFirstOut = Boolean(state?.firstOutPlayerId || this.gamedatas?.firstoutplayer);
+    const msg = partnerCalled
+      ? _("Your partner has already called Tichu. Only one player can finish first — are you sure?")
+      : hasFirstOut
+        ? _("You can't win this tichu bet anymore. Are you sure?")
+        : grand
+          ? _("Are you sure you want to call Grand Tichu?")
+          : _("Are you sure you want to call Tichu?");
+    this.pendingConfirmTichu = { grand, msg };
+    window.gameModel?.setPendingConfirmTichu(this.pendingConfirmTichu);
+  }
+
   onGrandTichuBet(bet: Bet.NO_BET | Bet.GRAND_TICHU) {
-    this.takeAction("grandTichuBet", { bet });
-  }
-
-  isMobileConfirmContext(): boolean {
-    if (typeof document !== "undefined") {
-      const body = document.body;
-      if (
-        body?.classList?.contains("mobile_version") ||
-        body?.classList?.contains("touch-device")
-      ) {
-        return true;
+    if (this.isReadOnly()) return;
+    if (bet === Bet.GRAND_TICHU) {
+      if (this.pendingConfirmTichu !== null) {
+        return;
       }
-      if (document.getElementById("game_play_area")?.classList?.contains("responsive-compact")) {
-        return true;
-      }
-    }
-    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-      if (window.matchMedia("(pointer: coarse)").matches) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private scrollPageTitleIntoViewIfNeeded(): void {
-    if (typeof document === "undefined" || typeof window === "undefined") return;
-    const titleEl = document.getElementById("page-title");
-    if (
-      !titleEl ||
-      typeof titleEl.getBoundingClientRect !== "function" ||
-      typeof titleEl.scrollIntoView !== "function"
-    ) {
+      this.openConfirmTichu(true);
       return;
     }
-    const rect = titleEl.getBoundingClientRect();
-    const vh = window.innerHeight || document.documentElement?.clientHeight || 0;
-    if (rect.top < 0 || (vh > 0 && rect.bottom > vh)) {
-      titleEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
+    this.pendingConfirmTichu = null;
+    window.gameModel?.setPendingConfirmTichu(null);
+    this.takeAction("grandTichuBet", { bet });
   }
 
   onTichuBet(evt?: Event) {
@@ -1555,14 +1458,31 @@ export class Tichu {
     }
     if (this.isReadOnly()) return;
     if (this.pendingConfirmTichu !== null) {
-      this.scrollPageTitleIntoViewIfNeeded();
       return;
     }
-    if (this.isMobileConfirmContext()) {
-      this.takeAction("tichuBet", { bet: Bet.TICHU, confirm: 1 });
-      return;
+    this.openConfirmTichu(false);
+  }
+
+  onConfirmTichu(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
     }
-    this.takeAction("tichuBet", { bet: Bet.TICHU });
+    if (this.isReadOnly() || !this.pendingConfirmTichu) return;
+    const grand = Boolean(this.pendingConfirmTichu.grand);
+    this.pendingConfirmTichu = null;
+    window.gameModel?.setPendingConfirmTichu(null);
+    this.takeAction("confirmTichu", { bet: grand ? Bet.GRAND_TICHU : Bet.TICHU });
+  }
+
+  onCancelConfirmTichu(evt?: Event) {
+    if (evt) {
+      evt.preventDefault?.();
+      evt.stopPropagation?.();
+    }
+    if (this.isReadOnly() || !this.pendingConfirmTichu) return;
+    this.pendingConfirmTichu = null;
+    window.gameModel?.setPendingConfirmTichu(null);
   }
 
   onPlayBomb(evt?: Event) {
@@ -2118,15 +2038,8 @@ export class Tichu {
       this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
-      const pending = this.pendingConfirmTichu;
       this.pendingConfirmTichu = null;
-      if (pending && this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = pending.titleSave;
-        if (pending.descSave !== undefined) {
-          this.gamedatas.gamestate.description = pending.descSave;
-        }
-        this.updatePageTitle();
-      }
+      window.gameModel?.setPendingConfirmTichu(null);
     }
     this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
   }
@@ -2158,70 +2071,19 @@ export class Tichu {
       this.notifqueue?.setSynchronousDuration?.(1);
     }
     if (playerId === Number(this.player_id)) {
-      const pending = this.pendingConfirmTichu;
       this.pendingConfirmTichu = null;
-      if (pending && this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = pending.titleSave;
-        if (pending.descSave !== undefined) {
-          this.gamedatas.gamestate.description = pending.descSave;
-        }
-        this.updatePageTitle();
-      }
+      window.gameModel?.setPendingConfirmTichu(null);
     }
     this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
   }
 
-  renderConfirmTichuButtons() {
-    if (!this.pendingConfirmTichu) return;
-    const { grand, titleSave, descSave } = this.pendingConfirmTichu;
-    this.removeActionButtons();
-    this.addActionButton("cancelTichu", grand ? _("no grand tichu") : _("no tichu"), () => {
-      this.pendingConfirmTichu = null;
-      if (this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = titleSave;
-        if (descSave !== undefined) {
-          this.gamedatas.gamestate.description = descSave;
-        }
-      }
-      this.updatePageTitle();
-      if (grand) {
-        this.onGrandTichuBet(Bet.NO_BET);
-        return;
-      }
-      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
-    });
-    this.addActionButton("confirmTichu", _("confirm"), () => {
-      this.pendingConfirmTichu = null;
-      if (this.gamedatas?.gamestate) {
-        this.gamedatas.gamestate.descriptionmyturn = titleSave;
-        if (descSave !== undefined) {
-          this.gamedatas.gamestate.description = descSave;
-        }
-      }
-      this.updatePageTitle();
-      this.onUpdateActionButtons(this.stateName, (this.gamedatas?.gamestate as any)?.args || {});
-      this.takeAction("confirmTichu", { bet: grand ? Bet.GRAND_TICHU : Bet.TICHU });
-    });
-    document.getElementById("confirmTichu")?.setAttribute("data-grand", grand ? "1" : "0");
-  }
-
   notif_confirmTichu(notif: TypedNotif<"confirmTichu">) {
     this.traceNotif("confirmTichu", notif);
-    const currentMyTurn = this.gamedatas?.gamestate?.descriptionmyturn ?? "";
-    const currentDesc = this.gamedatas?.gamestate?.description ?? "";
     this.pendingConfirmTichu = {
       grand: Boolean(notif.args.grand),
       msg: notif.args.msg,
-      titleSave: this.pendingConfirmTichu?.titleSave ?? currentMyTurn,
-      descSave: this.pendingConfirmTichu?.descSave ?? currentDesc,
     };
-    if (this.gamedatas?.gamestate) {
-      this.gamedatas.gamestate.descriptionmyturn = notif.args.msg;
-      this.gamedatas.gamestate.description = notif.args.msg;
-    }
-    this.updatePageTitle();
-    this.renderConfirmTichuButtons();
-    this.scrollPageTitleIntoViewIfNeeded();
+    window.gameModel?.setPendingConfirmTichu(this.pendingConfirmTichu);
   }
 
   notif_mahjongWishGranted(notif: TypedNotif<"mahjongWishGranted">) {

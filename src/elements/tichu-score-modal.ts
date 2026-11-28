@@ -32,7 +32,7 @@ export class TichuScoreModal extends LitElement {
           background: var(--tichu-dialog-bg, #faf6ef);
           color: var(--tichu-dialog-text, #1f2328);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
-          border-radius: 14px;
+          border-radius: 8px;
           padding: 0;
           margin: auto;
           width: min(620px, calc(100vw - 24px));
@@ -183,7 +183,7 @@ export class TichuScoreModal extends LitElement {
         .score-card {
           background: var(--tichu-dialog-surface, #ffffff);
           border: 1px solid var(--tichu-dialog-border, rgba(31, 35, 40, 0.14));
-          border-radius: 12px;
+          border-radius: 8px;
           overflow: hidden;
         }
 

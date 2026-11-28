@@ -134,7 +134,7 @@ export class TichuLastPlayed extends LitElement {
           background: var(--tichu-surface-bg, var(--bg-color-lighter));
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
-          border-radius: var(--border-radius, 12px);
+          border-radius: var(--border-radius, 8px);
           box-shadow: var(--tichu-surface-shadow, var(--elevation));
         }
         .last-played-container.active,
@@ -306,7 +306,7 @@ export class TichuLastPlayed extends LitElement {
           padding: 5px 6px;
           gap: 4px;
           min-width: 0;
-          border-radius: 10px;
+          border-radius: var(--border-radius, 8px);
         }
         .compact .last-played-player {
           display: flex;

@@ -26,7 +26,7 @@ export const button = css`
 
 export const styles = css`
   :host {
-    --border-radius: 12px;
+    --border-radius: 8px;
     --tichu-card-radius: 8px;
     --elevation:
       0 1px 2px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.1),
@@ -361,7 +361,7 @@ export const styles = css`
     display: none;
     position: absolute;
     background: rgba(15, 23, 42, 0.42);
-    border-radius: var(--border-radius, 12px);
+    border-radius: var(--border-radius, 8px);
     left: -2px;
     right: -2px;
     top: -2px;

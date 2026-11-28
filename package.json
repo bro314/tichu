@@ -1,6 +1,6 @@
 {
   "name": "bga-tichu",
-  "version": "2026-11-27.1",
+  "version": "2026-11-28.1",
   "description": "Tichu for BoardGameArena",
   "main": "tichu.js",
   "scripts": {

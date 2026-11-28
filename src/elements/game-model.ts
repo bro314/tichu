@@ -109,6 +109,11 @@ export interface BetAnimation {
   fadingOut: boolean;
 }
 
+export interface PendingConfirmTichu {
+  grand: boolean;
+  msg: string;
+}
+
 export interface ConcedeState {
   enabled: boolean;
   proposalBy: number;
@@ -214,6 +219,8 @@ export interface LiveGameState {
   targetScore: number;
   concede: ConcedeState;
   betAnimations: BetAnimation[];
+  dragonGiftEnemies: [string, string] | null;
+  pendingConfirmTichu: PendingConfirmTichu | null;
 }
 
 interface StoredCustomHandEntry {
@@ -467,7 +474,18 @@ export const initialLiveGameState: LiveGameState = {
   targetScore: 1000,
   concede: { ...initialConcedeState },
   betAnimations: [],
+  dragonGiftEnemies: null,
+  pendingConfirmTichu: null,
 };
+
+function normalizeDragonEnemies(raw: unknown): [string, string] | null {
+  if (!Array.isArray(raw) || raw.length < 2) return null;
+  const extractName = (item: unknown) =>
+    typeof item === "object" && item !== null
+      ? String((item as any).name ?? "")
+      : String(item ?? "");
+  return [extractName(raw[0]), extractName(raw[1])];
+}
 
 function normalizeCard(raw: any): Card {
   const card: Card = {
@@ -724,6 +742,8 @@ export class GameModel {
   public readonly targetScore$ = select(this.state$, (s) => s.targetScore);
   public readonly concede$ = select(this.state$, (s) => s.concede);
   public readonly betAnimations$ = select(this.state$, (s) => s.betAnimations);
+  public readonly dragonGiftEnemies$ = select(this.state$, (s) => s.dragonGiftEnemies);
+  public readonly pendingConfirmTichu$ = select(this.state$, (s) => s.pendingConfirmTichu);
 
   getState(): LiveGameState {
     return this.subject$.getValue();
@@ -1095,6 +1115,9 @@ export class GameModel {
       targetScore,
       concede,
       betAnimations: [],
+      dragonGiftEnemies:
+        stateName === "chooseDragonGift" ? normalizeDragonEnemies(gamestate?.args?.enemies) : null,
+      pendingConfirmTichu: null,
     });
     syncAnimCssVars();
   }
@@ -1144,6 +1167,11 @@ export class GameModel {
         stateName === "showPassedCards" ? prev.acceptingCardsCountdown : false,
       collectingTrickCountdown:
         stateName === "confirmTrick" ? prev.collectingTrickCountdown : false,
+      dragonGiftEnemies: stateName === "chooseDragonGift" ? prev.dragonGiftEnemies : null,
+      pendingConfirmTichu:
+        stateName === "newRound" || stateName === "endRound" || stateName === "gameEnd"
+          ? null
+          : prev.pendingConfirmTichu,
     });
   }
 
@@ -1163,6 +1191,8 @@ export class GameModel {
         phoenixValue: null,
         description: "",
       },
+      dragonGiftEnemies: null,
+      pendingConfirmTichu: null,
     });
   }
 
@@ -1225,6 +1255,8 @@ export class GameModel {
         proposalBy: 0,
         usedThisRound: false,
       },
+      dragonGiftEnemies: null,
+      pendingConfirmTichu: null,
     });
   }
 
@@ -1286,6 +1318,7 @@ export class GameModel {
       currentTrick: [],
       currentTrickValue: 0,
       trick: prev.trick + 1,
+      dragonGiftEnemies: null,
     });
   }
 
@@ -1307,6 +1340,18 @@ export class GameModel {
   enterPlayBomb(bombActivePlayerId: string | number): void {
     this.update({
       bombActivePlayerId: String(bombActivePlayerId),
+    });
+  }
+
+  enterChooseDragonGift(enemies: unknown): void {
+    this.update({
+      dragonGiftEnemies: normalizeDragonEnemies(enemies),
+    });
+  }
+
+  setPendingConfirmTichu(pending: PendingConfirmTichu | null): void {
+    this.update({
+      pendingConfirmTichu: pending,
     });
   }
 
@@ -1346,6 +1391,8 @@ export class GameModel {
         phoenixValue: null,
         description: "",
       },
+      dragonGiftEnemies: null,
+      pendingConfirmTichu: null,
     });
   }
 
@@ -1903,9 +1950,14 @@ export class GameModel {
     const existingPlayer = prev.players[pid];
     if (!existingPlayer) return;
 
-    this.updatePlayer(pid, {
+    const updatedPlayer: LivePlayer = {
+      ...existingPlayer,
       callGrandTichu: normalizedBet,
       callTichu: normalizedBet === 200 ? 0 : existingPlayer.callTichu,
+    };
+    this.update({
+      players: { ...prev.players, [pid]: updatedPlayer },
+      ...(pid === prev.currentPlayerId ? { pendingConfirmTichu: null } : {}),
     });
   }
 
@@ -1916,9 +1968,14 @@ export class GameModel {
     const existingPlayer = prev.players[pid];
     if (!existingPlayer) return;
 
-    this.updatePlayer(pid, {
+    const updatedPlayer: LivePlayer = {
+      ...existingPlayer,
       callTichu: normalizedBet,
       callGrandTichu: existingPlayer.callGrandTichu === 200 ? 200 : (0 as GrandTichuBetValue),
+    };
+    this.update({
+      players: { ...prev.players, [pid]: updatedPlayer },
+      ...(pid === prev.currentPlayerId ? { pendingConfirmTichu: null } : {}),
     });
   }
 

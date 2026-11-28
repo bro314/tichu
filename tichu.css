@@ -9,8 +9,10 @@ html {
 
   --bg-color-active: #dc2626;
 
-  --border-radius: 12px;
+  --border-radius: 8px;
   --tichu-card-radius: 8px;
+  --tichu-edge-inset: 10px;
+  --tichu-page-gap: 8px;
 
   --elevation:
     0 1px 2px rgba(15, 23, 42, 0.08), 0 4px 12px rgba(15, 23, 42, 0.1),
@@ -396,21 +398,23 @@ html[data-theme="dark"] #spectatorbox a {
   zoom: 1 !important;
 }
 
+@media (max-width: 760px) {
+  html {
+    --tichu-edge-inset: 4px;
+  }
+}
+
 #game_play_area_wrap {
   /* transform is set dynamically using resize observers when factor < 1 */
-  margin: 0px 10px;
-}
-@media (max-width: 760px) {
-  #game_play_area_wrap {
-    margin: 0px 4px;
-  }
+  margin: 0 var(--tichu-edge-inset);
 }
 #game_play_area {
   /* this is set dynamically using resize observers */
+  box-sizing: border-box;
   width: 900px;
-  margin: 10px auto 50px auto;
+  margin: 0 auto 50px auto;
   background: var(--bg-color-play-area);
-  border-radius: 14px;
+  border-radius: var(--border-radius);
   border: 1px solid var(--tichu-play-area-border, rgba(255, 255, 255, 0.25));
   box-shadow: var(--tichu-play-area-shadow, 0 12px 32px rgba(15, 23, 42, 0.22));
   padding-top: 15px;
@@ -418,9 +422,9 @@ html[data-theme="dark"] #spectatorbox a {
 #game_play_area.responsive-compact {
   width: 100%;
   max-width: 1200px;
-  margin: 6px auto 24px auto;
+  margin: 0 auto 24px auto;
   padding-top: 8px;
-  border-radius: 10px;
+  border-radius: var(--border-radius);
 }
 #game_play_area h3 {
   font-size: 20px;
@@ -431,14 +435,41 @@ html[data-theme="dark"] #spectatorbox a {
 
 #page-title {
   box-sizing: border-box;
-  margin: 0px 10px 10px 10px;
+  margin: 0 var(--tichu-edge-inset) var(--tichu-page-gap) var(--tichu-edge-inset);
+  padding: 7px 10px;
+  line-height: 1.35;
   border-radius: var(--border-radius);
   box-shadow: none;
 }
 #page-title.fixed-page-title {
   max-width: unset;
-  margin: unset;
+  margin: 0;
   border-radius: 0;
+}
+#gameaction_status_wrap,
+#maintitlebar_content {
+  min-height: 0;
+}
+#active_player_statusbar {
+  position: relative;
+  width: 20px;
+  height: 0.72em;
+  line-height: 0;
+  vertical-align: baseline;
+  margin-right: 6px;
+  overflow: visible;
+}
+#active_player_statusbar_icon {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px;
+  width: 20px;
+  object-fit: contain;
+}
+#generalactions:empty {
+  display: none;
 }
 
 #player_boards {
@@ -473,6 +504,77 @@ html[data-theme="dark"] .player_board_inner .timeToThink,
 html.dark .player_board_inner .player_board_content,
 html[data-theme="dark"] .player_board_inner .player_board_content {
   color: var(--tichu-text, #1f2328);
+}
+.mobile_version #overall-content #right-side,
+.mobile_version #overall-content #right-side-first-part {
+  padding-left: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  margin-left: 0;
+  margin-right: 0;
+  margin-bottom: 0;
+}
+.mobile_version #overall-content #player_boards {
+  display: grid;
+  gap: var(--tichu-page-gap);
+  padding: var(--tichu-page-gap) var(--tichu-edge-inset) 0 var(--tichu-edge-inset);
+  margin: 0;
+}
+.mobile_version #overall-content #player_boards > .clear {
+  display: none;
+}
+.mobile_version #overall-content #player_boards .player-board {
+  width: auto;
+  float: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+.mobile_version #overall-content #player_boards .player_board_inner {
+  margin: 0;
+}
+.mobile_version #overall-content #page-title {
+  margin: var(--tichu-page-gap) var(--tichu-edge-inset);
+}
+.mobile_version #overall-content #page-title.fixed-page-title {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  #overall-content #right-side,
+  #overall-content #right-side-first-part {
+    padding-left: 0;
+    padding-right: 0;
+    padding-bottom: 0;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 0;
+  }
+  #overall-content #player_boards {
+    display: grid;
+    gap: var(--tichu-page-gap);
+    padding: var(--tichu-page-gap) var(--tichu-edge-inset) 0 var(--tichu-edge-inset);
+    margin: 0;
+  }
+  #overall-content #player_boards > .clear {
+    display: none;
+  }
+  #overall-content #player_boards .player-board {
+    width: auto;
+    float: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  #overall-content #player_boards .player_board_inner {
+    margin: 0;
+  }
+  #overall-content #page-title {
+    margin: var(--tichu-page-gap) var(--tichu-edge-inset);
+  }
+  #overall-content #page-title.fixed-page-title {
+    margin: 0;
+  }
 }
 .player-name {
   position: relative;

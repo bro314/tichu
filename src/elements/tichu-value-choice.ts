@@ -5,7 +5,7 @@ import { rankToLocalizedName } from "./combo-validator";
 import { styles } from "./styles";
 import { subscribe } from "./subscription-controller";
 
-const MAHJONG_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const MAHJONG_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 export class TichuValueChoice extends LitElement {
   @property({ type: String }) mode: "mahjong" | "phoenix" = "mahjong";
@@ -37,7 +37,7 @@ export class TichuValueChoice extends LitElement {
           backdrop-filter: blur(8px);
           -webkit-backdrop-filter: blur(8px);
           border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
-          border-radius: var(--border-radius, 12px);
+          border-radius: var(--border-radius, 8px);
           box-shadow: var(--tichu-surface-shadow, var(--elevation));
         }
         #mahjongpanel h3,
@@ -84,6 +84,15 @@ export class TichuValueChoice extends LitElement {
           #phoenixpanel {
             --choice-w: 70px;
           }
+          @container (min-width: 760px) {
+            #mahjongpanel {
+              --choice-w: clamp(48px, calc((100cqi - 122px) / 13), 70px);
+            }
+            #mahjong {
+              grid-template-columns: repeat(13, var(--choice-w));
+              justify-content: center;
+            }
+          }
           @container (max-width: 599px) {
             #mahjongpanel,
             #phoenixpanel {
@@ -104,9 +113,6 @@ export class TichuValueChoice extends LitElement {
               border-radius: 6px;
             }
           }
-        }
-        #mahjong_item_15 {
-          background-color: #e5e7eb;
         }
         .stockitem.stockitem_selected {
           z-index: 1;
@@ -159,7 +165,7 @@ export class TichuValueChoice extends LitElement {
   }
 
   private getTileLabel(val: number): string {
-    return val === 15 ? _("No wish") : rankToLocalizedName(val, false);
+    return rankToLocalizedName(val, false);
   }
 
   private onTileKeyDown(e: KeyboardEvent, onActivate: () => void) {
@@ -198,8 +204,6 @@ export class TichuValueChoice extends LitElement {
                 tabindex="0"
                 aria-pressed=${isSelected ? "true" : "false"}
                 aria-label=${label}
-                data-tooltip=${val === 15 ? label : nothing}
-                data-tooltip-touch=${val === 15 ? "longpress" : nothing}
                 class=${classMap({
                   stockitem: true,
                   stockitem_selected: isSelected,

@@ -956,7 +956,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   function isConfirmTichuVisible(): boolean {
-    const confirmBtn = document.getElementById("confirmTichu");
+    const confirmBtn = getElementByIdDeep("confirmTichu");
     return Boolean(
       confirmBtn &&
       confirmBtn.offsetParent !== null &&
@@ -966,7 +966,7 @@ export function initStudioTestHelper(gameuiInstance: any): void {
   }
 
   function getConfirmTichuBetValue(): number {
-    const confirmBtn = document.getElementById("confirmTichu");
+    const confirmBtn = getElementByIdDeep("confirmTichu");
     if (confirmBtn?.getAttribute("data-grand") === "1") return 200;
     if (confirmBtn?.getAttribute("data-grand") === "0") return 100;
     const stName = getUi()?.gamedatas?.gamestate?.name;

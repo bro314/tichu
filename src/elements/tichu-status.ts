@@ -27,7 +27,7 @@ export class TichuStatus extends LitElement {
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         border: 1px solid var(--tichu-surface-border, rgba(255, 255, 255, 0.55));
-        border-radius: var(--border-radius, 12px);
+        border-radius: var(--border-radius, 8px);
         box-shadow: var(
           --tichu-surface-shadow,
           var(
@@ -157,7 +157,7 @@ export class TichuStatus extends LitElement {
       :host([compact]) .status-panel {
         padding: 4px 6px;
         gap: 2px;
-        border-radius: 10px;
+        border-radius: var(--border-radius, 8px);
       }
       :host([compact]) .status-row {
         grid-template-columns: 18px minmax(2ch, auto);

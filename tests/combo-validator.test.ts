@@ -1136,8 +1136,17 @@ test("Tichu studio adapter regressions: legacy accessors, reflexion/args, confir
   assert.equal(typeof gsNotif.args.reflexion.initial_ts["2385074"], "number");
   assert.equal(parentGameStateCalls.length, 1);
 
-  // 3. confirmTichu <-> updatePageTitle <-> onUpdateActionButtons mutual recursion guard
+  // 3. confirmTichu updates GameModel.pendingConfirmTichu without mutating page title or calling updatePageTitle
+  let pageTitleUpdates = 0;
   let actionButtonsRenders = 0;
+  const gConfirm = globalThis as any;
+  const savedWindowConfirm = gConfirm.window;
+  const confirmModel = new GameModel();
+  if (gConfirm.window) {
+    gConfirm.window.gameModel = confirmModel;
+  } else {
+    gConfirm.window = { gameModel: confirmModel };
+  }
   ui.stateName = "playCombo";
   ui.removeActionButtons = () => {};
   ui.addActionButton = () => {};
@@ -1150,25 +1159,28 @@ test("Tichu studio adapter regressions: legacy accessors, reflexion/args, confir
   };
   ui.onUpdateActionButtons = (_state: string, _args: any) => {
     actionButtonsRenders++;
-    if (actionButtonsRenders > 20) {
-      throw new RangeError("Simulated stack overflow");
-    }
-    ui.renderConfirmTichuButtons();
   };
-  // Mimic ly_studio.js:22688 updatePageTitle() synchronously invoking onUpdateActionButtons().
   ui.updatePageTitle = () => {
-    ui.onUpdateActionButtons(ui.stateName, ui.gamedatas.gamestate.args || {});
+    pageTitleUpdates++;
   };
 
   ui.notif_confirmTichu({
     args: { grand: false, msg: "Confirm Tichu?" },
   });
-  assert.equal(actionButtonsRenders, 1);
+  assert.equal(pageTitleUpdates, 0);
+  assert.equal(actionButtonsRenders, 0);
+  assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "Your turn");
+  assert.deepEqual(confirmModel.getState().pendingConfirmTichu, {
+    grand: false,
+    msg: "Confirm Tichu?",
+  });
 
   ui.notif_tichuBet({
     args: { player_id: 2385074, bet: Bet.TICHU },
   });
   assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "Your turn");
+  assert.equal(confirmModel.getState().pendingConfirmTichu, null);
+  gConfirm.window = savedWindowConfirm;
 
   // 4. Orphaned "Updating game situation ..." lockInterface release
   let locked = true;
@@ -2004,6 +2016,7 @@ function withMockLitEnv(
     TichuPlayedCards: any;
     TichuCardEl: any;
     TichuHand: any;
+    TichuGame: any;
     TichuStatus: any;
     TichuTrickModal: any;
     TichuScoreBoard: any;
@@ -2108,6 +2121,7 @@ function withMockLitEnv(
     TichuPlayedCards: require("../src/elements/tichu-played-cards").TichuPlayedCards,
     TichuCardEl: cardMod.TichuCard,
     TichuHand: handMod.TichuHand,
+    TichuGame: require("../src/elements/tichu-game").TichuGame,
     TichuStatus: require("../src/elements/tichu-status").TichuStatus,
     TichuTrickModal: require("../src/elements/tichu-trick-modal").TichuTrickModal,
     TichuScoreBoard: require("../src/elements/tichu-score-board").TichuScoreBoard,
@@ -3533,7 +3547,7 @@ test("Plan 01: GameModel and Tichu adapter gate capturedCards on isAllInfoExpose
   assert.equal(shownMessages.length, 2);
 });
 
-test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, and I18nLogPayload tolerance", () => {
+test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, and I18nLogPayload tolerance", async () => {
   const g = globalThis as any;
   const savedUnderscore = g._;
   const savedDojo = g.dojo;
@@ -3705,7 +3719,7 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
       "«Pair of «Queens»»",
     );
 
-    // Also test with dojo.string.substitute for Dragon gift (#175241) and confirmTichu buttons
+    // Also test Dragon gift (#175241) and inline confirmTichu buttons via GameModel + <tichu-action-bar>
     const { Tichu } = loadTichuAdapterForNodeTests();
     g._ = (s: string) => `«${s}»`;
     g.dojo.string = {
@@ -3717,6 +3731,7 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     const addedButtons: Array<{ id: string; label: string }> = [];
     ui.player_id = 1;
     ui.isCurrentPlayerActive = () => true;
+    ui.isReadOnly = () => false;
     ui.removeActionButtons = () => {
       addedButtons.length = 0;
     };
@@ -3737,11 +3752,39 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
       currentTrick: [],
       currentTrickValue: 0,
     };
+    const savedGM = g.window.gameModel;
+    g.window.gameModel = model;
     ui.onEnteringStateChooseDragonGift(ui.gamedatas.gamestate.args);
-    assert.deepEqual(addedButtons, [
-      { id: "giveDragonBefore_button", label: "«Give cards to LeftEnemy»" },
-      { id: "giveDragonAfter_button", label: "«Give cards to RightEnemy»" },
-    ]);
+    assert.deepEqual(model.getState().dragonGiftEnemies, ["LeftEnemy", "RightEnemy"]);
+    assert.equal(addedButtons.length, 0, "No buttons added to #generalactions");
+
+    await withMockLitEnv(({ TichuActionBar }) => {
+      g.window.gameModel = model;
+      model.setGameState("chooseDragonGift", {
+        activePlayerId: "1",
+        isCurrentPlayerActive: true,
+      });
+      model.enterChooseDragonGift([{ name: "LeftEnemy" }, { name: "RightEnemy" }]);
+      const ab = new TichuActionBar();
+      ab.performUpdate = () => {};
+      ab.connectedCallback();
+      try {
+        const htmlCw = serializeLitTemplate(ab.render());
+        assert.ok(htmlCw.includes("giveDragonBefore_button"));
+        assert.ok(htmlCw.includes("giveDragonAfter_button"));
+        assert.ok(htmlCw.includes("«Give cards to LeftEnemy»"));
+        assert.ok(htmlCw.includes("«Give cards to RightEnemy»"));
+
+        model.setClockwise(false);
+        const htmlCcw = serializeLitTemplate(ab.render());
+        const beforeIdx = htmlCcw.indexOf("«Give cards to RightEnemy»");
+        const afterIdx = htmlCcw.indexOf("«Give cards to LeftEnemy»");
+        assert.ok(beforeIdx >= 0 && afterIdx > beforeIdx);
+        model.setClockwise(true);
+      } finally {
+        ab.disconnectedCallback();
+      }
+    });
 
     ui.notif_playCombo({
       args: {
@@ -3807,14 +3850,33 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     assert.equal(ui.gamedatas.lastComboDescription, "Kings full of 4s");
     assert.equal(ui.gamedatas.lastCombo.description, "Kings full of 4s");
 
-    ui.pendingConfirmTichu = { grand: true, msg: "Confirm?", titleSave: "Turn" };
-    ui.renderConfirmTichuButtons();
-    assert.equal(addedButtons[0]?.label, "«no grand tichu»");
-    ui.pendingConfirmTichu = { grand: false, msg: "Confirm?", titleSave: "Turn" };
-    ui.renderConfirmTichuButtons();
-    assert.equal(addedButtons[0]?.label, "«no tichu»");
+    await withMockLitEnv(({ TichuActionBar }) => {
+      g.window.gameModel = model;
+      const ab = new TichuActionBar();
+      ab.performUpdate = () => {};
+      ab.connectedCallback();
+      try {
+        model.setPendingConfirmTichu({ grand: true, msg: "Confirm?" });
+        const grandHtml = serializeLitTemplate(ab.render());
+        assert.ok(grandHtml.includes("«No Grand Tichu»"));
+        assert.ok(grandHtml.includes("«Confirm»"));
+        assert.ok(grandHtml.includes('id="confirmTichu"'));
+        assert.ok(grandHtml.includes("bgabutton_blue"));
+        assert.ok(grandHtml.includes("confirm-grand-tichu"));
 
-    // Out-of-turn confirmTichu updates both descriptionmyturn and description, and restores both on cancel
+        model.setPendingConfirmTichu({ grand: false, msg: "Confirm?" });
+        const tichuHtml = serializeLitTemplate(ab.render());
+        assert.ok(tichuHtml.includes("«No Tichu»"));
+        assert.ok(tichuHtml.includes("«Confirm»"));
+        assert.ok(tichuHtml.includes('id="confirmTichu"'));
+        assert.ok(tichuHtml.includes("bgabutton_green"));
+      } finally {
+        ab.disconnectedCallback();
+        model.setPendingConfirmTichu(null);
+      }
+    });
+
+    // Out-of-turn confirmTichu leaves gamestate.descriptionmyturn/description untouched and clears cleanly on cancel
     ui.gamedatas.gamestate = {
       name: "playCombo",
       description: "${actplayer} must play",
@@ -3825,22 +3887,19 @@ test("Plan 02: i18n static extraction helpers, formatLocalizedComboDescription, 
     ui.pendingConfirmTichu = null;
     ui.updatePageTitle = () => {};
     ui.onUpdateActionButtons = () => {};
-    let cancelHandler: (() => void) | null = null;
-    ui.addActionButton = (id: string, label: string, cb?: () => void) => {
-      addedButtons.push({ id, label });
-      if (id === "cancelTichu" && cb) cancelHandler = cb;
-    };
     const partnerMsg =
       "Your partner has already called Tichu. Only one player can finish first — are you sure?";
     ui.notif_confirmTichu({
       args: { grand: false, msg: partnerMsg },
     });
-    assert.equal(ui.gamedatas.gamestate.descriptionmyturn, partnerMsg);
-    assert.equal(ui.gamedatas.gamestate.description, partnerMsg);
-    assert.ok(cancelHandler, "cancelTichu button should register a click handler");
-    (cancelHandler as () => void)();
     assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "${you} must play");
     assert.equal(ui.gamedatas.gamestate.description, "${actplayer} must play");
+    assert.deepEqual(model.getState().pendingConfirmTichu, { grand: false, msg: partnerMsg });
+    ui.onCancelConfirmTichu();
+    assert.equal(model.getState().pendingConfirmTichu, null);
+    assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "${you} must play");
+    assert.equal(ui.gamedatas.gamestate.description, "${actplayer} must play");
+    g.window.gameModel = savedGM;
   } finally {
     g._ = savedUnderscore;
     g.dojo = savedDojo;
@@ -3976,10 +4035,29 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
       };
 
       ui.onUpdateActionButtons("mahjongPlay", {});
-      assert.deepEqual(addedButtons, [
-        { id: "chooseWish", label: "«Make a wish»", callback: "onMakeAWish", color: undefined },
-        { id: "noWish_button", label: "«No wish»", callback: "onNoWish", color: "gray" },
-      ]);
+      assert.deepEqual(addedButtons, []);
+      const mahjongBar = new TichuActionBar();
+      mahjongBar.performUpdate = () => {};
+      mahjongBar.connectedCallback();
+      try {
+        const disabledWishHtml = serializeLitTemplate(mahjongBar.render());
+        assert.ok(disabledWishHtml.includes('id="chooseWish"'));
+        assert.ok(disabledWishHtml.includes("«Make a wish»"));
+        assert.ok(disabledWishHtml.includes("disabled"));
+        assert.ok(disabledWishHtml.includes('id="noWish_button"'));
+        assert.ok(disabledWishHtml.includes("«No wish»"));
+        assert.ok(disabledWishHtml.includes("bgabutton_gray"));
+
+        model.setSelectedMahjongWish(8);
+        const enabledWishHtml = serializeLitTemplate(mahjongBar.render());
+        assert.match(
+          enabledWishHtml,
+          /id="chooseWish"[^>]*class="action-button bgabutton bgabutton_blue\s*"/,
+        );
+        model.setSelectedMahjongWish(null);
+      } finally {
+        mahjongBar.disconnectedCallback();
+      }
 
       // Selecting an 8 then clicking "No wish" resets selection and sends wish: 15
       model.setSelectedMahjongWish(8);
@@ -4005,19 +4083,19 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
       ui.onMakeAWish();
       assert.equal(takenActions.length, countBeforeDenied);
 
-      // 2. TichuValueChoice: accessible tile 15 attributes + keyboard activation (Enter keydown / Space keyup)
+      // 2. TichuValueChoice: 13 tiles (2..14, no tile 15) + keyboard activation (Enter keydown / Space keyup)
       const valueChoice = new TichuValueChoice();
       valueChoice.mode = "mahjong";
       valueChoice.performUpdate = () => {};
       valueChoice.connectedCallback();
       try {
         const renderedChoice = serializeLitTemplate(valueChoice.render());
-        assert.match(renderedChoice, /id="mahjong_item_15"/);
+        assert.equal(renderedChoice.includes('id="mahjong_item_15"'), false);
+        assert.match(renderedChoice, /id="mahjong_item_2"/);
+        assert.match(renderedChoice, /id="mahjong_item_14"/);
+        assert.equal((renderedChoice.match(/id="mahjong_item_/g) || []).length, 13);
         assert.equal(renderedChoice.includes("mahjong-no-wish-label"), false);
         assert.match(renderedChoice, /role="button"/);
-        assert.match(renderedChoice, /aria-label=["']?«No wish»["']?/);
-        assert.match(renderedChoice, /data-tooltip=["']?«No wish»["']?/);
-        assert.match(renderedChoice, /data-tooltip-touch=["']?longpress["']?/);
         assert.equal(renderedChoice.includes("title="), false);
         assert.match(renderedChoice, /aria-label=["']?«Queen»["']?/);
 
@@ -4029,7 +4107,7 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
               prevented++;
             },
           }) as any;
-        valueChoice.onTileKeyDown(makeKeyEvt(" "), () => valueChoice.onMahjongClick(15));
+        valueChoice.onTileKeyDown(makeKeyEvt(" "), () => valueChoice.onMahjongClick(12));
         assert.equal(
           model.getState().selectedMahjongWish,
           null,
@@ -4037,10 +4115,10 @@ test("Plan 03: fixed-grid action bar removes 'My hand', suppresses readOnly/game
         );
         assert.equal(prevented, 1);
 
-        valueChoice.onTileKeyUp(makeKeyEvt(" "), () => valueChoice.onMahjongClick(15));
-        assert.equal(model.getState().selectedMahjongWish, 15, "Space keyup selects tile");
+        valueChoice.onTileKeyUp(makeKeyEvt(" "), () => valueChoice.onMahjongClick(12));
+        assert.equal(model.getState().selectedMahjongWish, 12, "Space keyup selects tile");
 
-        valueChoice.onTileKeyDown(makeKeyEvt("Enter"), () => valueChoice.onMahjongClick(15));
+        valueChoice.onTileKeyDown(makeKeyEvt("Enter"), () => valueChoice.onMahjongClick(12));
         assert.equal(model.getState().selectedMahjongWish, null, "Enter keydown toggles selection");
       } finally {
         valueChoice.disconnectedCallback();
@@ -4525,6 +4603,15 @@ test("Bug #257404: received-card glow, below-card avatar, first-move dismiss, an
         const stockHtml = serializeLitTemplate(stockReserved.render());
         assert.equal(stockReserved.style["--stock-height"], "184px");
         assert.equal(stockReserved.style["--card-footer-height"], "34px");
+
+        // On mobile 0.75x scale, --card-footer-height must stay full 34px so fixed 26px avatars don't overlap footer controls
+        const stockMobileReserved = new TichuStock();
+        stockMobileReserved.cards = handSample;
+        stockMobileReserved.wrapRows = true;
+        stockMobileReserved.reserveFooter = true;
+        (stockMobileReserved as any).containerWidth = 340;
+        stockMobileReserved.render();
+        assert.equal(stockMobileReserved.style["--card-footer-height"], "34px");
         assert.equal(stockReserved.style["--stock-card-width"], "100px");
         assert.ok(stockReserved.style["--card-visible-width"]);
         assert.ok(stockHtml.includes("<tichu-card"));
@@ -7599,13 +7686,20 @@ test("Mobile Step 4: centered last-played cards, fluid trick modal, responsive a
           assert.equal(serializeLitTemplate(bar.render()).includes("compact-single-row"), false);
 
           model.update({ stateName: "grandTichuBets" });
-          assert.ok(serializeLitTemplate(bar.render()).includes("compact-single-row"));
+          const gtMobileHtml = serializeLitTemplate(bar.render());
+          assert.ok(gtMobileHtml.includes("compact-single-row"));
+          assert.ok(gtMobileHtml.includes("preplay-bar"));
 
           model.update({ stateName: "giveCards" });
-          assert.ok(serializeLitTemplate(bar.render()).includes("compact-single-row"));
+          const giveMobileHtml = serializeLitTemplate(bar.render());
+          assert.ok(giveMobileHtml.includes("compact-single-row"));
+          assert.ok(giveMobileHtml.includes("preplay-bar"));
+          assert.ok(giveMobileHtml.includes("give-cards-active"));
 
           bar.updateResponsiveMode(900);
-          assert.equal(serializeLitTemplate(bar.render()).includes("compact-single-row"), false);
+          const giveDesktopHtml = serializeLitTemplate(bar.render());
+          assert.equal(giveDesktopHtml.includes("compact-single-row"), false);
+          assert.ok(giveDesktopHtml.includes("preplay-bar"));
 
           model.update({ stateName: "playComboOpen" });
         } finally {
@@ -7867,63 +7961,105 @@ test("Mobile-only Tichu confirmation triggers standard backend confirmTichu flow
       ui.updatePageTitle = () => {};
       ui.onUpdateActionButtons = () => {};
 
-      // 1. Desktop: immediate tichuBet without confirm flag or dialog
-      assert.equal(ui.isMobileConfirmContext(), false);
+      // 1. Always-on UI-only Tichu confirmation on desktop & mobile (zero AJAX until Confirm)
       ui.onTichuBet();
       assert.equal(confirmDialogCalls, 0);
-      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU } });
+      assert.equal(taken.length, 0);
+      assert.deepEqual(model.getState().pendingConfirmTichu, {
+        grand: false,
+        msg: "Are you sure you want to call Tichu?",
+      });
 
-      // 2. Detection signals
-      bodyClasses.add("mobile_version");
-      assert.equal(ui.isMobileConfirmContext(), true);
-      bodyClasses.clear();
-      bodyClasses.add("touch-device");
-      assert.equal(ui.isMobileConfirmContext(), true);
-      bodyClasses.clear();
-      coarsePointer = true;
-      assert.equal(ui.isMobileConfirmContext(), true);
-      coarsePointer = false;
-      areaClasses.add("responsive-compact");
-      assert.equal(ui.isMobileConfirmContext(), true);
-
-      // 3. Mobile Tichu sends confirm: 1 (no client confirmationDialog popup)
+      // Tapping Tichu again while confirmTichu is open is a no-op
       ui.onTichuBet();
-      assert.equal(confirmDialogCalls, 0);
-      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU, confirm: 1 } });
+      assert.equal(taken.length, 0);
 
-      // 4. Backend replies with confirmTichu -> renders #page-title buttons & scrolls into view if off-screen
-      const countAtPrompt = taken.length;
-      ui.notif_confirmTichu({
-        args: { grand: false, msg: "Are you sure you want to call Tichu?" },
-      } as any);
-      assert.equal(scrollIntoViewCalls, 1);
-      assert.ok(buttons.has("cancelTichu"));
-      assert.ok(buttons.has("confirmTichu"));
-
-      // Tapping Tichu again while confirmTichu is open sends no extra action and scrolls title into view
+      // Partner already called -> shows partner warning message
+      model.applyTichuBet("3", 100);
+      ui.onCancelConfirmTichu();
+      assert.equal(model.getState().pendingConfirmTichu, null);
       ui.onTichuBet();
-      assert.equal(taken.length, countAtPrompt);
-      assert.equal(scrollIntoViewCalls, 2);
+      assert.deepEqual(model.getState().pendingConfirmTichu, {
+        grand: false,
+        msg: "Your partner has already called Tichu. Only one player can finish first — are you sure?",
+      });
+      model.applyTichuBet("3", -1);
+      ui.onCancelConfirmTichu();
 
-      // Clicking "no tichu" clears pendingConfirmTichu without sending any action
-      buttons.get("cancelTichu")!();
-      assert.equal(taken.length, countAtPrompt);
-
-      // Re-open prompt when title is already visible (no unnecessary scroll), then confirm -> sends confirmTichu(100)
-      pageTitleRect = { top: 40, bottom: 100 };
+      // 2. Render inline confirmTichu inside <tichu-action-bar> (capitalized labels, no #page-title scroll/mutation)
       ui.onTichuBet();
-      assert.deepEqual(taken.at(-1), { action: "tichuBet", args: { bet: Bet.TICHU, confirm: 1 } });
-      ui.notif_confirmTichu({
-        args: { grand: false, msg: "Are you sure you want to call Tichu?" },
-      } as any);
-      assert.equal(scrollIntoViewCalls, 2);
-      buttons.get("confirmTichu")!();
-      assert.deepEqual(taken.at(-1), { action: "confirmTichu", args: { bet: Bet.TICHU } });
+      assert.equal(scrollIntoViewCalls, 0);
+      assert.equal(buttons.size, 0);
+      assert.deepEqual(model.getState().pendingConfirmTichu, {
+        grand: false,
+        msg: "Are you sure you want to call Tichu?",
+      });
+      assert.equal(ui.gamedatas.gamestate.descriptionmyturn, "You must play a combination");
 
-      // 5. Grand Tichu remains immediate on mobile
-      ui.onGrandTichuBet(Bet.GRAND_TICHU);
-      assert.equal(confirmDialogCalls, 0);
-      assert.deepEqual(taken.at(-1), { action: "grandTichuBet", args: { bet: Bet.GRAND_TICHU } });
+      const { TichuActionBar } = require("../src/elements/tichu-action-bar");
+      const bar = new TichuActionBar();
+      bar.performUpdate = () => {};
+      bar.connectedCallback();
+      try {
+        bar.updateResponsiveMode(382);
+        const confirmHtml = serializeLitTemplate(bar.render());
+        assert.ok(confirmHtml.includes("confirm-tichu"));
+        assert.ok(confirmHtml.includes('id="confirm_tichu_msg"'));
+        assert.ok(confirmHtml.includes("Are you sure you want to call Tichu?"));
+        assert.ok(confirmHtml.includes('id="cancelTichu"'));
+        assert.ok(confirmHtml.includes("No Tichu"));
+        assert.ok(confirmHtml.includes('id="confirmTichu"'));
+        assert.ok(confirmHtml.includes("Confirm"));
+        assert.ok(confirmHtml.includes("bgabutton_green"));
+
+        // Clicking "No Tichu" clears pendingConfirmTichu without sending any action
+        ui.onCancelConfirmTichu();
+        assert.equal(taken.length, 0);
+        assert.equal(model.getState().pendingConfirmTichu, null);
+
+        // Re-open prompt, then confirm -> sends confirmTichu(100) and clears pendingConfirmTichu
+        ui.onTichuBet();
+        assert.equal(taken.length, 0);
+        ui.onConfirmTichu();
+        assert.deepEqual(taken.at(-1), { action: "confirmTichu", args: { bet: Bet.TICHU } });
+        assert.equal(model.getState().pendingConfirmTichu, null);
+
+        // 3. Grand Tichu also uses UI-only confirmation; canceling does NOT submit No bet; confirming sends confirmTichu(200)
+        model.setGameState("grandTichuBets", { isCurrentPlayerActive: true });
+        ui.onGrandTichuBet(Bet.GRAND_TICHU);
+        assert.equal(taken.length, 1);
+        assert.deepEqual(model.getState().pendingConfirmTichu, {
+          grand: true,
+          msg: "Are you sure you want to call Grand Tichu?",
+        });
+        const gtConfirmHtml = serializeLitTemplate(bar.render());
+        assert.ok(gtConfirmHtml.includes("confirm-grand-tichu"));
+        assert.ok(gtConfirmHtml.includes("confirm-preplay"));
+        assert.ok(gtConfirmHtml.includes("No Grand Tichu"));
+        assert.ok(gtConfirmHtml.includes("Confirm"));
+        assert.ok(gtConfirmHtml.includes("bgabutton_blue"));
+
+        ui.onCancelConfirmTichu();
+        assert.equal(model.getState().pendingConfirmTichu, null);
+        assert.equal(taken.length, 1, "Canceling Grand Tichu must not send grandTichuBet(0)");
+
+        ui.onGrandTichuBet(Bet.GRAND_TICHU);
+        ui.onConfirmTichu();
+        assert.deepEqual(taken.at(-1), {
+          action: "confirmTichu",
+          args: { bet: Bet.GRAND_TICHU },
+        });
+        assert.equal(model.getState().pendingConfirmTichu, null);
+
+        // "No bet" sends grandTichuBet(0) immediately without confirmation
+        ui.onGrandTichuBet(Bet.NO_BET);
+        assert.deepEqual(taken.at(-1), {
+          action: "grandTichuBet",
+          args: { bet: Bet.NO_BET },
+        });
+      } finally {
+        bar.disconnectedCallback();
+      }
     } finally {
       g._ = savedUnderscore;
       g.window.gameModel = savedGameModel;
@@ -7990,6 +8126,8 @@ test("Fluid <tichu-value-choice>, <tichu-played-cards>, and gameinfos.inc.php mo
         .map((s: any) => s.cssText || String(s))
         .join("\n");
       assert.match(vcCss, /container-type:\s*inline-size/);
+      assert.match(vcCss, /@container\s*\(min-width:\s*760px\)/);
+      assert.match(vcCss, /repeat\(13,\s*var\(--choice-w\)\)/);
       assert.match(vcCss, /@container\s*\(max-width:\s*599px\)/);
       assert.ok(vcCss.includes("--choice-w"));
       assert.match(
@@ -8004,7 +8142,8 @@ test("Fluid <tichu-value-choice>, <tichu-played-cards>, and gameinfos.inc.php mo
       try {
         const htmlMahjong = serializeLitTemplate(vcMahjong.render());
         assert.ok(htmlMahjong.includes("--col: 0; --row: 0;"));
-        assert.ok(htmlMahjong.includes("--col: 6; --row: 1;"));
+        assert.ok(htmlMahjong.includes("--col: 5; --row: 1;"));
+        assert.equal(htmlMahjong.includes("--col: 6; --row: 1;"), false);
         assert.equal(htmlMahjong.includes("-70px"), false);
         assert.equal(htmlMahjong.includes("-105px"), false);
       } finally {
@@ -8137,8 +8276,34 @@ test("Hand row-mode toggle (#toggle_hand_rows): auto, single, two, persistence, 
         reserveFooter: true,
         rowMode: "two",
       });
-      assert.equal(twoSmallHand.twoRows, true);
-      assert.equal(twoSmallHand.row1Count, 3);
+      assert.equal(twoSmallHand.twoRows, false);
+
+      const twoSmallMobile = computeStockLayout({
+        sortedCards: hand14.slice(0, 3),
+        scale: 1.0,
+        containerWidth: 340,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "two",
+      });
+      assert.equal(twoSmallMobile.twoRows, false);
+
+      const twoSevenMobile = computeStockLayout({
+        sortedCards: hand14.slice(0, 7),
+        scale: 1.0,
+        containerWidth: 340,
+        cardGroups: {},
+        dynamicOverlap: true,
+        overlap: 75,
+        wrapRows: true,
+        reserveFooter: true,
+        rowMode: "two",
+      });
+      assert.equal(twoSevenMobile.twoRows, true);
+      assert.equal(twoSevenMobile.row1Count, 4);
 
       const twoOneCard = computeStockLayout({
         sortedCards: hand14.slice(0, 1),
@@ -8238,9 +8403,9 @@ test("Hand row-mode toggle (#toggle_hand_rows): auto, single, two, persistence, 
           false,
         );
 
-        // Hidden at <=720px when hand has < 2 cards
+        // Hidden at <=720px when hand has < 7 cards
         (handEl as any).updateCompactWidth(390);
-        model.update({ hand: hand14.slice(0, 1) });
+        model.update({ hand: hand14.slice(0, 6) });
         assert.equal(
           serializeLitTemplate(handEl.render()).includes('id="toggle_hand_rows"'),
           false,
@@ -8253,6 +8418,216 @@ test("Hand row-mode toggle (#toggle_hand_rows): auto, single, two, persistence, 
       g.window.gameModel = savedGameModel;
       g.window.gameui = savedGameUi;
       g.localStorage = savedStorage;
+    }
+  });
+});
+
+test("Migrated <tichu-action-bar> states & <tichu-game> value-choice placement", async () => {
+  await withMockLitEnv(({ TichuActionBar, TichuGame }) => {
+    const g = globalThis as any;
+    const savedUnderscore = g._;
+    const savedGameModel = g.window.gameModel;
+    const savedGameUi = g.window.gameui;
+
+    try {
+      g._ = (s: string) => s;
+      const model = new GameModel();
+      model.hydrateFromGamedatas(
+        {
+          players: {
+            "1": {
+              id: "1",
+              name: "Alice",
+              color: "000000",
+              no: 1,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "-1",
+              pass: "0",
+            } as any,
+            "2": {
+              id: "2",
+              name: "Bob",
+              color: "ff0000",
+              no: 2,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "-1",
+              pass: "0",
+            } as any,
+            "3": {
+              id: "3",
+              name: "Carol",
+              color: "000000",
+              no: 3,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "-1",
+              pass: "0",
+            } as any,
+            "4": {
+              id: "4",
+              name: "Dave",
+              color: "ff0000",
+              no: 4,
+              score: "0",
+              call_tichu: "-1",
+              call_grand_tichu: "-1",
+              pass: "0",
+            } as any,
+          },
+          playerorder: ["1", "2", "3", "4"],
+          gamestate: {
+            id: "15",
+            name: "grandTichuBets",
+            type: "multipleactiveplayer",
+            active_player: "0",
+            multiactive: ["1", "2", "3", "4"],
+            args: {},
+          } as any,
+          hand: [A2, A3, A4, A5, A6, A7, A8, A9],
+        },
+        "1",
+        false,
+        true,
+      );
+      g.window.gameModel = model;
+
+      const calls: string[] = [];
+      g.window.gameui = {
+        isReadOnly: () => false,
+        onGrandTichuBet: (b: string) => calls.push(`gt:${b}`),
+        onPassCards: () => calls.push("passCards"),
+        onResetPassCards: () => calls.push("resetPass"),
+        onUnpassCards: () => calls.push("unpass"),
+        onAcceptCards: () => calls.push("accept"),
+        onChoosePhoenix: () => calls.push("choosePhoenix"),
+        cancelPhoenix: () => calls.push("cancelPhoenix"),
+        onGiveDragon: (idx: number) => calls.push(`dragon:${idx}`),
+      };
+
+      const bar = new TichuActionBar();
+      bar.performUpdate = () => {};
+      bar.connectedCallback();
+      try {
+        // 1. grandTichuBets: #noBet gray, #makeGTBet blue, #myMakeTichuBet green, single row on mobile
+        bar.updateResponsiveMode(390);
+        const gtHtml = serializeLitTemplate(bar.render());
+        assert.ok(gtHtml.includes("preplay-bar"));
+        assert.ok(gtHtml.includes("compact-single-row"));
+        assert.match(gtHtml, /id="noBet"[^>]*bgabutton_gray/);
+        assert.match(gtHtml, /id="makeGTBet"[^>]*bgabutton_blue/);
+        assert.match(gtHtml, /id="myMakeTichuBet"[^>]*bgabutton_green/);
+
+        // 2. giveCards active: disabled states for 0, 1, 3 filled slots
+        model.setGameState("giveCards", { isCurrentPlayerActive: true });
+        const give0Html = serializeLitTemplate(bar.render());
+        assert.ok(give0Html.includes("give-cards-active"));
+        assert.match(give0Html, /id="resetPassCards_button"[^>]*disabled/);
+        assert.match(give0Html, /id="passCards_button"[^>]*disabled/);
+
+        // Click guards ignore disabled clicks
+        (bar as any).onPassCards({ preventDefault() {} });
+        (bar as any).onResetPassCards({ preventDefault() {} });
+        assert.equal(calls.length, 0);
+
+        // 1 slot filled -> reset enabled, pass still disabled
+        model.update({
+          passSlots: model
+            .getState()
+            .passSlots.map((s, idx) => (idx === 0 ? { ...s, givenCard: A2 } : s)),
+        });
+        const give1Html = serializeLitTemplate(bar.render());
+        assert.match(
+          give1Html,
+          /id="resetPassCards_button"[^>]*class="action-button bgabutton bgabutton_gray\s*"/,
+        );
+        assert.match(give1Html, /id="passCards_button"[^>]*disabled/);
+        (bar as any).onResetPassCards({ preventDefault() {} });
+        assert.deepEqual(calls, ["resetPass"]);
+
+        // 3 slots filled -> both enabled
+        model.update({
+          passSlots: model.getState().passSlots.map((s, idx) => ({
+            ...s,
+            givenCard: [A2, A3, A4][idx]!,
+          })),
+        });
+        const give3Html = serializeLitTemplate(bar.render());
+        assert.match(
+          give3Html,
+          /id="passCards_button"[^>]*class="action-button bgabutton bgabutton_blue\s*"/,
+        );
+        (bar as any).onPassCards({ preventDefault() {} });
+        assert.equal(calls.at(-1), "passCards");
+
+        // giveCards inactive -> #unpassCards_button
+        model.setGameState("giveCards", { isCurrentPlayerActive: false });
+        const unpassHtml = serializeLitTemplate(bar.render());
+        assert.ok(unpassHtml.includes('id="unpassCards_button"'));
+        assert.equal(unpassHtml.includes('id="passCards_button"'), false);
+
+        // 3. showPassedCards: #acceptCards_button when not countdown vs countdown header
+        model.setGameState("showPassedCards", { isCurrentPlayerActive: true });
+        model.setAcceptingCardsCountdown(false);
+        const acceptHtml = serializeLitTemplate(bar.render());
+        assert.ok(acceptHtml.includes('id="acceptCards_button"'));
+
+        model.setAcceptingCardsCountdown(true);
+        const countdownHtml = serializeLitTemplate(bar.render());
+        assert.equal(countdownHtml.includes('id="acceptCards_button"'), false);
+        assert.ok(countdownHtml.includes("Auto accepting ..."));
+        model.setAcceptingCardsCountdown(false);
+
+        // 4. phoenixPlay: #choosePhoenix disabled until selection + #cancelPhoenix red
+        model.setGameState("phoenixPlay", { isCurrentPlayerActive: true });
+        model.enterPhoenixPlay([5, 9]);
+        const phDisabledHtml = serializeLitTemplate(bar.render());
+        assert.match(phDisabledHtml, /id="choosePhoenix"[^>]*disabled/);
+        assert.match(phDisabledHtml, /id="cancelPhoenix"[^>]*bgabutton_red/);
+        (bar as any).onChoosePhoenix({ preventDefault() {} });
+        assert.notEqual(calls.at(-1), "choosePhoenix");
+
+        model.setSelectedPhoenixValue(9);
+        const phEnabledHtml = serializeLitTemplate(bar.render());
+        assert.match(
+          phEnabledHtml,
+          /id="choosePhoenix"[^>]*class="action-button bgabutton bgabutton_blue\s*"/,
+        );
+        (bar as any).onChoosePhoenix({ preventDefault() {} });
+        assert.equal(calls.at(-1), "choosePhoenix");
+
+        // 5. chooseDragonGift with empty hand (Dragon played as last card)
+        model.update({ hand: [] });
+        model.setGameState("chooseDragonGift", { isCurrentPlayerActive: true });
+        model.enterChooseDragonGift(["Bob", "Dave"]);
+        const dragonEmptyHtml = serializeLitTemplate(bar.render());
+        assert.ok(dragonEmptyHtml.includes("dragon-gift-mode"));
+        assert.ok(dragonEmptyHtml.includes('id="giveDragonBefore_button"'));
+        assert.ok(dragonEmptyHtml.includes('id="giveDragonAfter_button"'));
+        assert.ok(dragonEmptyHtml.includes("Give cards to Bob"));
+        assert.ok(dragonEmptyHtml.includes("Give cards to Dave"));
+      } finally {
+        bar.disconnectedCallback();
+      }
+
+      // 6. <tichu-game> renders <tichu-value-choice> directly above <tichu-hand> (after <tichu-pass-area>)
+      const gameEl = new TichuGame();
+      gameEl.performUpdate = () => {};
+      gameEl.connectedCallback();
+      try {
+        const gameHtml = serializeLitTemplate(gameEl.render());
+        const passIdx = gameHtml.indexOf("<tichu-pass-area>");
+        const choiceIdx = gameHtml.indexOf('<tichu-value-choice mode="mahjong">');
+        const handIdx = gameHtml.indexOf("<tichu-hand>");
+        assert.ok(passIdx >= 0 && choiceIdx > passIdx && handIdx > choiceIdx);
+      } finally {
+        gameEl.disconnectedCallback();
+      }
+    } finally {
+      g._ = savedUnderscore;
+      g.window.gameModel = savedGameModel;
+      g.window.gameui = savedGameUi;
     }
   });
 });
